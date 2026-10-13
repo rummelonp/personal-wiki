@@ -7,9 +7,9 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 
 次の機能が使えます。
 
-- Markdown のページの作成、編集、検索、バージョン履歴。ブラウザの Live Preview エディタと、REST（`/api/*`）、MCP（`/mcp`）から操作できます
+- Markdown のページの作成、編集、検索。ブラウザの Live Preview エディタと、REST（`/api/*`）、MCP（`/mcp`）から操作できます
 - `[[wikilink]]`、タグ、backlink、画像の添付（R2 を設定したときだけ）
-- ページごとの public / draft。public のページと一覧は、ログインしていない閲覧者にも見えます。draft は id を知っている人だけが開け、検索エンジンには載せません（`noindex`）
+- ページごとの public / draft。public のページと一覧は、ログインしていない閲覧者にも見え、リンクのプレビュー用に OGP のメタ情報を返します。draft は id を知っている人だけが開け、検索エンジンには載せません（`noindex`）
 - title を変えたときの、他のページの `[[旧 title]]` の書き換え
 - API token による REST と MCP の認証。claude.ai などのカスタムコネクタからは OAuth でも接続できます
 - ブラウザで閲覧と編集をする owner のログイン（Cloudflare Access）
@@ -196,12 +196,13 @@ WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
 ```
 
 `derived:rebuild` は links、tags、添付の参照、一覧の抜粋、検索の索引を本文から作り直します。
-migration が派生データの表を足すことがあるので、毎回実行して構いません。
+migration が派生データの表を足すことがあるので、migration を含む版では必ず実行します。Worker を前の版に戻して再デプロイしたあとも実行します。
 詳しい扱いは [AGENTS.md](./AGENTS.md) の「コマンド」にあります。
 
 ## バックアップ
 
 Time Travel で遡れるのは Free で 7 日までなので、定期的に手元へダンプを残します。
+`apps/worker` で実行します。
 
 ```sh
 pnpm backup --remote
