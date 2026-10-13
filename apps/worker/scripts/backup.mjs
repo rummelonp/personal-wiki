@@ -131,6 +131,9 @@ export const EXCLUDED_TABLES = {
   save_guard: "transient",
   // OAuth の client の登録数を UTC の 1 日ごとに数える表。復元しても過ぎた日の行は使われない
   oauth_client_registrations: "transient",
+  // title の変更でリンクを書き換える待ち行列。処理が済めば空になる。バックアップの時点で処理を
+  // 待っていた分は、復元した本文に古い title のリンクとして残る
+  link_rewrites: "transient",
 };
 
 const USAGE = `usage:
