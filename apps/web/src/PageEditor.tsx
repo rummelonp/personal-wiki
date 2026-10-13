@@ -7,6 +7,7 @@ import { createLocalBackupStore } from "./draft-backup";
 import {
   type EditorApi,
   EditorSession,
+  type FailedOp,
   isDirty,
   isReadOnly,
   type SaveStatus,
@@ -35,6 +36,23 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
   auth: "ログインが切れました",
   gone: "ページがありません",
 };
+
+const FAILURE_LEADS: Record<FailedOp["kind"], string> = {
+  save: "保存に失敗しました。",
+  visibility: "公開設定を変えられませんでした。",
+  delete: "削除できませんでした。",
+};
+
+function retryLabel(op: FailedOp): string {
+  switch (op.kind) {
+    case "save":
+      return "もう一度保存する";
+    case "visibility":
+      return op.to === "public" ? "もう一度公開にする" : "もう一度下書きにする";
+    case "delete":
+      return "もう一度削除する";
+  }
+}
 
 function useEditorSession(page: Page): EditorSession {
   const [session] = useState(
@@ -83,6 +101,14 @@ export function PageEditor({ page }: { page: Page }) {
     if (!window.confirm(`「${state.base.title}」を削除します。元に戻せません。よろしいですか？`))
       return;
     if (await session.remove()) navigate(homeHref());
+  }
+
+  // 削除の再試行は確認を挟まない。ボタン自体が「もう一度削除する」と明示している
+  async function retryFailed(op: FailedOp | null) {
+    if (op === null) return;
+    if (op.kind === "save") await session.flush();
+    else if (op.kind === "visibility") await session.changeVisibility(op.to);
+    else if (await session.remove()) navigate(homeHref());
   }
 
   const rail = (
@@ -193,18 +219,21 @@ export function PageEditor({ page }: { page: Page }) {
           </section>
         )}
 
-        {state.error !== null && status === "error" && (
+        {state.error !== null && state.failedOp !== null && (
           <section className="message message-error" role="alert">
-            <p>{state.error}</p>
-            <button type="button" className="button" onClick={() => void session.flush()}>
-              再試行
+            <p>
+              {FAILURE_LEADS[state.failedOp.kind]}
+              {state.error}
+            </p>
+            <button
+              type="button"
+              className="button"
+              disabled={!idle}
+              onClick={() => void retryFailed(state.failedOp)}
+            >
+              {retryLabel(state.failedOp)}
             </button>
           </section>
-        )}
-        {state.error !== null && status !== "error" && (
-          <p className="message message-error" role="alert">
-            {state.error}
-          </p>
         )}
 
         {state.conflict !== null && (

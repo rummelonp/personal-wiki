@@ -35,14 +35,23 @@ export interface EditorDeps {
   minCheckIntervalMs?: number;
 }
 
+export type FailedOp =
+  | { kind: "save" }
+  | { kind: "visibility"; to: Visibility }
+  | { kind: "delete" };
+
+const NO_ERROR = { error: null, failedOp: null } as const;
+
 export interface EditorState {
   /** サーバーで最後に確認した内容。保存済みかどうかはこれと draft の比較で決まる。 */
   base: Page;
   draft: Draft;
   /** 書き込み中の操作。保存・visibility・削除は直列に走るので 1 つだけ。 */
   busy: "saving" | "visibility" | "deleting" | null;
-  /** 直近の保存や操作の失敗。次の編集か再試行で消える。 */
+  /** 直近の失敗の説明。次の編集か再試行で消える。どの操作の失敗かは failedOp が持つ。 */
   error: string | null;
+  /** error を起こした操作。保存の失敗だけが保存の状態（SaveStatus）になる。 */
+  failedOp: FailedOp | null;
   /** 手元とサーバーが食い違っているとき、サーバーの最新。解決するまで自動保存を止める。 */
   conflict: Page | null;
   /** 401 を受けた。再ログインまで保存できない。 */
@@ -72,7 +81,7 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.authLost) return "auth";
   if (state.conflict !== null) return "conflict";
   if (state.busy === "saving") return "saving";
-  if (state.error !== null) return "error";
+  if (state.error !== null && state.failedOp?.kind === "save") return "error";
   return isDirty(state) ? "unsaved" : "saved";
 }
 
@@ -110,7 +119,7 @@ export class EditorSession {
       base: page,
       draft: { title: page.title, body: page.body },
       busy: null,
-      error: null,
+      ...NO_ERROR,
       conflict: null,
       authLost: false,
       gone: false,
@@ -178,7 +187,7 @@ export class EditorSession {
     // 画面側でも読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
     if (isReadOnly(this.state)) return;
     const { authLost } = this.state;
-    this.set({ draft, error: null });
+    this.set({ draft, ...NO_ERROR });
     if (authLost) {
       this.stashIfDirty();
       return;
@@ -202,7 +211,7 @@ export class EditorSession {
     if (!this.canWrite() || !isDirty(this.state)) return;
     const { base } = this.state;
     const snapshot: Draft = { ...this.state.draft };
-    this.set({ busy: "saving", error: null });
+    this.set({ busy: "saving", ...NO_ERROR });
     const res = await this.api.updatePage(base.id, base.version, snapshot, options);
     if (res.ok) {
       this.set({ base: res.value, busy: null });
@@ -215,12 +224,13 @@ export class EditorSession {
       return;
     }
     this.set({ busy: null });
-    await this.handleFailure(res, { sent: snapshot });
+    await this.handleFailure(res, { kind: "save" }, { sent: snapshot });
   }
 
   /** 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。 */
   private async handleFailure(
     res: ApiFailure,
+    op: FailedOp,
     options: { stash?: boolean; sent?: Draft } = {},
   ): Promise<void> {
     const stash = options.stash ?? true;
@@ -242,7 +252,7 @@ export class EditorSession {
           // （削除や visibility の変更は、版が変わったこと自体を知らせたいので対象外）。
           // 比べるのは送った内容。最新を取り直す間に入力が進んでも、それは別の編集であり衝突ではない
           if (sent !== undefined && server.title === sent.title && server.body === sent.body) {
-            this.set({ base: server, error: null });
+            this.set({ base: server, ...NO_ERROR });
             if (isDirty(this.state)) {
               // 取り直す間の入力を、新しい版に対して自動保存する
               this.edit(this.state.draft);
@@ -258,13 +268,14 @@ export class EditorSession {
         else
           this.set({
             error: `版が合わず、最新を取得できなかった（${failureMessage(latest, "通信の失敗")}）`,
+            failedOp: op,
           });
         if (stash) this.stashIfDirty();
         return;
       }
       case "title_conflict":
       case "error":
-        this.set({ error: res.message });
+        this.set({ error: res.message, failedOp: op });
         return;
     }
   }
@@ -324,14 +335,14 @@ export class EditorSession {
       base: conflict,
       draft: { title: conflict.title, body: conflict.body },
       conflict: null,
-      error: null,
+      ...NO_ERROR,
     });
     this.removeBackup(conflict.id);
   }
 
   /** ログイン切れの後、別のタブなどでログインし直したときの再試行。 */
   retry(): Promise<void> {
-    this.set({ authLost: false, error: null });
+    this.set({ authLost: false, ...NO_ERROR });
     return this.flush();
   }
 
@@ -361,16 +372,18 @@ export class EditorSession {
   changeVisibility(visibility: Visibility): Promise<void> {
     return this.enqueue(async () => {
       this.clearTimer();
+      // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える
+      this.set(NO_ERROR);
       await this.saveIfDirty();
       // 保存できなかった（衝突、ログイン切れ、失敗）なら、画面の状態表示に任せて visibility は変えない
       if (!this.canWrite() || this.state.error !== null) return;
       if (this.state.base.visibility === visibility) return;
       const { base } = this.state;
-      this.set({ busy: "visibility", error: null });
+      this.set({ busy: "visibility", ...NO_ERROR });
       const res = await this.api.setVisibility(base.id, base.version, visibility);
       this.set({ busy: null });
       if (!res.ok) {
-        await this.handleFailure(res);
+        await this.handleFailure(res, { kind: "visibility", to: visibility });
         return;
       }
       const server = res.value;
@@ -392,7 +405,7 @@ export class EditorSession {
       if (!this.canWrite() || this.state.pendingBackup !== null) return false;
       this.clearTimer();
       const { base } = this.state;
-      this.set({ busy: "deleting", error: null });
+      this.set({ busy: "deleting", ...NO_ERROR });
       const res = await this.api.deletePage(base.id, base.version);
       this.set({ busy: null });
       if (res.ok) {
@@ -400,7 +413,7 @@ export class EditorSession {
         this.set({ gone: true });
         return true;
       }
-      await this.handleFailure(res, { stash: false });
+      await this.handleFailure(res, { kind: "delete" }, { stash: false });
       return false;
     });
   }

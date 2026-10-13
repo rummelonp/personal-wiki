@@ -527,3 +527,61 @@ describe("退避が未決の間", () => {
     expect(server.page.body).toBe("新");
   });
 });
+
+describe("公開設定と削除の失敗", () => {
+  const failOnce = <A extends unknown[], T>(real: (...args: A) => Promise<ApiResult<T>>) => {
+    let failed = false;
+    return async (...args: A): Promise<ApiResult<T>> => {
+      if (failed) return real(...args);
+      failed = true;
+      return { ok: false, reason: "error", message: "落ちた" };
+    };
+  };
+
+  it("公開設定の失敗は保存の状態にせず、そのまま再操作できる", async () => {
+    const { session, api, server } = setup();
+    api.setVisibility = failOnce(api.setVisibility);
+    await session.changeVisibility("public");
+    const failed = session.getState();
+    expect(failed.error).toBe("落ちた");
+    expect(failed.failedOp).toEqual({ kind: "visibility", to: "public" });
+    expect(saveStatusOf(failed)).toBe("saved");
+    await session.changeVisibility("public");
+    expect(session.getState().error).toBeNull();
+    expect(session.getState().base.visibility).toBe("public");
+    expect(server.page.visibility).toBe("public");
+  });
+
+  it("保存の失敗が残っていても、公開設定の操作は前回の失敗に妨げられない", async () => {
+    const { session, api, server } = setup();
+    api.updatePage = failOnce(api.updatePage);
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    expect(saveStatusOf(session.getState())).toBe("error");
+    await session.changeVisibility("public");
+    expect(session.getState().error).toBeNull();
+    expect(server.page).toMatchObject({ body: "手元", visibility: "public" });
+  });
+
+  it("削除の失敗は保存の状態にせず、再操作で削除できる", async () => {
+    const { session, api } = setup();
+    api.deletePage = failOnce(api.deletePage);
+    expect(await session.remove()).toBe(false);
+    const failed = session.getState();
+    expect(failed.failedOp).toEqual({ kind: "delete" });
+    expect(saveStatusOf(failed)).toBe("saved");
+    expect(await session.remove()).toBe(true);
+    expect(session.getState().error).toBeNull();
+    expect(saveStatusOf(session.getState())).toBe("gone");
+  });
+
+  it("保存の失敗は保存の状態になり、次の入力で消える", async () => {
+    const { session, api } = setup();
+    api.updatePage = failOnce(api.updatePage);
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    expect(session.getState().failedOp).toEqual({ kind: "save" });
+    session.edit({ title: "題", body: "手元2" });
+    expect(session.getState().failedOp).toBeNull();
+  });
+});
