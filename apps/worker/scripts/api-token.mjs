@@ -79,10 +79,12 @@ export function parseArgs(argv) {
 /**
  * wrangler d1 execute --command はバインド変数を受け付けないので、値を SQL に埋め込む。
  * 埋め込む値は parseArgs で検査した name、hex の hash、固定の scopes、数値だけにする。
+ * 失効済みの行も名前を持ち続けるので、名前が使用済みなら 0 行にして RETURNING の行数で見分ける
+ * （UNIQUE 制約の失敗にすると wrangler の生のエラーしか出ない）。
  * @param {{ name: string; tokenHash: string; scopes: string; now: number }} params
  */
 export function issueSql({ name, tokenHash, scopes, now }) {
-  return `INSERT INTO api_tokens (name, token_hash, scopes, created_at) VALUES ('${name}', '${tokenHash}', '${scopes}', ${now})`;
+  return `INSERT INTO api_tokens (name, token_hash, scopes, created_at) SELECT '${name}', '${tokenHash}', '${scopes}', ${now} WHERE NOT EXISTS (SELECT 1 FROM api_tokens WHERE name = '${name}') RETURNING id`;
 }
 
 /**
@@ -162,7 +164,15 @@ export function main(argv, io = defaultIo) {
   const now = io.now();
   if (args.command === "issue") {
     const token = generateToken();
-    runWrangler(wranglerArgs(issueSql({ ...args, tokenHash: hashToken(token), now }), where), io);
+    const inserted = runWrangler(
+      wranglerArgs(issueSql({ ...args, tokenHash: hashToken(token), now }), where),
+      io,
+    );
+    if (inserted === 0) {
+      throw new Error(
+        `token name "${args.name}" is already used on ${target} D1 (revoked tokens keep their names); choose another name`,
+      );
+    }
     io.stderr.write(`issued "${args.name}" (${args.scopes}) on ${target} D1\n`);
     io.stdout.write(`${token}\n`);
     return;

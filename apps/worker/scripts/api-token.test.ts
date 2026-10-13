@@ -114,7 +114,7 @@ describe("main", () => {
   }
 
   it("発行したトークンの平文は標準出力にだけ出し、wrangler には hash だけを渡す", () => {
-    const { io, out } = fakeIo();
+    const { io, out } = fakeIo([{ id: 1 }]);
     expect(run(["issue", "laptop", "--scopes", "read"], io)).toBe(0);
     const token = out.stdout.trimEnd();
     expect(out.stdout).toBe(`${token}\n`);
@@ -125,6 +125,13 @@ describe("main", () => {
     expect(args).toContain(hashToken(token));
     expect(args).not.toContain(token);
     expect(args).toContain("--local");
+  });
+
+  it("名前が使用済み（失効済みを含む）なら、平文を出さずに使用済みと伝えて終了コード 1 にする", () => {
+    const { io, out } = fakeIo([]);
+    expect(run(["issue", "laptop", "--scopes", "read"], io)).toBe(1);
+    expect(out.stderr).toContain('token name "laptop" is already used');
+    expect(out.stdout).toBe("");
   });
 
   it("失効させる行が無ければ終了コード 1 にする", () => {
