@@ -66,6 +66,11 @@ export function useHash(): string {
   return useSyncExternalStore(subscribe, () => window.location.hash);
 }
 
+/** URL のパス。hash だけが変わる遷移でも再描画するのは `useHash` と同じ。 */
+export function usePathname(): string {
+  return useSyncExternalStore(subscribe, () => window.location.pathname);
+}
+
 export function useRoute(): Route {
   const location = useSyncExternalStore(subscribe, currentLocation);
   const index = location.indexOf("?");

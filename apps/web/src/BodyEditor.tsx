@@ -23,9 +23,10 @@ export interface BodyEditorHandle {
   jumpTo: (offset: number) => void;
   /**
    * URL の fragment が指す見出しか block へ、`jumpTo` と同じく移る。見つからなければ何もしない。
-   * block は対象の段落を一時的にハイライトする。
+   * block は対象の段落を一時的にハイライトする。`focus` を立てたときだけ編集部品に focus する
+   * （既定は立てない。ページを開いただけでモバイルのキーボードが出ないようにする）。
    */
-  jumpToFragment: (fragment: PageFragment) => void;
+  jumpToFragment: (fragment: PageFragment, options?: { focus?: boolean }) => void;
 }
 
 export interface BodyEditorProps {
@@ -65,13 +66,13 @@ const jumpKey = Symbol("jumpTo");
  * カーソルを `offset` に置き、その行を画面の上端の近くまでスクロールする。見出しへの移動は
  * 行頭が見えれば足りるわけではなく、その先を読み進めるので、最小限のスクロールにはしない。
  */
-function moveTo(editor: EditorView, offset: number): void {
+function moveTo(editor: EditorView, offset: number, focus: boolean): void {
   const at = Math.min(offset, editor.state.doc.length);
   editor.dispatch({
     selection: EditorSelection.cursor(at),
     effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 16 }),
   });
-  editor.focus();
+  if (focus) editor.focus();
 }
 
 /**
@@ -209,19 +210,20 @@ export function BodyEditor({
     jumpTo(offset) {
       const editor = view.current;
       if (editor === null) return;
-      dispatchWhenSettled(editor, jumpKey, () => moveTo(editor, offset));
+      dispatchWhenSettled(editor, jumpKey, () => moveTo(editor, offset, true));
     },
-    jumpToFragment(fragment) {
+    jumpToFragment(fragment, options) {
       const editor = view.current;
       if (editor === null) return;
+      const focus = options?.focus ?? false;
       // 位置は動かす時点の本文で求める。変換が落ち着くまでに本文が変わっていても、その本文の位置に移る
       dispatchWhenSettled(editor, jumpKey, () => {
         if (fragment.kind === "block") {
-          if (revealBlockId(editor, fragment.id)) editor.focus();
+          if (revealBlockId(editor, fragment.id) && focus) editor.focus();
           return;
         }
         const offset = findHeadingOffset(editor.state.doc.toString(), fragment.heading);
-        if (offset !== null) moveTo(editor, offset);
+        if (offset !== null) moveTo(editor, offset, focus);
       });
     },
   }));

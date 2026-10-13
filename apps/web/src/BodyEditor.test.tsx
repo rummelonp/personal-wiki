@@ -350,11 +350,15 @@ describe("jumpTo", () => {
 describe("jumpToFragment", () => {
   const BODY = "# 先頭\n\n本文\n\n## 次の見出し\n\n段落 ^blk1\n\n### 入れ子\n\n終わり";
 
-  it("見出しの行頭にカーソルを置いてフォーカスする", () => {
+  it("見出しの行頭にカーソルを置く。focus は頼まれたときだけ", () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled(BODY, { ref });
     act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "次の見出し" }));
     expect(view().state.selection.main.head).toBe(BODY.indexOf("## 次の見出し"));
+    expect(view().hasFocus).toBe(false);
+
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "先頭" }, { focus: true }));
+    expect(view().state.selection.main.head).toBe(0);
     expect(view().hasFocus).toBe(true);
   });
 
@@ -365,11 +369,14 @@ describe("jumpToFragment", () => {
     expect(view().state.selection.main.head).toBe(BODY.indexOf("### 入れ子"));
   });
 
-  it("block の段落へ移り、一時的にハイライトする", () => {
+  it("block の段落へ移り、一時的にハイライトする。focus は頼まれたときだけ", () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled(BODY, { ref });
     act(() => ref.current?.jumpToFragment({ kind: "block", id: "blk1" }));
     expect(view().state.selection.main.head).toBe(BODY.indexOf("段落"));
+    expect(view().hasFocus).toBe(false);
+
+    act(() => ref.current?.jumpToFragment({ kind: "block", id: "blk1" }, { focus: true }));
     expect(view().hasFocus).toBe(true);
   });
 
@@ -394,7 +401,8 @@ describe("jumpToFragment", () => {
     return vi.waitFor(() => {
       const top = v.coordsAtPos(body.indexOf("## 末尾の見出し"))?.top ?? Number.NaN;
       expect(top).toBeGreaterThanOrEqual(0);
-      expect(top).toBeLessThan(window.innerHeight / 2);
+      // y: "start" と yMargin の 16px で、行は画面の上端のすぐ下に来る
+      expect(top).toBeLessThan(100);
     });
   });
 

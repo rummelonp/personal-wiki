@@ -14,6 +14,7 @@ import {
   resolvePages,
   updatePage,
 } from "./pages-api";
+import { navigate } from "./route";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -472,7 +473,8 @@ describe("PageEditor の見出しと block への移動", () => {
     history.replaceState(null, "", `${location.pathname}${hashOf("節B")}`);
     const { view } = renderPage({ ...PAGE, body: BODY });
     expect(view().state.selection.main.head).toBe(at("## 節B"));
-    expect(view().hasFocus).toBe(true);
+    // ページを開いただけでは focus しない（モバイルでキーボードが出る）
+    expect(view().hasFocus).toBe(false);
   });
 
   it("hash が block を指すページを開くと、その段落にカーソルを置く", () => {
@@ -503,6 +505,8 @@ describe("PageEditor の見出しと block への移動", () => {
     const pathname = location.pathname;
     clickLink("#節B");
     expect(view().state.selection.main.head).toBe(at("## 節B"));
+    // link を押したときは focus する
+    expect(view().hasFocus).toBe(true);
     expect(location.pathname).toBe(pathname);
     expect(location.hash).toBe(hashOf("節B"));
     clickLink("#^blk");
@@ -538,10 +542,29 @@ describe("PageEditor の見出しと block への移動", () => {
     await flushAsync();
     clickLink("#節B");
     clickLink("#^blk");
+    act(() => view().contentDOM.blur());
     history.back();
     await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("## 節B")));
     history.forward();
     await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("段落 ^blk")));
+    // 戻る・進むでは focus しない
+    expect(view().hasFocus).toBe(false);
+  });
+
+  it("別のページへ fragment 付きで移る遷移では、遷移前のページの本文を動かさない", async () => {
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    await flushAsync();
+    act(() => navigate(`/p/BBBBBBBBBBBBBBBBBBBBBB${hashOf("節B")}`));
+    expect(view().state.selection.main.head).toBe(0);
+    expect(view().hasFocus).toBe(false);
+  });
+
+  it("正の URL への置き換えの後も、同じページの hash の変化には移る", async () => {
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    await flushAsync();
+    act(() => navigate("/p/CCCCCCCCCCCCCCCCCCCCCC", { replace: true }));
+    act(() => navigate(`/p/CCCCCCCCCCCCCCCCCCCCCC${hashOf("節B")}`));
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
   });
 });
 

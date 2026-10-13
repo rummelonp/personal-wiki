@@ -238,10 +238,13 @@ describe("見出しと block への移動", () => {
     history.replaceState(null, "", `${location.pathname}${hashOf("節A")}`);
     const { view } = renderReader({ ...PAGE, body: LONG });
     expect(view().state.selection.main.head).toBe(LONG.indexOf("# 節A"));
+    // ページを開いただけでは focus しない（モバイルでキーボードが出る）
+    expect(view().hasFocus).toBe(false);
     await vi.waitFor(() => {
       const top = view().coordsAtPos(LONG.indexOf("# 節A"))?.top ?? Number.NaN;
       expect(top).toBeGreaterThanOrEqual(0);
-      expect(top).toBeLessThan(window.innerHeight / 2);
+      // y: "start" で、見出しの行は画面の上端のすぐ下に来る
+      expect(top).toBeLessThan(100);
     });
   });
 
@@ -251,14 +254,19 @@ describe("見出しと block への移動", () => {
     expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
   });
 
-  it("見つからない見出しと block は、先頭のまま何も出さない", () => {
+  it("見つからない見出しと block は、開いたときも hash の変化でも先頭のまま何も出さない", () => {
     history.replaceState(null, "", `${location.pathname}${hashOf("無い")}`);
     const { view } = renderReader(PAGE_WITH_HEADINGS);
     expect(view().state.selection.main.head).toBe(0);
-    history.replaceState(null, "", `${location.pathname}#%5Enone`);
-    act(() => navigate(`${location.pathname}#%E3%81%82`));
+    // hash の変化は hook の経路（navigate）で流す。replaceState はイベントを出さない
+    act(() => navigate(`${location.pathname}#%5Enone`));
+    expect(view().state.selection.main.head).toBe(0);
+    act(() => navigate(`${location.pathname}${hashOf("存在しない見出し")}`));
     expect(view().state.selection.main.head).toBe(0);
     expect(container?.querySelector("[role=alert]")).toBeNull();
+    // 同じ経路で、あるものには移る
+    act(() => navigate(`${location.pathname}${hashOf("節B")}`));
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
   });
 
   it("同じページの link は遷移もページの問い合わせもせず、その位置へ移る", async () => {
@@ -267,9 +275,11 @@ describe("見出しと block への移動", () => {
     const pathname = location.pathname;
     clickLink("#節B");
     expect(view().state.selection.main.head).toBe(at("## 節B"));
+    // link を押したときは focus する
+    expect(view().hasFocus).toBe(true);
     expect(location.pathname).toBe(pathname);
     expect(location.hash).toBe(hashOf("節B"));
-    expect(findPageByTitle).not.toHaveBeenCalled();
+    for (const [titles] of vi.mocked(resolvePages).mock.calls) expect(titles).not.toContain("");
     clickLink("#^blk");
     expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
     expect(location.hash).toBe("#%5Eblk");
@@ -322,10 +332,28 @@ describe("見出しと block への移動", () => {
     expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
     const moved = (head: number) =>
       vi.waitFor(() => expect(view().state.selection.main.head).toBe(head));
+    act(() => view().contentDOM.blur());
     history.back();
     await moved(at("## 節B"));
     expect(location.hash).toBe(hashOf("節B"));
     history.forward();
     await moved(at("段落 ^blk"));
+    // 戻る・進むでは focus しない
+    expect(view().hasFocus).toBe(false);
+  });
+
+  it("別のページへ fragment 付きで移る遷移では、遷移前のページの本文を動かさない", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await flushAsync();
+    act(() => navigate(`/${encodeURIComponent("別の題")}${hashOf("節B")}`));
+    expect(view().state.selection.main.head).toBe(0);
+  });
+
+  it("正の URL への置き換えの後も、同じページの hash の変化には移る", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await flushAsync();
+    act(() => navigate(`/${encodeURIComponent(PAGE.title)}`, { replace: true }));
+    act(() => navigate(`/${encodeURIComponent(PAGE.title)}${hashOf("節B")}`));
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
   });
 });
