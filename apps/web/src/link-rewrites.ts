@@ -62,6 +62,8 @@ export class LinkRewriteRunner {
   private readonly participants = new Set<LinkRewriteParticipant>();
   /** ループを捨てるたびに進める。古いループは結果を書かずに抜ける */
   private generation = 0;
+  /** ループが走っている。status は何も見せない間（起動時の再開）も idle なので、別に持つ */
+  private active = false;
   /** 走っている間に start が来た。残りが 0 になっても、もう一度呼んで確かめる */
   private rerun = false;
 
@@ -84,19 +86,26 @@ export class LinkRewriteRunner {
    * 何も積まれていなければ 1 回呼ぶだけで、何も見せずに終わる（起動時の再開）。
    */
   start(queued = 0): void {
-    if (this.state.status === "running") {
+    if (this.active) {
       this.rerun = true;
+      if (queued > 0 && this.state.status !== "running") {
+        this.set({ ...this.state, status: "running", total: this.state.done + queued });
+      }
       return;
     }
     const generation = ++this.generation;
+    this.active = true;
     this.rerun = false;
     this.set({ ...IDLE, status: queued > 0 ? "running" : "idle", total: queued });
-    void this.loop(generation);
+    void this.loop(generation).finally(() => {
+      if (generation === this.generation) this.active = false;
+    });
   }
 
   /** ログアウトなどで書き換えを止め、結果も消す。 */
   stop(): void {
     this.generation++;
+    this.active = false;
     this.rerun = false;
     this.set(IDLE);
   }

@@ -392,6 +392,16 @@ a {
   border-color: var(--color-warn-border);
 }
 
+.link-rewrites-pages {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.link-rewrites-pages .chip {
+  margin-left: var(--space-2);
+}
+
 .notice-title,
 .list-title {
   margin: 0 0 var(--space-4);

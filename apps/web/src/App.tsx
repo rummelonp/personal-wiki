@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { fetchMe, logout } from "./api";
+import { fetchMe, logout, NO_FEATURES } from "./api";
 import { setDocumentTitle } from "./document-title";
 import { saveAllEditors } from "./editor-lifecycle";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
+import { LinkRewriteStatus } from "./LinkRewriteStatus";
+import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
 import { parseRoute, useRoute } from "./route";
 
@@ -59,13 +61,14 @@ export function App() {
     setLoggingOut(true);
     try {
       await saveAllEditors();
+      linkRewrites.stop();
       await logout();
       // features は環境の性質で、ログアウトでは変わらない
       setSession((current) => ({
         status: "ready",
         me: {
           kind: "anonymous",
-          features: current.status === "ready" ? current.me.features : { attachments: false },
+          features: current.status === "ready" ? current.me.features : NO_FEATURES,
         },
       }));
     } catch {
@@ -79,6 +82,13 @@ export function App() {
   // 匿名の読み取りが期限切れの cookie で 401 にならない
   const ready = session.status === "ready";
   const isOwner = ready && session.me.kind === "owner";
+  const canRewriteLinks = isOwner && session.me.features.linkRewrites;
+
+  // 前の起動やエージェントの改名で残った書き換えを、owner が開いたときに進める。止めるのはログアウトだけで、
+  // effect の後片付けでは止めない（StrictMode の 2 回目の実行で step を 2 本走らせない）
+  useEffect(() => {
+    if (canRewriteLinks) linkRewrites.start();
+  }, [canRewriteLinks]);
 
   return (
     <div className="app">
@@ -89,6 +99,7 @@ export function App() {
         onLogout={() => void handleLogout()}
       />
       <main className="main">
+        {isOwner && <LinkRewriteStatus />}
         {session.status === "loading" && <p className="narrow muted">読み込み中…</p>}
         {session.status === "error" && (
           <p className="narrow message message-error" role="alert">

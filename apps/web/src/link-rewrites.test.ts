@@ -157,6 +157,25 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState().rewritten.map((page) => page.id)).toEqual(["a", "b"]);
   });
 
+  it("何も見せていない間（起動時の再開）の start も、ループを 2 本にしない", async () => {
+    let release: () => void = () => {};
+    const { runner, step, settled } = setup([ok({ processed: processed("b"), remaining: 0 })]);
+    step.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(ok({ remaining: 0 }));
+        }),
+    );
+    runner.start();
+    runner.start(1);
+    expect(step).toHaveBeenCalledTimes(1);
+    expect(runner.getState()).toMatchObject({ status: "running", total: 1 });
+    release();
+    await settled();
+    expect(step).toHaveBeenCalledTimes(2);
+    expect(runner.getState()).toMatchObject({ status: "done", rewritten: [{ id: "b" }] });
+  });
+
   it("stop のあとは古いループの結果を書かない", async () => {
     let release: () => void = () => {};
     const { runner, step } = setup([]);

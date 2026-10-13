@@ -11,7 +11,7 @@ describe("loginHref", () => {
 });
 
 describe("parseMe", () => {
-  const off = { attachments: false };
+  const off = { attachments: false, linkRewrites: false };
 
   it("知らない形は anonymous にする", () => {
     for (const value of [
@@ -36,13 +36,25 @@ describe("parseMe", () => {
   });
 
   it("features.attachments は true のときだけ true にし、項目が無ければ false にする", () => {
-    const on = { attachments: true };
-    expect(parseMe({ kind: "owner", features: on })).toEqual({ kind: "owner", features: on });
-    expect(parseMe({ kind: "anonymous", features: on })).toEqual({
+    const on = { attachments: true, linkRewrites: true };
+    expect(parseMe({ kind: "owner", features: { attachments: true } })).toEqual({
+      kind: "owner",
+      features: on,
+    });
+    expect(parseMe({ kind: "anonymous", features: { attachments: true } })).toEqual({
       kind: "anonymous",
       features: on,
     });
-    for (const features of [{ attachments: false }, {}, null, "yes", { attachments: "true" }, 1]) {
+    for (const features of [{ attachments: false }, {}, { attachments: "true" }]) {
+      expect(parseMe({ kind: "owner", features })).toEqual({
+        kind: "owner",
+        features: { attachments: false, linkRewrites: true },
+      });
+    }
+  });
+
+  it("features が無い（step の無い前の版の）Worker では、リンクの書き換えも使えないものとする", () => {
+    for (const features of [undefined, null, "yes", 1]) {
       expect(parseMe({ kind: "owner", features })).toEqual({ kind: "owner", features: off });
     }
   });
@@ -62,7 +74,7 @@ describe("fetchMe と logout", () => {
       calls.push([input, init]);
       return Response.json({ kind: "owner" });
     });
-    expect(me).toEqual({ kind: "owner", features: { attachments: false } });
+    expect(me).toEqual({ kind: "owner", features: { attachments: false, linkRewrites: false } });
     expect(calls).toEqual([["/api/me", { credentials: "same-origin", cache: "no-store" }]]);
   });
 

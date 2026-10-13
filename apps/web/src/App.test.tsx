@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { fetchMe, logout } from "./api";
+import { linkRewrites } from "./link-rewrites";
+import { stepLinkRewrites } from "./link-rewrites-api";
 import {
   type ApiResult,
   findPageByTitle,
@@ -22,6 +24,8 @@ vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
   return { ...actual, fetchMe: vi.fn(), logout: vi.fn() };
 });
+
+vi.mock("./link-rewrites-api", () => ({ stepLinkRewrites: vi.fn() }));
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -77,9 +81,14 @@ beforeEach(() => {
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
+  vi.mocked(stepLinkRewrites).mockResolvedValue({
+    ok: true,
+    value: { processed: null, conflict: false, failed: [], remaining: 0 },
+  });
 });
 
 afterEach(() => {
+  linkRewrites.stop();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -95,11 +104,16 @@ const tagOf = (page: Page) => `${page.title}のタグ`;
  * `GET /api/pages/:id` は id を知っていれば draft も読めるので、principal で絞らない。
  * ログアウトすると、その後の要求は匿名として扱う。
  */
-function serve(me: "owner" | "anonymous", pages: readonly Page[], attachments = false) {
+function serve(
+  me: "owner" | "anonymous",
+  pages: readonly Page[],
+  attachments = false,
+  linkRewrites = true,
+) {
   let signedIn = me === "owner";
   vi.mocked(fetchMe).mockImplementation(async () => ({
     kind: signedIn ? "owner" : "anonymous",
-    features: { attachments },
+    features: { attachments, linkRewrites },
   }));
   vi.mocked(logout).mockImplementation(async () => {
     signedIn = false;
@@ -361,5 +375,64 @@ describe("App の owner の画面", () => {
     expect(main()?.querySelector<HTMLInputElement>(".title-input")?.value).toBe("下書きの題");
     expect(findPageByTitle).toHaveBeenCalledTimes(1);
     expect(getPage).not.toHaveBeenCalled();
+  });
+});
+
+describe("App のリンクの書き換えの再開", () => {
+  it("owner が開いたら、残っている書き換えを 1 回確かめ、残りがあれば最後まで進めて結果を出す", async () => {
+    vi.mocked(stepLinkRewrites)
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          processed: {
+            sourcePageId: PUBLIC.id,
+            title: PUBLIC.title,
+            visibility: "public",
+            version: 2,
+            rewritten: 1,
+          },
+          conflict: false,
+          failed: [],
+          remaining: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { processed: null, conflict: false, failed: [], remaining: 0 },
+      });
+    serve("owner", [PUBLIC, DRAFT]);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.textContent).toContain("1 ページのリンクを新しい title に書き換えました"),
+    );
+    expect(stepLinkRewrites).toHaveBeenCalledTimes(2);
+    expect(main()?.textContent).toContain("うち公開 1 ページ");
+  });
+
+  it("残りが無ければ 1 回だけ呼び、何も出さない", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() => expect(stepLinkRewrites).toHaveBeenCalledTimes(1));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+    expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
+    expect(main()?.textContent).not.toContain("書き換え");
+  });
+
+  it("匿名と、features の無い Worker では呼ばない", async () => {
+    serve("anonymous", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
+    );
+    act(() => root?.unmount());
+    container?.remove();
+
+    serve("owner", [PUBLIC], false, false);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+    expect(stepLinkRewrites).not.toHaveBeenCalled();
   });
 });
