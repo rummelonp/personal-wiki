@@ -29,16 +29,20 @@ function fakeAssets() {
 }
 
 describe("SPA の配信", () => {
-  it("HTML のナビゲーションには index.html を返す", async () => {
+  it("HTML のナビゲーションには index.html を返し、ページの無いパスは 404 にする", async () => {
     const { assets, requested } = fakeAssets();
     const app = createApp();
-    for (const path of ["/", "/p/abc", "/%E3%83%9A%E3%83%BC%E3%82%B8?x=1"]) {
+    for (const [path, status] of [
+      ["/", 200],
+      ["/p/abc", 404],
+      ["/%E3%83%9A%E3%83%BC%E3%82%B8?x=1", 404],
+    ] as const) {
       const res = await app.request(
         path,
         { headers: { Accept: HTML_ACCEPT } },
         { ...env, ASSETS: assets },
       );
-      expect(res.status, path).toBe(200);
+      expect(res.status, path).toBe(status);
       expect(await res.text()).toBe(INDEX_HTML);
       expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
     }
@@ -52,7 +56,26 @@ describe("SPA の配信", () => {
     ]);
   });
 
-  it("index.html に CSP、no-cache、noindex と共通のヘッダーを付ける", async () => {
+  it("noindex を外すのはクエリの無いトップだけで、検索や絞り込みの画面には残す", async () => {
+    const { assets } = fakeAssets();
+    const app = createApp();
+    for (const [path, robots] of [
+      ["/", null],
+      ["/?q=x", "noindex"],
+      ["/?tag=x", "noindex"],
+    ] as const) {
+      const res = await app.request(
+        path,
+        { headers: { Accept: HTML_ACCEPT } },
+        { ...env, ASSETS: assets },
+      );
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("X-Robots-Tag"), path).toBe(robots);
+      expect(res.headers.get("Cache-Control"), path).toBe("no-cache");
+    }
+  });
+
+  it("ページの無いパスの index.html に CSP、no-cache、noindex と共通のヘッダーを付ける", async () => {
     const { assets } = fakeAssets();
     const res = await createApp().request(
       "/p/abc",
