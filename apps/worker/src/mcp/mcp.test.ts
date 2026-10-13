@@ -272,7 +272,7 @@ describe("tools/list", () => {
     expect(byName.create_page?.description).toContain("draft");
     expect(byName.update_page?.description).toContain("read_page で取った version が必須");
     expect(byName.update_page?.description).toContain("上書きで押し切らない");
-    expect(byName.update_page?.description).toContain("`[[旧 title]]` はサーバーが");
+    expect(byName.update_page?.description).toContain("`[[旧 title]]` はすぐには書き換わらない");
     expect(byName.append_to_page?.description).toContain("そのまま送り直してよい");
     for (const name of ["create_page", "update_page", "append_to_page"]) {
       expect(byName[name]?.description).toContain("秘密を書かない");
