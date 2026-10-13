@@ -140,6 +140,10 @@ export class EditorSession {
    * 手元の内容を退避に写すだけにする。画面が無いセッションのタイマーが、離脱の保存の後から
    * keepalive でない保存を 1 本出さないため。leave() は unmount のほか、タブが hidden になったときや
    * pagehide でも呼ばれ、同じセッションが戻ってくるので、leave() で止めきらず戻ったら再開する。
+   * dev の StrictMode では mount の直後にも立つ。
+   *
+   * hidden になっただけの生きたタブも止まる。その間に重ねた取り込みや送り直しは退避に写すだけで、
+   * 表に戻るまで保存しない（内容は退避に残る）。hidden と unmount を区別するより単純なのでこうしている。
    */
   private left = false;
 
@@ -233,9 +237,17 @@ export class EditorSession {
   edit(draft: Draft): void {
     // 画面側でも読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
     if (isReadOnly(this.state)) return;
-    this.left = false;
+    this.markActive();
     this.set({ draft, ...NO_ERROR });
     this.rearm();
+  }
+
+  /**
+   * 画面の操作（入力、ボタン）が届いたので、離脱で止めていた自動保存を戻す。操作の起点ごとに呼ぶ。
+   * blur から来る commitTitle では呼ばない。hidden にしたときの blur が leave() の後に届くことがある。
+   */
+  private markActive(): void {
+    this.left = false;
   }
 
   /**
@@ -273,6 +285,7 @@ export class EditorSession {
   /** title 欄の入力。確定するまで保存しない。 */
   editTitle(title: string): void {
     if (isReadOnly(this.state)) return;
+    this.markActive();
     this.set({ titleInput: title });
   }
 
@@ -357,8 +370,8 @@ export class EditorSession {
    * 書き換えても、衝突の画面にしない。衝突の画面で上書きを選ぶと、その書き換えが消えるため。
    *
    * 手元の本文が base のまま（title だけの変更）なら、server の本文はリンクの書き換え以外の変更でも
-   * 取り込む。本文には重ねる編集が無く、title は server と base が同じことを先に確かめているので、
-   * どちらの変更も失わない。
+   * 取り込む。server の本文が base のまま（版だけ進んだ）なら、手元の本文をそのまま残す。どちらも
+   * 片方に重ねる編集が無く、title は server と base が同じことを先に確かめているので、変更を失わない。
    */
   private async rebaseOnServer(server: Page): Promise<boolean> {
     if (server.title !== this.state.base.title) return false;
@@ -458,7 +471,7 @@ export class EditorSession {
   checkFreshness(): Promise<void> {
     if (this.left) {
       // 画面が戻った。離脱の間に止めていた自動保存を再開する
-      this.left = false;
+      this.markActive();
       if (isDirty(this.state)) this.rearm();
     }
     return this.enqueue(async () => {
@@ -513,7 +526,8 @@ export class EditorSession {
 
   /**
    * step が書き換えた版を取り込む。手元に未保存の編集があれば、サーバーの書き換えを重ねる。
-   * 書き換えだけでは説明できない変化（別の場所の保存）が混ざっていれば、衝突にする。
+   * 書き換えだけでは説明できない変化（別の場所の保存）が混ざっていれば、衝突にする。手元の本文が
+   * base のまま（title だけの変更）なら、その変化も取り込む（rebaseOnServer の規則）。
    *
    * 取り直した版が step の書いた版より新しくても、重ねるかどうかは版の番号ではなく内容で決める。
    * 間に入ったのが別の step（Cron、別のタブ）の書き換えなら重ねてよく、別の保存なら内容の照合で
@@ -540,6 +554,7 @@ export class EditorSession {
 
   /** 衝突を手元の内容で解決する。サーバーの最新の版に重ねて保存する。 */
   overwrite(): Promise<void> {
+    this.markActive();
     return this.enqueue(async () => {
       const { conflict } = this.state;
       if (conflict === null) return;
@@ -565,6 +580,7 @@ export class EditorSession {
 
   /** ログイン切れの後、別のタブなどでログインし直したときの再試行。 */
   retry(): Promise<void> {
+    this.markActive();
     this.set({ authLost: false, ...NO_ERROR });
     return this.flush();
   }
@@ -573,14 +589,19 @@ export class EditorSession {
    * 退避した内容を手元に戻す。退避した時点の版と今のサーバーの版が違えば、そのまま保存すると
    * 間の変更を上書きするので、衝突として扱い差分を確認させる。
    *
-   * 退避した時点から title が変わらず、本文の差分がリンクの書き換えだけなら、衝突にせず退避の編集を重ねる。
+   * 退避した時点から title が変わらず、サーバーの本文の差分がリンクの書き換えだけなら（退避の本文が
+   * base のまま、またはサーバーの本文が退避の base のままの場合を含む）、衝突にせず退避の編集を重ねる。
    * タブを閉じた場合は、離脱の保存の送り直しが成立せず、退避が古い版のまま残るため。
-   * 重ねるのは編集中の rebaseOnServer と同じ規則だが、こちらは同期で行う。退避が未決の間は入力欄が
-   * 読み取り専用で変換中の文字が無く、whenSettled を待たなくてよい。
+   *
+   * 重ねるのは編集中の rebaseOnServer と同じ規則だが、こちらは whenSettled を待たず同期で行う。
+   * 退避が未決の間も入力欄では変換を始められるが、読み取り専用の changeFilter が確定を落とし、
+   * edit() も読み取り専用で弾き、本文の差し替え（replaceDoc）は変換が終わるまで保留されるので、
+   * 確定前の文字が重ねた本文を上書きしない。この前提が崩れたら whenSettled を待つ形に戻す。
    */
   restoreBackup(): void {
     const saved = this.state.pendingBackup;
     if (saved === null) return;
+    this.markActive();
     const draft = { title: saved.title, body: saved.body };
     this.set({ pendingBackup: null, titleInput: null });
     if (saved.baseVersion === this.state.base.version) {
@@ -610,6 +631,7 @@ export class EditorSession {
 
   /** 未保存の変更を先に保存してから変える。保存できなければ visibility は変えない。 */
   changeVisibility(visibility: Visibility): Promise<void> {
+    this.markActive();
     return this.enqueue(async () => {
       this.clearTimer();
       // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える

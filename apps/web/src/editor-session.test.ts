@@ -455,6 +455,18 @@ describe("ログイン切れ", () => {
       expect(backup.load(ID)).toBeNull();
     });
 
+    it("離脱の後（dev の StrictMode の mount 直後など）に復元しても、重ねた内容を自動保存する", async () => {
+      const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+      const { session, api } = setup({
+        backup,
+        server: page({ body: "[[新]] 本文", version: 3 }),
+      });
+      await session.leave();
+      session.restoreBackup();
+      await vi.advanceTimersByTimeAsync(2100);
+      expect(api.calls).toEqual(["put@3"]);
+    });
+
     it("重ねた内容を保存する前に離れても、新しい版に対する退避を残す", async () => {
       const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
       const { session, api } = setup({
