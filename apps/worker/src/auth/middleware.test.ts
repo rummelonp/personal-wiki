@@ -312,14 +312,13 @@ describe("同じパスに付けた宣言", () => {
     expect((await app.request("/api/test/all", { method: "POST" }, env)).status).toBe(401);
   });
 
-  it("SPA の catch-all は匿名で通り、先に登録した API の宣言はそのまま効く", async () => {
-    const app = createApp()
-      .get("/api/pages/:slug", requireToken("read"), (c) => c.text("page"))
-      .get("*", allowAnonymous(), (c) => c.text("spa"));
-    const spa = await app.request("/pages/home", {}, env);
+  it("SPA の catch-all は匿名で通り、API の宣言はそのまま効く", async () => {
+    const assets = { fetch: async () => new Response("spa") } as unknown as Fetcher;
+    const app = createApp().get("/api/test/:slug", requireToken("read"), (c) => c.text("page"));
+    const spa = await app.request("/pages/home", {}, { ...env, ASSETS: assets });
     expect(spa.status).toBe(200);
     expect(await spa.text()).toBe("spa");
-    expect((await app.request("/api/pages/home", {}, env)).status).toBe(401);
+    expect((await app.request("/api/test/home", {}, { ...env, ASSETS: assets })).status).toBe(401);
   });
 });
 

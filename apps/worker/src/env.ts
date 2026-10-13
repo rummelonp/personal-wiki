@@ -4,6 +4,8 @@ import type { Principal } from "./auth/principal";
 export interface Bindings {
   DB: D1Database;
   BUCKET: R2Bucket;
+  /** apps/web のビルド出力 */
+  ASSETS: Fetcher;
   /**
    * owner のログインの設定。deploy.env から vars に入る（SESSION_SECRET だけは wrangler secret）。
    * 1 つでも欠けると owner の経路は閉じる（auth/owner-config.ts）。

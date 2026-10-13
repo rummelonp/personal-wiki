@@ -19,5 +19,14 @@
       "migrations_dir": "migrations"
     }
   ],
-  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "personal-wiki" }]
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "personal-wiki" }],
+  // apps/web のビルド出力。deploy.mjs が wrangler deploy の前にビルドする。
+  // `/assets/*`（ハッシュ付きのファイル）以外は Worker が先に受け、HTML へのナビゲーションには
+  // Worker が index.html を返す（src/spa.ts）。未定義の /api と /mcp を SPA の HTML にしないため。
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/*", "!/assets/*"],
+    "not_found_handling": "single-page-application"
+  }
 }

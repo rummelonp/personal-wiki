@@ -12,6 +12,7 @@ import type { AppEnv } from "./env";
 import { registerMcpRoutes } from "./mcp/server";
 import type { WriteMetric } from "./pages/operations";
 import { registerAdminRoutes, registerPageRoutes } from "./pages/routes";
+import { registerSpaRoutes } from "./spa";
 
 export interface AppOptions {
   /** UNIX エポックのミリ秒を返す時計。テストだけが差し替える。 */
@@ -31,6 +32,8 @@ function logWriteMetric(metric: WriteMetric): void {
  * ルートは `.get(path, requireScope("read"), handler)` のように、ハンドラと同じ path・同じ
  * 呼び出しで宣言を付けて登録する。宣言の無いハンドラにマッチしたリクエストは 404 になる。
  * 全ルートに効かせる middleware を足すときは defineBaseMiddleware で登録する。
+ * SPA の catch-all は最後に登録する。`/api` などの予約した接頭辞は catch-all を素通りするので、
+ * 後から足した API のルートも動く（spa.ts）。
  */
 export function createApp({
   now = Date.now,
@@ -51,5 +54,6 @@ export function createApp({
   registerPageRoutes(app, { now, recordWrite });
   registerAdminRoutes(app, { recordWrite });
   registerMcpRoutes(app, { now, recordWrite });
+  registerSpaRoutes(app);
   return app;
 }

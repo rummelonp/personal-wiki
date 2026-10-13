@@ -1,5 +1,5 @@
 // デプロイ先の Cloudflare アカウントに対する操作を、deploy.env の値で合成した設定を使って実行する。
-//   node scripts/deploy.mjs deploy [wrangler deploy の引数]
+//   node scripts/deploy.mjs deploy [wrangler deploy の引数]（先に apps/web をビルドする）
 //   node scripts/deploy.mjs migrate [wrangler d1 migrations apply の引数]
 // 追跡対象の wrangler.jsonc にはデプロイ先の値が無く、wrangler の自動プロビジョニングが書き戻す先も
 // 生成した設定になるので、追跡ファイルは変わらない。
@@ -24,11 +24,16 @@ export const HELP = `usage:
   3. cp deploy.env.example deploy.env を実行し、ホスト名と database_id を書く
        R2 を作ったときだけ R2_BUCKET_NAME を書く。空のままなら R2 の binding を付けずにデプロイする
        ホスト名の DNS ゾーンが、ログインしたアカウントにあること（custom_domain の前提）
-  4. pnpm db:migrate:remote
-  5. pnpm deploy:remote
-  6. pnpm -s api-token issue <name> --scopes read,write --remote
+  4. owner のログイン（ブラウザからの閲覧・編集）を使うときだけ:
+       Cloudflare Zero Trust で /_auth/login だけを対象にした Access のアプリケーションを作り、
+       deploy.env に ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS を書く
+       手順 6 の後で、セッション cookie の署名鍵（32 文字以上）を secret で入れる（deploy.env には書かない）
+         openssl rand -base64 32 | pnpm exec wrangler secret put SESSION_SECRET --config wrangler.deploy.json
+  5. pnpm db:migrate:remote
+  6. pnpm deploy:remote
+  7. pnpm -s api-token issue <name> --scopes read,write --remote
        標準出力のトークンを控える
-  7. MCP 接続（MCP エンドポイントの実装後。パスは実装に合わせる）
+  8. MCP 接続（MCP エンドポイントの実装後。パスは実装に合わせる）
        claude mcp add --transport http personal-wiki https://<ホスト名>/mcp \\
          --header "Authorization: Bearer <トークン>"
 
@@ -50,6 +55,16 @@ export function deployArgs(configPath, extra) {
  */
 export function migrateArgs(configPath, extra) {
   return ["d1", "migrations", "apply", "DB", "--remote", "--config", configPath, ...extra];
+}
+
+/** wrangler.jsonc の assets.directory（apps/web/dist）を作る。古いビルドのままデプロイしないため毎回作る。 */
+function buildWeb() {
+  const cwd = fileURLToPath(new URL("..", import.meta.url));
+  const result = spawnSync("pnpm", ["--filter", "@personal-wiki/web", "build"], {
+    cwd,
+    stdio: "inherit",
+  });
+  return result.status ?? 1;
 }
 
 /** @param {string[]} args */
@@ -86,9 +101,10 @@ function main(argv) {
     process.stdout.write(`${configPath}\n`);
     return 0;
   }
-  return runWrangler(
-    command === "deploy" ? deployArgs(configPath, extra) : migrateArgs(configPath, extra),
-  );
+  if (command === "migrate") return runWrangler(migrateArgs(configPath, extra));
+  const built = buildWeb();
+  if (built !== 0) return built;
+  return runWrangler(deployArgs(configPath, extra));
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
