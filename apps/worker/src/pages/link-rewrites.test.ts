@@ -1,9 +1,12 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { createApp } from "../app";
 import { buildClient, linksFrom, type PageJson, T0 } from "../test/pages";
-import { insertToken } from "../test/tokens";
-import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites";
+import {
+  LINK_REWRITE_MAX_ATTEMPTS,
+  type LinkRewriteStepResult,
+  stepLinkRewrites,
+} from "./link-rewrites";
+import { findPageById, updatePage } from "./store";
 
 type Client = Awaited<ReturnType<typeof buildClient>>;
 
@@ -134,6 +137,7 @@ describe("POST /api/link-rewrites/step", () => {
       sourcePageId: b.id,
       title: "B",
       visibility: "draft",
+      version: 2,
       rewritten: 3,
     });
 
@@ -313,70 +317,236 @@ describe("POST /api/link-rewrites/step", () => {
     expect(res.status).toBe(400);
   });
 
+  it("1 つのリンク元に複数の対象が積まれていれば、1 回の revision でまとめて書き換える", async () => {
+    const client = await buildClient();
+    const x = await client.create("X");
+    const y = await client.create("Y");
+    const s = await client.create("S", "[[X]] [[Y]] [[Z]]");
+    await rename(client, x, "X2");
+    const other = await buildClient({ name: "other" });
+    other.clock.now = T0 + 1000;
+    await rename(other, y, "Y2");
+    const steps = await drain(client);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.processed).toMatchObject({ sourcePageId: s.id, rewritten: 2, version: 2 });
+    expect((await read(client, s)).body).toBe("[[X2]] [[Y2]] [[Z]]");
+    // 後に積んだ rename の呼び出し元を actor にする
+    expect((await actorsOf(s.id)).at(-1)).toEqual({ version: 2, actor: "token:other" });
+  });
+
+  it("同じ旧 key に 2 つの対象が積まれていれば、先に積んだ方の title に書き換える", async () => {
+    const client = await buildClient();
+    const first = await client.create("A");
+    const s = await client.create("S", "[[A]]");
+    await rename(client, first, "B");
+    client.clock.now = T0 + 1000;
+    // 旧 title で作ったページを改名すると、S の [[A]] がもう一度積まれる
+    const second = await client.create("A");
+    await rename(client, second, "C");
+    expect((await jobs()).map((j) => [j.target, j.oldKey]).sort()).toEqual(
+      [
+        [first.id, "a"],
+        [second.id, "a"],
+      ].sort(),
+    );
+    await drain(client);
+    expect((await read(client, s)).body).toBe("[[B]]");
+    expect(await jobs()).toEqual([]);
+  });
+
+  it("元に戻してからもう一度改名すると、積み直して最後の title に書き換える", async () => {
+    const client = await buildClient();
+    const target = await client.create("A");
+    const s = await client.create("S", "[[A]]");
+    const toB = await rename(client, target, "B");
+    client.clock.now = T0 + 1000;
+    const backToA = await rename(client, toB, "A");
+    expect(backToA).not.toHaveProperty("linkRewrites");
+    client.clock.now = T0 + 2000;
+    const toC = await rename(client, backToA, "C");
+    // 残っていた行を積み直すので、件数に数える
+    expect(toC.linkRewrites).toEqual({ queued: 1 });
+    expect(await createdAtOf(s.id)).toEqual([T0 + 2000]);
+    await drain(client);
+    expect(await read(client, s)).toMatchObject({ body: "[[C]]", version: 2 });
+  });
+
   it("読んだあとにリンク元が保存されたら、積んだ分を残して conflict を返す", async () => {
     const client = await buildClient();
     const target = await client.create("Old");
     const s = await client.create("S", "[[Old]]");
     await rename(client, target, "New");
-    // batch の直前に別の保存が入った状態を作る
-    const racing = new Proxy(env.DB, {
-      get(db, prop) {
-        if (prop === "batch") {
-          return async (statements: D1PreparedStatement[]) => {
-            await db
-              .prepare("UPDATE pages SET version = version + 1 WHERE id = ?1")
-              .bind(s.id)
-              .run();
-            return db.batch(statements);
-          };
-        }
-        const value = Reflect.get(db, prop, db);
-        return typeof value === "function" ? value.bind(db) : value;
-      },
+    const racing = beforeBatch(async () => {
+      await env.DB.prepare("UPDATE pages SET version = version + 1 WHERE id = ?1").bind(s.id).run();
     });
     const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 });
     expect(result).toMatchObject({ processed: null, conflict: true, remaining: 1 });
     expect(await jobs()).toHaveLength(1);
+    // batch まで進んだ試行は、試行回数に数えない
+    expect(await attemptsOf(s.id)).toEqual([0]);
     expect(await read(client, s)).toMatchObject({ body: "[[Old]]", version: 2 });
 
     await drain(client);
     expect(await read(client, s)).toMatchObject({ body: "[[New]]", version: 3 });
   });
 
-  it("1 回の step のクエリは認証を含めて 50 未満", async () => {
+  it("読んだあとに対象が改名されたら、古い title を書かずに conflict を返す", async () => {
+    const client = await buildClient();
+    const target = await client.create("A");
+    const s = await client.create("S", "[[A]]");
+    await rename(client, target, "B");
+    // step が B を読んだあと、書く前に C へ改名する。S の [[A]] はもう対象を指していないので、
+    // この rename では積み直されない
+    const racing = beforeBatch(async () => {
+      expect(await renameDirectly(target.id, "C", T0 + 1000)).toEqual({ queued: 0 });
+    });
+    const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 + 2000 });
+    expect(result).toMatchObject({ processed: null, conflict: true, remaining: 1 });
+    expect(await read(client, s)).toMatchObject({ body: "[[A]]", version: 1 });
+
+    await drain(client);
+    expect((await read(client, s)).body).toBe("[[C]]");
+    expect(await jobs()).toEqual([]);
+  });
+
+  it("元に戻した分を捨てる前に対象が改名されたら、捨てずに残す", async () => {
+    const client = await buildClient();
+    const target = await client.create("A");
+    const s = await client.create("S", "[[A]]");
+    const toB = await rename(client, target, "B");
+    await rename(client, toB, "A");
+    const racing = beforeBatch(async () => {
+      // 元に戻したので S の [[A]] は対象を指しており、改名で同じ行が積み直される
+      expect(await renameDirectly(target.id, "C", T0 + 1000)).toEqual({ queued: 1 });
+    });
+    const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 + 2000 });
+    expect(result).toMatchObject({ processed: null, conflict: true, remaining: 1 });
+    expect(await jobs()).toMatchObject([{ source: s.id, oldKey: "a", actor: "token:other" }]);
+    expect(await createdAtOf(s.id)).toEqual([T0 + 1000]);
+
+    await drain(client);
+    expect((await read(client, s)).body).toBe("[[C]]");
+  });
+
+  it("書き換えるものが無いと読んだあとにリンク元が保存されたら、捨てずに残す", async () => {
     const client = await buildClient();
     const target = await client.create("Old");
-    const links = Array.from({ length: 30 }, (_, i) => `[[Old]] [[L${i}]] #t${i}`).join("\n");
-    await client.create("S", links);
+    const s = await client.create("S", "[[Old]]");
     await rename(client, target, "New");
-
-    let queries = 0;
-    const counting = new Proxy(env.DB, {
-      get(db, prop) {
-        if (prop === "prepare") {
-          return (sql: string) => {
-            queries += 1;
-            return db.prepare(sql);
-          };
-        }
-        const value = Reflect.get(db, prop, db);
-        return typeof value === "function" ? value.bind(db) : value;
-      },
+    const v2 = await rename(client, s, "S", "リンクなし");
+    const racing = beforeBatch(async () => {
+      const res = await client.update(v2, "S", "[[Old]] を書き戻した");
+      expect(res.status).toBe(200);
     });
-    const token = await insertToken({ name: "counted", scopes: "read write" });
-    const app = createApp({ now: () => T0, recordWrite: () => {} });
-    const res = await app.request(
-      "/api/link-rewrites/step",
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: "{}",
-      },
-      { ...env, DB: counting },
-    );
-    expect(res.status).toBe(200);
-    expect((await res.json<LinkRewriteStepResult>()).processed?.rewritten).toBe(30);
-    expect(queries).toBeGreaterThan(10);
-    expect(queries).toBeLessThan(50);
+    const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 });
+    expect(result).toMatchObject({ processed: null, conflict: true, remaining: 1 });
+
+    await drain(client);
+    expect((await read(client, s)).body).toBe("[[New]] を書き戻した");
+  });
+
+  it("派生データの表が古くても、本文を解析し直して書き換える", async () => {
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const s = await client.create("S", "[[Old]] #tag");
+    await rename(client, target, "New");
+    await env.DB.prepare("DELETE FROM tags WHERE page_id = ?1").bind(s.id).run();
+    const [result] = await drain(client);
+    expect(result).toMatchObject({ failed: [], processed: { sourcePageId: s.id } });
+    expect((await read(client, s)).body).toBe("[[New]] #tag");
+  });
+
+  it("処理が上限の回数まで終わらなかったリンク元は、解析せずに failed にして捨てる", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const s = await client.create("S", "[[Old]]");
+    await rename(client, target, "New");
+    // batch の失敗は試行回数に数え、積んだ分は残る
+    const failing = beforeBatch(async () => {
+      throw new Error("injected");
+    });
+    for (let i = 0; i < LINK_REWRITE_MAX_ATTEMPTS; i++) {
+      await expect(stepLinkRewrites(failing, { targetPageId: null, now: T0 })).rejects.toThrow(
+        "injected",
+      );
+    }
+    expect(await attemptsOf(s.id)).toEqual([LINK_REWRITE_MAX_ATTEMPTS]);
+    const [result] = await drain(client);
+    expect(result).toMatchObject({ processed: null, failed: [s.id], remaining: 0 });
+    expect(await read(client, s)).toMatchObject({ body: "[[Old]]", version: 1 });
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("attempts_exceeded"));
+  });
+
+  it("上限を超えて捨てる間に積み直された分は残す", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = await buildClient();
+    const target = await client.create("A");
+    const s = await client.create("S", "[[A]]");
+    const toB = await rename(client, target, "B");
+    await rename(client, toB, "A");
+    await env.DB.prepare("UPDATE link_rewrites SET attempts = ?1")
+      .bind(LINK_REWRITE_MAX_ATTEMPTS)
+      .run();
+    // 上限を超えた分は読んだ状態を確かめずに捨てるので、積み直した行は created_at の違いで残る
+    const racing = beforeBatch(async () => {
+      expect(await renameDirectly(target.id, "C", T0 + 1000)).toEqual({ queued: 1 });
+    });
+    const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 + 2000 });
+    expect(result).toMatchObject({ failed: [s.id], remaining: 1 });
+    expect(await attemptsOf(s.id)).toEqual([0]);
+
+    await drain(client);
+    expect((await read(client, s)).body).toBe("[[C]]");
   });
 });
+
+/** batch を送る直前に hook を呼ぶ D1。hook の中の書き込みは env.DB に直接送る */
+function beforeBatch(hook: () => Promise<void>): D1Database {
+  return new Proxy(env.DB, {
+    get(db, prop) {
+      if (prop === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          await hook();
+          return db.batch(statements);
+        };
+      }
+      const value = Reflect.get(db, prop, db);
+      return typeof value === "function" ? value.bind(db) : value;
+    },
+  });
+}
+
+/** 別の呼び出し元の保存として、本文を変えずに title だけを変える */
+async function renameDirectly(id: string, title: string, now: number) {
+  const current = await findPageById(env.DB, id);
+  if (current === null) throw new Error("page not found");
+  const result = await updatePage(env.DB, {
+    id,
+    expectedVersion: current.version,
+    title,
+    body: current.body,
+    actor: "token:other",
+    now,
+  });
+  if (!result.ok) throw new Error(result.reason);
+  return result.linkRewrites;
+}
+
+async function attemptsOf(sourcePageId: string) {
+  const { results } = await env.DB.prepare(
+    "SELECT attempts FROM link_rewrites WHERE source_page_id = ?1",
+  )
+    .bind(sourcePageId)
+    .all<{ attempts: number }>();
+  return results.map((r) => r.attempts);
+}
+
+async function createdAtOf(sourcePageId: string) {
+  const { results } = await env.DB.prepare(
+    "SELECT created_at FROM link_rewrites WHERE source_page_id = ?1",
+  )
+    .bind(sourcePageId)
+    .all<{ created_at: number }>();
+  return results.map((r) => r.created_at);
+}

@@ -9,7 +9,7 @@ import { revisionStatements } from "./revisions";
  * 失敗すると先行する書き込みも戻る。D1 には対話的なトランザクションが無いので、版の照合は batch の
  * 先頭の guard 文で行い、版が合わなければ save_guard の trigger で batch 全体を失敗させる。
  *
- * 文の順序: guard、（更新では）リンクの書き換えの積み込み、revision、派生データ、pages の UPDATE（最後）。
+ * 文の順序: guard、（updatePage では）リンクの書き換えの積み込み、revision、派生データ、pages の UPDATE（最後）。
  * title_key の UNIQUE 違反は最後の UPDATE で起き、それまでの書き込みごと戻る。
  */
 
@@ -320,6 +320,10 @@ const LINK_REWRITE_SOURCES = `FROM links AS l JOIN pages AS p ON p.id = ?1
 /**
  * 書き換えを link_rewrites に積む文。新しい title がリンクに書けないときは積まずに、残るリンクの
  * 有無だけを数える（title を変えていない保存で skipped を返さないため）。
+ *
+ * 同じ行が残っていれば積み直す（created_at と actor を新しくし、試行回数を数え直す）。step は読んだ
+ * created_at の行だけを消すので、step が読んでから消すまでの間に積み直された行は残り、次の step が
+ * 今の title で処理する。
  */
 function linkRewritesStatement(
   db: D1Database,
@@ -336,9 +340,11 @@ function linkRewritesStatement(
   return {
     statement: db
       .prepare(
-        `INSERT OR IGNORE INTO link_rewrites
+        `INSERT INTO link_rewrites
            (source_page_id, target_page_id, old_title_key, actor, created_at)
-         SELECT l.source_page_id, ?1, l.target_title_key, ?3, ?4 ${LINK_REWRITE_SOURCES}`,
+         SELECT l.source_page_id, ?1, l.target_title_key, ?3, ?4 ${LINK_REWRITE_SOURCES}
+         ON CONFLICT (source_page_id, target_page_id, old_title_key) DO UPDATE
+           SET created_at = excluded.created_at, actor = excluded.actor, attempts = 0`,
       )
       .bind(input.id, input.titleKey, input.actor, input.now),
     unsafe: false,
@@ -351,29 +357,33 @@ function linkRewritesOf(result: D1Result, unsafe: boolean): LinkRewritesQueued {
   return count > 0 ? { queued: 0, skipped: "unsafe_title" } : { queued: 0 };
 }
 
+/** 版の照合で batch が戻った。ページが無いのか版が違うのかは、まだ読み分けていない */
+const GUARD_REJECTED = Symbol("guard_rejected");
+
 /**
- * title と body を置き換える。visibility は変えない。
- * title_key が変わるときは、旧 title へのリンクの書き換えを link_rewrites に積む（書き換えるのは
- * link-rewrites.ts の step）。
+ * title と body を置き換える batch を送る。queueLinkRewrites が false なら積み込みの文を入れない
+ * （title を変えない追記で、1 回あたりのクエリを減らす）。
  */
-export async function updatePage(
+async function writeContent(
   db: D1Database,
   input: UpdatePageInput,
-): Promise<UpdateSuccess | WriteError> {
-  const content = prepareContent(input.title, input.body);
-  if (!content.ok) return content;
+  content: PreparedContent,
+  queueLinkRewrites: boolean,
+): Promise<UpdateSuccess | typeof GUARD_REJECTED | { ok: false; reason: "title_conflict" }> {
   const { id, expectedVersion } = input;
-  const linkRewrites = linkRewritesStatement(db, {
-    id,
-    title: content.title,
-    titleKey: content.titleKey,
-    actor: input.actor,
-    now: input.now,
-  });
+  const linkRewrites = queueLinkRewrites
+    ? linkRewritesStatement(db, {
+        id,
+        title: content.title,
+        titleKey: content.titleKey,
+        actor: input.actor,
+        now: input.now,
+      })
+    : null;
   const statements = [
     guardStatement(db, id, expectedVersion),
-    // 応答の件数を results[1] から読むので、guard の直後から動かさない
-    linkRewrites.statement,
+    // 派生データの文より前に置く（LINK_REWRITE_SOURCES）
+    ...(linkRewrites === null ? [] : [linkRewrites.statement]),
     ...revisionStatements(db, {
       pageId: id,
       version: expectedVersion + 1,
@@ -395,7 +405,7 @@ export async function updatePage(
   try {
     results = await db.batch(statements);
   } catch (error) {
-    if (isVersionConflict(error)) return notFoundOrConflict(db, id);
+    if (isVersionConflict(error)) return GUARD_REJECTED;
     if (isTitleConflict(error)) return { ok: false, reason: "title_conflict" };
     throw error;
   }
@@ -403,13 +413,32 @@ export async function updatePage(
     ok: true,
     page: returnedPage(results),
     rowsWritten: sumRowsWritten(results),
-    linkRewrites: linkRewritesOf(results[1] as D1Result, linkRewrites.unsafe),
+    // 積み込みの文は guard の直後（results[1]）
+    linkRewrites:
+      linkRewrites === null
+        ? { queued: 0 }
+        : linkRewritesOf(results[1] as D1Result, linkRewrites.unsafe),
   };
 }
 
 /**
+ * title と body を置き換える。visibility は変えない。
+ * title_key が変わるときは、旧 title へのリンクの書き換えを link_rewrites に積む（書き換えるのは
+ * link-rewrites.ts の step）。
+ */
+export async function updatePage(
+  db: D1Database,
+  input: UpdatePageInput,
+): Promise<UpdateSuccess | WriteError> {
+  const content = prepareContent(input.title, input.body);
+  if (!content.ok) return content;
+  const result = await writeContent(db, input, content, true);
+  return result === GUARD_REJECTED ? notFoundOrConflict(db, input.id) : result;
+}
+
+/**
  * 追記の競合で読み直す回数の上限。D1 は 1 invocation あたりのクエリ数に上限（Free で 50）があり、
- * 1 回の試行で読み 2 文と batch の約 13 文を使う。
+ * 1 回の試行で読み 1 文と batch の 12 文を使う（store.test.ts で数えている）。
  */
 export const APPEND_MAX_ATTEMPTS = 3;
 
@@ -425,6 +454,10 @@ export type AppendError = WriteError | { ok: false; reason: "append_conflict" };
 /**
  * 最新版の本文の末尾に text を足す。呼び出し側は版を知らなくてよい。
  * 保存は更新と同じ版の照合を通し、その間に別の保存が入ったら読み直して足し直す。
+ * title は変えないので、リンクの書き換えは積まない。
+ *
+ * 照合で戻ったときに、無いのか版が違うのかを読み分けない（次の試行の読み込みが not_found を返す）。
+ * そのため最後の試行の間に削除されたページは、not_found ではなく append_conflict になる。
  */
 export async function appendToPage(
   db: D1Database,
@@ -433,16 +466,20 @@ export async function appendToPage(
   for (let attempt = 1; attempt <= APPEND_MAX_ATTEMPTS; attempt++) {
     const current = await findPageById(db, input.id);
     if (current === null) return { ok: false, reason: "not_found" };
-    const result = await updatePage(db, {
+    const update = {
       id: input.id,
       expectedVersion: current.version,
       title: current.title,
       body: appendText(current.body, input.text),
       actor: input.actor,
       now: input.now,
-    });
+    };
+    const content = prepareContent(update.title, update.body);
+    if (!content.ok) return content;
+    const result = await writeContent(db, update, content, false);
+    if (result === GUARD_REJECTED) continue;
     if (result.ok) return { ...result, attempts: attempt };
-    if (result.reason !== "version_conflict") return result;
+    return result;
   }
   return { ok: false, reason: "append_conflict" };
 }

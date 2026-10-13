@@ -1,6 +1,6 @@
 import { wikiLinkUnsafeChars } from "@personal-wiki/domain";
 import { rewriteWikiLinkTargets } from "@personal-wiki/markdown";
-import { derivedStatements, deriveValues } from "./derived";
+import { type DerivedValues, derivedStatements, deriveValues } from "./derived";
 import { revisionStatements } from "./revisions";
 import {
   guardStatement,
@@ -17,8 +17,16 @@ import {
  *
  * 書き換え先は処理する時点の対象ページの title で、links が今どこへ解決しているかは見ない。
  * A → B → C と続けて改名しても、旧 key a のリンクは C に 1 回で書き換わる。旧 title で別のページが
- * 作られていても、積んだ時点の対象ページの title に書き換える。
+ * 作られていても、rename のあとに新しく書いた `[[旧 title]]` も、積んだ対象ページの title に書き換える。
+ *
+ * 読んだ状態で判断して書く（または捨てる）ので、その batch では読んだときの状態を guard で確かめる。
+ * リンク元の版と、対象ページの title_key（と削除されていないこと）のどちらかが変わっていれば、
+ * 積んだ分を残して conflict を返す。対象を読んだあとに改名されると、rename の batch は旧 key の
+ * links から対象が外れているので積み直せず、ここで古い title を書くと誰も指さないリンクが残る。
  */
+
+/** このリンク元を処理しようとした回数の上限。超えたら解析せずに failed として捨てる */
+export const LINK_REWRITE_MAX_ATTEMPTS = 3;
 
 export interface LinkRewriteStepInput {
   /** 指定すると、このページを対象とする書き換えが残っているリンク元から選ぶ */
@@ -32,13 +40,19 @@ export interface LinkRewriteStepResult {
     sourcePageId: string;
     title: string;
     visibility: Visibility;
+    /** 書き換えたあとの版 */
+    version: number;
     /** 書き換えたリンクの数 */
     rewritten: number;
   } | null;
-  /** 読んだあとにリンク元が保存された。積んだ分は残るので、もう一度呼べば読み直して進む */
+  /**
+   * 読んだあとにリンク元が保存されたか、対象ページが改名・削除された。積んだ分は残るので、
+   * もう一度呼べば読み直して進む
+   */
   conflict: boolean;
   /**
-   * 書き換えると本文のリンクやタグが意図せず変わる、または本文の上限を超えるので書かなかったリンク元。
+   * 書き換えると本文のリンクやタグが意図せず変わる、本文の上限を超える、または処理が
+   * LINK_REWRITE_MAX_ATTEMPTS 回続けて終わらなかったので書かなかったリンク元。
    * 同じ本文と title なら何度試しても同じ結果になるので、積んだ分は捨てる（本文には旧 title のリンクが残る）
    */
   failed: string[];
@@ -58,17 +72,15 @@ interface JobRow {
   old_title_key: string;
   actor: string;
   created_at: number;
-  /** 以下は対象ページの今の値。対象ページの行が無ければ null */
-  title: string | null;
-  title_key: string | null;
-  deleted_at: number | null;
+  attempts: number;
 }
 
-interface SourceRow {
+interface PageRow {
   id: string;
   title: string;
   title_key: string;
-  body: string;
+  /** リンク元の行だけ読む */
+  body: string | null;
   visibility: Visibility;
   version: number;
   deleted_at: number | null;
@@ -79,15 +91,41 @@ interface Rename {
   titleKey: string;
 }
 
-/** 読んだ分だけを消す。読んだあとに積まれた分を、処理しないまま消さないようにする */
+/**
+ * 読んだ分だけを消す。created_at も照らすので、読んだあとに積み直された行は消えずに残る。
+ */
 function deleteJobsStatement(db: D1Database, sourcePageId: string, jobs: JobRow[]) {
   return db
     .prepare(
       `DELETE FROM link_rewrites WHERE source_page_id = ?1 AND EXISTS (
          SELECT 1 FROM json_each(?2) AS j
-         WHERE j.value ->> '$[0]' = target_page_id AND j.value ->> '$[1]' = old_title_key)`,
+         WHERE j.value ->> '$[0]' = target_page_id AND j.value ->> '$[1]' = old_title_key
+           AND j.value ->> '$[2]' = created_at)`,
     )
-    .bind(sourcePageId, JSON.stringify(jobs.map((job) => [job.target_page_id, job.old_title_key])));
+    .bind(
+      sourcePageId,
+      JSON.stringify(jobs.map((job) => [job.target_page_id, job.old_title_key, job.created_at])),
+    );
+}
+
+/**
+ * 対象ページが読んだときの title_key のまま、削除されていないことを確かめる guard。違えば save_guard の
+ * trigger が batch 全体を version_conflict で戻す。読んだ時点で削除済み・行の無い対象は戻らない
+ * （削除を取り消す経路が無い）ので確かめない。
+ */
+function targetsGuardStatement(db: D1Database, targets: PageRow[]) {
+  return db
+    .prepare(
+      `INSERT INTO save_guard (page_id)
+       SELECT j.value ->> '$[0]' FROM json_each(?1) AS j
+       WHERE NOT EXISTS (SELECT 1 FROM pages AS p
+         WHERE p.id = j.value ->> '$[0]' AND p.title_key = j.value ->> '$[1]' AND p.deleted_at IS NULL)`,
+    )
+    .bind(
+      JSON.stringify(
+        targets.filter((t) => t.deleted_at === null).map((target) => [target.id, target.title_key]),
+      ),
+    );
 }
 
 async function countRemaining(db: D1Database, targetPageId: string | null): Promise<number> {
@@ -107,28 +145,43 @@ async function countRemaining(db: D1Database, targetPageId: string | null): Prom
  * 同じ旧 key に複数の対象があれば、先に積んだ方を採る。本文の旧 key のリンクはそれで消えるので、
  * 後の分は書き換えるものが無くなる。
  */
-function renamesOf(jobs: JobRow[]): { renames: Map<string, Rename>; actor: string | null } {
+function renamesOf(
+  jobs: JobRow[],
+  targets: Map<string, PageRow>,
+): { renames: Map<string, Rename>; actor: string | null } {
   const renames = new Map<string, Rename>();
   let actor: string | null = null;
   for (const job of jobs) {
-    if (job.title === null || job.title_key === null || job.deleted_at !== null) continue;
-    if (job.title_key === job.old_title_key || renames.has(job.old_title_key)) continue;
-    if (wikiLinkUnsafeChars(job.title).length > 0) continue;
-    renames.set(job.old_title_key, { title: job.title, titleKey: job.title_key });
-    // jobs は積んだ順なので、最後に積んだ rename の actor になる
+    const target = targets.get(job.target_page_id);
+    if (target === undefined || target.deleted_at !== null) continue;
+    if (target.title_key === job.old_title_key || renames.has(job.old_title_key)) continue;
+    if (wikiLinkUnsafeChars(target.title).length > 0) continue;
+    renames.set(job.old_title_key, { title: target.title, titleKey: target.title_key });
+    // jobs は積んだ順なので、最後に積んだ（積み直した）rename の actor になる
     actor = job.actor;
   }
   return { renames, actor };
 }
 
+interface DerivedKeys {
+  links: Set<string>;
+  tags: Set<string>;
+}
+
+function keysOf(values: DerivedValues): DerivedKeys {
+  return {
+    links: new Set(JSON.parse(values.linksJson) as string[]),
+    tags: new Set((JSON.parse(values.tagsJson) as { key: string }[]).map((tag) => tag.key)),
+  };
+}
+
 /**
  * 書き換えで変わってよいのは、旧 key のリンクが新しい key になることだけ。新しい title の文字
  * （`` ` `` など）で前後の構文が組み変わると、他のリンクやタグも変わるので、それを検出する。
- * 書き換え前の値は本文を解析し直さず、派生データの表から読む（解析を 1 回減らして CPU を抑える）。
  */
 function unexpectedChange(
-  before: { links: Set<string>; tags: Set<string> },
-  after: { links: string[]; tags: string[] },
+  before: DerivedKeys,
+  after: DerivedKeys,
   renames: Map<string, Rename>,
 ): boolean {
   const expected = new Set<string>();
@@ -138,10 +191,10 @@ function unexpectedChange(
   }
   const sameSet = (a: Set<string>, b: Set<string>) =>
     a.size === b.size && [...a].every((key) => b.has(key));
-  return !sameSet(expected, new Set(after.links)) || !sameSet(before.tags, new Set(after.tags));
+  return !sameSet(expected, after.links) || !sameSet(before.tags, after.tags);
 }
 
-async function readDerivedKeys(db: D1Database, pageId: string) {
+async function readDerivedKeys(db: D1Database, pageId: string): Promise<DerivedKeys> {
   const { results } = await db
     .prepare(
       `SELECT 'link' AS kind, target_title_key AS key FROM links WHERE source_page_id = ?1
@@ -164,75 +217,129 @@ export async function stepLinkRewrites(
   input: LinkRewriteStepInput,
 ): Promise<LinkRewriteStep> {
   const { targetPageId } = input;
-  const next = await db
+  // 選ぶのと試行回数を数えるのを 1 文で行い、解析より前に確定させる。CPU の上限で invocation ごと
+  // 打ち切られるリンク元が、待ち行列の先頭に居座り続けないようにする
+  const picked = await db
     .prepare(
-      `SELECT source_page_id FROM link_rewrites WHERE ?1 IS NULL OR target_page_id = ?1
-       ORDER BY created_at, source_page_id LIMIT 1`,
+      `UPDATE link_rewrites SET attempts = attempts + 1
+       WHERE source_page_id = (
+         SELECT source_page_id FROM link_rewrites WHERE ?1 IS NULL OR target_page_id = ?1
+         ORDER BY created_at, source_page_id LIMIT 1)
+       RETURNING source_page_id, target_page_id, old_title_key, actor, created_at, attempts`,
     )
     .bind(targetPageId)
-    .first<{ source_page_id: string }>();
-  const idle = { processed: null, conflict: false, failed: [] as string[], rowsWritten: 0 };
-  if (next === null) return { result: { ...idle, remaining: 0 }, actor: null };
-  const sourcePageId = next.source_page_id;
+    .all<JobRow & { source_page_id: string }>();
+  const idle = { processed: null, conflict: false, failed: [] as string[] };
+  const first = picked.results[0];
+  if (first === undefined)
+    return { result: { ...idle, remaining: 0, rowsWritten: 0 }, actor: null };
+  const sourcePageId = first.source_page_id;
+  const jobs = picked.results.sort(
+    (a, b) =>
+      a.created_at - b.created_at ||
+      compare(a.target_page_id, b.target_page_id) ||
+      compare(a.old_title_key, b.old_title_key),
+  );
+  let rowsWritten = picked.meta.rows_written ?? 0;
 
-  const { results: jobs } = await db
-    .prepare(
-      `SELECT r.target_page_id, r.old_title_key, r.actor, r.created_at,
-         t.title, t.title_key, t.deleted_at
-       FROM link_rewrites AS r LEFT JOIN pages AS t ON t.id = r.target_page_id
-       WHERE r.source_page_id = ?1
-       ORDER BY r.created_at, r.target_page_id, r.old_title_key`,
-    )
-    .bind(sourcePageId)
-    .all<JobRow>();
-  const source = await db
-    .prepare(
-      "SELECT id, title, title_key, body, visibility, version, deleted_at FROM pages WHERE id = ?1",
-    )
-    .bind(sourcePageId)
-    .first<SourceRow>();
-
-  /** 書き込まずに積んだ分を捨てる */
-  const discard = async (failed: string[]) => {
-    const deleted = await deleteJobsStatement(db, sourcePageId, jobs).run();
+  const conflicted = async (): Promise<LinkRewriteStep> => {
+    // batch まで進んだので解析は終わっている。試行回数は CPU の上限で打ち切られた回数を数えるもので、
+    // 保存が続くリンク元を競合の回数で捨てないよう数え直す
+    const reset = await db
+      .prepare("UPDATE link_rewrites SET attempts = 0 WHERE source_page_id = ?1")
+      .bind(sourcePageId)
+      .run();
+    rowsWritten += reset.meta.rows_written ?? 0;
     return {
       result: {
         ...idle,
-        failed,
+        conflict: true,
         remaining: await countRemaining(db, targetPageId),
-        rowsWritten: deleted.meta.rows_written ?? 0,
+        rowsWritten,
       },
       actor: null,
     };
   };
 
-  if (source === null || source.deleted_at !== null) return discard([]);
-  const { renames, actor } = renamesOf(jobs);
-  if (renames.size === 0 || actor === null) return discard([]);
+  /** 書き込まずに積んだ分を捨てる。guards が読んだ状態と違えば捨てずに conflict を返す */
+  const discard = async (
+    failed: string[],
+    guards: D1PreparedStatement[],
+  ): Promise<LinkRewriteStep> => {
+    let results: D1Result[];
+    try {
+      results = await db.batch([...guards, deleteJobsStatement(db, sourcePageId, jobs)]);
+    } catch (error) {
+      if (!isVersionConflict(error)) throw error;
+      return conflicted();
+    }
+    return {
+      result: {
+        ...idle,
+        failed,
+        remaining: await countRemaining(db, targetPageId),
+        rowsWritten: rowsWritten + sumRowsWritten(results),
+      },
+      actor: null,
+    };
+  };
+  const fail = (reason: string, guards: D1PreparedStatement[]) => {
+    console.error(JSON.stringify({ event: "link_rewrites.failed", sourcePageId, reason }));
+    return discard([sourcePageId], guards);
+  };
+
+  // 本文にも対象にもよらない判断なので、読んだ状態を確かめずに捨てる
+  if (jobs.some((job) => job.attempts > LINK_REWRITE_MAX_ATTEMPTS)) {
+    return fail("attempts_exceeded", []);
+  }
+
+  const { results: pages } = await db
+    .prepare(
+      `SELECT id, title, title_key, CASE WHEN id = ?1 THEN body END AS body, visibility, version,
+         deleted_at
+       FROM pages WHERE id = ?1 OR id IN (SELECT value FROM json_each(?2))`,
+    )
+    .bind(sourcePageId, JSON.stringify(jobs.map((job) => job.target_page_id)))
+    .all<PageRow>();
+  const byId = new Map(pages.map((page) => [page.id, page]));
+  const source = byId.get(sourcePageId);
+  const targets = [...new Set(jobs.map((job) => job.target_page_id))]
+    .map((id) => byId.get(id))
+    .filter((page) => page !== undefined);
+  const guards = [
+    ...(source === undefined || source.deleted_at !== null
+      ? []
+      : [guardStatement(db, source.id, source.version)]),
+    targetsGuardStatement(db, targets),
+  ];
+
+  if (source === undefined || source.deleted_at !== null || source.body === null) {
+    return discard([], guards);
+  }
+  const { renames, actor } = renamesOf(jobs, byId);
+  if (renames.size === 0 || actor === null) return discard([], guards);
   const rewrite = rewriteWikiLinkTargets(
     source.body,
     new Map([...renames].map(([key, rename]) => [key, rename.title])),
   );
-  if (rewrite.rewritten === 0) return discard([]);
+  if (rewrite.rewritten === 0) return discard([], guards);
 
-  const fail = (reason: string) => {
-    console.error(JSON.stringify({ event: "link_rewrites.failed", sourcePageId, reason }));
-    return discard([sourcePageId]);
-  };
   if (new TextEncoder().encode(rewrite.body).length > MAX_BODY_BYTES) {
-    return fail("body_too_large");
+    return fail("body_too_large", guards);
   }
   const values = deriveValues(source.title, rewrite.body);
-  const after = {
-    links: JSON.parse(values.linksJson) as string[],
-    tags: (JSON.parse(values.tagsJson) as { key: string }[]).map((tag) => tag.key),
-  };
-  if (unexpectedChange(await readDerivedKeys(db, sourcePageId), after, renames)) {
-    return fail("unexpected_derived_change");
+  const after = keysOf(values);
+  // 書き換え前の値は、まず派生データの表から読む（解析を 1 回減らして CPU を抑える）。表が古いと
+  // 食い違うので、そのときだけ本文を解析し直して比べ直し、古い表のせいで捨てないようにする
+  if (
+    unexpectedChange(await readDerivedKeys(db, sourcePageId), after, renames) &&
+    unexpectedChange(keysOf(deriveValues(source.title, source.body)), after, renames)
+  ) {
+    return fail("unexpected_derived_change", guards);
   }
 
   const statements = [
-    guardStatement(db, source.id, source.version),
+    ...guards,
     ...revisionStatements(db, {
       pageId: source.id,
       version: source.version + 1,
@@ -256,10 +363,7 @@ export async function stepLinkRewrites(
   } catch (error) {
     // それ以外の失敗は積んだ分を残して 500 にする。一時的な D1 の失敗で書き換えを失わないため
     if (!isVersionConflict(error)) throw error;
-    return {
-      result: { ...idle, conflict: true, remaining: await countRemaining(db, targetPageId) },
-      actor: null,
-    };
+    return conflicted();
   }
   // guard を通ったあとに UPDATE が 0 行なら、派生データだけが書かれている（store.ts の returnedPage と同じ）
   if (results.at(-2)?.meta.changes !== 1) throw new Error("pages の書き込みが 1 行にならなかった");
@@ -269,13 +373,19 @@ export async function stepLinkRewrites(
         sourcePageId,
         title: source.title,
         visibility: source.visibility,
+        version: source.version + 1,
         rewritten: rewrite.rewritten,
       },
       conflict: false,
       failed: [],
       remaining: await countRemaining(db, targetPageId),
-      rowsWritten: sumRowsWritten(results),
+      rowsWritten: rowsWritten + sumRowsWritten(results),
     },
     actor,
   };
+}
+
+/** 照合順序によらない比較。localeCompare は実行環境の locale で順序が変わる */
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
