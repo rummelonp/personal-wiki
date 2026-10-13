@@ -19,7 +19,7 @@ export const HELP = `usage:
   2. D1 を作る。表示された database_id を次の手順で使う
        --update-config=false を付けないと、wrangler が追跡対象の wrangler.jsonc に binding を書き込む
        pnpm exec wrangler d1 create personal-wiki --update-config=false
-     R2 は添付とバックアップで使う。ダッシュボードで R2 を有効にしてから作る（有効化前は省略してよい）
+     R2 は添付で使う。ダッシュボードで R2 を有効にしてから作る（有効化前は省略してよい）
        pnpm exec wrangler r2 bucket create personal-wiki --update-config=false
      claude.ai や Claude Desktop のカスタムコネクタ（OAuth）から MCP に接続するときだけ、KV を作る
        pnpm exec wrangler kv namespace create personal-wiki-oauth --update-config=false
@@ -42,7 +42,7 @@ export const HELP = `usage:
   6. pnpm deploy:remote
   7. pnpm -s api-token issue <name> --scopes read,write --remote
        標準出力のトークンを控える
-  8. MCP 接続（MCP エンドポイントの実装後。パスは実装に合わせる）
+  8. MCP 接続（API token で接続する場合）
        claude mcp add --transport http personal-wiki https://<ホスト名>/mcp \\
          --header "Authorization: Bearer <トークン>"
   9. claude.ai や Claude Desktop のカスタムコネクタ（手順 2 の KV と手順 4 の owner のログインが要る）:
