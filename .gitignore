@@ -8,6 +8,8 @@ coverage/
 !.env.example
 *.tsbuildinfo
 .DS_Store
+# vitest の browser mode が失敗したテストのスクリーンショットを置く
+.vitest/
 
 # デプロイ先ごとの値と、そこから合成した wrangler の設定（apps/worker/scripts/deploy-config.mjs）
 apps/worker/deploy.env
