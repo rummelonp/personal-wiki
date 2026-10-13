@@ -14,3 +14,8 @@ export function hasScope(granted: readonly Scope[], required: Scope): boolean {
   if (required === "read") return granted.includes("read") || granted.includes("write");
   return granted.includes("write");
 }
+
+/** requireToken と MCP の tool が同じ判定を使う。owner と anonymous は token の scope を持たない。 */
+export function tokenHasScope(principal: Principal, required: Scope): boolean {
+  return principal.kind === "token" && hasScope(principal.scopes, required);
+}

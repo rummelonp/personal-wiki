@@ -6,7 +6,8 @@ import {
   resolvePrincipal,
 } from "./auth/middleware";
 import type { AppEnv } from "./env";
-import { registerAdminRoutes, registerPageRoutes, type WriteMetric } from "./pages/routes";
+import type { WriteMetric } from "./pages/operations";
+import { registerAdminRoutes, registerPageRoutes } from "./pages/routes";
 
 export interface AppOptions {
   /** UNIX エポックのミリ秒を返す時計。テストだけが差し替える。 */

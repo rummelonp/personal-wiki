@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { createApp } from "../app";
-import type { WriteMetric } from "../pages/routes";
+import type { WriteMetric } from "../pages/operations";
 import { insertToken } from "./tokens";
 
 export const T0 = Date.UTC(2026, 9, 1);

@@ -4,7 +4,7 @@ import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
 import type { AppEnv } from "../env";
 import { findActiveApiToken, recordApiTokenUse } from "./api-tokens";
-import { hasScope, type Principal, type Scope } from "./principal";
+import { type Principal, type Scope, tokenHasScope } from "./principal";
 import { hashApiToken, isWellFormedApiToken } from "./token";
 
 /*
@@ -179,7 +179,7 @@ export function requireToken(scope: Scope): MiddlewareHandler<AppEnv> {
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") return unauthorized(c);
-      if (principal.kind !== "token" || !hasScope(principal.scopes, scope)) {
+      if (!tokenHasScope(principal, scope)) {
         return c.json({ error: "forbidden" }, 403);
       }
       await next();

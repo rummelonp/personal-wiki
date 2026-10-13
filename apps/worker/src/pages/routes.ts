@@ -3,6 +3,15 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { requireToken } from "../auth/middleware";
 import type { AppEnv } from "../env";
 import { isPageId } from "./id";
+import {
+  appendToPageAs,
+  createPageAs,
+  describeWriteError,
+  findPageByInputId,
+  type PageWriteContext,
+  updatePageAs,
+  type WriteMetric,
+} from "./operations";
 import { actorOf } from "./revisions";
 import {
   type Cursor,
@@ -18,36 +27,15 @@ import {
 } from "./search";
 import {
   type AppendError,
-  appendToPage,
-  createPage,
   deletePage,
-  findPageById,
   findPageByTitle,
   MAX_BODY_BYTES,
   MAX_TITLE_BYTES,
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,
-  updatePage,
   type WriteError,
 } from "./store";
-
-/**
- * 書き込み 1 回分の計測値。D1 の書き込み行数（無料枠 10 万行/日）を保存 1 回あたりで集計し、
- * どの actor がどのページに書いたかを後から追えるようにする。本文は含めない。
- */
-export interface WriteMetric {
-  op: "create" | "update" | "append" | "delete" | "rebuild";
-  /** revisions.actor と同じ形式 */
-  actor: string;
-  /** 書いたページ。作り直しは 1 回で複数ページを扱いうるので付けない */
-  pageId?: string;
-  rowsWritten: number;
-  /** 追記で版の競合により読み直した場合の試行回数 */
-  attempts?: number;
-  /** 作り直しで失敗したページの id */
-  failed?: string[];
-}
 
 export interface PagesRoutesOptions {
   now: () => number;
@@ -88,31 +76,9 @@ function writeErrorResponse(
   c: PagesContext,
   error: WriteError | AppendError,
 ): Response | Promise<Response> {
-  switch (error.reason) {
-    case "invalid_title":
-      return errorResponse(c, 400, "invalid_title", {
-        message: "title が空か、空白だけになっている",
-      });
-    case "title_too_long":
-      return errorResponse(c, 400, "title_too_long", { max: MAX_TITLE_BYTES });
-    case "body_too_large":
-      return errorResponse(c, 413, "body_too_large", { max: MAX_BODY_BYTES });
-    case "not_found":
-      return c.notFound();
-    case "version_conflict":
-      return errorResponse(c, 409, "version_conflict", {
-        message: "版が合わない。最新版を読み直してから保存し直す",
-        currentVersion: error.currentVersion,
-      });
-    case "title_conflict":
-      return errorResponse(c, 409, "title_conflict", {
-        message: "同じ title のページがすでにある",
-      });
-    case "append_conflict":
-      return errorResponse(c, 409, "append_conflict", {
-        message: "他の保存と競合し続けた。同じ追記をそのまま送り直してよい",
-      });
-  }
+  if (error.reason === "not_found") return c.notFound();
+  const { status, body } = describeWriteError(error);
+  return c.json(body, status);
 }
 
 /**
@@ -120,8 +86,10 @@ function writeErrorResponse(
  * 正当なリクエストを拒まないよう、title と本文を上限まで入れ、全文字を JSON の最長のエスケープ
  * （制御文字の \u00XX で 1 バイトが 6 バイト）にした大きさに、キーと記号の分を足して決める。
  * Content-Length の無いリクエストは解析後の本文の検査に任せる。
+ * MCP の tool 呼び出しも同じ title と本文を運ぶので、/mcp でも同じ上限を使う（JSON-RPC の封筒の分は
+ * キーと記号の余裕に収まる）。
  */
-const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
+export const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
 
 type FieldSpec = Record<string, "string" | "number" | "string_or_null">;
 
@@ -265,6 +233,12 @@ function readPaging(c: PagesContext): Parsed<{ limit: number; cursor: Cursor | n
  * 合成したり、prefix の use() で一括に掛けたりすると、宣言の検査がルートを見つけられない。
  */
 export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: PagesRoutesOptions) {
+  const writeContext = (c: PagesContext): PageWriteContext => ({
+    db: c.env.DB,
+    principal: c.get("principal"),
+    now,
+    recordWrite,
+  });
   return (
     app
       .post("/api/pages", requireToken("write"), async (c) => {
@@ -273,20 +247,11 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
           "body",
         ]);
         if (!parsed.ok) return parsed.response;
-        const actor = actorOf(c.get("principal"));
-        const result = await createPage(c.env.DB, {
+        const result = await createPageAs(writeContext(c), {
           title: parsed.value.title as string,
           body: parsed.value.body as string,
-          actor,
-          now: now(),
         });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({
-          op: "create",
-          actor,
-          pageId: result.page.id,
-          rowsWritten: result.rowsWritten,
-        });
         c.header("Location", `/api/pages/${result.page.id}`);
         return pageResponse(c, result.page, 201);
       })
@@ -320,8 +285,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         return c.json({ results: await searchPages(c.env.DB, query.query, limit.value) });
       })
       .get("/api/pages/:id", requireToken("read"), async (c) => {
-        const id = c.req.param("id");
-        const page = isPageId(id) ? await findPageById(c.env.DB, id) : null;
+        const page = await findPageByInputId(c.env.DB, c.req.param("id"));
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
@@ -344,17 +308,13 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
           "body",
         ]);
         if (!parsed.ok) return parsed.response;
-        const actor = actorOf(c.get("principal"));
-        const result = await updatePage(c.env.DB, {
+        const result = await updatePageAs(writeContext(c), {
           id,
           expectedVersion: ifMatch.version,
           title: parsed.value.title as string,
           body: parsed.value.body as string,
-          actor,
-          now: now(),
         });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({ op: "update", actor, pageId: id, rowsWritten: result.rowsWritten });
         return pageResponse(c, result.page);
       })
       .post("/api/pages/:id/append", requireToken("write"), async (c) => {
@@ -364,16 +324,8 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!parsed.ok) return parsed.response;
         const text = parsed.value.text as string;
         if (text === "") return errorResponse(c, 400, "invalid_field", { field: "text" });
-        const actor = actorOf(c.get("principal"));
-        const result = await appendToPage(c.env.DB, { id, text, actor, now: now() });
+        const result = await appendToPageAs(writeContext(c), { id, text });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({
-          op: "append",
-          actor,
-          pageId: id,
-          rowsWritten: result.rowsWritten,
-          attempts: result.attempts,
-        });
         return pageResponse(c, result.page);
       })
       .delete("/api/pages/:id", requireToken("write"), async (c) => {
