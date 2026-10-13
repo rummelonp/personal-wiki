@@ -3,6 +3,12 @@ export interface Backup {
   body: string;
   /** 退避した時点で手元が前提にしていたサーバーの版 */
   baseVersion: number;
+  /**
+   * 退避した時点の base の title と本文。サーバーが先へ進んでいたとき、手元の編集との差分が
+   * リンクの書き換えだけかを調べるのに使う。この欄を足す前の退避には無い（その場合は衝突として扱う）。
+   */
+  baseTitle?: string;
+  baseBody?: string;
   savedAt: number;
 }
 
@@ -21,7 +27,9 @@ function isBackup(value: unknown): value is Backup {
     typeof v.title === "string" &&
     typeof v.body === "string" &&
     typeof v.baseVersion === "number" &&
-    typeof v.savedAt === "number"
+    typeof v.savedAt === "number" &&
+    (v.baseTitle === undefined || typeof v.baseTitle === "string") &&
+    (v.baseBody === undefined || typeof v.baseBody === "string")
   );
 }
 

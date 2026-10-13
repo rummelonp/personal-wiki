@@ -413,6 +413,119 @@ describe("ログイン切れ", () => {
     expect(state.conflict?.body).toBe("他");
   });
 
+  describe("サーバーがリンクの書き換えで進んでいた退避", () => {
+    const base = () => page({ body: "[[旧]] 本文" });
+
+    /** タブを閉じて送り直しが成立しなかったことにする。退避だけが古い版のまま残る */
+    async function closedWithUnsaved(edit: Draft) {
+      const first = setup({ server: base() });
+      first.api.updatePage = async () => ({ ok: false, reason: "error", message: "通信の失敗" });
+      first.session.edit(edit);
+      await first.session.leave();
+      return first.backup;
+    }
+
+    it("退避には、その時点の base の title と本文を残す", async () => {
+      const backup = await closedWithUnsaved({ title: "新題", body: "[[旧]] 本文 追記" });
+      expect(backup.load(ID)).toEqual({
+        title: "新題",
+        body: "[[旧]] 本文 追記",
+        baseVersion: 1,
+        baseTitle: "題",
+        baseBody: "[[旧]] 本文",
+        savedAt: expect.any(Number),
+      });
+    });
+
+    it("title が変わらず差分が書き換えだけなら、衝突にせず退避の編集を重ねて保存する", async () => {
+      const backup = await closedWithUnsaved({ title: "新題", body: "[[旧]] 本文 追記" });
+      const { session, server, api } = setup({
+        backup,
+        server: page({ body: "[[新]] 本文", version: 3 }),
+      });
+      session.restoreBackup();
+      expect(session.getState()).toMatchObject({
+        conflict: null,
+        pendingBackup: null,
+        draft: { title: "新題", body: "[[新]] 本文 追記" },
+      });
+      await vi.advanceTimersByTimeAsync(2100);
+      expect(api.calls).toEqual(["put@3"]);
+      expect(server.page).toMatchObject({ title: "新題", body: "[[新]] 本文 追記" });
+      expect(backup.load(ID)).toBeNull();
+    });
+
+    it("重ねた内容を保存する前に離れても、新しい版に対する退避を残す", async () => {
+      const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+      const { session, api } = setup({
+        backup,
+        server: page({ body: "[[新]] 本文", version: 3 }),
+      });
+      api.updatePage = async () => ({ ok: false, reason: "error", message: "通信の失敗" });
+      session.restoreBackup();
+      await session.leave();
+      expect(backup.load(ID)).toMatchObject({
+        body: "[[新]] 本文 追記",
+        baseVersion: 3,
+        baseBody: "[[新]] 本文",
+      });
+    });
+
+    it("手元が title だけの変更なら、サーバーの本文を取り込んで title を残す", async () => {
+      const backup = await closedWithUnsaved({ title: "新題", body: "[[旧]] 本文" });
+      const { session } = setup({ backup, server: page({ body: "他の編集", version: 3 }) });
+      session.restoreBackup();
+      expect(session.getState()).toMatchObject({
+        conflict: null,
+        draft: { title: "新題", body: "他の編集" },
+      });
+    });
+
+    it("本文が変わらず版だけ進んでいた（公開設定の変更など）なら、衝突にしない", async () => {
+      const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+      const { session } = setup({
+        backup,
+        server: page({ body: "[[旧]] 本文", visibility: "public", version: 3 }),
+      });
+      session.restoreBackup();
+      expect(session.getState()).toMatchObject({
+        conflict: null,
+        draft: { body: "[[旧]] 本文 追記" },
+      });
+    });
+
+    it("書き換え以外の変更が混ざっていれば、衝突にする", async () => {
+      const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+      const { session } = setup({ backup, server: page({ body: "[[新]] 他の編集", version: 3 }) });
+      session.restoreBackup();
+      expect(session.getState().conflict).toMatchObject({ body: "[[新]] 他の編集" });
+      expect(session.getState().draft.body).toBe("[[旧]] 本文 追記");
+    });
+
+    it("サーバーの title が退避の base と違えば、本文が書き換えだけでも衝突にする", async () => {
+      const backup = await closedWithUnsaved({ title: "新題", body: "[[旧]] 本文 追記" });
+      const { session } = setup({
+        backup,
+        server: page({ title: "別題", body: "[[新]] 本文", version: 3 }),
+      });
+      session.restoreBackup();
+      expect(session.getState().conflict).toMatchObject({ title: "別題" });
+      expect(session.getState().draft).toEqual({ title: "新題", body: "[[旧]] 本文 追記" });
+    });
+
+    it("base の欄が無い古い退避は、これまでどおり衝突にする", () => {
+      const backup = memoryBackup({
+        title: "題",
+        body: "[[旧]] 本文 追記",
+        baseVersion: 1,
+        savedAt: 0,
+      });
+      const { session } = setup({ backup, server: page({ body: "[[新]] 本文", version: 3 }) });
+      session.restoreBackup();
+      expect(session.getState().conflict).toMatchObject({ body: "[[新]] 本文" });
+    });
+  });
+
   it("退避分を破棄できる。サーバーと同じ内容の退避は黙って消す", () => {
     const backup = memoryBackup({ title: "題", body: "退避", baseVersion: 1, savedAt: 0 });
     const a = setup({ backup });

@@ -219,6 +219,8 @@ export class EditorSession {
       title: draft.title,
       body: draft.body,
       baseVersion: base.version,
+      baseTitle: base.title,
+      baseBody: base.body,
       savedAt: this.now(),
     });
   }
@@ -570,17 +572,34 @@ export class EditorSession {
   /**
    * 退避した内容を手元に戻す。退避した時点の版と今のサーバーの版が違えば、そのまま保存すると
    * 間の変更を上書きするので、衝突として扱い差分を確認させる。
+   *
+   * 退避した時点から title が変わらず、本文の差分がリンクの書き換えだけなら、衝突にせず退避の編集を重ねる。
+   * タブを閉じた場合は、離脱の保存の送り直しが成立せず、退避が古い版のまま残るため。
+   * 重ねるのは編集中の rebaseOnServer と同じ規則だが、こちらは同期で行う。退避が未決の間は入力欄が
+   * 読み取り専用で変換中の文字が無く、whenSettled を待たなくてよい。
    */
   restoreBackup(): void {
     const saved = this.state.pendingBackup;
     if (saved === null) return;
     const draft = { title: saved.title, body: saved.body };
     this.set({ pendingBackup: null, titleInput: null });
-    if (saved.baseVersion !== this.state.base.version) {
-      this.set({ draft, conflict: this.state.base });
+    if (saved.baseVersion === this.state.base.version) {
+      this.edit(draft);
       return;
     }
-    this.edit(draft);
+    const body = this.rebaseBackup(saved);
+    if (body !== null) {
+      this.set({ draft: { title: saved.title, body }, ...NO_ERROR });
+      this.resumeOnNewBase();
+      return;
+    }
+    this.set({ draft, conflict: this.state.base });
+  }
+
+  private rebaseBackup(saved: Backup): string | null {
+    const { base } = this.state;
+    if (saved.baseBody === undefined || saved.baseTitle !== base.title) return null;
+    return rebaseOnLinkRewrite(saved.baseBody, base.body, saved.body);
   }
 
   discardBackup(): void {
