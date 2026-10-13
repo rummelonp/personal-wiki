@@ -609,6 +609,100 @@ describe("OAuth のトークンでの /mcp", () => {
   });
 });
 
+describe("許可した接続の一覧と取り消し", () => {
+  async function openGrants(request: Request) {
+    const res = await request("/_auth/oauth/grants", {
+      headers: { Cookie: await ownerCookie(T0) },
+    });
+    expect(res.status).toBe(200);
+    return { res, html: await res.text() };
+  }
+
+  function grantIdsOf(html: string): string[] {
+    return [...html.matchAll(/name="grant" value="([^"]+)"/g)].map((m) => m[1] ?? "");
+  }
+
+  async function revoke(request: Request, grant: string, headers = SAME_ORIGIN) {
+    return request("/_auth/oauth/grants/revoke", {
+      method: "POST",
+      headers: { Cookie: await ownerCookie(T0), "Content-Type": FORM, ...headers },
+      body: new URLSearchParams({ grant }).toString(),
+    });
+  }
+
+  it("owner でなければ、一覧を return に入れて /_auth/login へ送る", async () => {
+    const { request } = setup();
+    const res = await request("/_auth/oauth/grants");
+    expect(res.status).toBe(302);
+    const location = new URL(res.headers.get("Location") ?? "", ORIGIN);
+    expect(location.pathname).toBe("/_auth/login");
+    expect(location.searchParams.get("return")).toBe("/_auth/oauth/grants");
+    expect(safeReturnUrl("/_auth/oauth/grants", ORIGIN)).toBe(`${ORIGIN}/_auth/oauth/grants`);
+  });
+
+  it("owner には client 名、client_id、権限を見せ、フレームと保存を禁じる", async () => {
+    const { request } = setup();
+    const { client } = await connect(request, "read");
+    const { res, html } = await openGrants(request);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(html).toContain("<strong>Claude</strong>");
+    expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
+    expect(html).toContain("権限: read<br>");
+    expect(grantIdsOf(html)).toHaveLength(1);
+  });
+
+  it("取り消すと、その接続のアクセストークンと更新トークンだけが使えなくなる", async () => {
+    const { request } = setup();
+    const { client, tokens } = await connect(request, "write");
+    const other = await connect(request, "read");
+    const bindings = ownerEnv();
+    const { items } = await oauthServerFor(bindings, ORIGIN)
+      .getOAuthApi(bindings)
+      .listUserGrants("owner");
+    const grant = items.find((item) => item.clientId === client.client_id)?.id ?? "";
+    expect(grantIdsOf((await openGrants(request)).html).sort()).toEqual(
+      items.map((item) => item.id).sort(),
+    );
+
+    const res = await revoke(request, grant);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toBe("/_auth/oauth/grants");
+    expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(401);
+    const refreshed = await postToken(request, {
+      grant_type: "refresh_token",
+      refresh_token: tokens.refresh_token,
+      client_id: client.client_id,
+    });
+    expect(refreshed.status).toBe(400);
+    expect(await refreshed.json()).toMatchObject({ error: "invalid_grant" });
+    expect((await postMcp(request, other.tokens.access_token, "tools/list")).status).toBe(200);
+    expect(grantIdsOf((await openGrants(request)).html)).not.toContain(grant);
+  });
+
+  it("別のオリジンからの送信、owner でない送信、読めない grant の id は受け付けない", async () => {
+    const { request } = setup();
+    const { tokens } = await connect(request, "read");
+    const [grant = ""] = grantIdsOf((await openGrants(request)).html);
+    const crossSite = await revoke(request, grant, {
+      Origin: "https://evil.example",
+      "Sec-Fetch-Site": "cross-site",
+    });
+    expect(crossSite.status).toBe(403);
+    const anonymous = await request("/_auth/oauth/grants/revoke", {
+      method: "POST",
+      headers: { "Content-Type": FORM, ...SAME_ORIGIN },
+      body: new URLSearchParams({ grant }).toString(),
+    });
+    expect(anonymous.status).toBe(401);
+    for (const bad of ["", "a:b", "x".repeat(65)]) {
+      expect((await revoke(request, bad)).status, bad).toBe(400);
+    }
+    expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(200);
+  });
+});
+
 describe("OAuth を閉じた環境", () => {
   async function expectOAuthClosed(request: Request) {
     for (const [method, path] of [
@@ -617,6 +711,7 @@ describe("OAuth を閉じた環境", () => {
       ["POST", "/_auth/oauth/token"],
       ["POST", "/_auth/oauth/register"],
       ["GET", "/_auth/oauth/authorize?response_type=code"],
+      ["GET", "/_auth/oauth/grants"],
     ] as const) {
       const res = await request(path, { method });
       expect(res.status, path).toBe(404);
@@ -630,10 +725,19 @@ describe("OAuth を閉じた環境", () => {
   it("OAUTH_KV が無ければ、OAuth のエンドポイントは 404、/mcp の challenge は素の Bearer になる", async () => {
     const { request } = setup({ oauthKv: false });
     await expectOAuthClosed(request);
-    const owner = await request("/_auth/oauth/authorize", {
-      headers: { Cookie: await ownerCookie(T0) },
+    const cookie = await ownerCookie(T0);
+    expect((await request("/_auth/oauth/authorize", { headers: { Cookie: cookie } })).status).toBe(
+      404,
+    );
+    expect((await request("/_auth/oauth/grants", { headers: { Cookie: cookie } })).status).toBe(
+      404,
+    );
+    const revoke = await request("/_auth/oauth/grants/revoke", {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": FORM, ...SAME_ORIGIN },
+      body: "grant=x",
     });
-    expect(owner.status).toBe(404);
+    expect(revoke.status).toBe(404);
   });
 
   it("owner のログインの設定が欠けていれば、OAUTH_KV があっても閉じる", async () => {

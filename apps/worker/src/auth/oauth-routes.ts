@@ -3,6 +3,7 @@ import {
   authorizationErrorRedirect,
   CimdFetchError,
   type ConsentDescription,
+  type GrantSummary,
 } from "@cloudflare/workers-oauth-provider";
 import type { Context, Hono } from "hono";
 import type { AppEnv } from "../env";
@@ -12,6 +13,8 @@ import {
   isOAuthEnabled,
   mcpResourceOf,
   OAUTH_AUTHORIZE_PATH,
+  OAUTH_GRANTS_PATH,
+  OAUTH_GRANTS_REVOKE_PATH,
   OAUTH_REGISTER_PATH,
   OAUTH_SCOPES,
   OAUTH_TOKEN_PATH,
@@ -26,8 +29,8 @@ import type { Scope } from "./principal";
  * - メタデータ 2 つ、トークン、client の登録は匿名に開き、応答はライブラリが作る（クライアントは wiki の
  *   資格情報を持たない）。トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す。
  *   登録は KV に書く前に oauth-registration.ts の検査を通す
- * - 認可（同意画面）は owner のセッションを要る。無ければ /_auth/login を経由して戻す。Access の対象は
- *   /_auth/login のままで、/_auth/oauth/* は Access を通さない
+ * - 認可（同意画面）と接続の一覧は owner のセッションを要る。無ければ /_auth/login を経由して戻す。
+ *   Access の対象は /_auth/login のままで、/_auth/oauth/* は Access を通さない
  * CORS と OPTIONS は扱わない。想定するクライアント（claude.ai など）はサーバーから呼ぶので、ブラウザで
  * 動く MCP のクライアントは対象にしない。
  */
@@ -53,7 +56,14 @@ export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => num
     .post(OAUTH_TOKEN_PATH, allowAnonymous(), serveProtocol)
     .post(OAUTH_REGISTER_PATH, allowAnonymous(), serveProtocol)
     .get(OAUTH_AUTHORIZE_PATH, allowAnonymous(), showConsent)
-    .post(OAUTH_AUTHORIZE_PATH, requireOwner(), decideConsent);
+    .post(OAUTH_AUTHORIZE_PATH, requireOwner(), decideConsent)
+    .get(OAUTH_GRANTS_PATH, allowAnonymous(), showGrants)
+    .post(OAUTH_GRANTS_REVOKE_PATH, requireOwner(), revokeGrantFromForm);
+}
+
+function redirectToLogin(c: Context<AppEnv>): Response {
+  const { pathname, search } = new URL(c.req.url);
+  return c.redirect(`/_auth/login?return=${encodeURIComponent(pathname + search)}`, 302);
 }
 
 // ライブラリはこれらのエンドポイントで ctx を使わない（API のハンドラを持つ構成でだけ渡す）。
@@ -78,10 +88,7 @@ function helpersOf(c: Context<AppEnv>) {
 
 async function showConsent(c: Context<AppEnv>): Promise<Response> {
   if (!isOAuthEnabled(c.env)) return c.notFound();
-  if (c.get("principal").kind !== "owner") {
-    const { pathname, search } = new URL(c.req.url);
-    return c.redirect(`/_auth/login?return=${encodeURIComponent(pathname + search)}`, 302);
-  }
+  if (c.get("principal").kind !== "owner") return redirectToLogin(c);
   const oauth = helpersOf(c);
   try {
     const request = await oauth.parseAuthRequest(c.req.raw);
@@ -207,12 +214,124 @@ function consentPagePolicy(redirectUri: string): string {
   return [...BASE_PAGE_POLICY, `form-action ${sources.join(" ")}`].join("; ");
 }
 
-function errorPage(status: number, message: string): Response {
+/** 1 ページに出す接続の数。1 件ごとに KV の読み取りが grant と client で 2 回かかる */
+const GRANTS_PAGE_SIZE = 50;
+// KV の list の cursor と、ライブラリが作る grant の id の形。外れた値は KV に渡さない
+const KV_CURSOR_PATTERN = /^[A-Za-z0-9_\-+/=.]{1,1024}$/;
+const GRANT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * owner が許可した接続（grant）の一覧。grant を取り消すと、その grant のアクセストークンと更新トークンが
+ * すべて失効する。client の登録は残るが、使われなければ期限で消える。
+ */
+async function showGrants(c: Context<AppEnv>): Promise<Response> {
+  if (!isOAuthEnabled(c.env)) return c.notFound();
+  if (c.get("principal").kind !== "owner") return redirectToLogin(c);
+  const cursor = c.req.query("cursor");
+  if (cursor !== undefined && !KV_CURSOR_PATTERN.test(cursor)) {
+    return errorPage(400, "一覧の続きの位置が読めません。", "最初のページから開き直してください。");
+  }
+  const oauth = helpersOf(c);
+  const page = await oauth.listUserGrants(OAUTH_USER_ID, {
+    limit: GRANTS_PAGE_SIZE,
+    ...(cursor === undefined ? {} : { cursor }),
+  });
+  const clientIds = [...new Set(page.items.map((grant) => grant.clientId))];
+  const clients = new Map(
+    await Promise.all(
+      clientIds.map(async (id) => [id, (await oauth.lookupClient(id))?.clientName] as const),
+    ),
+  );
+  const grants = page.items.toSorted((a, b) => b.createdAt - a.createdAt);
+  return new Response(grantsPage(grants, clients, page.cursor), {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": [...BASE_PAGE_POLICY, "form-action 'self'"].join("; "),
+      "X-Frame-Options": "DENY",
+      "X-Robots-Tag": "noindex",
+    },
+  });
+}
+
+async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
+  if (!isOAuthEnabled(c.env)) return c.notFound();
+  const grantId = await c.req
+    .formData()
+    .then((form) => form.get("grant"))
+    .catch(() => null);
+  if (typeof grantId !== "string" || !GRANT_ID_PATTERN.test(grantId)) {
+    return errorPage(400, "取り消す接続を読めない送信です。", "接続の一覧から開き直してください。");
+  }
+  await helpersOf(c).revokeGrant(grantId, OAUTH_USER_ID);
+  return new Response(null, {
+    status: 303,
+    headers: { Location: OAUTH_GRANTS_PATH, "Cache-Control": "no-store" },
+  });
+}
+
+function formatEpochSeconds(seconds: number | undefined): string {
+  if (seconds === undefined) return "なし";
+  return new Date(seconds * 1000).toISOString().replace(".000Z", "Z");
+}
+
+function grantsPage(
+  grants: readonly GrantSummary[],
+  clientNames: ReadonlyMap<string, string | undefined>,
+  nextCursor: string | undefined,
+): string {
+  const rows = grants.map((grant) => {
+    const name = clientNames.get(grant.clientId);
+    const label =
+      name === undefined
+        ? "（登録が消えたクライアント）"
+        : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
+    const scope = grant.scope.length > 0 ? grant.scope.map(escapeHtml).join(" ") : "（なし）";
+    const host = grant.redirectUri === undefined ? "" : safeHost(grant.redirectUri);
+    return `<li>
+<p><strong>${label}</strong><br><small>client_id: <code>${escapeHtml(grant.clientId)}</code></small></p>
+<p>権限: ${scope}${host === "" ? "" : `<br>送り先: ${escapeHtml(host)}`}<br>許可: ${formatEpochSeconds(grant.createdAt)}<br>期限: ${formatEpochSeconds(grant.expiresAt)}</p>
+<form method="post" action="${OAUTH_GRANTS_REVOKE_PATH}">
+<input type="hidden" name="grant" value="${escapeHtml(grant.id)}">
+<button>取り消す</button>
+</form>
+</li>`;
+  });
+  const list =
+    rows.length > 0
+      ? `<ul class="grants">\n${rows.join("\n")}\n</ul>`
+      : "<p>許可した接続はありません。</p>";
+  const more =
+    nextCursor === undefined
+      ? ""
+      : `<p><a href="${OAUTH_GRANTS_PATH}?cursor=${encodeURIComponent(nextCursor)}">続きを見る</a></p>`;
+  return pageHtml(
+    "許可した接続",
+    `<h1>許可した接続</h1>
+<p>取り消すと、その接続のトークンはすぐに使えなくなります。同じクライアントを同意画面で許可し直すと、
+以前の許可は自動で取り消されます。</p>
+${list}
+${more}`,
+  );
+}
+
+function safeHost(uri: string): string {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return "";
+  }
+}
+
+function errorPage(
+  status: number,
+  message: string,
+  hint = "接続するアプリから、もう一度接続をやり直してください。",
+): Response {
   const body = pageHtml(
     "接続できません",
     `<h1>接続できません</h1>
 <p>${escapeHtml(message)}</p>
-<p>接続するアプリから、もう一度接続をやり直してください。</p>`,
+<p>${escapeHtml(hint)}</p>`,
   );
   return new Response(body, {
     status,
@@ -283,6 +402,8 @@ body { font-family: system-ui, sans-serif; line-height: 1.6; margin: 0 auto; max
 dt { font-weight: bold; margin-top: 0.5rem; }
 dd { margin-left: 0; overflow-wrap: anywhere; }
 label { display: block; margin: 0.25rem 0; }
+.grants { list-style: none; padding: 0; }
+.grants li { border-top: 1px solid #ccc; padding: 0.5rem 0; }
 .warn { border-left: 4px solid #c60; padding-left: 0.5rem; }
 </style>
 <main>

@@ -3,7 +3,7 @@ import { deleteCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
 import type { AccessVerifier } from "./access";
 import { allowAnonymous, clearStaleSession } from "./middleware";
-import { OAUTH_AUTHORIZE_PATH } from "./oauth-server";
+import { OAUTH_AUTHORIZE_PATH, OAUTH_GRANTS_PATH } from "./oauth-server";
 import { isOwnerEmail, readOwnerAuthConfig } from "./owner-config";
 import {
   createSessionValue,
@@ -19,7 +19,10 @@ export interface AuthRoutesOptions {
 
 const MAX_RETURN_LENGTH = 2048;
 
-const RETURNABLE_AUTH_PATHS: ReadonlySet<string> = new Set([OAUTH_AUTHORIZE_PATH]);
+const RETURNABLE_AUTH_PATHS: ReadonlySet<string> = new Set([
+  OAUTH_AUTHORIZE_PATH,
+  OAUTH_GRANTS_PATH,
+]);
 
 /**
  * ログイン後に戻る先を、リクエストと同じオリジンの絶対 URL にして返す。同じオリジンの
@@ -30,7 +33,7 @@ const RETURNABLE_AUTH_PATHS: ReadonlySet<string> = new Set([OAUTH_AUTHORIZE_PATH
  *   正規化で `//` から始まるパスになっても別ホストへは飛ばない
  * - `/_auth/` 以下に戻さない（ログインを繰り返さないため）。`/%5Fauth/login` のような符号化で
  *   すり抜けないよう、パスを復号してから判定し、復号できない値は拒む。例外は、owner のセッションを
- *   要る画面として /_auth/login を経由させる OAuth の同意画面だけ
+ *   要る画面として /_auth/login を経由させる OAuth の同意画面と接続の一覧だけ
  */
 export function safeReturnUrl(raw: string | undefined, origin: string): string {
   const fallback = `${origin}/`;

@@ -493,7 +493,7 @@ describe("匿名向けの応答の総当たり", () => {
         `/p/${open.id}`,
         `/p/${open.id}/`,
       ],
-      // OAuth の認可サーバー（auth/oauth-routes.ts）。認可は owner でなければ /_auth/login へ送る
+      // OAuth の認可サーバー（auth/oauth-routes.ts）。認可と接続の一覧は owner でなければ /_auth/login へ送る
       "GET /.well-known/oauth-authorization-server": ["/.well-known/oauth-authorization-server"],
       "GET /.well-known/oauth-protected-resource/mcp": [
         "/.well-known/oauth-protected-resource/mcp",
@@ -504,6 +504,7 @@ describe("匿名向けの応答の総当たり", () => {
         "/_auth/oauth/authorize",
         `/_auth/oauth/authorize?response_type=code&client_id=${draft.id}&state=${draft.id}`,
       ],
+      "GET /_auth/oauth/grants": ["/_auth/oauth/grants", `/_auth/oauth/grants?cursor=${draft.id}`],
     };
   }
 

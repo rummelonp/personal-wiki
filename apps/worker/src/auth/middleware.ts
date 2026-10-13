@@ -10,6 +10,7 @@ import {
   bearerChallenge,
   isOAuthAccessTokenShape,
   OAUTH_AUTHORIZE_PATH,
+  OAUTH_GRANTS_REVOKE_PATH,
   OAUTH_REGISTER_PATH,
   OAUTH_TOKEN_PATH,
 } from "./oauth-server";
@@ -171,11 +172,18 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * OAuth の同意画面（POST /_auth/oauth/authorize）だけはフォームの送信を受け付ける。承認の応答はクライアントの
  * redirect URI への遷移なので fetch では送れない。同一オリジンの検査は掛けたままにし、加えて同意画面を
  * 開いたブラウザに結び付いた 1 回限りの handle（oauth-routes.ts）で守る。
+ * 接続の取り消し（POST /_auth/oauth/grants/revoke）も、script を持たないページのフォームから送るので
+ * 受け付ける。こちらは同一オリジンの検査だけで守る（できるのは owner の接続を切ることだけ）。
  */
+const FORM_POST_PATHS: ReadonlySet<string> = new Set([
+  OAUTH_AUTHORIZE_PATH,
+  OAUTH_GRANTS_REVOKE_PATH,
+]);
+
 export const rejectCrossSiteCookieWrites = defineBaseMiddleware(
   createMiddleware<AppEnv>(async (c, next) => {
     if (UNSAFE_METHODS.has(c.req.method) && sessionCookieOf(c) !== undefined) {
-      const acceptsForm = c.req.method === "POST" && c.req.path === OAUTH_AUTHORIZE_PATH;
+      const acceptsForm = c.req.method === "POST" && FORM_POST_PATHS.has(c.req.path);
       if (
         !isSameOriginRequest(c) ||
         !(acceptsForm || isJsonContentType(c.req.header("Content-Type")))

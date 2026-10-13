@@ -21,6 +21,9 @@ export const MCP_PATH = "/mcp";
 export const OAUTH_AUTHORIZE_PATH = "/_auth/oauth/authorize";
 export const OAUTH_TOKEN_PATH = "/_auth/oauth/token";
 export const OAUTH_REGISTER_PATH = "/_auth/oauth/register";
+/** owner が許可済みの接続を見て、取り消すページ */
+export const OAUTH_GRANTS_PATH = "/_auth/oauth/grants";
+export const OAUTH_GRANTS_REVOKE_PATH = "/_auth/oauth/grants/revoke";
 export const AUTHORIZATION_SERVER_METADATA_PATH = "/.well-known/oauth-authorization-server";
 /** RFC 9728 の、リソースのパスを well-known の後ろに挿し込んだ URL */
 export const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource/mcp";

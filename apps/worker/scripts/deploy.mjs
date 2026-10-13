@@ -47,6 +47,9 @@ export const HELP = `usage:
        （ログインしていなければ /_auth/login を経由してから同意画面に戻る）
        client の登録は、redirect URI が claude.ai の戻り先か deploy.env の OAUTH_REDIRECT_URIS に
        あるものだけを受け付け、1 日（UTC）に 20 件までにする。上限に達した日は新しい接続だけが止まる
+       許可した接続は https://<ホスト名>/_auth/oauth/grants で見て、取り消せる（取り消すとその接続の
+       トークンはすぐに使えなくなる）。同じクライアント（client_id）を同意画面で許可し直すと、
+       以前の許可とトークンは自動で取り消される
 
 更新のとき（migration を含む版をデプロイするとき）は、次の順に実行する:
   pnpm db:migrate:remote
