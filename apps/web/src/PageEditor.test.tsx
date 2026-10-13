@@ -49,6 +49,9 @@ beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
 
+// vitest の iframe は URL の query で orchestrator と結ばれているので、遷移の試験の後に元へ戻す
+const startUrl = location.href;
+
 let root: Root | null = null;
 let container: HTMLElement | null = null;
 
@@ -73,7 +76,7 @@ afterEach(() => {
   root = null;
   container = null;
   vi.clearAllMocks();
-  history.replaceState(null, "", "/");
+  history.replaceState(null, "", startUrl);
 });
 
 function renderPage(page: Page = PAGE) {
@@ -302,7 +305,7 @@ describe("PageEditor の wikilink", () => {
     await vi.waitFor(() =>
       expect(container?.textContent).toContain("「無い」のページはまだありません"),
     );
-    expect(location.pathname).toBe("/");
+    expect(location.pathname).toBe(new URL(startUrl).pathname);
 
     vi.mocked(createPage).mockResolvedValue(
       ok({ ...PAGE, id: "CCCCCCCCCCCCCCCCCCCCCC", title: "無い", body: "" }),
@@ -343,7 +346,7 @@ describe("PageEditor の wikilink", () => {
     clickLink("別");
     await vi.waitFor(() => expect(container?.textContent).toContain("調べられませんでした"));
     expect(container?.textContent).not.toContain("まだありません");
-    expect(location.pathname).toBe("/");
+    expect(location.pathname).toBe(new URL(startUrl).pathname);
   });
 
   it("![[ページ]] を取得した本文で展開する", async () => {
@@ -354,6 +357,42 @@ describe("PageEditor の wikilink", () => {
     await vi.waitFor(() =>
       expect(container?.querySelector(".cm-embed-page")?.textContent).toContain("埋め込まれた本文"),
     );
+  });
+
+  it("![[ページ#見出し]] は取得した本文のうち、その見出しの節だけを展開する", async () => {
+    vi.mocked(findPageByTitle).mockResolvedValue(
+      ok({
+        ...PAGE,
+        id: "BBBBBBBBBBBBBBBBBBBBBB",
+        title: "別",
+        body: "# 一\n\n一の本文\n\n# 二\n\n二の本文\n",
+      }),
+    );
+    renderPage({ ...PAGE, body: "![[別#二]]" });
+    await vi.waitFor(() =>
+      expect(container?.querySelector(".cm-embed-page")?.textContent).toContain("二の本文"),
+    );
+    expect(container?.querySelector(".cm-embed-page")?.textContent).not.toContain("一の本文");
+    expect(findPageByTitle).toHaveBeenCalledWith("別", expect.anything());
+  });
+
+  it("[[ページ#見出し]] のクリックでは、# を切らずに editor が分けた target で引く", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => ({
+          id: "BBBBBBBBBBBBBBBBBBBBBB",
+          title,
+          visibility: "draft" as const,
+        })),
+      ),
+    );
+    renderPage({ ...PAGE, body: "[[別#二]]" });
+    clickLink("別#二");
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/BBBBBBBBBBBBBBBBBBBBBB"));
+    for (const [titles] of vi.mocked(resolvePages).mock.calls) {
+      expect(titles).not.toContain("別#二");
+      expect(titles).toContain("別");
+    }
   });
 
   it("保存して版が進んだら、存在の確認を取り直す", async () => {
