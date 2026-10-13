@@ -3,7 +3,7 @@ name: CI
 on:
   # PR ブランチで二重に走らないよう、push は既定ブランチだけにする
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
 
 permissions:
@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # 既定ブランチの実行は取り消さず、PR の古い実行だけを取り消す
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
