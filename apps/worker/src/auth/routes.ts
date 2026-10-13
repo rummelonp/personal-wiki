@@ -25,7 +25,8 @@ const MAX_RETURN_LENGTH = 2048;
  * - `\` と制御文字を含まないこと（URL の解析で `/` に読み替えられたり、捨てられたりする）
  * - 解析後のオリジンが一致すること。Location には解析後の絶対 URL を返すので、`/.//evil` のように
  *   正規化で `//` から始まるパスになっても別ホストへは飛ばない
- * - `/_auth/` 以下に戻さない（ログインを繰り返さないため）
+ * - `/_auth/` 以下に戻さない（ログインを繰り返さないため）。`/%5Fauth/login` のような符号化で
+ *   すり抜けないよう、パスを復号してから判定し、復号できない値は拒む
  */
 export function safeReturnUrl(raw: string | undefined, origin: string): string {
   const fallback = `${origin}/`;
@@ -40,7 +41,13 @@ export function safeReturnUrl(raw: string | undefined, origin: string): string {
     return fallback;
   }
   if (url.origin !== origin) return fallback;
-  if (url.pathname === "/_auth" || url.pathname.startsWith("/_auth/")) return fallback;
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return fallback;
+  }
+  if (pathname === "/_auth" || pathname.startsWith("/_auth/")) return fallback;
   return url.href;
 }
 

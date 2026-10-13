@@ -9,6 +9,7 @@ import {
   ownerEnv,
   SESSION_SECRET,
   signAccessJwt,
+  TEAM_DOMAIN,
 } from "../test/owner";
 import { insertToken } from "../test/tokens";
 import { safeReturnUrl } from "./routes";
@@ -117,6 +118,17 @@ describe("GET /_auth/login", () => {
     expect(res.headers.get("Set-Cookie")).toBeNull();
   });
 
+  it("ACCESS_TEAM_DOMAIN を大文字で書いても iss と照合できる", async () => {
+    const { key, request } = await setup();
+    const res = await request(
+      "/_auth/login",
+      { headers: { "Cf-Access-Jwt-Assertion": await signAccessJwt(key, T0) } },
+      { ...ownerEnv(), ACCESS_TEAM_DOMAIN: ` ${TEAM_DOMAIN.toUpperCase()} ` } as Bindings,
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Set-Cookie")).toContain(SESSION_COOKIE_NAME);
+  });
+
   it("設定が 1 つでも欠けていれば JWKS を引かずに失敗する", async () => {
     const { key, request, jwks } = await setup();
     const jwt = await signAccessJwt(key, T0);
@@ -163,6 +175,10 @@ describe("safeReturnUrl（open redirect の拒否）", () => {
       ["evil.example", `${origin}/`],
       ["/_auth/login", `${origin}/`],
       ["/_auth", `${origin}/`],
+      // Hono は %XX を復号してからルートを照合するので、/%5Fauth/login も login のルートに届く
+      ["/%5Fauth/login", `${origin}/`],
+      ["/%5F%61uth/x", `${origin}/`],
+      ["/%E0%A4%A", `${origin}/`],
       [`/${"a".repeat(2048)}`, `${origin}/`],
     ];
     for (const [raw, expected] of cases) {

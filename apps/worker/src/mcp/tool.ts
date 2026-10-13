@@ -93,7 +93,10 @@ export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition
         { title, description, inputSchema: schema, annotations },
         async (args) => {
           // /mcp は token だけを通すが、owner が届いても tool を動かさない側に倒す
-          if (ctx.principal.kind !== "token" || !principalHasScope(ctx.principal, scope)) {
+          if (ctx.principal.kind !== "token") {
+            return toolError({ error: "forbidden", message: "MCP の tool は token でだけ呼べる" });
+          }
+          if (!principalHasScope(ctx.principal, scope)) {
             return toolError({
               error: "forbidden",
               message: `この token には ${scope} の scope が無い`,

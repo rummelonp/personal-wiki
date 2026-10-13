@@ -23,14 +23,22 @@ export const SESSION_TTL_SECONDS = 24 * 60 * 60;
 // 署名の対象に用途を入れ、同じ秘密で別の用途の値に署名しても session として通らないようにする
 const SIGNING_CONTEXT = "personal-wiki/session/v1.";
 
-async function hmacKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
+// 鍵の取り込みを cookie 付きのリクエストごとに繰り返さないよう、isolate の中で使い回す。
+// 秘密は通常 1 つなので、最後に使った 1 組だけを持つ（入れ替え後は古い鍵を持ち続けない）
+let cachedKey: { secret: string; key: Promise<CryptoKey> } | undefined;
+
+function hmacKey(secret: string): Promise<CryptoKey> {
+  if (cachedKey?.secret !== secret) {
+    const key = crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign", "verify"],
+    );
+    cachedKey = { secret, key };
+  }
+  return cachedKey.key;
 }
 
 function signingInput(payloadPart: string): Uint8Array {

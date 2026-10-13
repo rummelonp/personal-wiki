@@ -43,6 +43,13 @@ export interface AccessVerifyInput {
 const JWKS_TTL_MS = 60 * 60 * 1000;
 
 /**
+ * kid が見つからないときの取り直しの最小間隔。未知の kid を並べた JWT で JWKS の取得を
+ * 繰り返させない。Access は新しい鍵を使い始める前から JWKS に載せるので、直前に取った JWKS に
+ * 無い kid を、間隔を空けずに取り直して救う必要は薄い。
+ */
+const JWKS_MIN_REFRESH_INTERVAL_MS = 30 * 1000;
+
+/**
  * nbf と iat に許す時計のずれ。exp には許さない（ログインは JWT の発行直後に行われ、
  * 期限の近い JWT を救う必要が無い）。
  */
@@ -95,6 +102,10 @@ export function createAccessVerifier({
     const hit = select(first);
     if (hit !== undefined) return hit;
     // 鍵の入れ替え直後はキャッシュに新しい kid が無いので、1 回だけ取り直す
+    const fetchedAt = cache.get(teamDomain)?.fetchedAt;
+    if (fetchedAt !== undefined && now() - fetchedAt < JWKS_MIN_REFRESH_INTERVAL_MS) {
+      return "missing";
+    }
     const second = await loadKeys(teamDomain, true);
     if (second === null) return null;
     return select(second) ?? "missing";

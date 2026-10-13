@@ -21,7 +21,8 @@ const MIN_SESSION_SECRET_LENGTH = 32;
 
 /** 設定が欠けているか形式が誤っていれば null。 */
 export function readOwnerAuthConfig(env: Partial<Bindings>): OwnerAuthConfig | null {
-  const teamDomain = env.ACCESS_TEAM_DOMAIN?.trim() ?? "";
+  // JWT の iss と文字列で比べるので、Access が使う小文字にそろえる
+  const teamDomain = env.ACCESS_TEAM_DOMAIN?.trim().toLowerCase() ?? "";
   const audience = env.ACCESS_AUD?.trim() ?? "";
   const sessionSecret = env.SESSION_SECRET ?? "";
   const ownerEmails = new Set(

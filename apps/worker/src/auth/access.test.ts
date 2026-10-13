@@ -168,21 +168,55 @@ describe("Access の JWT の検証", () => {
     });
 
     it("kid が見つからなければ 1 回だけ取り直し、それでも無ければ拒む", async () => {
-      const { verify, jwks } = await setup();
+      const { key, verify, jwks, clock } = await setup();
+      await verify(await signAccessJwt(key, T0));
+      clock.now = T0 + 30 * 1000;
       const unknown = await generateSigningKey("key-unknown");
-      expect(await verify(await signAccessJwt(unknown, T0))).toEqual({
+      expect(await verify(await signAccessJwt(unknown, clock.now))).toEqual({
         ok: false,
         reason: "unknown_kid",
       });
       expect(jwks.state.calls).toBe(2);
     });
 
+    it("前回の取得から 30 秒以内は、知らない kid でも取り直さない", async () => {
+      const { key, verify, jwks, clock } = await setup();
+      await verify(await signAccessJwt(key, T0));
+      const unknown = await generateSigningKey("key-unknown");
+      for (const elapsed of [0, 1000, 29 * 1000]) {
+        clock.now = T0 + elapsed;
+        expect(await verify(await signAccessJwt(unknown, clock.now))).toEqual({
+          ok: false,
+          reason: "unknown_kid",
+        });
+      }
+      expect(jwks.state.calls).toBe(1);
+      // 取り直した後も、そこから 30 秒は取り直さない
+      clock.now = T0 + 30 * 1000;
+      await verify(await signAccessJwt(unknown, clock.now));
+      clock.now = T0 + 45 * 1000;
+      await verify(await signAccessJwt(unknown, clock.now));
+      expect(jwks.state.calls).toBe(2);
+    });
+
     it("鍵が入れ替わったら、取り直した JWKS の新しい鍵で検証する", async () => {
-      const { key, verify, jwks } = await setup();
+      const { key, verify, jwks, clock } = await setup();
       await verify(await signAccessJwt(key, T0));
       const rotated = await generateSigningKey("key-2");
       jwks.state.keys = [key, rotated];
-      expect(await verify(await signAccessJwt(rotated, T0))).toMatchObject({ ok: true });
+      clock.now = T0 + 60 * 1000;
+      expect(await verify(await signAccessJwt(rotated, clock.now))).toMatchObject({ ok: true });
+      expect(jwks.state.calls).toBe(2);
+    });
+
+    it("TTL の 1 時間が過ぎたら JWKS を取り直す", async () => {
+      const { key, verify, jwks, clock } = await setup();
+      await verify(await signAccessJwt(key, T0));
+      clock.now = T0 + 60 * 60 * 1000 - 1;
+      await verify(await signAccessJwt(key, clock.now));
+      expect(jwks.state.calls).toBe(1);
+      clock.now = T0 + 60 * 60 * 1000;
+      expect(await verify(await signAccessJwt(key, clock.now))).toMatchObject({ ok: true });
       expect(jwks.state.calls).toBe(2);
     });
 
