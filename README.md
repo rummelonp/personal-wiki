@@ -20,9 +20,12 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 ## 必要なもの
 
 - Cloudflare アカウント
-- 公開するホスト名（例 `wiki.example.com`）のゾーン。デプロイ先と同じ Cloudflare アカウントの DNS にあること
+- 公開するホスト名のゾーン。デプロイ先と同じ Cloudflare アカウントの DNS にあること
 - Node 22 系（`>=22.13 <23`）
 - pnpm（バージョンは `package.json` の `packageManager`）
+- git、openssl（`SESSION_SECRET` を作るとき）
+
+以下の `wiki.example.com` は、自分のホスト名（`WIKI_HOSTNAME`）に読み替えてください。
 
 ## 無料枠の資源
 
@@ -33,7 +36,7 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 | 添付（任意） | R2。ダッシュボードで R2 を有効にする必要があり、有効化の際に支払い情報の登録を求められることがあります |
 | OAuth の接続（任意） | Workers KV。書き込みの上限が小さいので、使い方の見積もりは `apps/worker/src/auth/oauth-server.ts` の冒頭にあります |
 | リンクの書き換えの自動実行（任意） | Cron Trigger。アカウント全体で 5 本までです |
-| owner のログイン（任意） | Cloudflare Zero Trust の Access |
+| owner のログイン（任意） | Cloudflare Zero Trust の Access。組織を作る際に支払い情報の登録を求められることがあります |
 
 各機能の上限とプランの条件は Cloudflare の最新の案内で確かめてください。
 
@@ -42,6 +45,7 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 以下は `apps/worker` で実行します。
 ホスト名と D1 の ID は `apps/worker/deploy.env`（gitignore 済み）に書き、追跡される `wrangler.jsonc` には書きません。
 `pnpm deploy:remote` と `pnpm db:migrate:remote` は、`wrangler.jsonc` に `deploy.env` の値を重ねた設定を `wrangler.deploy.json` に作って wrangler に渡します。
+各項目の詳細と注意は `node scripts/deploy.mjs --help` に載せています。
 
 ### 1. 取得と依存のインストール
 
@@ -85,6 +89,7 @@ pnpm deploy:remote
 
 `deploy:remote` は先に `apps/web` をビルドします。
 migration が先なのは、デプロイが先だと保存と一覧が表の無いエラーで止まるためです。
+owner のログインや OAuth を設定していない間は `warning:` が標準エラーに出ますが、デプロイは続きます。
 
 ### 5. API token を発行する
 
@@ -94,14 +99,19 @@ pnpm -s api-token issue <name> --scopes read,write --remote
 
 token の平文は標準出力に 1 度だけ出るので控えます。
 失効した token の名前は再利用できません。
+token を使うコマンドでは、平文をコマンド行に書かず、シェルの履歴に残らないよう環境変数で渡します。
+
+```sh
+read -rs WIKI_TOKEN && export WIKI_TOKEN
+```
 
 ここまでで REST と MCP が使えます（MCP の接続は後の節）。
 ブラウザで編集するには、次の owner のログインが要ります。
 
 ## 任意の機能
 
-どれも `deploy.env` に値を書いて `pnpm deploy:remote` を実行し直すと有効になります。
-値を空に戻して再デプロイすると外れます。
+各節の手順を終えて `pnpm deploy:remote` を実行し直すと有効になります。
+`deploy.env` の値を空に戻して再デプロイすると外れます（secret は残りますが、使われません）。
 
 ### owner のログイン（ブラウザでの閲覧と編集）
 
@@ -167,9 +177,12 @@ title を変えると、他のページの `[[旧 title]]` を書き換える仕
 owner がブラウザで開いていれば画面が進めますが、MCP 経由の rename では積まれたまま残ります。
 `deploy.env` の `LINK_REWRITE_CRON` に cron 式（例 `*/5 * * * *`）を書いてデプロイすると、1 回の発火で 1 ページずつ進めます。
 
-空のままなら Cron を付けません。
-Cron Trigger はアカウント全体で 5 本までなので、既定は空です。
-Cron を使わないときは、`pnpm link-rewrites` で手動で進められます（[AGENTS.md](./AGENTS.md) の「コマンド」）。
+Cron Trigger の本数に上限があるので、既定は空で、空のままなら Cron を付けません。
+Cron を使わないときは、`WIKI_TOKEN` に write の token を入れて、次のコマンドで手動で進められます（詳しくは [AGENTS.md](./AGENTS.md) の「コマンド」）。
+
+```sh
+pnpm link-rewrites --remote
+```
 
 ## MCP への接続
 
@@ -179,24 +192,25 @@ Cron を使わないときは、`pnpm link-rewrites` で手動で進められま
 
   ```sh
   claude mcp add --transport http personal-wiki https://wiki.example.com/mcp \
-    --header "Authorization: Bearer <token>"
+    --header "Authorization: Bearer $WIKI_TOKEN"
   ```
 
+  `--scope project` は付けません。付けると、リポジトリの `.mcp.json` に token が書かれます。
   token の scope が `read` だけのときは、write が要るツールを呼ぶとエラーになります。
-- claude.ai や Claude Desktop のカスタムコネクタ: コネクタの URL に上の URL を入れて接続します。ブラウザで同意画面が開くので、クライアント名と送り先を確かめ、`read` か `read` と `write` を選んで許可します。OAuth の設定が要ります
+- claude.ai や Claude Desktop のカスタムコネクタ: コネクタの URL に上の URL を入れて接続します。ブラウザで同意画面が開くので、クライアント名と送り先を確かめ、`read` か `read` と `write` を選んで許可します。OAuth と owner のログインの設定が要ります
 
 ## 更新
 
-新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で次の順に実行します。
+新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で毎回次の 3 つを順に実行します（`WIKI_TOKEN` は write の token）。
 
 ```sh
 pnpm db:migrate:remote
 pnpm deploy:remote
-WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
+pnpm derived:rebuild --remote
 ```
 
 `derived:rebuild` は links、tags、添付の参照、一覧の抜粋、検索の索引を本文から作り直します。
-migration が派生データの表を足すことがあるので、migration を含む版では必ず実行します。Worker を前の版に戻して再デプロイしたあとも実行します。
+新しい版が派生データの表や作り方を変えても、既存のページの分は作り直すまで古い（または空の）まま残るためです。Worker を前の版に戻して再デプロイしたあとも実行します。
 詳しい扱いは [AGENTS.md](./AGENTS.md) の「コマンド」にあります。
 
 ## バックアップ
