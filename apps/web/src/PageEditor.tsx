@@ -32,7 +32,7 @@ import {
   updatePage,
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { homeHref, navigate, pageHref } from "./route";
+import { homeHref, navigate, pageHrefFor } from "./route";
 import { createWikiLinks } from "./wiki-links";
 
 const api: EditorApi = {
@@ -148,7 +148,7 @@ export function PageEditor({ page }: { page: Page }) {
     setLinkNotice(null);
     const found = await links.lookup(link.target, controller.signal);
     if (controller.signal.aborted) return;
-    if (found.kind === "found") navigate(pageHref(found.page.id));
+    if (found.kind === "found") navigate(pageHrefFor(found.page));
     else if (found.kind === "missing") {
       setLinkNotice({ kind: "missing", title: link.target, busy: false, error: null });
     } else setLinkNotice({ kind: "error" });
@@ -168,7 +168,7 @@ export function PageEditor({ page }: { page: Page }) {
       const res = await createPage({ title, body: "" });
       if (controller.signal.aborted) return;
       if (res.ok) {
-        navigate(pageHref(res.value.id));
+        navigate(pageHrefFor(res.value));
         return;
       }
       if (res.reason === "title_conflict") {
@@ -176,7 +176,7 @@ export function PageEditor({ page }: { page: Page }) {
         const existing = await links.lookup(title, controller.signal);
         if (controller.signal.aborted) return;
         if (existing.kind === "found") {
-          navigate(pageHref(existing.page.id));
+          navigate(pageHrefFor(existing.page));
           return;
         }
       }

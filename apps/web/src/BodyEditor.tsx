@@ -36,7 +36,7 @@ export interface BodyEditorProps {
   /** `[[Title#` と `[[Title#^` の候補の取得元。pageIndex と一緒に渡したときだけ働く。 */
   linkTargets?: LinkTargetSource;
   /**
-   * wikilink の存在の印と `![[ページ]]` の展開の取得元。渡すと印と embed が働く。
+   * wikilink の存在の印、リンクの URL、`![[ページ]]` の展開の取得元。渡すと印と embed が働く。
    * 作った時点のものを使い続けるので、ページが変わるときは BodyEditor ごと作り直す。
    */
   links?: WikiLinkSources;
@@ -117,6 +117,8 @@ export function BodyEditor({
               latest.current.links?.resolveWikiLink(target) ?? true,
             resolvePageEmbed: (target: string) =>
               latest.current.links?.resolvePageEmbed(target) ?? NO_EMBED,
+            hrefForWikiLink: (link: WikiLinkClick) =>
+              latest.current.links?.hrefFor(link.target) ?? null,
           }),
       ...(initial.onWikiLinkClick === undefined
         ? {}

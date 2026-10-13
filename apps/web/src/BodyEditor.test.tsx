@@ -428,10 +428,12 @@ describe("[[ の補完", () => {
 function fakeLinks() {
   const missing = new Set<string>();
   const embeds = new Map<string, PageEmbedContent>();
+  const hrefs = new Map<string, string>();
   const listeners = new Set<() => void>();
   const sources: WikiLinkSources = {
     resolveWikiLink: (target) => !missing.has(target),
     resolvePageEmbed: (target) => embeds.get(target) ?? { kind: "loading" },
+    hrefFor: (target) => hrefs.get(target) ?? null,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -441,6 +443,7 @@ function fakeLinks() {
     sources,
     missing,
     embeds,
+    hrefs,
     listeners,
     changed: () => {
       for (const listener of [...listeners]) listener();
@@ -460,6 +463,22 @@ describe("wikilink の存在の印", () => {
     links.missing.add("無い");
     links.changed();
     await vi.waitFor(() => expect(unresolvedTargets(view())).toEqual(["無い"]));
+  });
+
+  it("解決先の URL が届いた link だけを <a href> にする", async () => {
+    const links = fakeLinks();
+    const { view } = controlled("[[有る]] と [[無い]]", { links: links.sources });
+    expect(view().dom.querySelectorAll("a.cm-wikilink")).toHaveLength(0);
+
+    links.hrefs.set("有る", "/%E6%9C%89%E3%82%8B");
+    links.missing.add("無い");
+    links.changed();
+    await vi.waitFor(() => {
+      const anchors = [...view().dom.querySelectorAll<HTMLAnchorElement>("a.cm-wikilink")];
+      expect(anchors.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+        ["有る", "/%E6%9C%89%E3%82%8B"],
+      ]);
+    });
   });
 
   it("変換中に届いた結果は、落ち着くまで装飾に反映しない", async () => {

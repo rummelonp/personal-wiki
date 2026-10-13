@@ -35,6 +35,11 @@ export interface TitleResolver {
    * 失敗は true（印を付けない）。確認していない title を見つけたら、裏でまとめて問い合わせる。
    */
   isResolved(target: string): boolean;
+  /**
+   * 取得済みの解決先。未確認・確認中・存在しないなら null。問い合わせは始めない（`isResolved` と
+   * 同じ組み直しの中で呼ぶ前提）。解決先が変わったときも `onChange` を呼ぶ。
+   */
+  resolvedPage(target: string): ResolvedPage | null;
   /** クリックの遷移先を引く。取得済みで古くない結果があればそれを返し、無ければ 1 件だけ問い合わせる。 */
   lookup(target: string, signal?: AbortSignal): Promise<TitleLookup>;
   /**
@@ -122,14 +127,20 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
     return entry;
   };
 
-  /** 結果を書く。印（存在しないと確認できたか）が変わったかを返す。 */
+  /** 結果を書く。印（存在しないと確認できたか）か、リンクの URL を決める解決先が変わったかを返す。 */
   const store = (entry: Entry, page: ResolvedPage | null, at: number): boolean => {
-    const before = entry.status === "missing";
+    const before = entry.page;
+    const wasMissing = entry.status === "missing";
     entry.status = page === null ? "missing" : "found";
     entry.page = page;
     entry.generation = at;
     entry.retryAt = 0;
-    return before !== (entry.status === "missing");
+    return (
+      wasMissing !== (entry.status === "missing") ||
+      before?.id !== page?.id ||
+      before?.title !== page?.title ||
+      before?.visibility !== page?.visibility
+    );
   };
 
   const queue = (key: string, target: string): void => {
@@ -197,6 +208,11 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
         else entry.retryAt = Number.POSITIVE_INFINITY;
       }
       return entry.status !== "missing";
+    },
+
+    resolvedPage(target) {
+      const entry = entries.get(foldTitle(target));
+      return entry?.status === "found" ? entry.page : null;
     },
 
     async lookup(target, signal) {

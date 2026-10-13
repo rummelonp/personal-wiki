@@ -1,26 +1,25 @@
+import { canonicalPagePath, pageIdPath, parsePagePath } from "@personal-wiki/domain/page-path";
 import { useSyncExternalStore } from "react";
 
 /**
- * SPA のパスは `/` と `/p/<id>` だけ。`/<title>` をページの URL にする予定なので、
- * `/search` や `/new` のような最上位のパスは増やさない。検索はクエリ（`/?q=`）で表す。
+ * SPA のパスは `/`、`/p/<id>`、`/<title>` だけ。最上位のパスは title に使うので、`/search` や
+ * `/new` のようなパスは増やさない。検索はクエリ（`/?q=`）で表す。
+ * ページの URL の読み方は Worker（OGP の差し込み）と同じ parsePagePath に任せる。
  */
 export type Route =
   | { name: "home"; query: string; tag: string }
   | { name: "page"; id: string }
+  | { name: "title"; title: string }
   | { name: "unknown" };
-
-const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
 export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/") {
     const params = new URLSearchParams(search);
     return { name: "home", query: params.get("q") ?? "", tag: params.get("tag") ?? "" };
   }
-  const match = /^\/p\/([^/]+)\/?$/.exec(pathname);
-  if (match !== null && PAGE_ID_PATTERN.test(match[1] as string)) {
-    return { name: "page", id: match[1] as string };
-  }
-  return { name: "unknown" };
+  const path = parsePagePath(pathname);
+  if (path === null) return { name: "unknown" };
+  return path.kind === "id" ? { name: "page", id: path.id } : { name: "title", title: path.title };
 }
 
 export function homeHref(query = ""): string {
@@ -31,7 +30,13 @@ export function homeHref(query = ""): string {
 /** タグで絞った一覧。パスは増やさず、クエリで表す。 */
 export const tagHref = (tag: string): string => `/?tag=${encodeURIComponent(tag)}`;
 
-export const pageHref = (id: string): string => `/p/${id}`;
+export const pageHref = pageIdPath;
+
+/**
+ * ページへのリンク。public は `/<title>`、draft と予約語の title は `/p/<id>`。
+ * Worker の canonical と同じ URL にし、匿名に渡る URL と履歴を 1 つにそろえる。
+ */
+export const pageHrefFor = canonicalPagePath;
 
 const NAVIGATE_EVENT = "personal-wiki:navigate";
 

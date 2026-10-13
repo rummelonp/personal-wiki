@@ -1,3 +1,4 @@
+import { canonicalPagePath } from "@personal-wiki/domain/page-path";
 import {
   createPageEmbedCache,
   type PageEmbedCache,
@@ -18,6 +19,11 @@ import { createTitleResolver, type TitleLookup } from "./title-resolver";
 export interface WikiLinkSources {
   resolveWikiLink: WikiLinkResolver;
   resolvePageEmbed: PageEmbedResolver;
+  /**
+   * wikilink の `<a href>` にする URL。解決先を取得済みのときだけ返し、未確認と存在しない link は null
+   * （href の無い装飾）。匿名には draft も存在しない link と同じく null になる。
+   */
+  hrefFor(target: string): string | null;
   /** 印や embed の内容が変わったときに呼ぶ listener を登録する。戻り値で解除する。 */
   subscribe(listener: () => void): () => void;
 }
@@ -90,6 +96,10 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
   return {
     resolveWikiLink: (target) => titles.isResolved(target),
     resolvePageEmbed: (target) => embedCache().resolve(target),
+    hrefFor(target) {
+      const page = titles.resolvedPage(target);
+      return page === null ? null : canonicalPagePath(page);
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => {

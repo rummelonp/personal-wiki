@@ -1,14 +1,14 @@
 import { formatRowTime } from "./format";
 import { Link } from "./Link";
 import type { ListedPage } from "./pages-api";
-import { pageHref, tagHref } from "./route";
+import { pageHrefFor, tagHref } from "./route";
 
 /** 一覧の 1 行（タイトル、抜粋、更新日、タグ）。配置は持たず、並べ方は呼び出し側が決める。 */
 export function EntryRow({ entry, now }: { entry: ListedPage; now: number }) {
   return (
     <li className="entry">
       <div className="entry-head">
-        <Link className="entry-title" href={pageHref(entry.id)}>
+        <Link className="entry-title" href={pageHrefFor(entry)}>
           {entry.title}
         </Link>
         {entry.visibility === "draft" && <span className="chip chip-draft">下書き</span>}

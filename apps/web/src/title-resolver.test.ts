@@ -48,7 +48,34 @@ describe("存在の印", () => {
     expect(fetchTitles.mock.calls[0]?.[0]).toEqual(["有る", "無い"]);
     expect(resolver.isResolved("有る")).toBe(true);
     expect(resolver.isResolved("無い")).toBe(false);
-    // 有ると分かっても見た目は変わらないので、組み直しは 1 回
+    // 1 回の要求の結果は、まとめて 1 回組み直させる
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("リンクの URL のために、取得済みの解決先だけを返し、解決先が変われば組み直させる", async () => {
+    let current = page("有る");
+    const fetchTitles = vi.fn<FetchTitles>(async (titles) => ({
+      ok: true,
+      value: titles.map((t) => (t === "有る" ? current : null)),
+    }));
+    const { resolver, onChange } = setup(fetchTitles);
+    resolver.isResolved("有る");
+    resolver.isResolved("無い");
+    expect(resolver.resolvedPage("有る")).toBeNull();
+
+    await flush();
+    expect(resolver.resolvedPage("有る")).toEqual(page("有る"));
+    expect(resolver.resolvedPage("ある")).toBeNull();
+    expect(resolver.resolvedPage("無い")).toBeNull();
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    // 公開範囲が変わると URL が変わるので、存在の印が同じでも組み直させる
+    current = { ...current, visibility: "public" };
+    resolver.refresh();
+    onChange.mockClear();
+    resolver.isResolved("有る");
+    await flush();
+    expect(resolver.resolvedPage("有る")?.visibility).toBe("public");
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 

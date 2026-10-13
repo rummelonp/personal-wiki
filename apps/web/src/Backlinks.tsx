@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "./Link";
 import { listBacklinks, type PageSummary } from "./pages-api";
 import { RailSection } from "./Rail";
-import { pageHref } from "./route";
+import { pageHrefFor } from "./route";
 
 type State =
   | { status: "loading" }
@@ -61,7 +61,7 @@ export function Backlinks({ pageId }: { pageId: string }) {
         <ul className="rail-list">
           {state.pages.map((page) => (
             <li key={page.id}>
-              <Link href={pageHref(page.id)}>{page.title}</Link>
+              <Link href={pageHrefFor(page)}>{page.title}</Link>
             </li>
           ))}
         </ul>
