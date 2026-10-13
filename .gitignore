@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.DS_Store
+
+# AI エージェントの作業用ファイル
+.claude/plans/
+.claude/worktrees/
+.claude/settings.local.json
