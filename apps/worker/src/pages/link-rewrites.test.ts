@@ -520,7 +520,7 @@ describe("同じリンク元を同時に選ぶ呼び出し（web の step と Cr
     expect(await jobs()).toEqual([]);
   });
 
-  it("上限の 1 つ手前から同時に選ぶと、後の方が failed を返すが、書き換えは失われない", async () => {
+  it("上限の 1 つ手前から同時に選ぶと、後の方が failed を返すが、先の方が書き終えれば書き換えは失われない", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const client = await buildClient();
     const target = await client.create("Old");
