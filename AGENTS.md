@@ -58,11 +58,18 @@ WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
 1 回の呼び出しで 1 ページずつ進めるので、全ページ分を回して終わる。
 migration の前から在るページは、これを回すまで一覧に抜粋が出ない。
 Worker を前の版に戻して再デプロイしたあとも実行する。前の版は新しい派生データ（抜粋など）を書かないので、戻している間に保存したページの分が古いまま残る。
+添付の参照も同じで、戻している間に本文から外した添付は、`derived:rebuild` を回すまで匿名に読めるまま残る。
 失敗したページがあると、その id を標準エラーに出して終了コード 1 になる。
 
 title を変えると、他のページの `[[旧 title]]` を書き換える仕事が `link_rewrites` に積まれ、`POST /api/link-rewrites/step` が 1 回に 1 ページずつ書き換える。
 `link-rewrites` はこれを残りが 0 になるまで呼ぶ。書き換えると他のリンクやタグが変わるページと、3 回試しても処理が終わらなかったページは書き換えずに飛ばし、その id を標準エラーに出して終了コード 1 になる。
 Worker を前の版（step の無い版）に戻している間は step が 404 になり、rename しても書き換えは積まれない。戻している間に変えた title へのリンクは、手で直す。
+
+### 添付（R2）
+
+- 画像は `POST /api/attachments` に、本文を画像のバイト列、`Content-Type` を画像の種類にして送る。`Content-Length` は必須で、無ければ 411 を返す。
+- 本文の `![[<名前>]]` は `/api/pages/<page id>/attachments/<名前>` で配信する。匿名は、削除されていないそのページが本文で参照する添付だけを読める。
+- 画像の URL は page id を含む。draft は id の URL で匿名に読めるので、draft の画像の URL を共有すると、その draft の本文も読めるようになる。
 
 ### バックアップと復元
 
@@ -94,7 +101,8 @@ pnpm -s api-token issue <name> --scopes read,write --remote  # --with-tokens で
 WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
 ```
 
-- `derived:rebuild` を回すまで、一覧の抜粋、backlink、タグ、検索は空のまま。
+- `derived:rebuild` を回すまで、一覧の抜粋、backlink、タグ、検索は空のまま。匿名には画像も 404 になる（配信の判定に使う添付の参照が空のため）。
+- 画像の中身はバックアップに入らないので、R2 にあるものを使う。復元後も、前と同じバケットを `R2_BUCKET_NAME` に書く。
 - 旧い D1 に、このバックアップから `deploy:remote` までの間に入った書き込みは移らない。
 - `load` が wrangler の失敗で止まったときは、同じコマンドで再試行できる。ローカルの D1 では、失敗した SQL ファイルは全体が巻き戻って表が空のままだった。remote で表が空でなくなっていたら（`load` が not empty で拒否する）、新しい D1 を作り直して最初からやり直す。
 

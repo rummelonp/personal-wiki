@@ -19,7 +19,7 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 1. `pnpm exec wrangler login`
 2. `pnpm exec wrangler d1 create personal-wiki --update-config=false`
    - `--update-config=false` を付けないと、wrangler が追跡対象の `wrangler.jsonc` に binding を書き込みます。
-   - R2 は添付とバックアップで使います。ダッシュボードで R2 を有効にしてから `pnpm exec wrangler r2 bucket create personal-wiki --update-config=false` を実行します。
+   - R2 は添付（画像）の保存に使います。ダッシュボードで R2 を有効にしてから `pnpm exec wrangler r2 bucket create personal-wiki --update-config=false` を実行します。
 3. `cp deploy.env.example deploy.env` を実行し、ホスト名と `database_id` を書く
    - `R2_BUCKET_NAME` は R2 を作ったときだけ書きます。空のままなら、R2 の binding を付けずにデプロイします。
 4. `pnpm db:migrate:remote`
