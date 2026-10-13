@@ -101,10 +101,34 @@ describe("GET /api/pages/recent?tag=", () => {
     const client = await buildClient();
     await client.create("a", "#Project");
     await client.create("b", "#other");
-    for (const tag of ["project", "PROJECT", "Ｐroject", "#project", " Project "]) {
+    for (const tag of [
+      "project",
+      "PROJECT",
+      "Ｐroject",
+      "#project",
+      " #project",
+      "＃project",
+      " Project ",
+    ]) {
       expect(titles(await byTag(client, tag)), tag).toEqual(["a"]);
     }
     expect(await byTag(client, "none")).toEqual([]);
+    // 剥がす `#` は 1 つだけ。残りは key の一部になり、どのタグにも一致しない
+    expect(await byTag(client, "##project")).toEqual([]);
+  });
+
+  it("長さの上限は畳んだ後の key で判定し、ちょうど 200 字は通る", async () => {
+    const client = await buildClient();
+    await client.create("long", `#${"a".repeat(200)}`);
+    expect(titles(await byTag(client, "a".repeat(200)))).toEqual(["long"]);
+    expect((await client.request(`/api/pages/recent?tag=${"a".repeat(201)}`)).status).toBe(400);
+    // `㌀` は NFKC で 4 文字になるので、51 字で 204 字の key になる
+    expect(
+      (await client.request(`/api/pages/recent?tag=${encodeURIComponent("㌀".repeat(51))}`)).status,
+    ).toBe(400);
+    expect(
+      (await client.request(`/api/pages/recent?tag=${encodeURIComponent("㌀".repeat(50))}`)).status,
+    ).toBe(200);
   });
 
   it("親のタグで子のタグのページも拾い、前置きが同じだけの別のタグは拾わない", async () => {

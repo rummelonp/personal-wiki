@@ -125,15 +125,24 @@ async function tagsByPage(db: D1Database, pageIds: string[]): Promise<Map<string
   return byPage;
 }
 
-/** タグの絞り込みに渡す tag_key。`#` は 1 つだけ剥がす（frontmatter の tags と同じ許容）。 */
+/** タグの絞り込みに渡す tag_key。 */
 export type TagFilter = { ok: true; key: string } | { ok: false };
 
-/** タグの表記の長さ（UTF-16 単位）の上限。本文のタグは長くても数十字で、検索語と同様に照合量を抑える。 */
+/**
+ * tag_key の長さ（UTF-16 単位）の上限。本文のタグは長くても数十字で、検索語と同様に照合量を抑える。
+ * 判定は畳んだ後の key で行う。照合に使うのは畳んだ値で、抑えたいのはその長さだから。
+ * 畳む前に 200 字でも、NFKC で伸びる文字（`㌀` は 4 文字）を含めば 400 になる。
+ */
 const TAG_MAX_LENGTH = 200;
 
-/** 表記を tags.tag_key と同じ畳み方（foldTitle）にする。ページをまたぐ照合はこの値で行う。 */
+/**
+ * 表記を tags.tag_key と同じ畳み方（foldTitle）にする。ページをまたぐ照合はこの値で行う。
+ * 先頭の `#` は畳んだ後に 1 つだけ剥がす（frontmatter の tags と同じ許容）。畳む前に剥がすと、
+ * 前に空白がある ` #a` や全角の `＃a` が、`#` を含む key になって何にも一致しない。
+ */
 export function prepareTagFilter(raw: string): TagFilter {
-  const key = foldTitle(raw.startsWith("#") ? raw.slice(1) : raw);
+  const folded = foldTitle(raw);
+  const key = folded.startsWith("#") ? folded.slice(1) : folded;
   return key === "" || key.length > TAG_MAX_LENGTH ? { ok: false } : { ok: true, key };
 }
 
