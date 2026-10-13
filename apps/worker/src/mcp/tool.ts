@@ -51,7 +51,20 @@ export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition
               message: `この token には ${scope} の scope が無い`,
             });
           }
-          return run(args as z.output<S>, ctx);
+          try {
+            return await run(args as z.output<S>, ctx);
+          } catch (error) {
+            // SDK は tool の例外を握り、message をそのまま isError で返す（onerror も呼ばない）。
+            // D1 の例外文をクライアントに出さず、ログにだけ残す
+            console.error(
+              JSON.stringify({
+                event: "mcp.tool_error",
+                tool: name,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+            return toolError({ error: "internal_error" });
+          }
         },
       );
     },

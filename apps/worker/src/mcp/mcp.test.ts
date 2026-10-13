@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES } from "../pages/routes";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
@@ -218,6 +218,32 @@ describe("tools/list", () => {
     }
     const listed = await rpc("tools/list", undefined, { "MCP-Protocol-Version": "2025-06-18" });
     expect(listed.result?.tools).toHaveLength(7);
+  });
+});
+
+describe("tool の中の例外", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("store が投げた例外の文面は返さず、internal_error にしてログに残す", async () => {
+    const { call, metrics } = await mcpClient();
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_insert BEFORE INSERT ON pages BEGIN SELECT RAISE(ABORT, 'secret detail'); END",
+    ).run();
+    const logged: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+      logged.push(String(line));
+    });
+
+    const result = await call("create_page", { title: "Boom", body: "" });
+
+    expect(result).toEqual({ isError: true, json: { error: "internal_error" } });
+    expect(metrics).toEqual([]);
+    expect(logged).toHaveLength(1);
+    const entry = JSON.parse(logged[0] as string);
+    expect(entry).toMatchObject({ event: "mcp.tool_error", tool: "create_page" });
+    expect(entry.error).toContain("secret detail");
   });
 });
 
