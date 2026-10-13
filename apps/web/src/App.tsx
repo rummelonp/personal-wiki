@@ -1,12 +1,35 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { fetchMe, logout } from "./api";
 import { setDocumentTitle } from "./document-title";
 import { saveAllEditors } from "./editor-lifecycle";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
 import { NotFound } from "./NotFound";
-import { PageView } from "./PageView";
-import { useRoute } from "./route";
+import { parseRoute, useRoute } from "./route";
+
+// エディタ（CodeMirror）はページの画面でしか使わないので、トップと検索の初回の読み込みから外す。
+// 読み込みの失敗（デプロイで古い版の chunk が消えた後の遷移など）は、画面全体を壊さず再読み込みを促す
+const loadPageView = () => import("./PageView");
+const PageView = lazy(() =>
+  loadPageView().then(
+    (module) => ({ default: module.PageView }),
+    () => ({ default: PageViewLoadFailed }),
+  ),
+);
+
+// ページの URL で開いたときは、/api/me の応答を待つ間にエディタも読み込んでおく
+const initialRoute = parseRoute(window.location.pathname, window.location.search);
+if (initialRoute.name === "page" || initialRoute.name === "title") {
+  loadPageView().catch(() => {});
+}
+
+function PageViewLoadFailed() {
+  return (
+    <p className="message message-error" role="alert">
+      画面を読み込めませんでした。再読み込みしてください。
+    </p>
+  );
+}
 
 export function App() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
@@ -67,16 +90,18 @@ export function App() {
         )}
         {ready && route.name === "home" && <HomeView query={route.query} tag={route.tag} />}
         {ready && (route.name === "page" || route.name === "title") && (
-          <PageView
-            // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す
-            key={isOwner ? "owner" : "reader"}
-            target={
-              route.name === "page"
-                ? { by: "id", id: route.id }
-                : { by: "title", title: route.title }
-            }
-            owner={isOwner}
-          />
+          <Suspense fallback={<p className="muted">読み込み中…</p>}>
+            <PageView
+              // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す
+              key={isOwner ? "owner" : "reader"}
+              target={
+                route.name === "page"
+                  ? { by: "id", id: route.id }
+                  : { by: "title", title: route.title }
+              }
+              owner={isOwner}
+            />
+          </Suspense>
         )}
         {ready && route.name === "unknown" && <NotFound />}
       </main>
