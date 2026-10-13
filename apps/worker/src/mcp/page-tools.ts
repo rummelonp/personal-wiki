@@ -1,4 +1,5 @@
-import { z } from "zod";
+// "zod" の `z` を経由すると zod の全ロケールがバンドルに入る（約 580KB）。SDK と同じ "zod/v4" から名前空間で取る
+import * as z from "zod/v4";
 import {
   appendToPageAs,
   createPageAs,

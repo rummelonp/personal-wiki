@@ -1,4 +1,5 @@
-import { z } from "zod";
+// 理由は page-tools.ts の同じ import を参照
+import * as z from "zod/v4";
 import { isPageId } from "../pages/id";
 import {
   type Cursor,

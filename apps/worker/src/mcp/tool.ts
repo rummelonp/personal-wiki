@@ -4,7 +4,7 @@ import type {
   StandardSchemaWithJSON,
   ToolAnnotations,
 } from "@modelcontextprotocol/server";
-import type { z } from "zod";
+import type * as z from "zod/v4";
 import { type Scope, tokenHasScope } from "../auth/principal";
 import type { PageWriteContext } from "../pages/operations";
 
