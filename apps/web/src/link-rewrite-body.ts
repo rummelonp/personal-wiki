@@ -1,4 +1,4 @@
-import { normalizeTitleKey, wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
+import { normalizeTitleKey } from "@personal-wiki/domain/title";
 import { extractDerived, extractWikiLinks, rewriteWikiLinkTargets } from "@personal-wiki/markdown";
 
 /*
@@ -31,21 +31,6 @@ function rewriteStrictly(body: string, renames: ReadonlyMap<string, string>): st
     expected.add(renamed?.ok ? renamed.value : key);
   }
   return sameSet(expected, after.links) && sameSet(before.tags, after.tags) ? rewrite.body : null;
-}
-
-/**
- * 自ページの title を変えるときに、本文の自分への `[[旧 title]]` を新しい title に書き換える。
- * title の保存と同じ要求で送り、Worker の step が開いているページの版を進めないようにする
- * （step は書き換えるリンクが無ければ版を変えずに捨てる）。
- * 新しい title がリンクに書けない、key が変わらない、書き換えると他のリンクやタグが変わるときは、
- * 本文をそのまま返す（Worker も書き換えない）。
- */
-export function rewriteOwnTitleLinks(body: string, oldTitle: string, newTitle: string): string {
-  const oldKey = normalizeTitleKey(oldTitle);
-  const newKey = normalizeTitleKey(newTitle);
-  if (!oldKey.ok || !newKey.ok || oldKey.value === newKey.value) return body;
-  if (wikiLinkUnsafeChars(newTitle).length > 0) return body;
-  return rewriteStrictly(body, new Map([[oldKey.value, newTitle]])) ?? body;
 }
 
 /**

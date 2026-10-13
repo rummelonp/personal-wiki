@@ -1,28 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rebaseOnLinkRewrite, renamesBetween, rewriteOwnTitleLinks } from "./link-rewrite-body";
-
-describe("rewriteOwnTitleLinks", () => {
-  it("自分への旧 title のリンクを、見出しと label を保って新しい title にする", () => {
-    expect(rewriteOwnTitleLinks("[[旧]] と [[旧#節|ラベル]] と [[別]]", "旧", "新")).toBe(
-      "[[新]] と [[新#節|ラベル]] と [[別]]",
-    );
-  });
-
-  it("表記ゆれ（大文字小文字）のリンクも同じ key として書き換える", () => {
-    expect(rewriteOwnTitleLinks("[[abc]] [[ABC]]", "Abc", "Xyz")).toBe("[[Xyz]] [[Xyz]]");
-  });
-
-  it("リンクに書けない title、key の変わらない変更では書き換えない", () => {
-    expect(rewriteOwnTitleLinks("[[旧]]", "旧", "新#")).toBe("[[旧]]");
-    expect(rewriteOwnTitleLinks("[[abc]]", "abc", "ABC")).toBe("[[abc]]");
-  });
-
-  it("書き換えると他のリンクやタグが変わるなら書き換えない", () => {
-    // 新しい title の ` が前の ` と組んでインラインコードになり、リンクが消える
-    const body = "a ` b [[Old]] c";
-    expect(rewriteOwnTitleLinks(body, "Old", "Ne`w")).toBe(body);
-  });
-});
+import { rebaseOnLinkRewrite, renamesBetween } from "./link-rewrite-body";
 
 describe("renamesBetween と rebaseOnLinkRewrite", () => {
   it("リンクの target の書き換えだけなら、旧 key から新しい title への対応を返す", () => {
@@ -43,6 +20,15 @@ describe("renamesBetween と rebaseOnLinkRewrite", () => {
       "[[新]] 本文 追記 [[新]]",
     );
     expect(rebaseOnLinkRewrite(base, server, base)).toBe(server);
+  });
+
+  it("手元の表記ゆれ（大文字小文字）のリンクも同じ key として書き換える", () => {
+    expect(rebaseOnLinkRewrite("[[abc]]", "[[Xyz]]", "[[abc]] [[ABC]]")).toBe("[[Xyz]] [[Xyz]]");
+  });
+
+  it("手元に重ねると他のリンクやタグが変わるなら null", () => {
+    // 新しい title の ` が手元で足した ` と組んでインラインコードになり、リンクが消える
+    expect(rebaseOnLinkRewrite("[[Old]]", "[[Ne`w]]", "a ` b [[Old]] c")).toBeNull();
   });
 
   it("書き換えで説明できない変化なら null", () => {

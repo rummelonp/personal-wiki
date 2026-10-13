@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backup, BackupStore } from "./draft-backup";
 import {
+  type Draft,
   type EditorApi,
   type EditorDeps,
   EditorSession,
@@ -647,12 +648,35 @@ describe("title の確定", () => {
     expect(saveStatusOf(session.getState())).toBe("unsaved");
   });
 
-  it("自分への [[旧 title]] は、title と同じ保存で新しい title に書き換える", async () => {
+  it("本文の自分への [[旧 title]] は手元で書き換えない（step の書き換えを取り込む）", async () => {
     const { session, api } = setup({ server: page({ body: "[[題]] と [[別]]" }) });
     const put = vi.spyOn(api, "updatePage");
     session.editTitle("新");
     await session.commitTitle();
-    expect(put).toHaveBeenCalledWith(ID, 1, { title: "新", body: "[[新]] と [[別]]" }, {});
+    expect(put).toHaveBeenCalledWith(ID, 1, { title: "新", body: "[[題]] と [[別]]" }, {});
+  });
+
+  it("title が title_conflict で通らなかったあとに title を変え直しても、他のページへのリンクは書き換えない", async () => {
+    const { session, api, server } = setup({
+      server: page({ title: "メモ", body: "[[週報]] を見る" }),
+    });
+    const sent: Draft[] = [];
+    const real = api.updatePage;
+    api.updatePage = async (id, version, input, options) => {
+      sent.push(input);
+      if (input.title === "週報") return { ok: false, reason: "title_conflict", message: "重複" };
+      return real(id, version, input, options);
+    };
+    session.editTitle("週報");
+    await session.commitTitle();
+    expect(session.getState().error).toBe("重複");
+    session.editTitle("週報 2");
+    await session.commitTitle();
+    expect(sent).toEqual([
+      { title: "週報", body: "[[週報]] を見る" },
+      { title: "週報 2", body: "[[週報]] を見る" },
+    ]);
+    expect(server.page).toMatchObject({ title: "週報 2", body: "[[週報]] を見る" });
   });
 
   it("離脱すると、打っていた title を確定して送る", async () => {
@@ -751,11 +775,100 @@ describe("リンクの書き換えの取り込み", () => {
     expect(session.getState().draft.body).toBe("[[旧]] 手元");
   });
 
+  it("取り直した版が step の版より新しくても、リンクの書き換えだけの差分なら重ねる", async () => {
+    const { session, server } = setup({ server: page({ body: "[[旧]] [[甲]] 本文" }) });
+    session.edit({ title: "題", body: "[[旧]] [[甲]] 本文 追記" });
+    await session.runLinkRewriteStep(async () => {
+      const result = rewriteOnServer(server, "[[新]] [[甲]] 本文");
+      // 取り直す前に、別の step（Cron、別のタブ）がもう一つのリンクを書き換える
+      rewriteOnServer(server, "[[新]] [[乙]] 本文");
+      return result;
+    });
+    expect(session.getState()).toMatchObject({
+      conflict: null,
+      base: { version: 3 },
+      draft: { body: "[[新]] [[乙]] 本文 追記" },
+    });
+  });
+
   it("他のページの書き換えでは何も取りに行かない", async () => {
     const { session, api } = setup();
     await session.runLinkRewriteStep(async () => ({
       processed: { sourcePageId: "BBBBBBBBBBBBBBBBBBBBBB", version: 5 },
     }));
     expect(api.calls).toEqual([]);
+  });
+});
+
+describe("自分のタブの外で走ったリンクの書き換え", () => {
+  const base = () => page({ body: "[[旧]] 本文" });
+  /** 別の step が開いているページのリンクを書き換えたことにする */
+  const rewritten = (server: { page: Page }, body = "[[新]] 本文") => {
+    server.page = { ...server.page, body, version: server.page.version + 1 };
+  };
+
+  it("保存が 409 でも、差分がリンクの書き換えだけなら手元に重ね、同じ形の要求ですぐに送り直す", async () => {
+    const { session, server, api, backup } = setup({ server: base() });
+    const put = vi.spyOn(api, "updatePage");
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    rewritten(server);
+    await session.leave();
+    expect(api.calls).toEqual(["put@1", "get", "put@2"]);
+    expect(put).toHaveBeenLastCalledWith(
+      ID,
+      2,
+      { title: "題", body: "[[新]] 本文 追記" },
+      { keepalive: true },
+    );
+    expect(session.getState().conflict).toBeNull();
+    expect(saveStatusOf(session.getState())).toBe("saved");
+    expect(backup.load(ID)).toBeNull();
+  });
+
+  it("送り直しがまた 409 になっても、続けては送らず自動保存に任せる", async () => {
+    const { session, server, api } = setup({ server: base() });
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    rewritten(server);
+    const real = api.getPage;
+    api.getPage = async (id) => {
+      const res = await real(id);
+      // 取り直した直後に、さらに別の step が書き換える
+      if (server.page.version === 2) rewritten(server, "[[新2]] 本文");
+      return res;
+    };
+    await session.flush();
+    expect(api.calls).toEqual(["put@1", "get", "put@2", "get"]);
+    expect(session.getState()).toMatchObject({
+      conflict: null,
+      base: { version: 3 },
+      draft: { body: "[[新2]] 本文 追記" },
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(api.calls.at(-1)).toBe("put@3");
+    expect(server.page.body).toBe("[[新2]] 本文 追記");
+  });
+
+  it("フォーカス復帰で版が進んでいても、リンクの書き換えだけなら衝突にせず重ねる。確定済みの title は残す", async () => {
+    const { session, server, api } = setup({ server: base() });
+    session.edit({ title: "新題", body: "[[旧]] 本文 追記" });
+    rewritten(server);
+    await session.checkFreshness();
+    expect(session.getState()).toMatchObject({
+      conflict: null,
+      base: { version: 2 },
+      draft: { title: "新題", body: "[[新]] 本文 追記" },
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(api.calls).toEqual(["get", "put@2"]);
+    expect(server.page).toMatchObject({ title: "新題", body: "[[新]] 本文 追記" });
+  });
+
+  it("書き換え以外の変化が混ざっていれば、これまでどおり衝突にする", async () => {
+    const { session, server } = setup({ server: base() });
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    rewritten(server, "[[新]] 他の編集");
+    await session.flush();
+    expect(session.getState().conflict).toMatchObject({ body: "[[新]] 他の編集" });
+    expect(session.getState().draft.body).toBe("[[旧]] 本文 追記");
   });
 });

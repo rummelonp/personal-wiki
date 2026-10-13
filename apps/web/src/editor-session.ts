@@ -1,6 +1,6 @@
 import { singleLineTitle } from "@personal-wiki/domain/title";
 import type { Backup, BackupStore } from "./draft-backup";
-import { rebaseOnLinkRewrite, rewriteOwnTitleLinks } from "./link-rewrite-body";
+import { rebaseOnLinkRewrite } from "./link-rewrite-body";
 import {
   type ApiFailure,
   type ApiResult,
@@ -257,8 +257,13 @@ export class EditorSession {
   }
 
   /**
-   * 打っていた title を draft に入れる。自分への `[[旧 title]]` も同じ保存で新しい title に書き換える。
-   * 読み取り専用の間は入れずに残す（表示は残るので、解決したあとの確定か離脱で入る）。
+   * 打っていた title を draft に入れる。読み取り専用の間は入れずに残す（表示は残るので、解決したあとの
+   * 確定か離脱で入る）。
+   *
+   * 本文の自分への `[[旧 title]]` は手元では書き換えない。改名を受け入れた保存で Worker が自分も
+   * リンク元として積むので、step の書き換えを取り込む。手元で先に書き換えると、title の保存が
+   * 失敗したとき（title_conflict など）に受け入れられていない title が次の書き換えの基準になり、
+   * 他のページへの本物のリンクまで書き換える。
    */
   private applyPendingTitle(): void {
     const { titleInput, draft } = this.state;
@@ -269,7 +274,7 @@ export class EditorSession {
     if (title === "") return;
     this.set({ titleInput: null });
     if (title === draft.title) return;
-    this.edit({ title, body: rewriteOwnTitleLinks(draft.body, draft.title, title) });
+    this.edit({ ...draft, title });
   }
 
   /** 変更が無ければ何も送らない。blur と離脱でも呼ぶ。 */
@@ -278,7 +283,11 @@ export class EditorSession {
     return this.enqueue(() => this.saveIfDirty(options));
   }
 
-  private async saveIfDirty(options: UpdateOptions = {}): Promise<void> {
+  /**
+   * retried は、409 のあとにリンクの書き換えを重ねて送り直した保存。その保存がまた 409 になっても
+   * すぐには送り直さず、自動保存に任せる（書き換えが続く間に送り直しを重ねない）。
+   */
+  private async saveIfDirty(options: UpdateOptions = {}, retried = false): Promise<void> {
     if (!this.canWrite() || !isDirty(this.state)) return;
     const { base } = this.state;
     const snapshot: Draft = { ...this.state.draft };
@@ -295,14 +304,74 @@ export class EditorSession {
       return;
     }
     this.set({ busy: null });
-    await this.handleFailure(res, { kind: "save" }, { sent: snapshot });
+    await this.handleFailure(
+      res,
+      { kind: "save" },
+      {
+        sent: snapshot,
+        // 離脱の保存（keepalive）も、同じ要求の形で送り直す
+        ...(retried ? {} : { resend: () => this.saveIfDirty(options, true) }),
+      },
+    );
   }
 
-  /** 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。 */
+  /** base を進めたあと。未保存の変更が残っていれば新しい版に対して自動保存し、無ければ退避を消す。 */
+  private resumeOnNewBase(): void {
+    if (isDirty(this.state)) {
+      this.edit(this.state.draft);
+    } else {
+      this.clearTimer();
+      this.removeBackup(this.state.base.id);
+    }
+  }
+
+  /**
+   * server が base にリンクの書き換えだけを加えた版なら、手元の未保存の編集を重ねて base を server に
+   * 進め、true を返す。自分のタブの外で走った step（起動時の再開、Cron、別のタブ）が開いているページを
+   * 書き換えても、衝突の画面にしない。衝突の画面で上書きを選ぶと、その書き換えが消えるため。
+   */
+  private async rebaseOnServer(server: Page): Promise<boolean> {
+    if (server.title !== this.state.base.title) return false;
+    // 変換中の本文に重ねると、確定前の文字を含む入力が重ねた本文を上書きする
+    await this.whenSettled();
+    const { base, draft, pendingBackup } = this.state;
+    // 退避が未決の間は、復元か破棄を選ぶまで手元を動かさない
+    if (!this.canWrite() || pendingBackup !== null || server.title !== base.title) return false;
+    // step は title を変えない。手元の確定済みで未保存の title はそのまま残す
+    const body = rebaseOnLinkRewrite(base.body, server.body, draft.body);
+    if (body === null) return false;
+    this.set({ base: server, draft: { title: draft.title, body }, ...NO_ERROR });
+    return true;
+  }
+
+  /**
+   * サーバーで進んだ版を手元に入れる。リンクの書き換えだけの差分なら手元の編集に重ね、そうでなければ、
+   * 手元に未保存の変更が無いときだけそのまま取り込み、あれば衝突にする。
+   */
+  private async takeIn(server: Page): Promise<void> {
+    if (await this.rebaseOnServer(server)) {
+      this.resumeOnNewBase();
+      return;
+    }
+    if (!this.canWrite()) return;
+    this.clearTimer();
+    if (!isDirty(this.state)) {
+      this.set({ base: server, draft: { title: server.title, body: server.body } });
+      this.removeBackup(server.id);
+      return;
+    }
+    this.set({ conflict: server });
+    this.stash();
+  }
+
+  /**
+   * 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。
+   * resend は保存の失敗にだけ渡す。リンクの書き換えを重ねられたら、その版に対して送り直す。
+   */
   private async handleFailure(
     res: ApiFailure,
     op: FailedOp,
-    options: { stash?: boolean; sent?: Draft } = {},
+    options: { stash?: boolean; sent?: Draft; resend?: () => Promise<void> } = {},
   ): Promise<void> {
     const stash = options.stash ?? true;
     switch (res.reason) {
@@ -324,12 +393,16 @@ export class EditorSession {
           // 比べるのは送った内容。最新を取り直す間に入力が進んでも、それは別の編集であり衝突ではない
           if (sent !== undefined && server.title === sent.title && server.body === sent.body) {
             this.set({ base: server, ...NO_ERROR });
-            if (isDirty(this.state)) {
-              // 取り直す間の入力を、新しい版に対して自動保存する
-              this.edit(this.state.draft);
-            } else {
+            // 取り直す間の入力は、新しい版に対して自動保存する
+            this.resumeOnNewBase();
+            return;
+          }
+          if (sent !== undefined && (await this.rebaseOnServer(server))) {
+            if (options.resend !== undefined && isDirty(this.state)) {
               this.clearTimer();
-              this.removeBackup(server.id);
+              await options.resend();
+            } else {
+              this.resumeOnNewBase();
             }
             return;
           }
@@ -380,14 +453,14 @@ export class EditorSession {
         this.set({
           base: server,
           draft: { title: server.title, body: server.body },
+          // 打っている途中の title は、取り込む前の title に対する変更として捨てる。他で title が
+          // 変わっていれば、残して確定するとその改名を衝突の確認なしに上書きするため
           titleInput: null,
         });
         this.removeBackup(server.id);
         return;
       }
-      this.clearTimer();
-      this.set({ conflict: server });
-      this.stash();
+      await this.takeIn(server);
     });
   }
 
@@ -409,7 +482,11 @@ export class EditorSession {
 
   /**
    * step が書き換えた版を取り込む。手元に未保存の編集があれば、サーバーの書き換えを重ねる。
-   * 書き換えだけでは説明できない変化（別の場所の保存）が混ざっていれば、フォーカス復帰と同じく衝突にする。
+   * 書き換えだけでは説明できない変化（別の場所の保存）が混ざっていれば、衝突にする。
+   *
+   * 取り直した版が step の書いた版より新しくても、重ねるかどうかは版の番号ではなく内容で決める。
+   * 間に入ったのが別の step（Cron、別のタブ）の書き換えなら重ねてよく、別の保存なら内容の照合で
+   * 衝突になる。
    */
   private async adoptLinkRewrite(version: number): Promise<void> {
     if (!this.canWrite() || this.state.base.version >= version) return;
@@ -422,36 +499,12 @@ export class EditorSession {
         this.set({ gone: true });
         this.stashIfDirty();
       }
-      // 通信の失敗では取り込まない。次の保存が 409 になり、衝突として差分を見せる
+      // 通信の失敗では取り込まない。次の保存が 409 になったときに取り直して重ねる
       return;
     }
     const server = res.value;
     if (server.version <= this.state.base.version) return;
-    await this.whenSettled();
-    if (!this.canWrite()) return;
-    const { base, draft } = this.state;
-    // step は title を変えない。手元の確定済みで未保存の title はそのまま残す
-    const body =
-      server.title === base.title ? rebaseOnLinkRewrite(base.body, server.body, draft.body) : null;
-    if (body === null || this.state.pendingBackup !== null) {
-      if (!isDirty(this.state)) {
-        this.clearTimer();
-        this.set({ base: server, draft: { title: server.title, body: server.body } });
-        this.removeBackup(server.id);
-        return;
-      }
-      this.clearTimer();
-      this.set({ conflict: server });
-      this.stash();
-      return;
-    }
-    this.set({ base: server, draft: { title: draft.title, body } });
-    if (isDirty(this.state)) {
-      this.edit(this.state.draft);
-    } else {
-      this.clearTimer();
-      this.removeBackup(server.id);
-    }
+    await this.takeIn(server);
   }
 
   /** 衝突を手元の内容で解決する。サーバーの最新の版に重ねて保存する。 */
