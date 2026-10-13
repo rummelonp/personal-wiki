@@ -24,6 +24,13 @@ export default defineConfig({
           fsModuleCache: false,
         },
       },
+      {
+        test: {
+          name: "scripts",
+          include: ["scripts/**/*.test.ts"],
+          environment: "node",
+        },
+      },
     ],
   },
 });
