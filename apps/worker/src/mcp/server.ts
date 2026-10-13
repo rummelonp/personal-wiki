@@ -30,22 +30,43 @@ const INSTRUCTIONS = [
   "- 本文の `[[title]]` は別ノートへのリンク。参照元は list_backlinks、最近の動きは list_recent で見る。",
 ].join("\n");
 
-export function createWikiMcpServer(ctx: WikiToolContext): McpServer {
+/**
+ * tool の登録は、登録のたびに SDK が inputSchema を処理するぶん CPU を使う。tools/call は呼ばれる
+ * 1 件しか使わないので、calledTool が TOOLS にあれば、その 1 件だけを登録する。
+ * 名前が TOOLS に無いときは全件登録し、「tool が無い」という応答は SDK に任せて変えない。
+ */
+export function createWikiMcpServer(ctx: WikiToolContext, calledTool?: string): McpServer {
   const server = new McpServer(
     { name: "personal-wiki", version: "0.0.0" },
     { instructions: INSTRUCTIONS },
   );
-  for (const tool of TOOLS) tool.register(server, ctx);
+  const called = TOOLS.filter((tool) => tool.name === calledTool);
+  for (const tool of called.length > 0 ? called : TOOLS) tool.register(server, ctx);
   return server;
 }
 
-// handler は factory に env を渡さないので、リクエストごとの値は authInfo.extra に載せて factory へ届ける
-const CONTEXT_KEY = "wikiToolContext";
+/** handler が factory に渡す、リクエスト 1 件ぶんの値 */
+interface McpRequestScope {
+  context: WikiToolContext;
+  /** tools/call の対象の tool 名。tools/call でなければ undefined */
+  calledTool: string | undefined;
+}
 
-function contextOf(authInfo: AuthInfo | undefined): WikiToolContext {
-  const context = authInfo?.extra?.[CONTEXT_KEY];
-  if (context === undefined) throw new Error("/mcp の handler に tool の context が渡されていない");
-  return context as WikiToolContext;
+// handler は factory に env を渡さないので、リクエストごとの値は authInfo.extra に載せて factory へ届ける
+const SCOPE_KEY = "wikiMcpRequestScope";
+
+function scopeOf(authInfo: AuthInfo | undefined): McpRequestScope {
+  const scope = authInfo?.extra?.[SCOPE_KEY];
+  if (scope === undefined) throw new Error("/mcp の handler にリクエストの値が渡されていない");
+  return scope as McpRequestScope;
+}
+
+function calledToolName(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const { method, params } = body as { method?: unknown; params?: unknown };
+  if (method !== "tools/call" || typeof params !== "object" || params === null) return undefined;
+  const { name } = params as { name?: unknown };
+  return typeof name === "string" ? name : undefined;
 }
 
 export interface McpRoutesOptions {
@@ -74,11 +95,17 @@ const ALLOWED_ORIGIN_HOSTNAMES: string[] = [];
  * GET と DELETE（セッションの操作）は SDK の stateless の経路が 405 で返す。
  */
 export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRoutesOptions) {
-  const handler = createMcpHandler(({ authInfo }) => createWikiMcpServer(contextOf(authInfo)), {
-    onerror: (error) => {
-      console.error(JSON.stringify({ event: "mcp.error", error: error.message }));
+  const handler = createMcpHandler(
+    ({ authInfo }) => {
+      const { context, calledTool } = scopeOf(authInfo);
+      return createWikiMcpServer(context, calledTool);
     },
-  });
+    {
+      onerror: (error) => {
+        console.error(JSON.stringify({ event: "mcp.error", error: error.message }));
+      },
+    },
+  );
   return app.all("/mcp", requireToken("read"), async (c) => {
     const rejected = originValidationResponse(c.req.raw, ALLOWED_ORIGIN_HOSTNAMES);
     if (rejected !== undefined) return rejected;
@@ -112,7 +139,7 @@ export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRo
         token: "",
         clientId: principal.kind === "token" ? principal.name : principal.kind,
         scopes: principal.kind === "token" ? [...principal.scopes] : [],
-        extra: { [CONTEXT_KEY]: context },
+        extra: { [SCOPE_KEY]: { context, calledTool: calledToolName(parsedBody) } },
       },
       ...(parsedBody === undefined ? {} : { parsedBody }),
     });
