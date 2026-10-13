@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { buildClient, type PageJson, snapshotDb, T0 } from "../test/pages";
-import { MAX_BODY_BYTES } from "./store";
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "./store";
 
 async function revisionsOf(pageId: string) {
   const { results } = await env.DB.prepare(
@@ -107,7 +107,37 @@ describe("POST /api/pages", () => {
       json: { title: "big", body: "あ".repeat(Math.floor(MAX_BODY_BYTES / 3) + 1) },
     });
     expect(over.status).toBe(413);
-    expect(await over.json()).toEqual({ error: "body_too_large" });
+    expect(await over.json()).toEqual({ error: "body_too_large", max: MAX_BODY_BYTES });
+  });
+
+  it("JSON を解析する前に、Content-Length が上限を大きく超えるリクエストを 413 にする", async () => {
+    const { request } = await buildClient();
+    // JSON として壊れた本文を送る。解析まで進めば 400 invalid_json になる
+    const huge = "x".repeat((MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 2048);
+    const res = await request("/api/pages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": String(huge.length) },
+      body: huge,
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "body_too_large", max: MAX_BODY_BYTES });
+  });
+
+  it("title は単一行にしたあとの UTF-8 で MAX_TITLE_BYTES まで。超えたら 400 title_too_long", async () => {
+    const { request } = await buildClient();
+    const atLimit = await request("/api/pages", {
+      method: "POST",
+      json: { title: `${"t".repeat(MAX_TITLE_BYTES)}\n`, body: "" },
+    });
+    expect(atLimit.status).toBe(201);
+    const before = await snapshotDb();
+    const over = await request("/api/pages", {
+      method: "POST",
+      json: { title: "あ".repeat(Math.floor(MAX_TITLE_BYTES / 3) + 1), body: "" },
+    });
+    expect(over.status).toBe(400);
+    expect(await over.json()).toEqual({ error: "title_too_long", max: MAX_TITLE_BYTES });
+    expect(await snapshotDb()).toEqual(before);
   });
 
   it("title_key が同じページがあれば 409 title_conflict", async () => {

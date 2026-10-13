@@ -11,6 +11,8 @@ import {
   deletePage,
   findPageById,
   findPageByTitle,
+  MAX_BODY_BYTES,
+  MAX_TITLE_BYTES,
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,
@@ -70,8 +72,10 @@ function writeErrorResponse(
       return errorResponse(c, 400, "invalid_title", {
         message: "title が空か、空白だけになっている",
       });
+    case "title_too_long":
+      return errorResponse(c, 400, "title_too_long", { max: MAX_TITLE_BYTES });
     case "body_too_large":
-      return errorResponse(c, 413, "body_too_large");
+      return errorResponse(c, 413, "body_too_large", { max: MAX_BODY_BYTES });
     case "not_found":
       return c.notFound();
     case "version_conflict":
@@ -90,6 +94,14 @@ function writeErrorResponse(
   }
 }
 
+/**
+ * JSON を解析する前に Content-Length で拒む上限。巨大な JSON の解析で CPU を使い切らないようにする。
+ * 正当なリクエストを拒まないよう、title と本文を上限まで入れ、全文字を JSON の最長のエスケープ
+ * （制御文字の \u00XX で 1 バイトが 6 バイト）にした大きさに、キーと記号の分を足して決める。
+ * Content-Length の無いリクエストは解析後の本文の検査に任せる。
+ */
+const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
+
 type FieldSpec = Record<string, "string" | "number" | "string_or_null">;
 
 type ParsedBody = { ok: true; value: Record<string, unknown> } | { ok: false; response: Response };
@@ -104,6 +116,13 @@ async function readJsonBody(
   spec: FieldSpec,
   required: readonly string[],
 ): Promise<ParsedBody> {
+  const length = Number(c.req.header("Content-Length"));
+  if (length > MAX_REQUEST_BYTES) {
+    return {
+      ok: false,
+      response: errorResponse(c, 413, "body_too_large", { max: MAX_BODY_BYTES }),
+    };
+  }
   let json: unknown;
   try {
     json = await c.req.json();

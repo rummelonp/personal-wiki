@@ -26,7 +26,7 @@ export async function buildClient(options: { scopes?: "read" | "read write"; nam
   const app = createApp({ now: () => clock.now, recordWrite: (m) => metrics.push(m) });
   const request = (
     path: string,
-    init: { method?: string; headers?: Record<string, string>; json?: unknown } = {},
+    init: { method?: string; headers?: Record<string, string>; json?: unknown; body?: string } = {},
   ) =>
     app.request(
       path,
@@ -37,7 +37,7 @@ export async function buildClient(options: { scopes?: "read" | "read write"; nam
           ...(init.json === undefined ? {} : { "Content-Type": "application/json" }),
           ...init.headers,
         },
-        ...(init.json === undefined ? {} : { body: JSON.stringify(init.json) }),
+        body: init.json === undefined ? (init.body ?? null) : JSON.stringify(init.json),
       },
       env,
     );

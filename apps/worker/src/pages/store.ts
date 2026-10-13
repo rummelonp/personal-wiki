@@ -34,8 +34,15 @@ export interface Page {
  */
 export const MAX_BODY_BYTES = 65_536;
 
+/**
+ * title の上限（UTF-8 のバイト数）。title は一覧やリンクの解決で何度も読み書きし、title_key の
+ * 索引にも入るので、本文と別に小さく抑える。
+ */
+export const MAX_TITLE_BYTES = 1024;
+
 export type InputError =
   | { ok: false; reason: "invalid_title" }
+  | { ok: false; reason: "title_too_long" }
   | { ok: false; reason: "body_too_large" };
 
 export type WriteError =
@@ -105,7 +112,11 @@ function prepareContent(rawTitle: string, body: string): PreparedContent | Input
   const title = singleLineTitle(rawTitle);
   const key = normalizeTitleKey(title);
   if (!key.ok) return { ok: false, reason: "invalid_title" };
-  if (new TextEncoder().encode(body).length > MAX_BODY_BYTES) {
+  const encoder = new TextEncoder();
+  if (encoder.encode(title).length > MAX_TITLE_BYTES) {
+    return { ok: false, reason: "title_too_long" };
+  }
+  if (encoder.encode(body).length > MAX_BODY_BYTES) {
     return { ok: false, reason: "body_too_large" };
   }
   return { ok: true, title, titleKey: key.value, body };
