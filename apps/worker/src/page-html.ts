@@ -13,62 +13,50 @@ export interface PageMeta {
   excerpt: string | null;
 }
 
-/**
- * HTML のナビゲーションのパスの種類。
- * - home: `/`
- * - page: ページの URL（`/p/<id>` か `/<title>`）で、principal が読めるページが見つかった
- * - notFound: それ以外。ページが無い、匿名から見た draft の title、ページの URL の形でないパスを区別しない
- */
-export type HtmlTarget = { kind: "home" } | { kind: "page"; page: PageMeta } | { kind: "notFound" };
-
 const META_COLUMNS = "p.id, p.title, p.visibility, e.excerpt";
 const META_FROM = "pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id";
 
 /**
- * パスを解決して、差し込むページを決める。D1 は多くて 1 回引く。
+ * ページの URL（`/p/<id>` か `/<title>`）のパスから、principal が読めるページを引く。D1 は多くて 1 回引く。
+ * 見つからなければ null で、ページが無い、匿名から見た draft の title、ページの URL の形でないパスを区別しない。
  * title の解決は findPageByTitle と同じ条件で、principal が draft を読めなければ draft を返さない。
  * id の解決は visibility で絞らない（draft は id を知っていれば読める）。
  *
  * パスは c.req.path ではなく生の pathname から自分で 1 回だけ decode する。c.req.path は `%2F` などを
  * 残す decodeURI 相当で、title に `/` を含むページの URL（titlePath が `%2F` にする）を引けないため。
  */
-export async function resolveHtmlTarget(
+export async function findPageForPath(
   db: D1Database,
-  url: URL,
+  pathname: string,
   principal: Principal,
-): Promise<HtmlTarget> {
-  const { pathname } = url;
-  if (pathname === "/") return { kind: "home" };
-
+): Promise<PageMeta | null> {
   const idMatch = /^\/p\/([^/]+)\/?$/.exec(pathname);
   if (idMatch !== null) {
     const id = idMatch[1] as string;
-    if (!isPageId(id)) return { kind: "notFound" };
-    const page = await db
+    if (!isPageId(id)) return null;
+    return db
       .prepare(`SELECT ${META_COLUMNS} FROM ${META_FROM} WHERE p.id = ?1 AND p.deleted_at IS NULL`)
       .bind(id)
       .first<PageMeta>();
-    return page === null ? { kind: "notFound" } : { kind: "page", page };
   }
 
   let title: string;
   try {
     title = decodeURIComponent(pathname.slice(1));
   } catch {
-    return { kind: "notFound" };
+    return null;
   }
   // 予約語の segment（`/P/...` や `/API` など、大文字小文字を畳むと予約語になるもの）は D1 を引かない
-  if (titlePath(title) === null) return { kind: "notFound" };
+  if (titlePath(title) === null) return null;
   const key = normalizeTitleKey(title);
-  if (!key.ok) return { kind: "notFound" };
-  const page = await db
+  if (!key.ok) return null;
+  return db
     .prepare(
       `SELECT ${META_COLUMNS} FROM ${META_FROM}
        WHERE p.title_key = ?1 AND p.deleted_at IS NULL AND (?2 = 0 OR p.visibility = 'public')`,
     )
     .bind(key.value, publicOnlyFlag(readableVisibilityOf(principal)))
     .first<PageMeta>();
-  return page === null ? { kind: "notFound" } : { kind: "page", page };
 }
 
 /**

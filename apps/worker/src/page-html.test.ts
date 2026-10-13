@@ -115,6 +115,7 @@ describe("public のページの HTML", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
     expect(res.headers.get("Vary")).toContain("Cookie");
     expect(res.headers.get("ETag")).toBeNull();
+    expect(res.headers.get("Content-Length")).toBeNull();
     expect(metaOf(await res.text())).toEqual({
       title: "Open Note - wiki",
       ogTitle: "Open Note",
@@ -165,13 +166,28 @@ describe("public のページの HTML", () => {
   });
 });
 
+describe("owner と token の HTML", () => {
+  it("public のページは private, no-store で、noindex を付けない", async () => {
+    const { navigate, cookie } = await seed();
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    for (const headers of [{ Cookie: cookie }, { Authorization: `Bearer ${token}` }]) {
+      const res = await navigate(`/${encodeURIComponent("Open Note")}`, headers);
+      const label = Object.keys(headers)[0];
+      expect(res.status, label).toBe(200);
+      expect(res.headers.get("Cache-Control"), label).toBe("private, no-store");
+      expect(res.headers.get("X-Robots-Tag"), label).toBeNull();
+      expect(metaOf(await res.text()).ogUrl, label).toBe(`${ORIGIN}/Open%20Note`);
+    }
+  });
+});
+
 describe("draft のページの HTML", () => {
-  it("匿名の /p/<draft の id> は 200 で、noindex、no-referrer、no-store を付け、OGP も差し込む", async () => {
+  it("匿名の /p/<draft の id> は 200 で、noindex と no-store を付け、OGP も差し込む", async () => {
     const { navigate, draft } = await seed();
     const res = await navigate(`/p/${draft.id}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
-    expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(res.headers.get("Referrer-Policy")).toBe("same-origin");
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(metaOf(await res.text())).toEqual({
       title: "Hidden Plan - wiki",
@@ -194,7 +210,6 @@ describe("draft のページの HTML", () => {
       expect(res.status, label).toBe(200);
       expect(res.headers.get("Cache-Control"), label).toBe("private, no-store");
       expect(res.headers.get("X-Robots-Tag"), label).toBe("noindex");
-      expect(res.headers.get("Referrer-Policy"), label).toBe("no-referrer");
       const meta = metaOf(await res.text());
       expect(meta.ogTitle, label).toBe("Hidden Plan");
       expect(meta.ogUrl, label).toBe(`${ORIGIN}/p/${draft.id}`);
@@ -274,15 +289,128 @@ describe("見つからないパス", () => {
     }
   });
 
-  it("HTML を受け付けないリクエストは、ページがあっても JSON の 404", async () => {
+  it("HEAD もページ、見つからないパス、トップで GET と同じステータスとヘッダーを返す", async () => {
+    const { call } = await seed();
+    for (const [path, status, robots] of [
+      ["/Open%20Note", 200, null],
+      ["/Missing%20Page", 404, "noindex"],
+      ["/", 200, null],
+    ] as const) {
+      const res = await call(path, { method: "HEAD", headers: { Accept: HTML_ACCEPT } });
+      expect(res.status, path).toBe(status);
+      expect(res.headers.get("Content-Type"), path).toBe("text/html; charset=utf-8");
+      expect(res.headers.get("X-Robots-Tag"), path).toBe(robots);
+    }
+  });
+});
+
+describe("Accept による分岐", () => {
+  // Accept の無い要求、*/* だけの要求（空白は無視）
+  const anyAccepts = [undefined, "*/*", " */* "];
+  const withAccept = (accept: string | undefined): RequestInit =>
+    accept === undefined ? {} : { headers: { Accept: accept } };
+
+  it("Accept が無いか */* だけなら、読めるページに限って書き換えた HTML を返す", async () => {
+    const { call, cookie, draft } = await seed();
+    for (const accept of anyAccepts) {
+      const label = String(accept);
+      const open = await call("/Open%20Note", withAccept(accept));
+      expect(open.status, label).toBe(200);
+      expect(open.headers.get("X-Robots-Tag"), label).toBeNull();
+      expect(metaOf(await open.text()).ogTitle, label).toBe("Open Note");
+
+      const byId = await call(`/p/${draft.id}`, withAccept(accept));
+      expect(byId.status, label).toBe(200);
+      expect(byId.headers.get("X-Robots-Tag"), label).toBe("noindex");
+      expect(metaOf(await byId.text()).ogTitle, label).toBe("Hidden Plan");
+
+      const init = withAccept(accept);
+      const asOwner = await call("/Hidden%20Plan", {
+        headers: { ...(init.headers as Record<string, string>), Cookie: cookie },
+      });
+      expect(asOwner.status, label).toBe(200);
+      expect(metaOf(await asOwner.text()).ogTitle, label).toBe("Hidden Plan");
+    }
+  });
+
+  it("Accept が無いか */* だけでも、匿名の draft の title と存在しない title は同じ JSON の 404", async () => {
+    const { call, draft } = await seed();
+    for (const accept of anyAccepts) {
+      const responses = await Promise.all(
+        ["/Hidden%20Plan", "/hidden%20plan", "/Missing%20Page", "/p/AAAAAAAAAAAAAAAAAAAAAA"].map(
+          async (path) => ({ path, ...(await snapshot(await call(path, withAccept(accept)))) }),
+        ),
+      );
+      const [first, ...others] = responses;
+      const { path: _path, ...expected } = first as (typeof responses)[number];
+      expect(expected.status, String(accept)).toBe(404);
+      expect(JSON.parse(expected.body), String(accept)).toEqual({ error: "not_found" });
+      for (const { path, ...response } of others) {
+        expect(response, `${accept} ${path}`).toEqual(expected);
+      }
+      const serialized = JSON.stringify(responses);
+      for (const word of [draft.id, "zebrafish"]) expect(serialized, word).not.toContain(word);
+    }
+  });
+
+  it("JSON や画像など他の型を明示した要求は、ページがあっても JSON の 404", async () => {
     const { call, open } = await seed();
     for (const path of ["/Open%20Note", `/p/${open.id}`]) {
-      for (const accept of [undefined, "application/json"]) {
-        const res = await call(path, accept === undefined ? {} : { headers: { Accept: accept } });
-        expect(res.status, path).toBe(404);
+      for (const accept of [
+        "application/json",
+        "image/avif,image/webp,*/*",
+        "*/*;q=0.8",
+        "application/json, */*",
+      ]) {
+        const res = await call(path, withAccept(accept));
+        expect(res.status, `${accept} ${path}`).toBe(404);
         expect(await res.json()).toEqual({ error: "not_found" });
       }
     }
+  });
+});
+
+describe("D1 や ASSETS の失敗", () => {
+  const failingDb = {
+    prepare: () => ({
+      bind: () => ({
+        first: async () => {
+          throw new Error("D1 is unavailable");
+        },
+      }),
+    }),
+  } as unknown as D1Database;
+
+  it("D1 の検索が失敗したら、書き換えない index.html を 503、noindex、no-store で返す", async () => {
+    const app = createApp();
+    for (const path of ["/Open%20Note", "/p/AAAAAAAAAAAAAAAAAAAAAA"]) {
+      const res = await app.request(
+        path,
+        { headers: { Accept: HTML_ACCEPT } },
+        { ...ownerEnv(), ASSETS: assets, DB: failingDb },
+      );
+      expect(res.status, path).toBe(503);
+      expect(await res.text(), path).toBe(INDEX_HTML);
+      expect(res.headers.get("X-Robots-Tag"), path).toBe("noindex");
+      expect(res.headers.get("Cache-Control"), path).toBe("no-store");
+      expect(res.headers.get("ETag"), path).toBeNull();
+    }
+  });
+
+  it("ASSETS の取得も失敗したときは 500 で、D1 の失敗を未処理の拒否として残さない", async () => {
+    const brokenAssets = {
+      fetch: async (input: RequestInfo | URL) => {
+        const { pathname } = new URL(String(input instanceof Request ? input.url : input));
+        if (pathname !== "/") return new Response("not found", { status: 404 });
+        throw new Error("assets are unavailable");
+      },
+    } as unknown as Fetcher;
+    const res = await createApp().request(
+      "/Open%20Note",
+      { headers: { Accept: HTML_ACCEPT } },
+      { ...ownerEnv(), ASSETS: brokenAssets, DB: failingDb },
+    );
+    expect(res.status).toBe(500);
   });
 });
 
@@ -301,6 +429,20 @@ describe("値のエスケープ", () => {
     expect(meta.ogTitle).toBe(title);
     expect(meta.ogDescription).toBe('1 < 2 & "x" &lt;y&gt;');
     expect(meta.ogUrl).toBe(`${ORIGIN}/${encodeURIComponent(title)}`);
+  });
+
+  it("抜粋の改行や制御文字も属性値の中に収まる", async () => {
+    const { navigate, create } = await seed();
+    const page = await create("Multiline", "仮の本文", "public");
+    const excerpt = "一行目\n二行目\r\n\t三行目\u0007終わり";
+    await env.DB.prepare("UPDATE page_excerpts SET excerpt = ?2 WHERE page_id = ?1")
+      .bind(page.id, excerpt)
+      .run();
+    const html = await (await navigate(`/p/${page.id}`)).text();
+    const meta = metaOf(html);
+    expect(meta.ogDescription).toBe(excerpt);
+    expect(meta.ogTitle).toBe("Multiline");
+    expect(html).toContain("</head><body>");
   });
 
   it("抜粋が空か無いページは og:description を出さない", async () => {

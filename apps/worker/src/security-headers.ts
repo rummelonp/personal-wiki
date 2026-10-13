@@ -4,8 +4,7 @@ import type { AppEnv } from "./env";
 
 /**
  * すべての応答に付けるヘッダー。早期に返す 400 や 404 にも効かせるため、最初に登録する。
- * - Referrer-Policy は、ページの URL（title を含む）を外部のリンク先へ送らないため。ハンドラが
- *   より厳しい値（draft の HTML の no-referrer）を付けていれば上書きしない
+ * - Referrer-Policy は、ページの URL（title を含む）を外部のリンク先へ送らないため
  * - `/api/*` の X-Robots-Tag: noindex は、匿名で読める JSON（ページの本文や一覧）を検索エンジンに
  *   載せないため。HTML の noindex は withHtmlHeaders が別に付ける
  */
@@ -13,7 +12,7 @@ export const securityHeaders = defineBaseMiddleware(
   createMiddleware<AppEnv>(async (c, next) => {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
-    if (!c.res.headers.has("Referrer-Policy")) c.header("Referrer-Policy", "same-origin");
+    c.header("Referrer-Policy", "same-origin");
     if (c.req.path.startsWith("/api/")) c.header("X-Robots-Tag", "noindex");
   }),
 );
