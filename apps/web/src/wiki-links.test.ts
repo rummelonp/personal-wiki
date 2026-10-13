@@ -115,6 +115,46 @@ describe("ページ embed", () => {
   });
 });
 
+describe("embedPageId", () => {
+  it("取得前は null、取得すると埋め込み先の id を返す", async () => {
+    const { links } = setup([pageOf("B", "別", "本文")]);
+    expect(links.embedPageId("別")).toBeNull();
+    links.resolvePageEmbed("別");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(links.embedPageId("別")).toBe("B");
+  });
+
+  it("無い・読めないページは null のまま（匿名の draft の id を持たない）", async () => {
+    const { links } = setup([]);
+    links.resolvePageEmbed("無い");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(links.resolvePageEmbed("無い")).toEqual({ kind: "unresolved" });
+    expect(links.embedPageId("無い")).toBeNull();
+  });
+
+  it("取り直して読めなくなったら、前の id を捨てる", async () => {
+    const pages = [pageOf("B", "別", "本文")];
+    const { links } = setup(pages);
+    links.resolvePageEmbed("別");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(links.embedPageId("別")).toBe("B");
+
+    pages.length = 0;
+    links.refresh();
+    links.resolvePageEmbed("別");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(links.embedPageId("別")).toBeNull();
+  });
+
+  it("dispose で捨てる", async () => {
+    const { links } = setup([pageOf("B", "別", "本文")]);
+    links.resolvePageEmbed("別");
+    await vi.advanceTimersByTimeAsync(0);
+    links.dispose();
+    expect(links.embedPageId("別")).toBeNull();
+  });
+});
+
 describe("refreshTitles", () => {
   it("title の確認だけを取り直し、embed の本文は取り直さない", async () => {
     const { links, find, resolve } = setup([pageOf("B", "別", "本文")]);

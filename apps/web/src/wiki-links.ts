@@ -33,6 +33,12 @@ export interface WikiLinkSources {
 }
 
 export interface WikiLinks extends WikiLinkSources {
+  /**
+   * 展開した embed の埋め込み先の id。`target` は `![[target]]` に書かれたままの title。
+   * 取得前と、無い・読めないページは null。入れ子の embed の添付の URL は埋め込み先の id で引く。
+   * 匿名には draft の embed が展開されない（API が not_found を返す）ので、draft の id はここに入らない。
+   */
+  embedPageId(target: string): string | null;
   /** クリックの遷移先を title から引く。 */
   lookup(target: string, signal?: AbortSignal): Promise<TitleLookup>;
   /** 画面への復帰など、ほかの page が変わりうるときに呼ぶ。存在の印も embed の本文も取り直す。 */
@@ -80,6 +86,8 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
     onChange: notify,
   });
 
+  const embedIds = new Map<string, string>();
+
   // 破棄後の再利用（StrictMode）のために、使うときに作る
   let embeds: PageEmbedCache | null = null;
   const embedCache = (): PageEmbedCache => {
@@ -88,9 +96,15 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
       onChange: notify,
       load: async (title, signal) => {
         const res = await find(title, withSignal(signal));
-        if (res.ok) return { id: res.value.id, title: res.value.title, text: res.value.body };
+        if (res.ok) {
+          embedIds.set(title, res.value.id);
+          return { id: res.value.id, title: res.value.title, text: res.value.body };
+        }
         // 無い・読めないは null。それ以外（通信、5xx、ログイン切れ）は reject して再試行させる
-        if (res.reason === "not_found") return null;
+        if (res.reason === "not_found") {
+          embedIds.delete(title);
+          return null;
+        }
         throw new Error(res.reason);
       },
     });
@@ -100,6 +114,7 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
   return {
     resolveWikiLink: (target) => titles.isResolved(target),
     resolvePageEmbed: (target) => embedCache().resolve(target),
+    embedPageId: (target) => embedIds.get(target) ?? null,
     hrefFor(link) {
       const hash = hashOfLink(link);
       if (link.target === "") return hash === "" ? null : hash;
@@ -122,6 +137,7 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
       titles.dispose();
       embeds?.dispose();
       embeds = null;
+      embedIds.clear();
     },
   };
 }
