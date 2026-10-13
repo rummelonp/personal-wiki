@@ -215,13 +215,13 @@ export class EditorSession {
       return;
     }
     this.set({ busy: null });
-    await this.handleFailure(res, { adoptSame: true });
+    await this.handleFailure(res, { sent: snapshot });
   }
 
   /** 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。 */
   private async handleFailure(
     res: ApiFailure,
-    options: { stash?: boolean; adoptSame?: boolean } = {},
+    options: { stash?: boolean; sent?: Draft } = {},
   ): Promise<void> {
     const stash = options.stash ?? true;
     switch (res.reason) {
@@ -237,13 +237,19 @@ export class EditorSession {
         const latest = await this.api.getPage(this.state.base.id);
         if (latest.ok) {
           const server = latest.value;
-          const { draft } = this.state;
+          const { sent } = options;
           // 別の場所で同じ内容が保存されていれば、見せる差分が無いので衝突にしない
-          // （削除や visibility の変更は、版が変わったこと自体を知らせたいので対象外）
-          if (options.adoptSame && server.title === draft.title && server.body === draft.body) {
-            this.clearTimer();
+          // （削除や visibility の変更は、版が変わったこと自体を知らせたいので対象外）。
+          // 比べるのは送った内容。最新を取り直す間に入力が進んでも、それは別の編集であり衝突ではない
+          if (sent !== undefined && server.title === sent.title && server.body === sent.body) {
             this.set({ base: server, error: null });
-            this.removeBackup(server.id);
+            if (isDirty(this.state)) {
+              // 取り直す間の入力を、新しい版に対して自動保存する
+              this.edit(this.state.draft);
+            } else {
+              this.clearTimer();
+              this.removeBackup(server.id);
+            }
             return;
           }
           this.set({ conflict: server });

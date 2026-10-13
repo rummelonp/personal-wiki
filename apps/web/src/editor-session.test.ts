@@ -219,6 +219,34 @@ describe("409 の衝突", () => {
     expect(backup.load(ID)).toBeNull();
   });
 
+  it("最新を取り直す間に打った入力は、偽の衝突にせず新しい版へ自動保存する", async () => {
+    const { session, api, server, backup } = setup();
+    session.edit({ title: "題", body: "同じ" });
+    server.page = { ...server.page, body: "同じ", version: 2 };
+    const real = api.getPage;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.getPage = async (id) => {
+      await gate;
+      return real(id);
+    };
+    const flushing = session.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    session.edit({ title: "題", body: "同じ 続き" });
+    release();
+    await flushing;
+    const state = session.getState();
+    expect(state.conflict).toBeNull();
+    expect(state.base.version).toBe(2);
+    expect(saveStatusOf(state)).toBe("unsaved");
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(api.calls.at(-1)).toBe("put@2");
+    expect(server.page.body).toBe("同じ 続き");
+    expect(backup.load(ID)).toBeNull();
+  });
+
   it("衝突の時点で手元の内容を localStorage に退避する", async () => {
     const { backup } = await conflicted();
     expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
