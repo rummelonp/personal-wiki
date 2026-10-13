@@ -465,6 +465,8 @@ describe("owner のページ API", () => {
     expect(appended.status).toBe(200);
     const rebuild = await request("/api/admin/derived/rebuild", ownerInit(cookie, "POST", {}));
     expect(rebuild.status).toBe(200);
+    const step = await request("/api/link-rewrites/step", ownerInit(cookie, "POST", {}));
+    expect(step.status).toBe(200);
 
     const { results } = await env.DB.prepare(
       "SELECT DISTINCT actor FROM revisions WHERE page_id = ?",
@@ -485,6 +487,7 @@ describe("owner のページ API", () => {
       ["DELETE", `/api/pages/${id}`, undefined],
       ["PUT", `/api/pages/${id}/visibility`, { visibility: "public" }],
       ["POST", "/api/admin/derived/rebuild", {}],
+      ["POST", "/api/link-rewrites/step", {}],
     ] as const) {
       const res = await request(path, {
         method,

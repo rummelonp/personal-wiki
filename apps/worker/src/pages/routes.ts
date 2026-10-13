@@ -9,9 +9,11 @@ import {
   createPageAs,
   describeWriteError,
   findPageByInputId,
+  linkRewritesField,
   MAX_REQUEST_BYTES,
   type PageWriteContext,
   setVisibilityAs,
+  stepLinkRewritesAs,
   updatePageAs,
   type WriteMetric,
 } from "./operations";
@@ -73,7 +75,12 @@ function errorResponse(
 /** 版の ETag。強い比較で If-Match と突き合わせる。 */
 const etagOf = (version: number) => `"${version}"`;
 
-function pageResponse(c: PagesContext, page: Page, status: 200 | 201 = 200): Response {
+function pageResponse(
+  c: PagesContext,
+  page: Page,
+  status: 200 | 201 = 200,
+  extra: Record<string, unknown> = {},
+): Response {
   c.header("ETag", etagOf(page.version));
   return c.json(
     {
@@ -84,6 +91,7 @@ function pageResponse(c: PagesContext, page: Page, status: 200 | 201 = 200): Res
       version: page.version,
       createdAt: page.createdAt,
       updatedAt: page.updatedAt,
+      ...extra,
     },
     status,
   );
@@ -385,7 +393,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
           body: parsed.value.body as string,
         });
         if (!result.ok) return writeErrorResponse(c, result);
-        return pageResponse(c, result.page);
+        return pageResponse(c, result.page, 200, linkRewritesField(result));
       })
       .post("/api/pages/:id/append", requireScope("write"), async (c) => {
         const id = c.req.param("id");
@@ -444,6 +452,18 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!result.ok) return writeErrorResponse(c, result);
         recordWrite({ op: "delete", actor, pageId: id, rowsWritten: result.rowsWritten });
         return c.body(null, 204);
+      })
+      // title の変更で積んだリンクの書き換えを 1 ページ分進める（pages/link-rewrites.ts）。応答は
+      // draft のリンク元の id と title を含みうるので、書き込める principal だけが呼べる。
+      // remaining が 0 になるまで繰り返す。conflict ならそのまま呼び直せばよい
+      .post("/api/link-rewrites/step", requireScope("write"), async (c) => {
+        const parsed = await readJsonBody(c, { targetPageId: "string" }, []);
+        if (!parsed.ok) return parsed.response;
+        const targetPageId = (parsed.value.targetPageId as string | undefined) ?? null;
+        if (targetPageId !== null && !isPageId(targetPageId)) {
+          return errorResponse(c, 400, "invalid_field", { field: "targetPageId" });
+        }
+        return c.json(await stepLinkRewritesAs(writeContext(c), { targetPageId }));
       })
   );
 }

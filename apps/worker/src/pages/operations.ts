@@ -1,15 +1,18 @@
 import type { Principal } from "../auth/principal";
 import { isPageId } from "./id";
+import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites";
 import { actorOf } from "./revisions";
 import {
   type AppendError,
   appendToPage,
   createPage,
   findPageById,
+  type LinkRewritesQueued,
   MAX_BODY_BYTES,
   MAX_TITLE_BYTES,
   type Page,
   setVisibility,
+  type UpdateSuccess,
   updatePage,
   type Visibility,
   type WriteError,
@@ -36,15 +39,18 @@ export const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
  * どの actor がどのページに書いたかを後から追えるようにする。本文は含めない。
  */
 export interface WriteMetric {
-  op: "create" | "update" | "append" | "delete" | "rebuild" | "visibility";
-  /** revisions.actor と同じ形式 */
+  op: "create" | "update" | "append" | "delete" | "rebuild" | "visibility" | "link_rewrite";
+  /**
+   * revisions.actor と同じ形式。リンクの書き換えで本文を書いたときは revision と同じく rename した
+   * actor、積んだ分を捨てただけのときは呼び出し元
+   */
   actor: string;
   /** 書いたページ。作り直しは 1 回で複数ページを扱いうるので付けない */
   pageId?: string;
   rowsWritten: number;
   /** 追記で版の競合により読み直した場合の試行回数 */
   attempts?: number;
-  /** 作り直しで失敗したページの id */
+  /** 作り直しとリンクの書き換えで失敗したページの id */
   failed?: string[];
 }
 
@@ -77,10 +83,20 @@ export async function createPageAs(
   return result;
 }
 
+/**
+ * 更新の応答に足す linkRewrites。書き換えを積んだか、リンクに書けない title で積まなかったときだけ
+ * 返し、それ以外の保存では応答を GET と同じ形のままにする。
+ */
+export function linkRewritesField({ linkRewrites }: UpdateSuccess): {
+  linkRewrites?: LinkRewritesQueued;
+} {
+  return linkRewrites.queued > 0 || linkRewrites.skipped !== undefined ? { linkRewrites } : {};
+}
+
 export async function updatePageAs(
   ctx: PageWriteContext,
   input: { id: string; expectedVersion: number; title: string; body: string },
-): Promise<WriteSuccess | WriteError> {
+): Promise<UpdateSuccess | WriteError> {
   if (!isPageId(input.id)) return { ok: false, reason: "not_found" };
   const actor = actorOf(ctx.principal);
   const result = await updatePage(ctx.db, { ...input, actor, now: ctx.now() });
@@ -104,6 +120,24 @@ export async function appendToPageAs(
       pageId: input.id,
       rowsWritten: result.rowsWritten,
       attempts: result.attempts,
+    });
+  }
+  return result;
+}
+
+/** 積んだリンクの書き換えを 1 ページ分進める。 */
+export async function stepLinkRewritesAs(
+  ctx: PageWriteContext,
+  input: { targetPageId: string | null },
+): Promise<LinkRewriteStepResult> {
+  const { result, actor } = await stepLinkRewrites(ctx.db, { ...input, now: ctx.now() });
+  if (result.rowsWritten > 0) {
+    ctx.recordWrite({
+      op: "link_rewrite",
+      actor: actor ?? actorOf(ctx.principal),
+      ...(result.processed === null ? {} : { pageId: result.processed.sourcePageId }),
+      rowsWritten: result.rowsWritten,
+      ...(result.failed.length > 0 ? { failed: result.failed } : {}),
     });
   }
   return result;

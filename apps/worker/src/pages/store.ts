@@ -1,4 +1,4 @@
-import { normalizeTitleKey, singleLineTitle } from "@personal-wiki/domain";
+import { normalizeTitleKey, singleLineTitle, wikiLinkUnsafeChars } from "@personal-wiki/domain";
 import type { ReadableVisibility } from "../auth/principal";
 import { clearDerivedStatements, derivedStatements, deriveValues } from "./derived";
 import { generatePageId } from "./id";
@@ -9,7 +9,7 @@ import { revisionStatements } from "./revisions";
  * 失敗すると先行する書き込みも戻る。D1 には対話的なトランザクションが無いので、版の照合は batch の
  * 先頭の guard 文で行い、版が合わなければ save_guard の trigger で batch 全体を失敗させる。
  *
- * 文の順序: guard、revision、派生データ、pages の UPDATE（最後）。
+ * 文の順序: guard、（更新では）リンクの書き換えの積み込み、revision、派生データ、pages の UPDATE（最後）。
  * title_key の UNIQUE 違反は最後の UPDATE で起き、それまでの書き込みごと戻る。
  */
 
@@ -190,7 +190,11 @@ function prepareContent(rawTitle: string, body: string): PreparedContent | Input
   return { ok: true, title, titleKey: key.value, body };
 }
 
-function guardStatement(db: D1Database, id: string, expectedVersion: number): D1PreparedStatement {
+export function guardStatement(
+  db: D1Database,
+  id: string,
+  expectedVersion: number,
+): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO save_guard (page_id) SELECT ?1 WHERE NOT EXISTS
@@ -199,7 +203,7 @@ function guardStatement(db: D1Database, id: string, expectedVersion: number): D1
     .bind(id, expectedVersion);
 }
 
-function sumRowsWritten(results: D1Result[]): number {
+export function sumRowsWritten(results: D1Result[]): number {
   return results.reduce((sum, result) => sum + (result.meta.rows_written ?? 0), 0);
 }
 
@@ -210,7 +214,7 @@ function errorText(error: unknown): string {
   return `${error.message} ${cause}`;
 }
 
-const isVersionConflict = (error: unknown) => errorText(error).includes("version_conflict");
+export const isVersionConflict = (error: unknown) => errorText(error).includes("version_conflict");
 const isTitleConflict = (error: unknown) =>
   errorText(error).includes("UNIQUE constraint failed: pages.title_key");
 
@@ -290,16 +294,86 @@ export interface UpdatePageInput {
   now: number;
 }
 
-/** title と body を置き換える。visibility は変えない。 */
+export interface LinkRewritesQueued {
+  /** 書き換えを積んだリンク元の数（自ページを含む） */
+  queued: number;
+  /**
+   * 新しい title が WikiLink の target に書けない（wikiLinkUnsafeChars）ので積まなかった。
+   * 旧 title へのリンクが他のページに残っているときだけ付く
+   */
+  skipped?: "unsafe_title";
+}
+
+export interface UpdateSuccess extends WriteSuccess {
+  linkRewrites: LinkRewritesQueued;
+}
+
+/*
+ * title_key が変わる保存で、旧 title_key のまま自分を指している links のリンク元。guard が版を照合した
+ * あとで、pages の UPDATE より前に読むので、p は保存前の行になる。title が変わらない保存では
+ * p.title_key = ?2 で 0 行になる。大文字小文字だけの変更も title_key が同じなので積まない。
+ * 派生データの文がこの links の target_page_id を外すので、それより前に置く。
+ */
+const LINK_REWRITE_SOURCES = `FROM links AS l JOIN pages AS p ON p.id = ?1
+  WHERE l.target_page_id = ?1 AND l.target_title_key = p.title_key AND p.title_key <> ?2`;
+
+/**
+ * 書き換えを link_rewrites に積む文。新しい title がリンクに書けないときは積まずに、残るリンクの
+ * 有無だけを数える（title を変えていない保存で skipped を返さないため）。
+ */
+function linkRewritesStatement(
+  db: D1Database,
+  input: { id: string; title: string; titleKey: string; actor: string; now: number },
+): { statement: D1PreparedStatement; unsafe: boolean } {
+  if (wikiLinkUnsafeChars(input.title).length > 0) {
+    return {
+      statement: db
+        .prepare(`SELECT count(*) AS n ${LINK_REWRITE_SOURCES}`)
+        .bind(input.id, input.titleKey),
+      unsafe: true,
+    };
+  }
+  return {
+    statement: db
+      .prepare(
+        `INSERT OR IGNORE INTO link_rewrites
+           (source_page_id, target_page_id, old_title_key, actor, created_at)
+         SELECT l.source_page_id, ?1, l.target_title_key, ?3, ?4 ${LINK_REWRITE_SOURCES}`,
+      )
+      .bind(input.id, input.titleKey, input.actor, input.now),
+    unsafe: false,
+  };
+}
+
+function linkRewritesOf(result: D1Result, unsafe: boolean): LinkRewritesQueued {
+  if (!unsafe) return { queued: result.meta.changes ?? 0 };
+  const count = (result.results as { n: number }[])[0]?.n ?? 0;
+  return count > 0 ? { queued: 0, skipped: "unsafe_title" } : { queued: 0 };
+}
+
+/**
+ * title と body を置き換える。visibility は変えない。
+ * title_key が変わるときは、旧 title へのリンクの書き換えを link_rewrites に積む（書き換えるのは
+ * link-rewrites.ts の step）。
+ */
 export async function updatePage(
   db: D1Database,
   input: UpdatePageInput,
-): Promise<WriteSuccess | WriteError> {
+): Promise<UpdateSuccess | WriteError> {
   const content = prepareContent(input.title, input.body);
   if (!content.ok) return content;
   const { id, expectedVersion } = input;
+  const linkRewrites = linkRewritesStatement(db, {
+    id,
+    title: content.title,
+    titleKey: content.titleKey,
+    actor: input.actor,
+    now: input.now,
+  });
   const statements = [
     guardStatement(db, id, expectedVersion),
+    // 応答の件数を results[1] から読むので、guard の直後から動かさない
+    linkRewrites.statement,
     ...revisionStatements(db, {
       pageId: id,
       version: expectedVersion + 1,
@@ -325,12 +399,17 @@ export async function updatePage(
     if (isTitleConflict(error)) return { ok: false, reason: "title_conflict" };
     throw error;
   }
-  return { ok: true, page: returnedPage(results), rowsWritten: sumRowsWritten(results) };
+  return {
+    ok: true,
+    page: returnedPage(results),
+    rowsWritten: sumRowsWritten(results),
+    linkRewrites: linkRewritesOf(results[1] as D1Result, linkRewrites.unsafe),
+  };
 }
 
 /**
  * 追記の競合で読み直す回数の上限。D1 は 1 invocation あたりのクエリ数に上限（Free で 50）があり、
- * 1 回の試行で読み 2 文と batch の約 12 文を使う。
+ * 1 回の試行で読み 2 文と batch の約 13 文を使う。
  */
 export const APPEND_MAX_ATTEMPTS = 3;
 
@@ -350,7 +429,7 @@ export type AppendError = WriteError | { ok: false; reason: "append_conflict" };
 export async function appendToPage(
   db: D1Database,
   input: AppendInput,
-): Promise<(WriteSuccess & { attempts: number }) | AppendError> {
+): Promise<(UpdateSuccess & { attempts: number }) | AppendError> {
   for (let attempt = 1; attempt <= APPEND_MAX_ATTEMPTS; attempt++) {
     const current = await findPageById(db, input.id);
     if (current === null) return { ok: false, reason: "not_found" };
