@@ -1,4 +1,14 @@
 export {
+  ATTACHMENT_CONTENT_TYPES,
+  ATTACHMENT_MAX_BYTES,
+  type AttachmentContentType,
+  type AttachmentExtension,
+  attachmentExtensionForType,
+  attachmentTypeForName,
+  isAttachmentName,
+  matchesAttachmentMagic,
+} from "./attachment";
+export {
   canonicalPagePath,
   isPageId,
   type PagePath,

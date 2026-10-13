@@ -7,6 +7,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./attachment": "./src/attachment.ts",
     "./page-path": "./src/page-path.ts",
     "./title": "./src/title.ts",
     "./result": "./src/result.ts"
