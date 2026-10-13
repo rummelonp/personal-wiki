@@ -237,7 +237,7 @@ importers:
   apps/worker:
     dependencies:
       '@cloudflare/workers-oauth-provider':
-        specifier: ^1.2.3
+        specifier: 1.2.3
         version: 1.2.3
       '@modelcontextprotocol/server':
         specifier: ^2.0.0
