@@ -10,14 +10,17 @@ export const RESERVED_PATH_SEGMENTS: readonly string[] = ["api", "mcp", "assets"
 /**
  * public のページを `/<title>` で開くときのパス。予約語と重なる title は null で、`/p/<id>` だけで開く。
  *
- * 判定は title_key と同じ畳み方（大文字小文字、全角半角を区別しない）で、`/` の前の部分を見る。
- * パスでは `/` もエンコードするが、プロキシや配信の層が `%2F` を戻しても予約語のパスに入らないよう、
- * 区切りとして扱ったときの先頭でも判定する。`.` と `..` は URL の解決で消えるので使わない。
+ * パスでは `/` もエンコードするが、プロキシや配信の層が `%2F` を戻しても別のパスに入らないよう、
+ * title_key と同じ畳み方（大文字小文字、全角半角を区別しない）をしてから `/` で区切って判定する。
+ * 畳んでから区切るのは、NFKC で全角の `／` が `/` になるため。
+ * - 先頭が予約語か空（`/api` が `//api` になる）なら使わない。
+ * - `.` と `..` の segment は URL の解決で消えたり前の segment を消したりするので、どこにあっても使わない。
  */
 export function titlePath(title: string): string | null {
-  if (title === "." || title === "..") return null;
-  const head = foldTitle(title.split("/", 1)[0] ?? "");
-  if (RESERVED_PATH_SEGMENTS.includes(head)) return null;
+  const segments = foldTitle(title).split("/");
+  const head = segments[0] ?? "";
+  if (head === "" || RESERVED_PATH_SEGMENTS.includes(head)) return null;
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
   return `/${encodeURIComponent(title)}`;
 }
 

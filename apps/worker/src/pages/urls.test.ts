@@ -16,9 +16,22 @@ describe("titlePath", () => {
     }
   });
 
-  it("URL の解決で消える `.` と `..` は null", () => {
-    expect(titlePath(".")).toBeNull();
-    expect(titlePath("..")).toBeNull();
+  it("URL の解決で消える `.` と `..` の segment を含む title は null", () => {
+    for (const title of [".", "..", "../api", "./mcp", "a/../api", "a/.", "．．／api"]) {
+      expect(titlePath(title)).toBeNull();
+    }
+  });
+
+  it("先頭の segment が空の title は null", () => {
+    for (const title of ["/api", "/", "／mcp", "//x"]) {
+      expect(titlePath(title)).toBeNull();
+    }
+  });
+
+  it("全角の `／` も区切りとして予約語を判定する", () => {
+    expect(titlePath("api／pages")).toBeNull();
+    expect(titlePath("ａｐｉ／x")).toBeNull();
+    expect(titlePath("apix／api")).toBe(`/${encodeURIComponent("apix／api")}`);
   });
 });
 
