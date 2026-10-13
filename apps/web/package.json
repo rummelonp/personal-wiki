@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
+    "@personal-wiki/markdown": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

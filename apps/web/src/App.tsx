@@ -1,20 +1,25 @@
 import { useEffect, useState } from "react";
-import { fetchMe, loginHref, logout, type Me } from "./api";
-
-type State = { status: "loading" } | { status: "ready"; me: Me } | { status: "error" };
+import { fetchMe, logout } from "./api";
+import { Header, type SessionState } from "./Header";
+import { HomeView } from "./HomeView";
+import { Link } from "./Link";
+import { PageView } from "./PageView";
+import { homeHref, useRoute } from "./route";
+import { SignInNotice } from "./SignInNotice";
 
 export function App() {
-  const [state, setState] = useState<State>({ status: "loading" });
+  const [session, setSession] = useState<SessionState>({ status: "loading" });
   const [loggingOut, setLoggingOut] = useState(false);
+  const route = useRoute();
 
   useEffect(() => {
     let cancelled = false;
     fetchMe()
       .then((me) => {
-        if (!cancelled) setState({ status: "ready", me });
+        if (!cancelled) setSession({ status: "ready", me });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!cancelled) setSession({ status: "error" });
       });
     return () => {
       cancelled = true;
@@ -25,34 +30,43 @@ export function App() {
     setLoggingOut(true);
     try {
       await logout();
-      setState({ status: "ready", me: { kind: "anonymous" } });
+      setSession({ status: "ready", me: { kind: "anonymous" } });
     } catch {
-      setState({ status: "error" });
+      setSession({ status: "error" });
     } finally {
       setLoggingOut(false);
     }
   }
 
+  const isOwner = session.status === "ready" && session.me.kind === "owner";
+
   return (
     <div className="app">
-      <header className="header">
-        <span className="brand">personal-wiki</span>
-        <div className="session">
-          {state.status === "loading" && <span className="muted">確認中…</span>}
-          {state.status === "error" && <span className="muted">状態を取得できませんでした</span>}
-          {state.status === "ready" && state.me.kind === "owner" && (
-            <>
-              <span>ログイン中</span>
-              <button type="button" onClick={handleLogout} disabled={loggingOut}>
-                ログアウト
-              </button>
-            </>
-          )}
-          {state.status === "ready" && state.me.kind !== "owner" && (
-            <a href={loginHref(window.location)}>ログイン</a>
-          )}
-        </div>
-      </header>
+      <Header
+        session={session}
+        query={route.name === "home" ? route.query : ""}
+        loggingOut={loggingOut}
+        onLogout={() => void handleLogout()}
+      />
+      <main className="main">
+        {session.status === "loading" && <p className="muted">読み込み中…</p>}
+        {session.status === "error" && (
+          <p className="message message-error" role="alert">
+            ログインの状態を取得できませんでした。再読み込みしてください。
+          </p>
+        )}
+        {session.status === "ready" && !isOwner && <SignInNotice />}
+        {isOwner && route.name === "home" && <HomeView query={route.query} />}
+        {isOwner && route.name === "page" && <PageView id={route.id} />}
+        {isOwner && route.name === "unknown" && (
+          <section className="notice">
+            <h1 className="notice-title">このパスのページはありません</h1>
+            <p>
+              <Link href={homeHref()}>最近の更新へ戻る</Link>
+            </p>
+          </section>
+        )}
+      </main>
     </div>
   );
 }

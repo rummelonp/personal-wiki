@@ -1,0 +1,92 @@
+/*
+ * 見た目の値（色、フォント、角丸、余白、影、境界線）はこのファイルのトークンに集める。
+ * 部品の CSS（styles.css）はここで定義した変数だけを参照するので、このファイルを差し替えれば
+ * 全体の印象が変わる。ダークは prefers-color-scheme で色のトークンだけを上書きする。
+ */
+:root {
+  color-scheme: light dark;
+
+  /* 色: 面 */
+  --color-bg: #ffffff; /* ページ全体の背景 */
+  --color-surface: #ffffff; /* ヘッダー、ダイアログ、入力欄の背景 */
+  --color-sunken: #f4f4f5; /* 差分、補助的な面、バッジの背景 */
+  --color-backdrop: rgb(0 0 0 / 0.4); /* ダイアログの背後 */
+
+  /* 色: 文字と線 */
+  --color-fg: #18181b; /* 本文の文字 */
+  --color-fg-muted: #6b6b73; /* 補助の文字（日時、説明） */
+  --color-border: #e4e4e7; /* 区切り線、入力欄の枠 */
+  --color-border-strong: #a1a1aa; /* 強調する枠（フォーカス前のボタンなど） */
+
+  /* 色: 操作 */
+  --color-accent: #18181b; /* リンク、主ボタンの背景 */
+  --color-accent-fg: #ffffff; /* 主ボタンの文字 */
+  --color-focus: #3f3f46; /* フォーカスリング */
+
+  /* 色: 状態 */
+  --color-danger: #b42318; /* 失敗、削除 */
+  --color-danger-bg: #fef3f2; /* 失敗の通知の背景 */
+  --color-warn-bg: #fffaeb; /* 注意の通知の背景（退避、ログイン切れ） */
+  --color-warn-border: #d4a72c; /* 注意の通知の枠 */
+  --color-ok: #3f6f4f; /* 保存済みの表示 */
+  --color-diff-add-bg: #e6f4ea; /* 差分: 手元だけにある行 */
+  --color-diff-del-bg: #fdecea; /* 差分: サーバーだけにある行 */
+
+  /* 文字 */
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans Mono CJK JP", monospace;
+  --font-size-sm: 0.8125rem; /* 補助、バッジ */
+  --font-size-base: 1rem; /* 本文 */
+  --font-size-lg: 1.125rem; /* 一覧のタイトル、小見出し */
+  --font-size-xl: 1.5rem; /* ページ名、見出し */
+  --font-weight-strong: 600; /* 強調、見出し */
+  --line-height: 1.7; /* 本文の行間 */
+  --line-height-tight: 1.35; /* 見出し、ボタン */
+
+  /* 形 */
+  --radius-sm: 4px; /* バッジ、差分 */
+  --radius-md: 8px; /* ボタン、入力欄、通知、ダイアログ */
+  --border-width: 1px; /* 区切り線と枠の太さ */
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.16); /* ダイアログの影 */
+
+  /* 余白 */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2.5rem;
+
+  /* 寸法 */
+  --content-width: 46rem; /* 本文の幅 */
+  --control-height: 2.25rem; /* ボタンと 1 行の入力欄の高さ */
+  --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0b0b0c;
+    --color-surface: #131315;
+    --color-sunken: #1c1c1f;
+    --color-backdrop: rgb(0 0 0 / 0.6);
+
+    --color-fg: #ececef;
+    --color-fg-muted: #9a9aa3;
+    --color-border: #2b2b30;
+    --color-border-strong: #52525b;
+
+    --color-accent: #ececef;
+    --color-accent-fg: #0b0b0c;
+    --color-focus: #c4c4cc;
+
+    --color-danger: #f97066;
+    --color-danger-bg: #2a1512;
+    --color-warn-bg: #2a2412;
+    --color-warn-border: #8a6d1a;
+    --color-ok: #7fbf92;
+    --color-diff-add-bg: #14281b;
+    --color-diff-del-bg: #301917;
+
+    --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.6);
+  }
+}

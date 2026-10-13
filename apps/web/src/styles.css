@@ -1,68 +1,396 @@
-:root {
-  --bg: #ffffff;
-  --fg: #1f2328;
-  --muted: #656d76;
-  --border: #d0d7de;
-  --accent: #0969da;
-  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
-  line-height: 1.6;
-  color: var(--fg);
-  background: var(--bg);
-}
+/* 値はすべて theme.css のトークン経由で書く。色や寸法を直接書かない。 */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #e6edf3;
-    --muted: #8d96a0;
-    --border: #30363d;
-    --accent: #4493f8;
-  }
+html {
+  font-family: var(--font-sans);
+  font-size: 100%;
+  line-height: var(--line-height);
+  color: var(--color-fg);
+  background: var(--color-bg);
 }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--color-bg);
+  overflow-wrap: anywhere;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+:focus-visible {
+  outline: calc(var(--border-width) * 2) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 骨格 */
+
+.app {
+  min-height: 100vh;
 }
 
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .brand {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
+  color: var(--color-fg);
+  text-decoration: none;
 }
 
-.session {
+.search {
+  flex: 1 1 12rem;
+  max-width: var(--content-width);
+}
+
+.search-input {
+  width: 100%;
+}
+
+.header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2) var(--space-3);
+  margin-left: auto;
 }
 
-.muted {
-  color: var(--muted);
+.main {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-6);
 }
 
-a {
-  color: var(--accent);
-}
+/* 部品 */
 
-button {
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
   font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px 12px;
+  line-height: var(--line-height-tight);
+  color: var(--color-fg);
+  text-decoration: none;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
-button:disabled {
+.button:disabled {
   cursor: default;
-  opacity: 0.6;
+  opacity: 0.5;
+}
+
+.button-primary {
+  color: var(--color-accent-fg);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.button-danger {
+  color: var(--color-danger);
+}
+
+.text-input,
+.title-input {
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  font: inherit;
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.badge {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  background: var(--color-sunken);
+  border-radius: var(--radius-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.message {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.message > p {
+  margin: 0 0 var(--space-2);
+}
+
+.message-error {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+}
+
+.message-warn {
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn-border);
+}
+
+.notice {
+  padding: var(--space-5) 0;
+}
+
+.notice-title,
+.section-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+}
+
+.section-subtitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-lg);
+}
+
+/* 一覧 */
+
+.entries {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.entry-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+
+.entry-title:hover {
+  text-decoration: underline;
+}
+
+.entry-time {
+  display: block;
+  font-size: var(--font-size-sm);
+}
+
+.entry-excerpt {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+}
+
+/* 編集画面 */
+
+.editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.status {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.status-saved {
+  color: var(--color-ok);
+}
+
+.status-error,
+.status-conflict,
+.status-auth,
+.status-gone {
+  color: var(--color-danger);
+}
+
+.title-input {
+  display: block;
+  width: 100%;
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.body-editor {
+  display: block;
+  width: 100%;
+  min-height: var(--editor-min-height);
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height);
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}
+
+.editor-meta {
+  margin: var(--space-2) 0 var(--space-5);
+  font-size: var(--font-size-sm);
+}
+
+.backlinks {
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.backlink-list {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+}
+
+/* 衝突 */
+
+.conflict {
+  margin: var(--space-3) 0;
+  padding: var(--space-4);
+  background: var(--color-warn-bg);
+  border: var(--border-width) solid var(--color-warn-border);
+  border-radius: var(--radius-md);
+}
+
+.conflict-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-lg);
+}
+
+.conflict-titles dt {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.conflict-titles dd {
+  margin: 0 0 var(--space-2);
+}
+
+.diff {
+  max-height: 50vh;
+  margin: var(--space-3) 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.diff-row {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  white-space: pre-wrap;
+}
+
+.diff-insert {
+  background: var(--color-diff-add-bg);
+}
+
+.diff-delete {
+  background: var(--color-diff-del-bg);
+}
+
+.diff-mark {
+  flex: none;
+  width: 1em;
+  text-align: center;
+}
+
+.diff-skip {
+  padding: 0 var(--space-2);
+  background: var(--color-sunken);
+}
+
+.diff-legend {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+/* ダイアログ */
+
+.dialog {
+  width: min(100% - var(--space-5), 24rem);
+  padding: var(--space-4);
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.dialog-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-lg);
+}
+
+.field {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.field-label {
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.field .text-input {
+  width: 100%;
 }
