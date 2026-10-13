@@ -1,13 +1,24 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { deployArgs, migrateArgs } from "./deploy.mjs";
-import { composeConfig, readDeployValues, stripJsonc } from "./deploy-config.mjs";
+import { deployArgs, extraArgs, migrateArgs } from "./deploy.mjs";
+import {
+  BASE_CONFIG_PATH,
+  composeConfig,
+  GENERATED_CONFIG_PATH,
+  readDeployValues,
+  stripJsonc,
+  writeGeneratedConfig,
+} from "./deploy-config.mjs";
+
+const UUID = "00000000-0000-0000-0000-000000000000";
 
 const VALUES = {
   hostname: "wiki.test.example",
   d1DatabaseName: "my-wiki",
-  d1DatabaseId: "00000000-0000-0000-0000-000000000000",
+  d1DatabaseId: UUID,
   r2BucketName: "my-wiki-files",
   accountId: undefined,
 };
@@ -50,25 +61,56 @@ describe("stripJsonc", () => {
 });
 
 describe("readDeployValues", () => {
-  it("必須の値と任意の値を読み、名前は既定値で補う", () => {
+  it("必須の値と任意の値を読み、D1 の名前は既定値で補う。R2 は空なら使わない", () => {
     const result = readDeployValues(
-      "WIKI_HOSTNAME=wiki.test.example\nD1_DATABASE_ID=abc\n# コメント\nCLOUDFLARE_ACCOUNT_ID=acct\n",
+      `WIKI_HOSTNAME=wiki.test.example\nD1_DATABASE_ID=${UUID}\n# コメント\nR2_BUCKET_NAME=\nCLOUDFLARE_ACCOUNT_ID=acct\n`,
     );
     expect(result).toEqual({
       values: {
         hostname: "wiki.test.example",
-        d1DatabaseId: "abc",
+        d1DatabaseId: UUID,
         d1DatabaseName: "personal-wiki",
-        r2BucketName: "personal-wiki",
+        r2BucketName: undefined,
         accountId: "acct",
       },
+      warnings: [],
     });
   });
 
+  it("R2_BUCKET_NAME があれば使う", () => {
+    const result = readDeployValues(
+      `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\nR2_BUCKET_NAME=files\n`,
+    );
+    expect(result).toMatchObject({ values: { r2BucketName: "files" } });
+  });
+
   it("足りない必須の値をすべて挙げる。空の値は無いものとして扱う", () => {
-    expect(readDeployValues("")).toEqual({ missing: ["WIKI_HOSTNAME", "D1_DATABASE_ID"] });
-    expect(readDeployValues("WIKI_HOSTNAME=h\nD1_DATABASE_ID=  \n")).toEqual({
-      missing: ["D1_DATABASE_ID"],
+    expect(readDeployValues("")).toEqual({
+      problems: ["WIKI_HOSTNAME がありません", "D1_DATABASE_ID がありません"],
+    });
+    expect(readDeployValues("WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=  \n")).toEqual({
+      problems: ["D1_DATABASE_ID がありません"],
+    });
+  });
+
+  it("スキームやパスを含むホスト名と、UUID でない D1_DATABASE_ID を弾く", () => {
+    for (const hostname of ["https://wiki.example.com", "wiki.example.com/", "a b", "-x.example"]) {
+      expect(
+        readDeployValues(`WIKI_HOSTNAME=${hostname}\nD1_DATABASE_ID=${UUID}\n`),
+      ).toHaveProperty("problems");
+    }
+    expect(readDeployValues("WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=abc\n")).toHaveProperty(
+      "problems",
+    );
+  });
+
+  it("先頭の BOM を無視し、未知のキーは警告する", () => {
+    const result = readDeployValues(
+      `\uFEFFWIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\nR2_BUCKET=typo\n`,
+    );
+    expect(result).toMatchObject({
+      values: { hostname: "h.example" },
+      warnings: ["未知のキー R2_BUCKET は使われません"],
     });
   });
 });
@@ -87,6 +129,21 @@ describe("composeConfig", () => {
     expect(config.r2_buckets).toEqual([{ binding: "BUCKET", bucket_name: "my-wiki-files" }]);
     expect(config.main).toBe("src/index.ts");
     expect(config).not.toHaveProperty("account_id");
+  });
+
+  it("r2BucketName が無ければ BUCKET を外し、他の R2 binding は残す。無くなれば r2_buckets ごと外す", () => {
+    const config = composeConfig(BASE, { ...VALUES, r2BucketName: undefined });
+    expect(config).not.toHaveProperty("r2_buckets");
+    const withOther = {
+      ...BASE,
+      r2_buckets: [...BASE.r2_buckets, { binding: "OTHER", bucket_name: "o" }],
+    };
+    expect(composeConfig(withOther, { ...VALUES, r2BucketName: undefined }).r2_buckets).toEqual([
+      { binding: "OTHER", bucket_name: "o" },
+    ]);
+    expect(() =>
+      composeConfig({ ...BASE, r2_buckets: [] }, { ...VALUES, r2BucketName: undefined }),
+    ).not.toThrow();
   });
 
   it("入力を書き換えない", () => {
@@ -109,6 +166,54 @@ describe("composeConfig", () => {
   it("対象の binding が無ければ例外にする", () => {
     expect(() => composeConfig({ ...BASE, d1_databases: [] }, VALUES)).toThrow(/"DB"/);
     expect(() => composeConfig({ ...BASE, r2_buckets: [] }, VALUES)).toThrow(/"BUCKET"/);
+  });
+});
+
+describe("writeGeneratedConfig", () => {
+  const setup = (envText: string | undefined, baseText = JSON.stringify(BASE)) => {
+    const dir = mkdtempSync(join(tmpdir(), "deploy-config-"));
+    const envPath = join(dir, "deploy.env");
+    const basePath = join(dir, "wrangler.jsonc");
+    const outPath = join(dir, "out.json");
+    if (envText !== undefined) writeFileSync(envPath, envText);
+    writeFileSync(basePath, baseText);
+    const warnings: string[] = [];
+    return { envPath, basePath, outPath, warn: (m: string) => warnings.push(m), warnings };
+  };
+
+  it("合成した設定を outPath に書き、そのパスを返す", () => {
+    const opts = setup(`WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\nX=1\n`);
+    expect(writeGeneratedConfig(opts)).toBe(opts.outPath);
+    const written = JSON.parse(readFileSync(opts.outPath, "utf8"));
+    expect(written.routes[0].pattern).toBe("h.example");
+    expect(written).not.toHaveProperty("r2_buckets");
+    expect(opts.warnings).toHaveLength(1);
+    expect(opts.warnings[0]).toContain(opts.envPath);
+  });
+
+  it("deploy.env が無い・値が足りない・形式が誤りのとき、パスと内容を含む例外にする", () => {
+    const none = setup(undefined);
+    expect(() => writeGeneratedConfig(none)).toThrow(none.envPath);
+    const missing = setup("WIKI_HOSTNAME=h.example\n");
+    expect(() => writeGeneratedConfig(missing)).toThrow(/D1_DATABASE_ID がありません/);
+    expect(() => writeGeneratedConfig(missing)).toThrow(missing.envPath);
+  });
+
+  it("wrangler.jsonc が壊れているとき、そのパスを含む例外にする", () => {
+    const opts = setup(`WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`, "{ not json");
+    expect(() => writeGeneratedConfig(opts)).toThrow(opts.basePath);
+  });
+
+  it("生成物は wrangler.jsonc と同じディレクトリにある（main と migrations_dir の相対パスのため）", () => {
+    expect(dirname(GENERATED_CONFIG_PATH)).toBe(dirname(BASE_CONFIG_PATH));
+  });
+});
+
+describe("extraArgs", () => {
+  it("pnpm が渡す先頭の -- だけを除く", () => {
+    expect(extraArgs(["--", "--dry-run"])).toEqual(["--dry-run"]);
+    expect(extraArgs(["--dry-run", "--", "x"])).toEqual(["--dry-run", "--", "x"]);
+    expect(extraArgs([])).toEqual([]);
   });
 });
 

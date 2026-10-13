@@ -21,7 +21,7 @@ const R2_BINDING = "BUCKET";
  *   hostname: string;
  *   d1DatabaseName: string;
  *   d1DatabaseId: string;
- *   r2BucketName: string;
+ *   r2BucketName: string | undefined;
  *   accountId: string | undefined;
  * }} DeployValues
  */
@@ -81,38 +81,67 @@ export function stripJsonc(text) {
   return out;
 }
 
+const KNOWN_KEYS = new Set([
+  "WIKI_HOSTNAME",
+  "D1_DATABASE_ID",
+  "D1_DATABASE_NAME",
+  "R2_BUCKET_NAME",
+  "CLOUDFLARE_ACCOUNT_ID",
+]);
+const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * deploy.env の内容から、デプロイ先ごとの値を取り出す。足りない必須の値はすべてまとめて報告する。
+ * deploy.env の内容から、デプロイ先ごとの値を取り出す。
+ * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
+ * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
  * @param {string} envText
- * @returns {{ values: DeployValues } | { missing: string[] }}
+ * @returns {{ values: DeployValues; warnings: string[] } | { problems: string[] }}
  */
 export function readDeployValues(envText) {
-  const env = parseEnv(envText);
+  // エディタによっては先頭に BOM が付き、最初のキー名が一致しなくなる
+  const env = parseEnv(envText.replace(/^\uFEFF/, ""));
   /** @param {string} key */
   const get = (key) => {
     const value = env[key]?.trim();
     return value === undefined || value === "" ? undefined : value;
   };
+  const warnings = Object.keys(env)
+    .filter((key) => !KNOWN_KEYS.has(key))
+    .map((key) => `未知のキー ${key} は使われません`);
   const hostname = get("WIKI_HOSTNAME");
   const d1DatabaseId = get("D1_DATABASE_ID");
-  const missing = [];
-  if (hostname === undefined) missing.push("WIKI_HOSTNAME");
-  if (d1DatabaseId === undefined) missing.push("D1_DATABASE_ID");
-  if (hostname === undefined || d1DatabaseId === undefined) return { missing };
+  const problems = [];
+  if (hostname === undefined) problems.push("WIKI_HOSTNAME がありません");
+  else if (!HOSTNAME_PATTERN.test(hostname)) {
+    problems.push("WIKI_HOSTNAME はスキームやパスを含まないホスト名だけにしてください");
+  }
+  if (d1DatabaseId === undefined) problems.push("D1_DATABASE_ID がありません");
+  else if (!UUID_PATTERN.test(d1DatabaseId)) {
+    problems.push(
+      "D1_DATABASE_ID は UUID 形式（wrangler d1 create が表示する database_id）にしてください",
+    );
+  }
+  if (problems.length > 0 || hostname === undefined || d1DatabaseId === undefined) {
+    return { problems };
+  }
   return {
     values: {
       hostname,
       d1DatabaseId,
       d1DatabaseName: get("D1_DATABASE_NAME") ?? "personal-wiki",
-      r2BucketName: get("R2_BUCKET_NAME") ?? "personal-wiki",
+      r2BucketName: get("R2_BUCKET_NAME"),
       accountId: get("CLOUDFLARE_ACCOUNT_ID"),
     },
+    warnings,
   };
 }
 
 /**
  * wrangler.jsonc を表すオブジェクトに、デプロイ先ごとの値を重ねる。入力は変更しない。
  * 差し替える箇所は binding の名前で探し、見つからなければ例外にする。
+ * routes は元の内容を捨てて、ホスト名 1 件の custom_domain に置き換える。
+ * r2BucketName が無いときは、R2 の binding を設定から外す。
  * @param {Record<string, any>} base
  * @param {DeployValues} values
  * @returns {Record<string, any>}
@@ -128,33 +157,55 @@ export function composeConfig(base, values) {
     throw new Error(`wrangler.jsonc に D1 binding "${D1_BINDING}" がありません`);
   d1.database_name = values.d1DatabaseName;
   d1.database_id = values.d1DatabaseId;
-  const r2 = (config.r2_buckets ?? []).find(
-    (/** @type {{ binding: string }} */ b) => b.binding === R2_BINDING,
-  );
-  if (r2 === undefined)
-    throw new Error(`wrangler.jsonc に R2 binding "${R2_BINDING}" がありません`);
-  r2.bucket_name = values.r2BucketName;
+  const buckets = config.r2_buckets ?? [];
+  if (values.r2BucketName === undefined) {
+    const rest = buckets.filter((/** @type {{ binding: string }} */ b) => b.binding !== R2_BINDING);
+    if (rest.length > 0) config.r2_buckets = rest;
+    else delete config.r2_buckets;
+  } else {
+    const r2 = buckets.find((/** @type {{ binding: string }} */ b) => b.binding === R2_BINDING);
+    if (r2 === undefined)
+      throw new Error(`wrangler.jsonc に R2 binding "${R2_BINDING}" がありません`);
+    r2.bucket_name = values.r2BucketName;
+  }
   if (values.accountId !== undefined) config.account_id = values.accountId;
   return config;
 }
 
 /**
+ * @typedef {{ envPath: string; basePath: string; outPath: string; warn: (message: string) => void }} GenerateOptions
+ */
+
+/**
  * deploy.env を読んで設定を合成し、wrangler.deploy.json に書いてそのパスを返す。
- * 値が足りないときは、何が足りないかを説明する例外を投げる。
+ * 値が足りない、または誤っているときは、その内容を説明する例外を投げる。
+ * @param {Partial<GenerateOptions>} [options] テストで差し替える。生成物は basePath と同じディレクトリに置く
  * @returns {string}
  */
-export function writeGeneratedConfig() {
-  if (!existsSync(DEPLOY_ENV_PATH)) {
+export function writeGeneratedConfig(options = {}) {
+  const {
+    envPath = DEPLOY_ENV_PATH,
+    basePath = BASE_CONFIG_PATH,
+    outPath = GENERATED_CONFIG_PATH,
+    warn = (message) => process.stderr.write(`warning: ${message}\n`),
+  } = options;
+  if (!existsSync(envPath)) {
+    throw new Error(`${envPath} がありません。deploy.env.example をコピーして値を書いてください`);
+  }
+  const result = readDeployValues(readFileSync(envPath, "utf8"));
+  if ("problems" in result) {
     throw new Error(
-      "apps/worker/deploy.env がありません。deploy.env.example をコピーして値を書いてください",
+      `${envPath} を直してください:\n${result.problems.map((p) => `- ${p}`).join("\n")}`,
     );
   }
-  const result = readDeployValues(readFileSync(DEPLOY_ENV_PATH, "utf8"));
-  if ("missing" in result) {
-    throw new Error(`apps/worker/deploy.env に次の値がありません: ${result.missing.join(", ")}`);
+  for (const message of result.warnings) warn(`${envPath}: ${message}`);
+  let base;
+  try {
+    base = JSON.parse(stripJsonc(readFileSync(basePath, "utf8")));
+  } catch (error) {
+    throw new Error(`${basePath} を読めません: ${error instanceof Error ? error.message : error}`);
   }
-  const base = JSON.parse(stripJsonc(readFileSync(BASE_CONFIG_PATH, "utf8")));
   const config = composeConfig(base, result.values);
-  writeFileSync(GENERATED_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`);
-  return GENERATED_CONFIG_PATH;
+  writeFileSync(outPath, `${JSON.stringify(config, null, 2)}\n`);
+  return outPath;
 }
