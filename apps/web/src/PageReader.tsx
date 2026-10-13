@@ -1,6 +1,7 @@
 import type { WikiLinkClick } from "@personal-wiki/editor";
 import { extractDerived } from "@personal-wiki/markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createAttachmentUrlResolver } from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { formatTime } from "./format";
@@ -16,6 +17,8 @@ import { createWikiLinks } from "./wiki-links";
 
 interface PageReaderProps {
   page: Page;
+  /** 添付（画像）を使える環境か。`/api/me` の features。false なら画像の要求を出さない */
+  attachments?: boolean;
   /** 表示したページを伝える。URL と document.title を合わせるため */
   onShown?: (page: Pick<Page, "id" | "title" | "visibility">) => void;
 }
@@ -30,12 +33,19 @@ type LinkNotice = { kind: "missing"; title: string } | { kind: "error" };
  * draft へのリンクは API が存在しないものとして返すので、存在しないページへのリンクと同じ見た目と
  * 案内になる。案内の文も draft と存在しないページで分けない。
  */
-export function PageReader({ page, onShown }: PageReaderProps) {
+export function PageReader({ page, attachments = false, onShown }: PageReaderProps) {
   const editor = useRef<BodyEditorHandle>(null);
   const { goTo } = useFragmentJump(editor);
   const outline = useMemo(() => extractOutline(page.body), [page.body]);
   const tags = useMemo(() => extractDerived(page.body).tags.map(({ tag }) => tag), [page.body]);
   const [links] = useState(() => createWikiLinks({ pageId: page.id }));
+  const [attachmentUrl] = useState(() =>
+    createAttachmentUrlResolver({
+      enabled: attachments,
+      pageId: page.id,
+      embedPageId: (target) => links.embedPageId(target),
+    }),
+  );
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
 
@@ -127,6 +137,7 @@ export function PageReader({ page, onShown }: PageReaderProps) {
           value={page.body}
           readOnly
           links={links}
+          resolveAttachmentUrl={attachmentUrl}
           onWikiLinkClick={(link) => void handleWikiLinkClick(link)}
         />
       </article>

@@ -12,6 +12,7 @@ import {
   resolvePages,
 } from "./pages-api";
 import { navigate } from "./route";
+import { recordImageSrcs } from "./test-image-srcs";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -77,12 +78,13 @@ afterEach(() => {
 function renderReader(
   page: Page = PAGE,
   onShown: (page: Pick<Page, "id" | "title" | "visibility">) => void = () => {},
+  attachments = false,
 ) {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
   root = mounted;
-  act(() => mounted.render(<PageReader page={page} onShown={onShown} />));
+  act(() => mounted.render(<PageReader page={page} onShown={onShown} attachments={attachments} />));
   const view = () => {
     const editor = container?.querySelector<HTMLElement>(".cm-editor");
     const found = editor ? EditorView.findFromDOM(editor) : null;
@@ -355,5 +357,58 @@ describe("見出しと block への移動", () => {
     act(() => navigate(`/${encodeURIComponent(PAGE.title)}`, { replace: true }));
     act(() => navigate(`/${encodeURIComponent(PAGE.title)}${hashOf("節B")}`));
     expect(view().state.selection.main.head).toBe(at("## 節B"));
+  });
+});
+
+describe("PageReader の添付の表示", () => {
+  const NAME = `${"A".repeat(21)}b.png`;
+  const OTHER = `${"C".repeat(21)}d.png`;
+  let restore: (() => void) | null = null;
+
+  function recordSrcs(): string[] {
+    const recorder = recordImageSrcs();
+    restore = recorder.restore;
+    return recorder.srcs;
+  }
+
+  afterEach(() => {
+    restore?.();
+    restore = null;
+  });
+
+  it("本文の添付を、このページの id の URL で表示する", async () => {
+    const srcs = recordSrcs();
+    renderReader({ ...PAGE, body: `![[${NAME}]]` }, undefined, true);
+    await flushAsync();
+    expect(srcs).toEqual([`/api/pages/${PAGE.id}/attachments/${NAME}`]);
+  });
+
+  it("features が false なら画像の要求を出さない", async () => {
+    const srcs = recordSrcs();
+    renderReader({ ...PAGE, body: `![[${NAME}]]` });
+    await flushAsync();
+    expect(srcs).toEqual([]);
+  });
+
+  it("埋め込んだ公開ページの添付は、埋め込み先の id の URL で表示する", async () => {
+    const srcs = recordSrcs();
+    const otherId = "BBBBBBBBBBBBBBBBBBBBBB";
+    vi.mocked(findPageByTitle).mockImplementation(async (title) =>
+      title === "別"
+        ? ok({ ...PAGE, id: otherId, title: "別", body: `![[${OTHER}]]` })
+        : { ok: false, reason: "not_found" },
+    );
+    renderReader({ ...PAGE, body: "![[別]]" }, undefined, true);
+    await vi.waitFor(() => expect(srcs).toEqual([`/api/pages/${otherId}/attachments/${OTHER}`]));
+  });
+
+  it("匿名に読めない（draft の）埋め込み先は展開されず、その id の要求も出さない", async () => {
+    const srcs = recordSrcs();
+    // API は匿名の draft を not_found で返す
+    vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
+    renderReader({ ...PAGE, body: "![[下書き]]" }, undefined, true);
+    await flushAsync();
+    expect(srcs).toEqual([]);
+    expect(container?.querySelector(".cm-embed-unresolved")).not.toBeNull();
   });
 });

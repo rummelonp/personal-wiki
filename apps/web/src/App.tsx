@@ -114,6 +114,7 @@ export function App() {
                   : { by: "title", title: route.title }
               }
               owner={isOwner}
+              attachments={session.me.features.attachments}
             />
           </Suspense>
         )}

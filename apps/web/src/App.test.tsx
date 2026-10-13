@@ -16,6 +16,7 @@ import {
   resolvePages,
 } from "./pages-api";
 import { navigate } from "./route";
+import { recordImageSrcs } from "./test-image-srcs";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -247,6 +248,37 @@ describe("App の匿名の画面", () => {
     expect(getPage).not.toHaveBeenCalled();
     expect(findPageByTitle).not.toHaveBeenCalled();
   });
+});
+
+describe("App の添付", () => {
+  const NAME = `${"A".repeat(21)}b.png`;
+  let restore: (() => void) | null = null;
+
+  afterEach(() => {
+    restore?.();
+    restore = null;
+  });
+
+  it.each([
+    ["owner", true],
+    ["owner", false],
+    ["anonymous", true],
+    ["anonymous", false],
+  ] as const)(
+    "%s で /api/me の features.attachments が %s のとき、画像の要求は features に従う",
+    async (me, attachments) => {
+      const recorder = recordImageSrcs();
+      restore = recorder.restore;
+      const page = { ...PUBLIC, body: `![[${NAME}]]` };
+      serve(me, [page], attachments);
+      await renderAt(titleUrl(page.title));
+      await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
+      await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      expect(recorder.srcs).toEqual(
+        attachments ? [`/api/pages/${page.id}/attachments/${NAME}`] : [],
+      );
+    },
+  );
 });
 
 describe("App の owner の画面", () => {

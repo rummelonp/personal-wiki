@@ -1,6 +1,8 @@
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import {
+  type AcceptAttachment,
+  type AttachmentUrlResolver,
   createEditor,
   dispatchWhenSettled,
   invalidateDecorations,
@@ -11,6 +13,7 @@ import {
   replaceDoc,
   revealBlockId,
   setReadOnly,
+  type UploadAttachment,
   type WikiLinkClick,
 } from "@personal-wiki/editor";
 import { findHeadingOffset } from "@personal-wiki/markdown";
@@ -54,6 +57,18 @@ export interface BodyEditorProps {
    * 渡されているかを見る）。呼ぶ関数は最新のものを使う。
    */
   onWikiLinkClick?: (link: WikiLinkClick) => void;
+  /**
+   * 渡すと、貼り付けと drop の画像をアップロードする。作った時点のものを使い続ける。
+   * 失敗の通知は渡す関数の中で行う（reject すると編集部品は placeholder を黙って除く）。
+   */
+  onUploadAttachment?: UploadAttachment;
+  /** アップロードで受け付ける File の判定。`onUploadAttachment` と一緒に渡す（省略すると `image/*`） */
+  acceptAttachment?: AcceptAttachment;
+  /**
+   * `![[画像]]` の URL。渡さないと画像は未解決として表示する。作った時点のものを使い続けるので、
+   * ページが変わるときは BodyEditor ごと作り直す。
+   */
+  resolveAttachmentUrl?: AttachmentUrlResolver;
   ref?: Ref<BodyEditorHandle>;
 }
 
@@ -93,6 +108,9 @@ export function BodyEditor({
   linkTargets,
   links,
   onWikiLinkClick,
+  onUploadAttachment,
+  acceptAttachment,
+  resolveAttachmentUrl,
   ref,
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -108,6 +126,9 @@ export function BodyEditor({
     linkTargets,
     links,
     onWikiLinkClick,
+    onUploadAttachment,
+    acceptAttachment,
+    resolveAttachmentUrl,
   });
   latest.current = {
     value,
@@ -118,6 +139,9 @@ export function BodyEditor({
     linkTargets,
     links,
     onWikiLinkClick,
+    onUploadAttachment,
+    acceptAttachment,
+    resolveAttachmentUrl,
   };
 
   useEffect(() => {
@@ -144,6 +168,16 @@ export function BodyEditor({
       ...(initial.onWikiLinkClick === undefined
         ? {}
         : { onWikiLinkClick: (link: WikiLinkClick) => latest.current.onWikiLinkClick?.(link) }),
+      // 渡さなければ貼り付けと drop に触れない。どちらも作った時点のものを使い続ける
+      ...(initial.onUploadAttachment === undefined
+        ? {}
+        : { onUploadAttachment: initial.onUploadAttachment }),
+      ...(initial.acceptAttachment === undefined
+        ? {}
+        : { acceptAttachment: initial.acceptAttachment }),
+      ...(initial.resolveAttachmentUrl === undefined
+        ? {}
+        : { resolveAttachmentUrl: initial.resolveAttachmentUrl }),
       extensions: [
         EditorView.contentAttributes.of({ "aria-label": "本文" }),
         EditorView.domEventHandlers({

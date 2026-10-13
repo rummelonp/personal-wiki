@@ -2,6 +2,12 @@ import { foldTitle } from "@personal-wiki/domain/title";
 import type { WikiLinkClick } from "@personal-wiki/editor";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
+import {
+  acceptAttachment,
+  createAttachmentUploader,
+  createAttachmentUrlResolver,
+  type UploadNotice,
+} from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { ConflictPanel } from "./ConflictPanel";
@@ -77,6 +83,9 @@ function retryLabel(op: FailedOp): string {
   }
 }
 
+/** 同時に出す添付の失敗の数。まとめて貼った画像が全部失敗しても、画面を埋めない */
+const MAX_UPLOAD_NOTICES = 5;
+
 /** 本文のリンクをクリックしても開けなかったときの案内。 */
 type LinkNotice =
   | { kind: "missing"; title: string; busy: boolean; error: string | null }
@@ -103,11 +112,13 @@ function useEditorSession(page: Page): EditorSession {
 
 interface PageEditorProps {
   page: Page;
+  /** 添付（画像）を使える環境か。`/api/me` の features。false なら貼り付けと drop をアップロードしない */
+  attachments?: boolean;
   /** 保存済みの title と公開範囲が決まるたびに呼ぶ。URL と document.title を合わせるため */
   onShown?: (page: Pick<Page, "id" | "title" | "visibility">) => void;
 }
 
-export function PageEditor({ page, onShown }: PageEditorProps) {
+export function PageEditor({ page, attachments = false, onShown }: PageEditorProps) {
   const session = useEditorSession(page);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const { title: savedTitle, visibility: savedVisibility } = state.base;
@@ -124,6 +135,24 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
   const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
   const [links] = useState(() => createWikiLinks({ pageId: page.id }));
+  const [attachmentUrl] = useState(() =>
+    createAttachmentUrlResolver({
+      enabled: attachments,
+      pageId: page.id,
+      embedPageId: (target) => links.embedPageId(target),
+    }),
+  );
+  const [uploadNotices, setUploadNotices] = useState<UploadNotice[]>([]);
+  const [uploader] = useState(() =>
+    createAttachmentUploader({
+      notify: (notice) =>
+        setUploadNotices((current) =>
+          [...current.filter(({ message }) => message !== notice.message), notice].slice(
+            -MAX_UPLOAD_NOTICES,
+          ),
+        ),
+    }),
+  );
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
   /** 作成の応答を待っている title。null なら作成中ではない */
@@ -132,6 +161,8 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
   useEffect(() => {
     void titleIndex.refresh();
   }, []);
+
+  useEffect(() => uploader.bindUnloadGuard(window), [uploader]);
 
   // 自分の title が変わると、その title への link の存在が変わる。ほかの page は保存では変わらない
   // ので、embed の本文は取り直さない（autosave のたびに全部取り直すことになる）
@@ -395,6 +426,24 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
           </section>
         )}
 
+        {uploadNotices.length > 0 && (
+          <section className="message message-warn" role="alert">
+            {uploadNotices.map(({ message }) => (
+              <p key={message}>{message}</p>
+            ))}
+            <div className="actions">
+              {uploadNotices.some(({ kind }) => kind === "unauthorized") && (
+                <a className="button button-primary" href={loginHref(window.location)}>
+                  ログインし直す
+                </a>
+              )}
+              <button type="button" className="button" onClick={() => setUploadNotices([])}>
+                閉じる
+              </button>
+            </div>
+          </section>
+        )}
+
         <input
           className="title-input"
           aria-label="title"
@@ -412,6 +461,8 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
           pageIndex={titleIndex}
           linkTargets={linkTargets}
           links={links}
+          resolveAttachmentUrl={attachmentUrl}
+          {...(attachments ? { onUploadAttachment: uploader.upload, acceptAttachment } : {})}
           onWikiLinkClick={(link) => void handleWikiLinkClick(link)}
           onChange={(body) => session.edit({ ...session.getState().draft, body })}
           onBlur={() => void session.flush()}

@@ -15,6 +15,7 @@ import {
   updatePage,
 } from "./pages-api";
 import { navigate } from "./route";
+import { recordImageSrcs } from "./test-image-srcs";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -80,12 +81,12 @@ afterEach(() => {
   history.replaceState(null, "", startUrl);
 });
 
-function renderPage(page: Page = PAGE) {
+function renderPage(page: Page = PAGE, attachments = false) {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
   root = mounted;
-  act(() => mounted.render(<PageEditor page={page} />));
+  act(() => mounted.render(<PageEditor page={page} attachments={attachments} />));
   const view = () => {
     // `.cm-content` から探すと、展開した embed の中の view に当たることがある
     const editor = container?.querySelector<HTMLElement>(".cm-editor");
@@ -678,5 +679,182 @@ describe("PageEditor の「作成して開く」", () => {
     );
     await flushAsync();
     expect(location.pathname).toBe(startPath);
+  });
+});
+
+describe("添付の貼り付けと表示", () => {
+  const NAME = `${"A".repeat(21)}b.png`;
+  const OTHER = `${"C".repeat(21)}d.png`;
+  const srcOf = (name: string, id = ID) => `/api/pages/${id}/attachments/${name}`;
+
+  const png = (name = "cat.png", size = 3) =>
+    new File([new Uint8Array(size)], name, { type: "image/png" });
+
+  function paste(view: EditorView, file: File): void {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    act(() => {
+      view.contentDOM.dispatchEvent(
+        new ClipboardEvent("paste", {
+          bubbles: false,
+          cancelable: true,
+          clipboardData: dataTransfer,
+        }),
+      );
+    });
+  }
+
+  let restoreImageSrc: (() => void) | null = null;
+  function recordSrcs(): string[] {
+    const recorder = recordImageSrcs();
+    restoreImageSrc = recorder.restore;
+    return recorder.srcs;
+  }
+
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    restoreImageSrc?.();
+    restoreImageSrc = null;
+    vi.unstubAllGlobals();
+  });
+
+  const saved = (name: string) =>
+    Response.json({ name, contentType: "image/png", size: 3 }, { status: 201 });
+
+  it("貼り付けた画像を上げ、返った名前を本文に書く", async () => {
+    fetchMock.mockImplementation(async () => saved(NAME));
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    v.focus();
+    paste(v, png());
+    await vi.waitFor(() => expect(v.state.doc.toString()).toContain(`![[${NAME}]]`));
+    expect(v.state.doc.toString()).not.toContain("uploading");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/attachments");
+    expect(init.method).toBe("POST");
+  });
+
+  it("features が false なら、貼り付けた画像を上げない", async () => {
+    const { view } = renderPage(PAGE, false);
+    const v = view();
+    v.focus();
+    paste(v, png());
+    await flushAsync();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(v.state.doc.toString()).toBe("本文");
+    expect(container?.querySelector(".message-warn")).toBeNull();
+  });
+
+  it("受けない種類の画像は上げず、通知も出さない", async () => {
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    v.focus();
+    paste(v, new File([new Uint8Array(3)], "a.svg", { type: "image/svg+xml" }));
+    await flushAsync();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(v.state.doc.toString()).toBe("本文");
+  });
+
+  it("上限を超える画像は送らずに通知し、placeholder を除く", async () => {
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    v.focus();
+    paste(v, png("big.png", 10 * 1024 * 1024 + 1));
+    await vi.waitFor(() => expect(container?.textContent).toContain("big.png"));
+    await flushAsync();
+    expect(container?.querySelector("[role=alert]")?.textContent).toContain("10 MiB");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(v.state.doc.toString()).toBe("本文");
+  });
+
+  it.each([
+    [413, {}, "大きすぎる"],
+    [415, {}, "添付できない形式"],
+    [503, { error: "attachments_unavailable" }, "添付を使えません"],
+    [500, {}, "添付できませんでした"],
+  ])("%i の失敗は理由を通知し、placeholder を除く", async (status, body, text) => {
+    fetchMock.mockImplementation(async () => Response.json(body, { status }));
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    v.focus();
+    paste(v, png());
+    await vi.waitFor(() => expect(container?.textContent).toContain(text));
+    await flushAsync();
+    expect(v.state.doc.toString()).toBe("本文");
+    expect(container?.querySelector("a[href^='/_auth/login']")).toBeNull();
+  });
+
+  it("401 ではログインし直すリンクを出す", async () => {
+    fetchMock.mockImplementation(async () => Response.json({}, { status: 401 }));
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    v.focus();
+    paste(v, png());
+    await vi.waitFor(() => expect(container?.textContent).toContain("ログインの期限が切れた"));
+    expect(container?.querySelector("a[href^='/_auth/login']")).not.toBeNull();
+  });
+
+  it("通知は閉じられる", async () => {
+    fetchMock.mockImplementation(async () => Response.json({}, { status: 500 }));
+    const { view, button } = renderPage(PAGE, true);
+    view().focus();
+    paste(view(), png());
+    await vi.waitFor(() => expect(container?.textContent).toContain("添付できませんでした"));
+    act(() => button("閉じる").click());
+    expect(container?.textContent).not.toContain("添付できませんでした");
+  });
+
+  it("本文の添付は、このページの id の URL で表示する", async () => {
+    const srcs = recordSrcs();
+    renderPage({ ...PAGE, body: `![[${NAME}]]\n\n末尾` }, true);
+    await flushAsync();
+    expect(srcs).toEqual([srcOf(NAME)]);
+  });
+
+  it("features が false なら画像の要求を出さない", async () => {
+    const srcs = recordSrcs();
+    renderPage({ ...PAGE, body: `![[${NAME}]]\n\n末尾` }, false);
+    await flushAsync();
+    expect(srcs).toEqual([]);
+    expect(container?.querySelector(".cm-embed-unresolved")?.textContent).toBe(NAME);
+  });
+
+  it("アップロード中の placeholder と形の合わない名前は画像の要求を出さない", async () => {
+    const srcs = recordSrcs();
+    renderPage(
+      { ...PAGE, body: "![[uploading.1700000000000-0.png]]\n\n![[photo.png]]\n\n末尾" },
+      true,
+    );
+    await flushAsync();
+    expect(srcs).toEqual([]);
+  });
+
+  it("入れ子の embed の添付は、埋め込み先のページの id の URL で表示する", async () => {
+    const srcs = recordSrcs();
+    const OTHER_ID = "BBBBBBBBBBBBBBBBBBBBBB";
+    vi.mocked(findPageByTitle).mockImplementation(async (title) =>
+      title === "別"
+        ? ok({ ...PAGE, id: OTHER_ID, title: "別", body: `![[${OTHER}]]` })
+        : { ok: false, reason: "not_found" },
+    );
+    renderPage({ ...PAGE, body: `![[別]]\n\n![[${NAME}]]\n\n末尾` }, true);
+    await vi.waitFor(() => expect(srcs).toContain(srcOf(OTHER, OTHER_ID)));
+    expect(srcs).toContain(srcOf(NAME));
+    expect(srcs).not.toContain(srcOf(OTHER));
+  });
+
+  it("埋め込み先を読めなければ展開されず、その添付の要求も出さない", async () => {
+    const srcs = recordSrcs();
+    vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
+    renderPage({ ...PAGE, body: "![[別]]\n\n末尾" }, true);
+    await flushAsync();
+    expect(srcs).toEqual([]);
   });
 });

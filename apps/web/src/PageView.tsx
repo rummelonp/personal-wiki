@@ -21,6 +21,8 @@ interface PageViewProps {
   target: PageTarget;
   /** owner なら編集の画面、それ以外は読み取り専用の画面で開く。切り替わるときは作り直させる（key） */
   owner: boolean;
+  /** 添付（画像）を使える環境か。`/api/me` の features */
+  attachments: boolean;
 }
 
 /**
@@ -30,7 +32,7 @@ interface PageViewProps {
  * 置き換えた URL は同じページを指すので、その後のルートの変化では取り直さない。取り直すと
  * 編集中のエディタが作り直され、変換中の文字が消える。
  */
-export function PageView({ target, owner }: PageViewProps) {
+export function PageView({ target, owner, attachments }: PageViewProps) {
   const [state, setState] = useState<State>({ status: "loading" });
   /** 表示中のページの正の URL のパス。アドレスバーがこれと同じなら、ルートが変わっても取り直さない */
   const shownPath = useRef<string | null>(null);
@@ -85,9 +87,19 @@ export function PageView({ target, owner }: PageViewProps) {
       );
     case "ready":
       return owner ? (
-        <PageEditor key={state.page.id} page={state.page} onShown={show} />
+        <PageEditor
+          key={state.page.id}
+          page={state.page}
+          attachments={attachments}
+          onShown={show}
+        />
       ) : (
-        <PageReader key={state.page.id} page={state.page} onShown={show} />
+        <PageReader
+          key={state.page.id}
+          page={state.page}
+          attachments={attachments}
+          onShown={show}
+        />
       );
   }
 }
