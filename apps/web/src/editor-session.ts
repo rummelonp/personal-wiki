@@ -45,9 +45,10 @@ export interface EditorDeps {
   whenSettled?: () => Promise<void>;
 }
 
-/** リンクの書き換えの step（`POST /api/link-rewrites/step`）の結果のうち、セッションが見る部分。 */
-export interface LinkRewriteStepLike {
-  processed: { sourcePageId: string; version: number } | null;
+/** リンクの書き換えの step（`POST /api/link-rewrites/step`）が書き換えたページのうち、セッションが見る部分。 */
+export interface ProcessedLinkRewrite {
+  sourcePageId: string;
+  version: number;
 }
 
 export type FailedOp =
@@ -465,19 +466,15 @@ export class EditorSession {
   }
 
   /**
-   * リンクの書き換えの step を、このページの書き込みと重ならないように走らせる。step が開いている
-   * このページを書き換えたら、その版を同じ区切りの中で取り込む。保存の要求と step が行き違うと、
-   * 保存が古い版で 409 になり衝突の表示になるため、列に並べて直列にする。
+   * step が開いているこのページを書き換えたら、その版を取り込む。取り込みは保存と同じ列に並べる。
+   *
+   * step の要求そのものは列に並べない。並べると、離脱の保存（keepalive）が step の応答を待ち、
+   * ページが閉じるまでに送られないことがある。保存と step が行き違っても、step は版の照合で
+   * conflict を返して呼び直され、保存の 409 は書き換えを重ねて送り直すので、手元の編集は失わない。
    */
-  runLinkRewriteStep<T extends LinkRewriteStepLike>(step: () => Promise<T>): Promise<T> {
-    return this.enqueue(async () => {
-      const result = await step();
-      const { processed } = result;
-      if (processed !== null && processed.sourcePageId === this.state.base.id) {
-        await this.adoptLinkRewrite(processed.version);
-      }
-      return result;
-    });
+  linkRewritten(processed: ProcessedLinkRewrite): Promise<void> {
+    if (processed.sourcePageId !== this.state.base.id) return Promise.resolve();
+    return this.enqueue(() => this.adoptLinkRewrite(processed.version));
   }
 
   /**

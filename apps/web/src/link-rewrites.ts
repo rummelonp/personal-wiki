@@ -1,4 +1,4 @@
-import type { LinkRewriteStepLike } from "./editor-session";
+import type { ProcessedLinkRewrite } from "./editor-session";
 import { type StepResult, stepLinkRewrites } from "./link-rewrites-api";
 import type { Visibility } from "./pages-api";
 
@@ -28,12 +28,9 @@ export interface LinkRewriteState {
   stopReason: "auth" | "error" | null;
 }
 
-/**
- * 開いているエディタ。step を保存と同じ列に並べ、開いているページが書き換えられたら取り込む
- * （EditorSession.runLinkRewriteStep）。
- */
+/** 開いているエディタ。step が書き換えたページが自分なら、その版を取り込む（EditorSession.linkRewritten）。 */
 export interface LinkRewriteParticipant {
-  runLinkRewriteStep<T extends LinkRewriteStepLike>(step: () => Promise<T>): Promise<T>;
+  linkRewritten(processed: ProcessedLinkRewrite): Promise<void>;
 }
 
 export interface LinkRewriteRunnerDeps {
@@ -59,7 +56,7 @@ const IDLE: LinkRewriteState = {
 export class LinkRewriteRunner {
   private state: LinkRewriteState = IDLE;
   private readonly listeners = new Set<() => void>();
-  private readonly participants = new Set<LinkRewriteParticipant>();
+  private readonly participants = new Set<{ participant: LinkRewriteParticipant }>();
   /** ループを捨てるたびに進める。古いループは結果を書かずに抜ける */
   private generation = 0;
   /** ループが走っている。status は何も見せない間（起動時の再開）も idle なので、別に持つ */
@@ -76,9 +73,16 @@ export class LinkRewriteRunner {
     return () => this.listeners.delete(listener);
   };
 
+  /**
+   * 登録ごとに別の枠を作る。同じエディタを外す前に登録し直しても（StrictMode の effect の再実行で、
+   * 離脱の保存を待ってから外すとき）、古い登録を外したときに新しい登録まで消さない。
+   */
   register(participant: LinkRewriteParticipant): () => void {
-    this.participants.add(participant);
-    return () => this.participants.delete(participant);
+    const entry = { participant };
+    this.participants.add(entry);
+    return () => {
+      this.participants.delete(entry);
+    };
   }
 
   /**
@@ -120,16 +124,19 @@ export class LinkRewriteRunner {
     for (const listener of this.listeners) listener();
   }
 
-  private runStep(): Promise<StepResult> {
-    let run = async () => {
-      const result = await this.deps.step();
-      return { result, processed: result.ok ? result.value.processed : null };
-    };
-    for (const participant of this.participants) {
-      const inner = run;
-      run = () => participant.runLinkRewriteStep(inner);
+  /**
+   * 取り込みの完了は待たない。エディタは取り込みを保存の後ろに並べるので、待つとループの進みが
+   * 保存（離脱の保存を含む）の進み具合に縛られる。
+   */
+  private async runStep(): Promise<StepResult> {
+    const result = await this.deps.step();
+    const processed = result.ok ? result.value.processed : null;
+    if (processed !== null) {
+      for (const { participant } of this.participants) {
+        participant.linkRewritten(processed).catch(() => undefined);
+      }
     }
-    return run().then(({ result }) => result);
+    return result;
   }
 
   private async loop(generation: number): Promise<void> {

@@ -193,19 +193,37 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState().status).toBe("idle");
   });
 
-  it("開いているエディタの列の中で step を呼ぶ", async () => {
-    const { runner, settled } = setup([ok({ processed: processed("a"), remaining: 0 })]);
-    const order: string[] = [];
-    runner.register({
-      runLinkRewriteStep: async (step) => {
-        order.push("enter");
-        const result = await step();
-        order.push(`exit ${result.processed?.sourcePageId}`);
-        return result;
+  it("書き換えたページを開いているエディタに知らせ、取り込みの完了は待たずに次を呼ぶ", async () => {
+    const { runner, step, settled } = setup([
+      ok({ processed: processed("a"), remaining: 1 }),
+      ok({ processed: processed("b"), remaining: 0 }),
+    ]);
+    const told: string[] = [];
+    const unregister = runner.register({
+      // 保存の後ろに並んで終わらない取り込み
+      linkRewritten: (p) => {
+        told.push(p.sourcePageId);
+        return new Promise<void>(() => {});
       },
     });
+    runner.start(2);
+    await settled();
+    expect(step).toHaveBeenCalledTimes(2);
+    expect(told).toEqual(["a", "b"]);
+    unregister();
+  });
+
+  it("同じエディタを登録し直してから古い登録を外しても、新しい登録には知らせ続ける", async () => {
+    const { runner, settled } = setup([ok({ processed: processed("a"), remaining: 0 })]);
+    const told: string[] = [];
+    const participant = {
+      linkRewritten: async (p: { sourcePageId: string }) => void told.push(p.sourcePageId),
+    };
+    const first = runner.register(participant);
+    runner.register(participant);
+    first();
     runner.start(1);
     await settled();
-    expect(order).toEqual(["enter", "exit a"]);
+    expect(told).toEqual(["a"]);
   });
 });

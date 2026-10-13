@@ -703,12 +703,12 @@ describe("リンクの書き換えの取り込み", () => {
   /** step が開いているページを書き換えたことにする */
   function rewriteOnServer(server: { page: Page }, body: string) {
     server.page = { ...server.page, body, version: server.page.version + 1 };
-    return { processed: { sourcePageId: ID, version: server.page.version } };
+    return { sourcePageId: ID, version: server.page.version };
   }
 
   it("手元に変更が無ければ、書き換えた版をそのまま取り込む", async () => {
     const { session, server } = setup({ server: page({ body: "[[旧]]" }) });
-    await session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]]"));
+    await session.linkRewritten(rewriteOnServer(server, "[[新]]"));
     expect(session.getState().base.version).toBe(2);
     expect(session.getState().draft.body).toBe("[[新]]");
     expect(saveStatusOf(session.getState())).toBe("saved");
@@ -717,7 +717,7 @@ describe("リンクの書き換えの取り込み", () => {
   it("未保存の編集があれば書き換えを重ね、新しい版に対して保存する（409 にしない）", async () => {
     const { session, server, api } = setup({ server: page({ body: "[[旧]] 本文" }) });
     session.edit({ title: "題", body: "[[旧]] 本文 追記" });
-    await session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]] 本文"));
+    await session.linkRewritten(rewriteOnServer(server, "[[新]] 本文"));
     expect(session.getState().draft.body).toBe("[[新]] 本文 追記");
     expect(session.getState().conflict).toBeNull();
     await vi.advanceTimersByTimeAsync(2000);
@@ -725,21 +725,44 @@ describe("リンクの書き換えの取り込み", () => {
     expect(server.page).toMatchObject({ body: "[[新]] 本文 追記", version: 3 });
   });
 
-  it("step は保存と重ならず、保存中の step は保存が終わってから走る", async () => {
+  it("保存と step が行き違っても、409 に書き換えを重ねて送り直し、後から届いた取り込みは何もしない", async () => {
     const { session, server, api } = setup({ server: page({ body: "[[旧]]" }) });
     session.edit({ title: "題", body: "[[旧]] 追記" });
     const saving = session.flush();
-    const stepping = session.runLinkRewriteStep(async () => {
-      api.calls.push("step");
-      return rewriteOnServer(server, server.page.body.replace("[[旧]]", "[[新]]"));
-    });
-    await Promise.all([saving, stepping]);
-    expect(api.calls).toEqual(["put@1", "step", "get"]);
+    // 保存の要求が届く前に、step が同じページを書き換える
+    const processed = rewriteOnServer(server, "[[新]]");
+    const adopting = session.linkRewritten(processed);
+    await Promise.all([saving, adopting]);
+    expect(api.calls).toEqual(["put@1", "get", "put@2"]);
     expect(session.getState()).toMatchObject({
       base: { version: 3 },
       draft: { body: "[[新]] 追記" },
       conflict: null,
     });
+    expect(server.page.body).toBe("[[新]] 追記");
+  });
+
+  it("取り込みは保存の後ろに並ぶ。自分の保存で版が追いついていれば読み直さない", async () => {
+    const { session, server, api } = setup({ server: page({ body: "[[旧]]" }) });
+    const real = api.updatePage;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.updatePage = async (...args) => {
+      await gate;
+      return real(...args);
+    };
+    session.edit({ title: "題", body: "[[旧]] 追記" });
+    const saving = session.flush();
+    const adopting = session.linkRewritten({ sourcePageId: ID, version: 2 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.calls).toEqual([]);
+    release();
+    await Promise.all([saving, adopting]);
+    // 自分の保存で版 2 になっているので、取り込みは読み直さない
+    expect(api.calls).toEqual(["put@1"]);
+    expect(server.page.version).toBe(2);
   });
 
   it("変換が落ち着くまで、手元の本文に重ねない", async () => {
@@ -755,14 +778,14 @@ describe("リンクの書き換えの取り込み", () => {
       deps: { whenSettled },
     });
     session.edit({ title: "題", body: "[[旧]] へんかん" });
-    const stepping = session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]]"));
+    const adopting = session.linkRewritten(rewriteOnServer(server, "[[新]]"));
     await vi.advanceTimersByTimeAsync(0);
     expect(whenSettled).toHaveBeenCalledTimes(1);
     // 変換中の入力（未確定文字を含む）が届く
     session.edit({ title: "題", body: "[[旧]] 変換" });
     expect(session.getState().base.version).toBe(1);
     settle();
-    await stepping;
+    await adopting;
     expect(session.getState().draft.body).toBe("[[新]] 変換");
     expect(session.getState().base.version).toBe(2);
   });
@@ -770,7 +793,7 @@ describe("リンクの書き換えの取り込み", () => {
   it("書き換え以外の変化が混ざっていれば、手元を失わないよう衝突にする", async () => {
     const { session, server } = setup({ server: page({ body: "[[旧]] 本文" }) });
     session.edit({ title: "題", body: "[[旧]] 手元" });
-    await session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]] 他の編集"));
+    await session.linkRewritten(rewriteOnServer(server, "[[新]] 他の編集"));
     expect(session.getState().conflict).toMatchObject({ body: "[[新]] 他の編集" });
     expect(session.getState().draft.body).toBe("[[旧]] 手元");
   });
@@ -778,12 +801,10 @@ describe("リンクの書き換えの取り込み", () => {
   it("取り直した版が step の版より新しくても、リンクの書き換えだけの差分なら重ねる", async () => {
     const { session, server } = setup({ server: page({ body: "[[旧]] [[甲]] 本文" }) });
     session.edit({ title: "題", body: "[[旧]] [[甲]] 本文 追記" });
-    await session.runLinkRewriteStep(async () => {
-      const result = rewriteOnServer(server, "[[新]] [[甲]] 本文");
-      // 取り直す前に、別の step（Cron、別のタブ）がもう一つのリンクを書き換える
-      rewriteOnServer(server, "[[新]] [[乙]] 本文");
-      return result;
-    });
+    const processed = rewriteOnServer(server, "[[新]] [[甲]] 本文");
+    // 取り直す前に、別の step（Cron、別のタブ）がもう一つのリンクを書き換える
+    rewriteOnServer(server, "[[新]] [[乙]] 本文");
+    await session.linkRewritten(processed);
     expect(session.getState()).toMatchObject({
       conflict: null,
       base: { version: 3 },
@@ -793,9 +814,7 @@ describe("リンクの書き換えの取り込み", () => {
 
   it("他のページの書き換えでは何も取りに行かない", async () => {
     const { session, api } = setup();
-    await session.runLinkRewriteStep(async () => ({
-      processed: { sourcePageId: "BBBBBBBBBBBBBBBBBBBBBB", version: 5 },
-    }));
+    await session.linkRewritten({ sourcePageId: "BBBBBBBBBBBBBBBBBBBBBB", version: 5 });
     expect(api.calls).toEqual([]);
   });
 });

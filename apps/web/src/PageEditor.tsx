@@ -123,9 +123,9 @@ function useEditorSession(
     return () => {
       unbind();
       unregister();
-      leaveRewrites();
-      // アプリ内の遷移でも、未保存の変更をここで送る
-      void session.leave();
+      // アプリ内の遷移でも、未保存の変更をここで送る。送り終えるまでは、step がこのページを
+      // 書き換えたら取り込めるよう、リンクの書き換えからは外さない
+      void session.leave().finally(leaveRewrites);
     };
   }, [session]);
 
