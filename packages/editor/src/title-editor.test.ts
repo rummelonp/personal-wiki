@@ -112,6 +112,33 @@ describe("createTitleEditor", () => {
     expect(commits).toBe(1);
   });
 
+  // IME 不変条件 3。CodeMirror は DOM の変更を読んだ後の変換中の keydown を keymap より前に捨てるので、
+  // 実際のキー入力ではこの guard に届かない。届くのは compositionstart の直後（まだ DOM の変更が無い）と、
+  // Safari で compositionend と keydown の順序が入れ替わったときなので、keymap を直接呼んで確かめる
+  test("Enter and ArrowDown leave the keys to the IME during composition", () => {
+    const bodyView = mount((parent) => createEditor(parent, { doc: "一行目" }));
+    let commits = 0;
+    const titleView = mount((parent) =>
+      createTitleEditor(parent, {
+        doc: "題名",
+        bodyView: () => bodyView,
+        onCommit: () => {
+          commits += 1;
+        },
+      }),
+    );
+    titleView.focus();
+    titleView.dispatch({ selection: EditorSelection.cursor(2) });
+    titleView.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    expect(titleView.compositionStarted).toBe(true);
+
+    expect(press(titleView, "Enter")).toBe(false);
+    press(titleView, "ArrowDown");
+    expect(commits).toBe(0);
+    expect(document.activeElement).toBe(titleView.contentDOM);
+    expect(titleView.state.doc.toString()).toBe("題名");
+  });
+
   test("ArrowDown moves to the start of the body", () => {
     const { titleView, bodyView } = setup();
     bodyView.dispatch({ selection: EditorSelection.cursor(5) });

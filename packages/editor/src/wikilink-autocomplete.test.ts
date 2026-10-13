@@ -4,12 +4,13 @@ import {
   currentCompletions,
   startCompletion,
 } from "@codemirror/autocomplete";
-import { EditorView } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import { EditorView, runScopeHandlers } from "@codemirror/view";
 import type { LinkTargets } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "./create-editor";
 import { createMemoryPageIndex } from "./page-index";
-import type { LinkTargetSource } from "./wikilink-autocomplete";
+import { type LinkTargetSource, wikiLinkAutocomplete } from "./wikilink-autocomplete";
 
 let view: EditorView | null = null;
 let host: HTMLElement | null = null;
@@ -162,6 +163,41 @@ it("closes open candidates within the composition transaction itself", async () 
 
   await afterCompletionWouldSettle();
   expect(transactions()).toBe(before + 1);
+});
+
+// IME 不変条件 3。CodeMirror は DOM の変更を読んだ後の変換中の keydown を keymap より前に捨てるので、
+// 実際のキー入力ではこの guard に届かない。届くのは compositionstart の直後（まだ DOM の変更が無い）と、
+// Safari で compositionend と keydown の順序が入れ替わったときなので、keymap を直接呼んで確かめる。
+// 既定の keymap を載せると、guard が false を返した後の Enter を insertNewlineAndIndent が拾うので、
+// autocomplete だけの view で見る。
+it("leaves Enter and Tab to the IME while candidates are open during composition", async () => {
+  host = document.createElement("div");
+  document.body.append(host);
+  view = new EditorView({
+    parent: host,
+    state: EditorState.create({
+      extensions: wikiLinkAutocomplete({
+        index: createMemoryPageIndex([{ id: "p1", title: "Code" }], {
+          normalize: (text) => text.toLowerCase(),
+        }),
+      }),
+    }),
+  });
+  const v = view;
+  v.dispatch({
+    changes: { from: 0, insert: "[[Co" },
+    selection: { anchor: 4 },
+    userEvent: "input.type",
+  });
+  await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
+  await afterInteractionDelay();
+
+  v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+  expect(v.compositionStarted).toBe(true);
+  for (const key of ["Enter", "Tab"]) {
+    expect(runScopeHandlers(v, new KeyboardEvent("keydown", { key }), "editor")).toBe(false);
+  }
+  expect(v.state.doc.toString()).toBe("[[Co");
 });
 
 const NOTE_TARGETS: LinkTargets = {
