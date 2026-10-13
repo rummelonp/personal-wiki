@@ -4,6 +4,7 @@ import {
   deletePage,
   getPage,
   listBacklinks,
+  listPageTitles,
   listRecent,
   listTags,
   RESOLVE_MAX_TITLES,
@@ -151,6 +152,20 @@ describe("一覧と検索", () => {
     expect(calls[0]?.path).toBe(
       `/api/pages/recent?cursor=${encodeURIComponent(`1.${ID}`)}&limit=100`,
     );
+  });
+
+  it("title の一覧は上限の件数で引き、cursor をクエリに載せる", async () => {
+    const page = { id: ID, title: "題", visibility: "draft", updatedAt: 1 };
+    const { calls, fetchFn } = recorder(() => Response.json({ pages: [page], nextCursor: null }));
+    expect(await listPageTitles(null, fetchFn)).toEqual({
+      ok: true,
+      value: { pages: [page], nextCursor: null },
+    });
+    await listPageTitles(`1.${ID}`, fetchFn);
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/pages/titles?limit=500",
+      `/api/pages/titles?limit=500&cursor=${encodeURIComponent(`1.${ID}`)}`,
+    ]);
   });
 
   it("最近の更新は tags が必須で、excerpt は省略できる", async () => {

@@ -26,7 +26,7 @@ import {
   failureMessage,
   findPageByTitle,
   getPage,
-  listRecent,
+  listPageTitles,
   type Page,
   setVisibility,
   updatePage,
@@ -43,7 +43,7 @@ const api: EditorApi = {
 };
 
 // ページを移っても同じ候補を使い、開くたびに取り直す
-const titleIndex = createTitleIndex((cursor) => listRecent(cursor, { limit: 100 }));
+const titleIndex = createTitleIndex((cursor) => listPageTitles(cursor));
 
 const findWithSignal = (title: string, signal: AbortSignal) =>
   findPageByTitle(title, (input, init) => fetch(input, { ...init, signal }));

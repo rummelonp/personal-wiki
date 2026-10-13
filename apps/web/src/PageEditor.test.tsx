@@ -9,7 +9,7 @@ import {
   findPageByTitle,
   getPage,
   listBacklinks,
-  listRecent,
+  listPageTitles,
   type Page,
   resolvePages,
   updatePage,
@@ -25,7 +25,7 @@ vi.mock("./pages-api", async (importOriginal) => {
     deletePage: vi.fn(),
     findPageByTitle: vi.fn(),
     listBacklinks: vi.fn(),
-    listRecent: vi.fn(),
+    listPageTitles: vi.fn(),
     resolvePages: vi.fn(),
     createPage: vi.fn(),
   };
@@ -63,7 +63,7 @@ beforeEach(() => {
   vi.mocked(getPage).mockResolvedValue(ok(PAGE));
   vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
-  vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+  vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   // 既定では、どの link も存在することにして印を付けない
   vi.mocked(resolvePages).mockImplementation(async (titles) =>
     ok(titles.map((title) => ({ id: "B", title, visibility: "draft" as const }))),
@@ -224,16 +224,16 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.state.readOnly).toBe(false);
   });
 
-  it("[[ の title の候補に最近の更新の一覧を使う", async () => {
-    vi.mocked(listRecent).mockResolvedValue(
+  it("[[ の title の候補に title の一覧を使う", async () => {
+    vi.mocked(listPageTitles).mockResolvedValue(
       ok({
-        pages: [{ id: "B", title: "別のページ", visibility: "draft", updatedAt: 0, tags: [] }],
+        pages: [{ id: "B", title: "別のページ", visibility: "draft", updatedAt: 0 }],
         nextCursor: null,
       }),
     );
     const { view } = renderPage();
     await flushAsync();
-    expect(listRecent).toHaveBeenCalledWith(null, { limit: 100 });
+    expect(listPageTitles).toHaveBeenCalledWith(null);
 
     view().focus();
     typeAtEnd(view(), "\n[[別");

@@ -47,10 +47,10 @@ describe("createTitleIndex", () => {
     const index = createTitleIndex(list);
     await index.refresh();
     expect(list).toHaveBeenCalledTimes(TITLE_INDEX_MAX_REQUESTS);
-    expect(list.mock.calls.map(([cursor]) => cursor)).toEqual([null, "1", "2", "3", "4"]);
+    expect(list.mock.calls.map(([cursor]) => cursor)).toEqual([null, "1", "2", "3"]);
     // 途中のページの分も積み上げて持つ
     expect(index.search("p0")).toContainEqual({ id: "0", title: "p0" });
-    expect(index.search("p4")).toContainEqual({ id: "4", title: "p4" });
+    expect(index.search("p3")).toContainEqual({ id: "3", title: "p3" });
   });
 
   it("1 回目で失敗したら前の候補を残し、reject しない", async () => {

@@ -19,10 +19,10 @@ export interface TitleIndex extends PageIndex {
 export type ListTitles = (cursor: string | null) => Promise<ApiResult<PageList<PageSummary>>>;
 
 /**
- * 候補に読む一覧の回数の上限。全 title を返す API が無いので、最近の更新を辿って集める。
- * ページを開くたびに取り直すので、回数を抑えて古いページを候補から落とすことを受け入れる。
+ * 候補に読む一覧の回数の上限。ページを開くたびに取り直すので、`listPageTitles` の 500 件ずつで
+ * 最近の 2,000 件までに抑え、それより古いページを候補から落とすことを受け入れる。
  */
-export const TITLE_INDEX_MAX_REQUESTS = 5;
+export const TITLE_INDEX_MAX_REQUESTS = 4;
 
 /**
  * `[[` の title の候補。エディタは作ったときに渡された PageIndex を使い続けるので、

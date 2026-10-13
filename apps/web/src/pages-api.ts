@@ -391,6 +391,19 @@ export async function listRecent(
   return listResult(await request(fetchFn, `/api/pages/recent${query}`), isListedPage);
 }
 
+/** Worker の `TITLES_MAX_LIMIT`。一覧の上限より大きいのは、抜粋とタグを引かないため */
+export const PAGE_TITLES_LIMIT = 500;
+
+/** id と title だけの一覧。並びと cursor は `listRecent` と同じ。 */
+export async function listPageTitles(
+  cursor: string | null,
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<PageList>> {
+  const params = new URLSearchParams({ limit: String(PAGE_TITLES_LIMIT) });
+  if (cursor !== null) params.set("cursor", cursor);
+  return listResult(await request(fetchFn, `/api/pages/titles?${params}`), isSummary);
+}
+
 export async function listTags(fetchFn: Fetch = fetch): Promise<ApiResult<TagCount[]>> {
   const res = await request(fetchFn, "/api/tags");
   if (isFailure(res)) return res;
