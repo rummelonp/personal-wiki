@@ -1,8 +1,7 @@
-import { normalizeTitleKey } from "@personal-wiki/domain";
+import { normalizeTitleKey, parsePagePath } from "@personal-wiki/domain";
 import { type Principal, readableVisibilityOf } from "./auth/principal";
-import { isPageId } from "./pages/id";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
-import { pageUrls, titlePath } from "./pages/urls";
+import { pageUrls } from "./pages/urls";
 
 /** SPA の index.html に差し込むページのメタ情報。本文は読まない。 */
 export interface PageMeta {
@@ -22,33 +21,25 @@ const META_FROM = "pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id";
  * title の解決は findPageByTitle と同じ条件で、principal が draft を読めなければ draft を返さない。
  * id の解決は visibility で絞らない（draft は id を知っていれば読める）。
  *
- * パスは c.req.path ではなく生の pathname から自分で 1 回だけ decode する。c.req.path は `%2F` などを
- * 残す decodeURI 相当で、title に `/` を含むページの URL（titlePath が `%2F` にする）を引けないため。
+ * パスは c.req.path ではなく生の pathname を parsePagePath に渡す（SPA のルーティングと同じ関数）。
+ * c.req.path は `%2F` などを残す decodeURI 相当で、title に `/` を含むページの URL を引けないため。
+ * 予約語の segment（`/P/...` や `/API` など、大文字小文字を畳むと予約語になるもの）は D1 を引かない。
  */
 export async function findPageForPath(
   db: D1Database,
   pathname: string,
   principal: Principal,
 ): Promise<PageMeta | null> {
-  const idMatch = /^\/p\/([^/]+)\/?$/.exec(pathname);
-  if (idMatch !== null) {
-    const id = idMatch[1] as string;
-    if (!isPageId(id)) return null;
+  const path = parsePagePath(pathname);
+  if (path === null) return null;
+  if (path.kind === "id") {
     return db
       .prepare(`SELECT ${META_COLUMNS} FROM ${META_FROM} WHERE p.id = ?1 AND p.deleted_at IS NULL`)
-      .bind(id)
+      .bind(path.id)
       .first<PageMeta>();
   }
 
-  let title: string;
-  try {
-    title = decodeURIComponent(pathname.slice(1));
-  } catch {
-    return null;
-  }
-  // 予約語の segment（`/P/...` や `/API` など、大文字小文字を畳むと予約語になるもの）は D1 を引かない
-  if (titlePath(title) === null) return null;
-  const key = normalizeTitleKey(title);
+  const key = normalizeTitleKey(path.title);
   if (!key.ok) return null;
   return db
     .prepare(

@@ -164,6 +164,28 @@ describe("public のページの HTML", () => {
     // `/API` は大文字小文字を畳むと予約語の api になるので、title として引かない
     expect((await navigate("/API")).status).toBe(404);
   });
+
+  it("Static Assets が先に応答する index と index.html の title は /p/<id> を正規の URL にする", async () => {
+    const { navigate, create } = await seed();
+    for (const title of ["index", "Index.html"]) {
+      const page = await create(title, "", "public");
+      const res = await navigate(`/p/${page.id}`);
+      expect(metaOf(await res.text()).ogUrl, title).toBe(`${ORIGIN}/p/${page.id}`);
+    }
+  });
+
+  it("/p/<id>/ と同じく、/<title>/ も末尾の / を外して同じページを開く", async () => {
+    const { navigate, create } = await seed();
+    const res = await navigate("/Open%20Note/");
+    expect(res.status).toBe(200);
+    expect(metaOf(await res.text()).canonical).toBe(`${ORIGIN}/Open%20Note`);
+    // title の末尾の / は %2F で書くので、/ を外した title とは別のページになる
+    const slash = await create("Slash/", "", "public");
+    const encoded = await navigate("/Slash%2F");
+    expect(metaOf(await encoded.text()).canonical).toBe(`${ORIGIN}/Slash%2F`);
+    expect((await navigate("/Slash/")).status).toBe(404);
+    expect(slash.title).toBe("Slash/");
+  });
 });
 
 describe("owner と token の HTML", () => {
@@ -284,6 +306,8 @@ describe("見つからないパス", () => {
       "/Gone",
       "/%E0%A4%A",
       "/a%2F..",
+      "/Missing%20Page/",
+      "/index",
     ]) {
       expect(await snapshot(await navigate(path)), path).toEqual(expected);
     }

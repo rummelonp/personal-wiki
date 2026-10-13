@@ -1,4 +1,4 @@
-const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+export { isPageId } from "@personal-wiki/domain";
 
 /**
  * 16 バイトの乱数の base64url（22 文字）。draft は id を知っている人だけが読める前提なので、
@@ -10,9 +10,4 @@ export function generatePageId(): string {
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
-}
-
-/** 形式が違う id は D1 に問い合わせずに 404 にする。 */
-export function isPageId(value: string): boolean {
-  return PAGE_ID_PATTERN.test(value);
 }
