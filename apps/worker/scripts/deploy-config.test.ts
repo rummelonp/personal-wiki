@@ -21,7 +21,13 @@ const VALUES = {
   d1DatabaseId: UUID,
   r2BucketName: "my-wiki-files",
   accountId: undefined,
+  ownerAuth: undefined,
 };
+
+const AUD = "0123456789abcdef".repeat(4);
+const OWNER_AUTH_ENV = `ACCESS_TEAM_DOMAIN=team.cloudflareaccess.com\nACCESS_AUD=${AUD}\nOWNER_EMAILS= a@example.com , b@example.com \n`;
+const NO_OWNER_AUTH_WARNING =
+  "ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS が無いので、owner のログインは使えません（token の API と MCP は使えます）";
 
 const BASE = {
   name: "personal-wiki",
@@ -72,9 +78,48 @@ describe("readDeployValues", () => {
         d1DatabaseName: "personal-wiki",
         r2BucketName: undefined,
         accountId: "acct",
+        ownerAuth: undefined,
       },
+      warnings: [NO_OWNER_AUTH_WARNING],
+    });
+  });
+
+  it("owner のログインの値を読み、メールの前後の空白を除く", () => {
+    const result = readDeployValues(
+      `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n${OWNER_AUTH_ENV}`,
+    );
+    expect(result).toEqual({
+      values: expect.objectContaining({
+        ownerAuth: {
+          teamDomain: "team.cloudflareaccess.com",
+          audience: AUD,
+          ownerEmails: "a@example.com,b@example.com",
+        },
+      }),
       warnings: [],
     });
+  });
+
+  it("owner のログインの値が一部だけ、または形式が誤っていれば弾く", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(readDeployValues(`${base}ACCESS_AUD=${AUD}\n`)).toEqual({
+      problems: [
+        "ACCESS_TEAM_DOMAIN がありません（owner のログインに要ります）",
+        "OWNER_EMAILS がありません（owner のログインに要ります）",
+      ],
+    });
+    for (const line of [
+      "ACCESS_TEAM_DOMAIN=https://team.cloudflareaccess.com",
+      "ACCESS_TEAM_DOMAIN=team.cloudflareaccess.com/",
+      "ACCESS_AUD=a b",
+      "OWNER_EMAILS=owner",
+      "OWNER_EMAILS=a@example.com b@example.com",
+      "OWNER_EMAILS=,",
+    ]) {
+      expect(readDeployValues(`${base}${OWNER_AUTH_ENV}${line}\n`), line).toHaveProperty(
+        "problems",
+      );
+    }
   });
 
   it("R2_BUCKET_NAME があれば使う", () => {
@@ -110,7 +155,7 @@ describe("readDeployValues", () => {
     );
     expect(result).toMatchObject({
       values: { hostname: "h.example" },
-      warnings: ["未知のキー R2_BUCKET は使われません"],
+      warnings: ["未知のキー R2_BUCKET は使われません", NO_OWNER_AUTH_WARNING],
     });
   });
 });
@@ -152,6 +197,18 @@ describe("composeConfig", () => {
     expect(BASE).toEqual(before);
   });
 
+  it("owner のログインの値は指定されたときだけ vars に入れ、既存の vars は残す", () => {
+    expect(composeConfig(BASE, VALUES)).not.toHaveProperty("vars");
+    const ownerAuth = { teamDomain: "t.example", audience: AUD, ownerEmails: "a@example.com" };
+    const config = composeConfig({ ...BASE, vars: { OTHER: "x" } }, { ...VALUES, ownerAuth });
+    expect(config.vars).toEqual({
+      OTHER: "x",
+      ACCESS_TEAM_DOMAIN: "t.example",
+      ACCESS_AUD: AUD,
+      OWNER_EMAILS: "a@example.com",
+    });
+  });
+
   it("account_id は指定されたときだけ入れる", () => {
     expect(composeConfig(BASE, { ...VALUES, accountId: "acct" }).account_id).toBe("acct");
   });
@@ -182,11 +239,12 @@ describe("writeGeneratedConfig", () => {
   };
 
   it("合成した設定を outPath に書き、そのパスを返す", () => {
-    const opts = setup(`WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\nX=1\n`);
+    const opts = setup(`WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\nX=1\n${OWNER_AUTH_ENV}`);
     expect(writeGeneratedConfig(opts)).toBe(opts.outPath);
     const written = JSON.parse(readFileSync(opts.outPath, "utf8"));
     expect(written.routes[0].pattern).toBe("h.example");
     expect(written).not.toHaveProperty("r2_buckets");
+    expect(written.vars.ACCESS_AUD).toBe(AUD);
     expect(opts.warnings).toHaveLength(1);
     expect(opts.warnings[0]).toContain(opts.envPath);
   });

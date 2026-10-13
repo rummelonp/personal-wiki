@@ -23,7 +23,14 @@ const R2_BINDING = "BUCKET";
  *   d1DatabaseId: string;
  *   r2BucketName: string | undefined;
  *   accountId: string | undefined;
+ *   ownerAuth: OwnerAuthValues | undefined;
  * }} DeployValues
+ */
+
+/**
+ * owner のログイン（Cloudflare Access）の設定。Worker の vars に入れる。
+ * SESSION_SECRET は秘密なのでここに含めず、`wrangler secret put` で入れる。
+ * @typedef {{ teamDomain: string; audience: string; ownerEmails: string }} OwnerAuthValues
  */
 
 /**
@@ -87,7 +94,11 @@ const KNOWN_KEYS = new Set([
   "D1_DATABASE_NAME",
   "R2_BUCKET_NAME",
   "CLOUDFLARE_ACCOUNT_ID",
+  "ACCESS_TEAM_DOMAIN",
+  "ACCESS_AUD",
+  "OWNER_EMAILS",
 ]);
+const OWNER_AUTH_KEYS = ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "OWNER_EMAILS"];
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -95,6 +106,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * deploy.env の内容から、デプロイ先ごとの値を取り出す。
  * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
+ * owner のログインの 3 つの値は、すべて空なら ownerAuth を undefined にして警告する。一部だけなら
+ * problems にする（ログインできないままデプロイしても気づきにくいため）。
  * @param {string} envText
  * @returns {{ values: DeployValues; warnings: string[] } | { problems: string[] }}
  */
@@ -122,6 +135,7 @@ export function readDeployValues(envText) {
       "D1_DATABASE_ID は UUID 形式（wrangler d1 create が表示する database_id）にしてください",
     );
   }
+  const ownerAuth = readOwnerAuth(get, problems, warnings);
   if (problems.length > 0 || hostname === undefined || d1DatabaseId === undefined) {
     return { problems };
   }
@@ -132,9 +146,52 @@ export function readDeployValues(envText) {
       d1DatabaseName: get("D1_DATABASE_NAME") ?? "personal-wiki",
       r2BucketName: get("R2_BUCKET_NAME"),
       accountId: get("CLOUDFLARE_ACCOUNT_ID"),
+      ownerAuth,
     },
     warnings,
   };
+}
+
+const EMAIL_PATTERN = /^[^\s@,]+@[^\s@,]+$/;
+
+/**
+ * @param {(key: string) => string | undefined} get
+ * @param {string[]} problems
+ * @param {string[]} warnings
+ * @returns {OwnerAuthValues | undefined}
+ */
+function readOwnerAuth(get, problems, warnings) {
+  const present = OWNER_AUTH_KEYS.filter((key) => get(key) !== undefined);
+  if (present.length === 0) {
+    warnings.push(
+      `${OWNER_AUTH_KEYS.join("、")} が無いので、owner のログインは使えません（token の API と MCP は使えます）`,
+    );
+    return undefined;
+  }
+  const missing = OWNER_AUTH_KEYS.filter((key) => get(key) === undefined);
+  for (const key of missing) problems.push(`${key} がありません（owner のログインに要ります）`);
+  const teamDomain = get("ACCESS_TEAM_DOMAIN");
+  const audience = get("ACCESS_AUD");
+  const emails = get("OWNER_EMAILS")
+    ?.split(",")
+    .map((email) => email.trim())
+    .filter((email) => email !== "");
+  if (teamDomain !== undefined && !HOSTNAME_PATTERN.test(teamDomain)) {
+    problems.push(
+      "ACCESS_TEAM_DOMAIN はスキームやパスを含まないホスト名（<team>.cloudflareaccess.com）にしてください",
+    );
+  }
+  if (audience !== undefined && /\s/.test(audience)) {
+    problems.push("ACCESS_AUD は Access のアプリケーションの AUD タグをそのまま書いてください");
+  }
+  if (
+    emails !== undefined &&
+    (emails.length === 0 || !emails.every((e) => EMAIL_PATTERN.test(e)))
+  ) {
+    problems.push("OWNER_EMAILS はメールアドレスをカンマで区切って書いてください");
+  }
+  if (teamDomain === undefined || audience === undefined || emails === undefined) return undefined;
+  return { teamDomain, audience, ownerEmails: emails.join(",") };
 }
 
 /**
@@ -142,6 +199,7 @@ export function readDeployValues(envText) {
  * 差し替える箇所は binding の名前で探し、見つからなければ例外にする。
  * routes は元の内容を捨てて、ホスト名 1 件の custom_domain に置き換える。
  * r2BucketName が無いときは、R2 の binding を設定から外す。
+ * ownerAuth があれば vars に入れる。無ければ vars に入れず、Worker はログインを拒む。
  * @param {Record<string, any>} base
  * @param {DeployValues} values
  * @returns {Record<string, any>}
@@ -169,6 +227,14 @@ export function composeConfig(base, values) {
     r2.bucket_name = values.r2BucketName;
   }
   if (values.accountId !== undefined) config.account_id = values.accountId;
+  if (values.ownerAuth !== undefined) {
+    config.vars = {
+      ...config.vars,
+      ACCESS_TEAM_DOMAIN: values.ownerAuth.teamDomain,
+      ACCESS_AUD: values.ownerAuth.audience,
+      OWNER_EMAILS: values.ownerAuth.ownerEmails,
+    };
+  }
   return config;
 }
 
