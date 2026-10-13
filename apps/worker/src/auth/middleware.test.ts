@@ -183,8 +183,8 @@ describe("認可の宣言が無いルート", () => {
     });
 
     it("SPA の catch-all に付けた allowAnonymous()", async () => {
-      const app = createApp().post("/api/pages", undeclared).all("*", allowAnonymous(), declared);
-      await expectRejected(app, "/api/pages", "POST");
+      const app = createApp().post("/api/x", undeclared).all("*", allowAnonymous(), declared);
+      await expectRejected(app, "/api/x", "POST");
     });
 
     it("prefix の use() に付けた宣言", async () => {
@@ -206,9 +206,9 @@ describe("認可の宣言が無いルート", () => {
 
     it("同じパスの別の method にだけ付けた宣言", async () => {
       const app = createApp()
-        .get("/api/pages", allowAnonymous(), declared)
-        .on(["GET", "POST"], "/api/pages", undeclared);
-      await expectRejected(app, "/api/pages", "POST");
+        .get("/api/x", allowAnonymous(), declared)
+        .on(["GET", "POST"], "/api/x", undeclared);
+      await expectRejected(app, "/api/x", "POST");
     });
 
     it("use() の宣言の後ろに登録した method 別のハンドラ", async () => {
