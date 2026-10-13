@@ -278,9 +278,11 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
 /**
  * 管理用のルート。派生データの作り直しは冪等で、ページの内容も版も変えないので write の scope で許す。
  *
- * 作り直しは CPU 10ms に収まるよう数ページずつ進む。全ページを作り直すには、応答の next を
+ * 作り直しは CPU 10ms に収まるよう 1 ページずつ進む。全ページを作り直すには、応答の next を
  * 次のリクエストの after に渡し、next が null になるまで繰り返す:
- *   POST /api/admin/derived/rebuild  {"after": null, "limit": 3}
+ *   POST /api/admin/derived/rebuild  {"after": null}
+ *   → {"rebuilt": 1, "skipped": 0, "failed": [], "next": "<id>", "rowsWritten": 9}
+ * failed に入ったページは派生データが古いまま残る。応答が返らない場合は rebuildDerived を参照。
  */
 export function registerAdminRoutes(
   app: Hono<AppEnv>,

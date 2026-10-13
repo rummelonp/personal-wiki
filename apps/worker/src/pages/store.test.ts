@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
-import { snapshotDb } from "../test/pages";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { snapshotDb, tagsOf } from "../test/pages";
 import {
   APPEND_MAX_ATTEMPTS,
   appendText,
@@ -8,6 +8,7 @@ import {
   createPage,
   findPageById,
   type Page,
+  rebuildDerived,
   updatePage,
 } from "./store";
 
@@ -18,25 +19,30 @@ async function seedPage(body: string): Promise<Page> {
 }
 
 /**
- * batch を送る直前に別の保存を割り込ませる D1。追記が読んでから書くまでの間に競合が起きた状況を作る。
+ * batch を送る直前に before を呼ぶ D1。call は 1 から数えた batch の呼び出し回数。
  * workerd の D1Database は private field を持つので、メソッドは元のオブジェクトに bind して返す。
  */
-function interruptingDb(interruptions: number, interrupt: () => Promise<void>): D1Database {
-  let remaining = interruptions;
+function hookedDb(before: (call: number) => Promise<void>): D1Database {
+  let calls = 0;
   return new Proxy(env.DB, {
     get(target, property) {
       if (property === "batch") {
         return async (statements: D1PreparedStatement[]) => {
-          if (remaining > 0) {
-            remaining -= 1;
-            await interrupt();
-          }
+          calls += 1;
+          await before(calls);
           return target.batch(statements);
         };
       }
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
+  });
+}
+
+/** 読んでから書くまでの間に別の保存が入った状況を、最初の interruptions 回の batch で作る。 */
+function interruptingDb(interruptions: number, interrupt: () => Promise<void>): D1Database {
+  return hookedDb(async (call) => {
+    if (call <= interruptions) await interrupt();
   });
 }
 
@@ -89,6 +95,37 @@ describe("appendToPage", () => {
       "token:other",
     ]);
     expect((await findPageById(env.DB, page.id))?.body).toBe("base e1 e2 e3");
+  });
+});
+
+describe("rebuildDerived", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function seedTitled(title: string, body: string): Promise<Page> {
+    const result = await createPage(env.DB, { title, body, actor: "token:seed", now: 1 });
+    if (!result.ok) throw new Error(result.reason);
+    return result.page;
+  }
+
+  it("版の競合以外で失敗したページは failed に入れ、cursor を進めて次のページを作り直す", async () => {
+    const [first, second] = [await seedTitled("a", "#a"), await seedTitled("b", "#b")].sort(
+      (p, q) => (p.id < q.id ? -1 : 1),
+    );
+    if (first === undefined || second === undefined) throw new Error("seed failed");
+    await env.DB.prepare("DELETE FROM tags").run();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const db = hookedDb(async (call) => {
+      if (call === 1) throw new Error("injected");
+    });
+    const result = await rebuildDerived(db, { after: null, limit: 2 });
+
+    expect(result).toMatchObject({ rebuilt: 1, skipped: 0, failed: [first.id], next: second.id });
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining(first.id));
+    expect(await tagsOf(first.id)).toEqual([]);
+    expect(await tagsOf(second.id)).toEqual([{ key: second.title, tag: second.title }]);
   });
 });
 

@@ -112,12 +112,10 @@ async function rebuildAll(request: Awaited<ReturnType<typeof buildClient>>["requ
   let after: string | null = null;
   let calls = 0;
   for (;;) {
-    const res = await request("/api/admin/derived/rebuild", {
-      method: "POST",
-      json: { after, limit: 2 },
-    });
+    const res = await request("/api/admin/derived/rebuild", { method: "POST", json: { after } });
     expect(res.status).toBe(200);
-    const body = await res.json<{ next: string | null; rebuilt: number }>();
+    const body = await res.json<{ next: string | null; failed: string[] }>();
+    expect(body.failed).toEqual([]);
     calls += 1;
     if (body.next === null) return calls;
     after = body.next;
@@ -155,8 +153,8 @@ describe("POST /api/admin/derived/rebuild", () => {
     });
 
     const calls = await rebuildAll(request);
-    // 4 ページを 2 件ずつ。最後の呼び出しは 0 件で next が null になる
-    expect(calls).toBe(3);
+    // 4 ページを 1 件ずつ。最後の呼び出しは 0 件で next が null になる
+    expect(calls).toBe(5);
     expect(await snapshotDb()).toEqual(expected);
   });
 

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { buildClient, type PageJson, snapshotDb, T0 } from "../test/pages";
+import { MAX_BODY_BYTES } from "./store";
 
 async function revisionsOf(pageId: string) {
   const { results } = await env.DB.prepare(
@@ -93,13 +94,20 @@ describe("POST /api/pages", () => {
     expect(await broken.json()).toEqual({ error: "invalid_json" });
   });
 
-  it("大きすぎる本文は 413", async () => {
+  it("本文は UTF-8 で MAX_BODY_BYTES まで。超えたら 413", async () => {
     const { request } = await buildClient();
-    const res = await request("/api/pages", {
+    const atLimit = await request("/api/pages", {
       method: "POST",
-      json: { title: "big", body: "あ".repeat(400_000) },
+      json: { title: "limit", body: "a".repeat(MAX_BODY_BYTES) },
     });
-    expect(res.status).toBe(413);
+    expect(atLimit.status).toBe(201);
+    // 3 バイトの文字で、文字数ではなくバイト数で数えることを確かめる
+    const over = await request("/api/pages", {
+      method: "POST",
+      json: { title: "big", body: "あ".repeat(Math.floor(MAX_BODY_BYTES / 3) + 1) },
+    });
+    expect(over.status).toBe(413);
+    expect(await over.json()).toEqual({ error: "body_too_large" });
   });
 
   it("title_key が同じページがあれば 409 title_conflict", async () => {

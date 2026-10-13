@@ -25,10 +25,14 @@ export interface Page {
 }
 
 /**
- * D1 の 1 行の上限は 2MB で、revisions の行は title と body を両方持つ。UTF-8 のバイト数で数える。
- * 保存時の Markdown の解析も本文の長さに比例して CPU を使う。
+ * 本文の上限（UTF-8 のバイト数）。保存のたびに本文の Markdown を解析して派生データを作るので、
+ * Workers Free の CPU 10ms で決める。dev の Mac（Node、warm）で解析を測った値:
+ *   リンクと強調の多い本文: 28KB で 8.5ms、100KB で 24.8ms、286KB で 69ms、1MB で約 260〜300ms
+ *   平文: 22KB で 3.4ms、219KB で 21ms
+ * リンクの多い本文では 64KiB でも 10ms を超えうる。本番の CPU 時間を測ってから見直す。
+ * D1 の 1 行 2MB（revisions の行は title と body を両方持つ）には、この上限なら十分収まる。
  */
-export const MAX_BODY_BYTES = 1_000_000;
+export const MAX_BODY_BYTES = 65_536;
 
 export type InputError =
   | { ok: false; reason: "invalid_title" }
@@ -332,10 +336,10 @@ export async function deletePage(
 }
 
 /**
- * 1 回の呼び出しで作り直すページ数の上限。Workers Free の CPU 10ms と、1 invocation 50 クエリ
- * （1 ページあたり batch で約 9 文）に収める。
+ * 1 回の呼び出しで作り直すページ数の上限。上限近い本文 1 ページの解析だけで CPU 10ms に届きうる
+ * （MAX_BODY_BYTES の計測値）ので、1 ページずつにする。
  */
-export const REBUILD_MAX_LIMIT = 3;
+export const REBUILD_MAX_LIMIT = 1;
 
 export interface RebuildInput {
   /** 前回の呼び出しが返した next。最初は null */
@@ -348,6 +352,8 @@ export interface RebuildResult {
   rebuilt: number;
   /** 読んだあとに別の保存が入ったページ。その保存が新しい本文で派生データを書いている */
   skipped: number;
+  /** 作り直しが例外で失敗したページの id。派生データはそのページの作り直し前のまま残る */
+  failed: string[];
   /** 次の呼び出しに渡す cursor。null なら全ページを終えた */
   next: string | null;
   rowsWritten: number;
@@ -365,6 +371,11 @@ interface RebuildRow {
 /**
  * 派生データを pages の title と body から作り直す。id 順に limit 件ずつ進むので、呼び出し側は
  * next が null になるまで繰り返す。版も revision も変えない。
+ *
+ * 1 ページの失敗で全体を止めないよう、版の競合以外の例外は failed に入れて cursor を進める。
+ * ただし CPU の上限で invocation ごと打ち切られると例外として捕まえられず、応答も返らない。
+ * そのときは同じ after で何度呼んでも同じページで止まるので、呼び出し側は after より後ろで最初の
+ * id（`SELECT id FROM pages WHERE id > ? ORDER BY id LIMIT 1`）を after に渡して、そのページを飛ばす。
  */
 export async function rebuildDerived(db: D1Database, input: RebuildInput): Promise<RebuildResult> {
   const { results: rows } = await db
@@ -376,28 +387,36 @@ export async function rebuildDerived(db: D1Database, input: RebuildInput): Promi
     .all<RebuildRow>();
   let rebuilt = 0;
   let skipped = 0;
+  const failed: string[] = [];
   let rowsWritten = 0;
   for (const row of rows) {
-    // 削除済みのページは書き込み経路が無く、版の照合は要らない
-    const statements =
-      row.deleted_at === null
-        ? [
-            guardStatement(db, row.id, row.version),
-            ...derivedStatements(db, row.id, row.title_key, deriveValues(row.title, row.body)),
-          ]
-        : clearDerivedStatements(db, row.id);
     try {
+      // 削除済みのページは書き込み経路が無く、版の照合は要らない
+      const statements =
+        row.deleted_at === null
+          ? [
+              guardStatement(db, row.id, row.version),
+              ...derivedStatements(db, row.id, row.title_key, deriveValues(row.title, row.body)),
+            ]
+          : clearDerivedStatements(db, row.id);
       rowsWritten += sumRowsWritten(await db.batch(statements));
       rebuilt += 1;
     } catch (error) {
-      if (!isVersionConflict(error)) throw error;
-      skipped += 1;
+      if (isVersionConflict(error)) {
+        skipped += 1;
+        continue;
+      }
+      console.error(
+        JSON.stringify({ event: "pages.rebuild_failed", pageId: row.id, error: errorText(error) }),
+      );
+      failed.push(row.id);
     }
   }
   const last = rows.at(-1);
   return {
     rebuilt,
     skipped,
+    failed,
     next: rows.length === input.limit && last !== undefined ? last.id : null,
     rowsWritten,
   };
