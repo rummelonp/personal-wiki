@@ -8,6 +8,7 @@ import {
   type EditorApi,
   EditorSession,
   isDirty,
+  isReadOnly,
   type SaveStatus,
   saveStatusOf,
 } from "./editor-session";
@@ -73,7 +74,7 @@ export function PageEditor({ page }: { page: Page }) {
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const editor = useRef<BodyEditorHandle>(null);
   const status = saveStatusOf(state);
-  const readOnly = state.conflict !== null || state.gone;
+  const readOnly = isReadOnly(state);
   const idle = state.busy === null;
   const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
@@ -118,7 +119,13 @@ export function PageEditor({ page }: { page: Page }) {
         <button
           type="button"
           className="button button-quiet button-danger"
-          disabled={!idle || state.gone || state.authLost || state.conflict !== null}
+          disabled={
+            !idle ||
+            state.gone ||
+            state.authLost ||
+            state.conflict !== null ||
+            state.pendingBackup !== null
+          }
           onClick={() => void handleDelete()}
         >
           このページを削除

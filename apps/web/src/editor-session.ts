@@ -58,6 +58,15 @@ export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "conflict" |
 export const isDirty = (state: Pick<EditorState, "base" | "draft">): boolean =>
   state.draft.title !== state.base.title || state.draft.body !== state.base.body;
 
+/**
+ * 手元の内容を動かしてはいけない状態。画面は入力欄を読み取り専用にし、セッションも編集を受け付けない。
+ * 退避が未決の間を含めるのは、入力すると localStorage の退避を上書きし、復元か破棄を選ぶ前に
+ * 前回の内容を失うため。
+ */
+export const isReadOnly = (
+  state: Pick<EditorState, "conflict" | "gone" | "pendingBackup">,
+): boolean => state.conflict !== null || state.gone || state.pendingBackup !== null;
+
 export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.gone) return "gone";
   if (state.authLost) return "auth";
@@ -140,7 +149,17 @@ export class EditorSession {
     return conflict === null && !authLost && !gone;
   }
 
+  /**
+   * 退避が未決の間は、localStorage の内容が前回の唯一の写しなので消さない。
+   * 復元か破棄の操作（restoreBackup、discardBackup）だけが未決を解く。
+   */
+  private removeBackup(pageId: string): void {
+    if (this.state.pendingBackup === null) this.backup.remove(pageId);
+  }
+
   private stash(): void {
+    // 未決の間は上書きしない。手元は退避と同じ内容か、まだ復元していない
+    if (this.state.pendingBackup !== null) return;
     const { base, draft } = this.state;
     this.backup.save(base.id, {
       title: draft.title,
@@ -156,9 +175,9 @@ export class EditorSession {
   }
 
   edit(draft: Draft): void {
-    const { conflict, gone, authLost } = this.state;
-    // 衝突中は画面側で読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
-    if (conflict !== null || gone) return;
+    // 画面側でも読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
+    if (isReadOnly(this.state)) return;
+    const { authLost } = this.state;
     this.set({ draft, error: null });
     if (authLost) {
       this.stashIfDirty();
@@ -191,7 +210,7 @@ export class EditorSession {
         // 保存中にさらに入力があった
         this.edit(this.state.draft);
       } else {
-        this.backup.remove(base.id);
+        this.removeBackup(base.id);
       }
       return;
     }
@@ -224,7 +243,7 @@ export class EditorSession {
           if (options.adoptSame && server.title === draft.title && server.body === draft.body) {
             this.clearTimer();
             this.set({ base: server, error: null });
-            this.backup.remove(server.id);
+            this.removeBackup(server.id);
             return;
           }
           this.set({ conflict: server });
@@ -271,7 +290,7 @@ export class EditorSession {
       if (!isDirty(this.state) || same) {
         this.clearTimer();
         this.set({ base: server, draft: { title: server.title, body: server.body } });
-        this.backup.remove(server.id);
+        this.removeBackup(server.id);
         return;
       }
       this.clearTimer();
@@ -301,7 +320,7 @@ export class EditorSession {
       conflict: null,
       error: null,
     });
-    this.backup.remove(conflict.id);
+    this.removeBackup(conflict.id);
   }
 
   /** ログイン切れの後、別のタブなどでログインし直したときの再試行。 */
@@ -363,14 +382,15 @@ export class EditorSession {
   /** 成功したら true。呼び出し側が一覧へ戻る。 */
   remove(): Promise<boolean> {
     return this.enqueue(async () => {
-      if (!this.canWrite()) return false;
+      // 退避が未決のまま消すと、復元の機会を失う
+      if (!this.canWrite() || this.state.pendingBackup !== null) return false;
       this.clearTimer();
       const { base } = this.state;
       this.set({ busy: "deleting", error: null });
       const res = await this.api.deletePage(base.id, base.version);
       this.set({ busy: null });
       if (res.ok) {
-        this.backup.remove(base.id);
+        this.removeBackup(base.id);
         this.set({ gone: true });
         return true;
       }

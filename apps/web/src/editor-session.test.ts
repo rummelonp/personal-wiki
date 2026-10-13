@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backup, BackupStore } from "./draft-backup";
-import { type EditorApi, type EditorDeps, EditorSession, saveStatusOf } from "./editor-session";
+import {
+  type EditorApi,
+  type EditorDeps,
+  EditorSession,
+  isReadOnly,
+  saveStatusOf,
+} from "./editor-session";
 import type { ApiResult, Page } from "./pages-api";
 
 const ID = "AAAAAAAAAAAAAAAAAAAAAA";
@@ -443,5 +449,53 @@ describe("削除と離脱", () => {
     const { session, api } = setup();
     await session.leave();
     expect(api.calls).toEqual([]);
+  });
+});
+
+describe("退避が未決の間", () => {
+  const stale = { title: "題", body: "退避", baseVersion: 1, savedAt: 0 };
+
+  it("編集は受け付けず、自動保存も退避の上書きもしない", async () => {
+    const backup = memoryBackup(stale);
+    const { session, api } = setup({ backup });
+    expect(isReadOnly(session.getState())).toBe(true);
+    session.edit({ title: "題", body: "上書きのつもり" });
+    expect(session.getState().draft.body).toBe("本文");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.calls).toEqual([]);
+    expect(backup.load(ID)).toEqual(stale);
+    await session.leave();
+    expect(backup.load(ID)).toEqual(stale);
+  });
+
+  it("フォーカス復帰で最新の版を取り込んでも退避は残り、復元は衝突になる", async () => {
+    const backup = memoryBackup(stale);
+    const { session, server } = setup({ backup });
+    server.page = page({ body: "他で更新", version: 2 });
+    await session.checkFreshness();
+    expect(session.getState().base.version).toBe(2);
+    expect(backup.load(ID)).toEqual(stale);
+    session.restoreBackup();
+    expect(saveStatusOf(session.getState())).toBe("conflict");
+    expect(session.getState().draft.body).toBe("退避");
+  });
+
+  it("削除は退避を決めるまで拒否する", async () => {
+    const backup = memoryBackup(stale);
+    const { session, api } = setup({ backup });
+    expect(await session.remove()).toBe(false);
+    expect(api.calls).toEqual([]);
+    expect(backup.load(ID)).toEqual(stale);
+  });
+
+  it("破棄すると退避が消え、以後は編集できる", async () => {
+    const backup = memoryBackup(stale);
+    const { session, server } = setup({ backup });
+    session.discardBackup();
+    expect(backup.load(ID)).toBeNull();
+    expect(isReadOnly(session.getState())).toBe(false);
+    session.edit({ title: "題", body: "新" });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(server.page.body).toBe("新");
   });
 });
