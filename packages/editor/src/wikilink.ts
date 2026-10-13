@@ -163,8 +163,10 @@ const clickToNavigate = EditorView.domEventHandlers({
     if (handlers.length === 0) return false;
     const element =
       event.target instanceof Element ? event.target.closest(`[${TARGET_ATTR}]`) : null;
-    const target = element?.getAttribute(TARGET_ATTR);
-    if (!element || target === null) return false;
+    if (!element) return false;
+    // target が空文字列の link（`[[#見出し]]`）も有効なので、null かどうかだけを見る
+    const target = element.getAttribute(TARGET_ATTR);
+    if (target === null) return false;
     const link: WikiLinkClick = {
       target,
       label: element.getAttribute(LABEL_ATTR),
