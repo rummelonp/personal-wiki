@@ -211,6 +211,33 @@ describe("認可の宣言が無いルート", () => {
       await expectRejected(app, "/api/pages", "POST");
     });
 
+    it("use() の宣言の後ろに登録した method 別のハンドラ", async () => {
+      const app = createApp().use("/api/x", allowAnonymous()).put("/api/x", undeclared);
+      await expectRejected(app, "/api/x", "PUT");
+    });
+
+    it("all() の宣言の後ろに登録した method 別のハンドラ", async () => {
+      const app = createApp()
+        .all("/api/x", allowAnonymous(), async (_c, next) => next())
+        .post("/api/x", undeclared);
+      await expectRejected(app, "/api/x", "POST");
+    });
+
+    it("GET の宣言の後ろに登録した all() のハンドラ", async () => {
+      const app = createApp()
+        .get("/api/x", allowAnonymous(), async (_c, next) => next())
+        .all("/api/x", undeclared);
+      await expectRejected(app, "/api/x");
+    });
+
+    it("基盤として登録したハンドラを個別のルートに置いたもの", async () => {
+      const app = createApp().get(
+        "/api/x",
+        defineBaseMiddleware(createMiddleware(async (c) => undeclared(c))),
+      );
+      await expectRejected(app, "/api/x");
+    });
+
     it("基盤として登録していない全体の middleware", async () => {
       const app = createApp()
         .use("*", async (_c, next) => next())

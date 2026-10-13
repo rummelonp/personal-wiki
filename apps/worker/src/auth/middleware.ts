@@ -15,15 +15,18 @@ import { hashApiToken, isWellFormedApiToken } from "./token";
  *   4. ルートごとの宣言（requireToken、allowAnonymous）: principal と scope を検査する
  *
  * 3 が保証すること: マッチした登録のうち、基盤の middleware と宣言を除くすべて（ハンドラや
- * 宣言でない middleware）について、それより前に同じ path・同じ method（または ALL）の宣言が
- * 登録されている。1 つでも満たさなければリクエスト全体を拒否する。
+ * 宣言でない middleware）について、それより前に同じ path・同じ method の宣言が登録されている。
+ * 1 つでも満たさなければリクエスト全体を拒否する。ALL の宣言（use、all）は ALL の登録しか守らない。
+ * `.use(p, requireToken("read")).put(p, h)` を通すと、write を書き忘れた h が read で動くため。
  *
  * そのため宣言は、守りたい登録と同じ path に付ける。
  *   - `.get("/api/pages/:slug", requireToken("read"), handler)` のように同じ呼び出しで付けるのが基本。
  *   - `.use("/api/*", requireToken("read"))` は path が "/api/*" の登録（mount など）にしか効かず、
  *     "/api/pages" のハンドラを守らない。prefix で一括して守る書き方は、宣言漏れを隠すので採らない。
  *   - 宣言は守る登録より前に置く。後ろに置いた宣言は数えない。
- * 他のルートの宣言や catch-all の allowAnonymous() に便乗して、宣言の無いハンドラが通ることはない。
+ * 保証の単位は (path, method)。Hono の登録情報からは `.get(p, policy, h1, h2)` と
+ * `.get(p, policy, h1).get(p, h2)` を区別できないので、同じ path・method に前の登録の宣言があれば
+ * それが効く。別の path や別の method の宣言、catch-all の allowAnonymous() には便乗できない。
  */
 
 const policies = new WeakSet<MiddlewareHandler>();
@@ -37,8 +40,9 @@ function definePolicy(handler: MiddlewareHandler<AppEnv>): MiddlewareHandler<App
 
 /**
  * 全ルートに共通の基盤の middleware（認証、CORS、セキュリティヘッダーなど）として登録する。
- * 登録したものは enforceDeclaredPolicy の検査から外れるので、ハンドラの代わりに応答を作る
- * middleware（principal に関係なく内容を返すもの）には使わない。
+ * wildcard の path（`*` で終わる）に `use()` で置いたときだけ enforceDeclaredPolicy の検査から
+ * 外れる。外れるので、ハンドラの代わりに応答を作る middleware（principal に関係なく内容を返すもの）
+ * には使わない。
  */
 export function defineBaseMiddleware<T extends MiddlewareHandler>(handler: T): T {
   baseMiddlewares.add(handler as MiddlewareHandler);
@@ -58,18 +62,27 @@ function isRegisteredIn(set: WeakSet<MiddlewareHandler>, handler: unknown): bool
   return false;
 }
 
+// 基盤として扱うのは wildcard の use() に置いた登録だけにする。個別ルートのハンドラを
+// defineBaseMiddleware で包んで宣言を逃れる書き方を通さないため。
+function isBaseRegistration(route: RouterRoute): boolean {
+  return (
+    route.method === "ALL" &&
+    route.path.endsWith("*") &&
+    isRegisteredIn(baseMiddlewares, route.handler)
+  );
+}
+
 /** `routes` は Hono が返すマッチ順（登録順）のまま渡す。 */
 function everyRouteDeclared(routes: readonly RouterRoute[]): boolean {
   const declared: RouterRoute[] = [];
   for (const route of routes) {
-    if (isRegisteredIn(baseMiddlewares, route.handler)) continue;
+    if (isBaseRegistration(route)) continue;
     if (isRegisteredIn(policies, route.handler)) {
       declared.push(route);
       continue;
     }
     const covered = declared.some(
-      (policy) =>
-        policy.path === route.path && (policy.method === route.method || policy.method === "ALL"),
+      (policy) => policy.path === route.path && policy.method === route.method,
     );
     if (!covered) return false;
   }
@@ -109,7 +122,8 @@ export interface ResolvePrincipalOptions {
  * 公開ルートであっても無効なトークンは 401 にする（送った資格情報が黙って無視されないように）。
  *
  * キャッシュの制御もここで行う。匿名を受け付けるルートも principal で内容が変わりうるので、
- * 応答には常に Vary を付け、匿名以外の応答は共有キャッシュに載せない。ルートの宣言ではなく
+ * principal が決まった後の応答には Vary を付け、匿名以外の応答は共有キャッシュに載せない
+ * （401 と 400 の早期返却はキャッシュされないステータスなので付けない）。ルートの宣言ではなく
  * principal を起点にするのは、宣言の種類を増やしたときに付け忘れないようにするため。
  */
 export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHandler<AppEnv> {
