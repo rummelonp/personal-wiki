@@ -121,6 +121,45 @@ export async function findPageByTitle(
   return row === null ? null : toPage(row);
 }
 
+export interface ResolvedPage {
+  id: string;
+  title: string;
+  visibility: Visibility;
+}
+
+/**
+ * 複数の title を 1 回のクエリで引き、入力と同じ順・同じ件数で返す。重複や、正規化で同じになる
+ * title も入力ごとに答える。title_key にできない title、削除済み、readable の外にあるページは null。
+ * readable が public なら draft は null（無いページと区別できないようにする）。
+ * links の target_page_id からは引かない。draft にも解決していて、readable で絞れないため。
+ */
+export async function resolvePagesByTitle(
+  db: D1Database,
+  titles: readonly string[],
+  readable: ReadableVisibility,
+): Promise<(ResolvedPage | null)[]> {
+  const keys = titles.map((title) => {
+    const key = normalizeTitleKey(title);
+    return key.ok ? key.value : null;
+  });
+  const distinct = [...new Set(keys.filter((key) => key !== null))];
+  const found = new Map<string, ResolvedPage>();
+  if (distinct.length > 0) {
+    const { results } = await db
+      .prepare(
+        `SELECT id, title, title_key, visibility FROM pages
+         WHERE title_key IN (SELECT value FROM json_each(?1))
+           AND deleted_at IS NULL AND (?2 = 0 OR visibility = 'public')`,
+      )
+      .bind(JSON.stringify(distinct), publicOnlyFlag(readable))
+      .all<ResolvedPage & { title_key: string }>();
+    for (const { id, title, title_key, visibility } of results) {
+      found.set(title_key, { id, title, visibility });
+    }
+  }
+  return keys.map((key) => (key === null ? null : (found.get(key) ?? null)));
+}
+
 interface PreparedContent {
   ok: true;
   title: string;

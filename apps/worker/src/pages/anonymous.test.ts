@@ -5,6 +5,7 @@ import { SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../auth/session";
 import { ownerCookie, ownerEnv } from "../test/owner";
 import { type PageJson, T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
+import { RESOLVE_MAX_TITLES } from "./routes";
 
 /*
  * 匿名から見た公開範囲の境界。draft は id での直接取得だけで読め、title での取得、一覧、検索、
@@ -281,10 +282,11 @@ describe("匿名の読み取り", () => {
 });
 
 describe("検証できないセッション cookie", () => {
-  /** ページの読み取りの 6 つのルートを 1 つずつ呼ぶパス。 */
+  /** ページの読み取りの 7 つのルートを 1 つずつ呼ぶパス。 */
   function readPaths(open: PageJson): string[] {
     return [
       `/api/pages/by-title?title=${encodeURIComponent("Open Note")}`,
+      `/api/pages/resolve?title=${encodeURIComponent("Open Note")}`,
       "/api/pages/recent",
       "/api/tags",
       `/api/search?q=${encodeURIComponent("Open")}`,
@@ -404,6 +406,8 @@ describe("匿名向けの応答の総当たり", () => {
     const { draft, open, linker, gone } = pages;
     const title = (value: string) => `/api/pages/by-title?title=${encodeURIComponent(value)}`;
     const search = (q: string) => `/api/search?q=${encodeURIComponent(q)}`;
+    const resolve = (...titles: string[]) =>
+      `/api/pages/resolve?${titles.map((t) => `title=${encodeURIComponent(t)}`).join("&")}`;
     return {
       "GET /api/healthz": ["/api/healthz"],
       "GET /api/me": ["/api/me"],
@@ -416,6 +420,12 @@ describe("匿名向けの応答の総当たり", () => {
         title("hidden plan"),
         title("Gone"),
         title("Missing Page"),
+      ],
+      "GET /api/pages/resolve": [
+        resolve("Open Note", "hidden plan", "HIDDEN PLAN", "Gone", "Missing Page", "Linker"),
+        resolve("hidden plan"),
+        resolve(...Array.from({ length: RESOLVE_MAX_TITLES + 1 }, () => "hidden plan")),
+        "/api/pages/resolve",
       ],
       "GET /api/pages/recent": [
         "/api/pages/recent",

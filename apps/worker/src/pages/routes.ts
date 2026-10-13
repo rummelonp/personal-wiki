@@ -36,9 +36,11 @@ import {
   deletePage,
   findPageByTitle,
   MAX_BODY_BYTES,
+  MAX_TITLE_BYTES,
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,
+  resolvePagesByTitle,
   type Visibility,
   type WriteError,
 } from "./store";
@@ -49,6 +51,14 @@ export interface PagesRoutesOptions {
 }
 
 type PagesContext = Context<AppEnv>;
+
+/**
+ * `/api/pages/resolve` が 1 回に受け付ける title の数。読み取りは件数に関係なく 1 クエリだが、
+ * title は GET のクエリで受けるので URL の長さで決める。日本語 10 文字の title は percent-encoding で
+ * 約 100 バイトになり、50 件で 5KB ほどと、edge の URL の上限（16KB）に余裕を残す。
+ * これを超える数のリンクを持つページでは、クライアントが分けて呼ぶ。
+ */
+export const RESOLVE_MAX_TITLES = 50;
 
 function errorResponse(
   c: PagesContext,
@@ -269,6 +279,28 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         );
         if (page === null) return c.notFound();
         return pageResponse(c, page);
+      })
+      // wikilink の解決に使う。応答は入力と同じ順・同じ件数で、解決できない title は page が null。
+      // 匿名には draft も null で返し、存在しない title と区別させない。`/api/pages/:id` より前に登録する
+      .get("/api/pages/resolve", allowAnonymousRead(), async (c) => {
+        const titles = c.req.queries("title");
+        if (titles === undefined) return errorResponse(c, 400, "missing_field", { field: "title" });
+        if (titles.length > RESOLVE_MAX_TITLES) {
+          return errorResponse(c, 400, "invalid_field", {
+            field: "title",
+            max: RESOLVE_MAX_TITLES,
+          });
+        }
+        const encoder = new TextEncoder();
+        if (titles.some((title) => encoder.encode(title).length > MAX_TITLE_BYTES)) {
+          return errorResponse(c, 400, "title_too_long", { max: MAX_TITLE_BYTES });
+        }
+        const pages = await resolvePagesByTitle(
+          c.env.DB,
+          titles,
+          readableVisibilityOf(c.get("principal")),
+        );
+        return c.json({ results: titles.map((title, i) => ({ title, page: pages[i] ?? null })) });
       })
       // `/api/pages/:id` より前に登録する。後ろだと :id のハンドラが "recent" を id として先に 404 にする
       .get("/api/pages/recent", allowAnonymousRead(), async (c) => {
