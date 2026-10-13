@@ -7,7 +7,12 @@ import { createApp } from "../app";
 import type { AppEnv } from "../env";
 import { generateTestToken, insertToken, lastUsedAt } from "../test/tokens";
 import { LAST_USED_UPDATE_INTERVAL_MS } from "./api-tokens";
-import { allowAnonymous, defineBaseMiddleware, requireToken } from "./middleware";
+import {
+  allowAnonymous,
+  allowAnonymousRead,
+  defineBaseMiddleware,
+  requireToken,
+} from "./middleware";
 import { SESSION_COOKIE_NAME } from "./session";
 
 const T0 = Date.UTC(2026, 9, 1);
@@ -319,6 +324,33 @@ describe("同じパスに付けた宣言", () => {
     expect(spa.status).toBe(200);
     expect(await spa.text()).toBe("spa");
     expect((await app.request("/api/test/home", {}, { ...env, ASSETS: assets })).status).toBe(401);
+  });
+});
+
+describe("allowAnonymousRead", () => {
+  it("変更系の method に付けても、匿名は 401 で、read の token は通る", async () => {
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    const app = createApp().post("/api/test/misdeclared", allowAnonymousRead(), (c) =>
+      c.json({ ok: true }),
+    );
+    const anonymous = await app.request("/api/test/misdeclared", { method: "POST" }, env);
+    expect(anonymous.status).toBe(401);
+    const viaToken = await app.request(
+      "/api/test/misdeclared",
+      { method: "POST", headers: bearer(token) },
+      env,
+    );
+    expect(viaToken.status).toBe(200);
+  });
+
+  it("匿名の GET と HEAD は通す", async () => {
+    const app = createApp().get("/api/test/open", allowAnonymousRead(), (c) =>
+      c.json({ ok: true }),
+    );
+    for (const method of ["GET", "HEAD"]) {
+      const res = await app.request("/api/test/open", { method }, env);
+      expect(res.status, method).toBe(200);
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
-import { SESSION_COOKIE_NAME } from "../auth/session";
+import { SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../auth/session";
 import { ownerCookie, ownerEnv } from "../test/owner";
 import { type PageJson, T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
@@ -242,14 +242,109 @@ describe("匿名の読み取り", () => {
     const backlinks = await (await anonymous(`/api/pages/${draft.id}/backlinks`)).json();
     expect(backlinks).toEqual({ pages: [], nextCursor: null });
   });
+});
 
-  it("検証できない cookie は匿名として扱い、draft を一覧に出さない", async () => {
-    const { call, draft } = await seed();
-    const res = await call("/api/pages/recent", {
-      headers: { Cookie: `${SESSION_COOKIE_NAME}=garbage` },
+describe("検証できないセッション cookie", () => {
+  /** ページの読み取りの 6 つのルートを 1 つずつ呼ぶパス。 */
+  function readPaths(open: PageJson): string[] {
+    return [
+      `/api/pages/by-title?title=${encodeURIComponent("Open Note")}`,
+      "/api/pages/recent",
+      "/api/tags",
+      `/api/search?q=${encodeURIComponent("Open")}`,
+      `/api/pages/${open.id}`,
+      `/api/pages/${open.id}/backlinks`,
+    ];
+  }
+
+  function expectCookieCleared(res: Response) {
+    const setCookie = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(new RegExp(`^${SESSION_COOKIE_NAME}=;`));
+    for (const attribute of ["Max-Age=0", "Path=/", "HttpOnly", "Secure", "SameSite=Lax"]) {
+      expect(setCookie).toContain(attribute);
+    }
+  }
+
+  const garbage = `${SESSION_COOKIE_NAME}=garbage`;
+
+  it("ページの読み取りは 401 にして cookie を消し、cookie を外せば匿名で public だけを読める", async () => {
+    const { call, anonymous, open, clock } = await seed();
+    const stale = {
+      garbage,
+      expired: await ownerCookie(clock.now - SESSION_TTL_SECONDS * 1000 - 1000),
+      wrongSecret: await ownerCookie(clock.now, "x".repeat(44)),
+    };
+    for (const [variant, cookie] of Object.entries(stale)) {
+      for (const path of readPaths(open)) {
+        const res = await call(path, { headers: { Cookie: cookie } });
+        expect(res.status, `${variant} ${path}`).toBe(401);
+        expect(await res.json()).toEqual({ error: "unauthorized" });
+        expectCookieCleared(res);
+        expect(res.headers.get("Vary")).toBe("Authorization, Cookie");
+      }
+    }
+    for (const path of readPaths(open)) {
+      const res = await anonymous(path);
+      expect(res.status, path).toBe(200);
+      const text = await res.text();
+      for (const word of DRAFT_ONLY_MARKERS) expect(text, `${path} に ${word}`).not.toContain(word);
+      expect(res.headers.get("Set-Cookie"), path).toBeNull();
+    }
+  });
+
+  it("OWNER_EMAILS から外れた owner の cookie も 401 にして消す", async () => {
+    const { app, open, cookie } = await seed();
+    const env = ownerEnv({ OWNER_EMAILS: "other@example.com" });
+    for (const path of readPaths(open)) {
+      const res = await app.request(path, { headers: { Cookie: cookie } }, env);
+      expect(res.status, path).toBe(401);
+      expectCookieCleared(res);
+    }
+  });
+
+  it("HEAD も GET と同じく 401 にする", async () => {
+    const { call, open } = await seed();
+    const res = await call(`/api/pages/${open.id}`, {
+      method: "HEAD",
+      headers: { Cookie: garbage },
     });
+    expect(res.status).toBe(401);
+    expectCookieCleared(res);
+  });
+
+  it("/api/me は匿名として答え、cookie を消す", async () => {
+    const { call } = await seed();
+    const res = await call("/api/me", { headers: { Cookie: garbage } });
     expect(res.status).toBe(200);
-    expect(await res.text()).not.toContain(draft.id);
+    expect(await res.json()).toEqual({ kind: "anonymous" });
+    expectCookieCleared(res);
+  });
+
+  it("ヘルスチェックは匿名として通し、cookie には触らない", async () => {
+    const { call } = await seed();
+    const res = await call("/api/healthz", { headers: { Cookie: garbage } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("owner の設定が無い環境では cookie を検証できないので、匿名として読ませ、消さない", async () => {
+    const { app, open, cookie } = await seed();
+    const env = ownerEnv({ SESSION_SECRET: "" });
+    for (const path of readPaths(open)) {
+      const res = await app.request(path, { headers: { Cookie: cookie } }, env);
+      expect(res.status, path).toBe(200);
+      expect(await res.text(), path).not.toContain("zebrafish");
+      expect(res.headers.get("Set-Cookie"), path).toBeNull();
+    }
+  });
+
+  it("有効な owner の cookie は消さない", async () => {
+    const { asOwner, open } = await seed();
+    for (const path of readPaths(open)) {
+      const res = await asOwner(path);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("Set-Cookie"), path).toBeNull();
+    }
   });
 });
 

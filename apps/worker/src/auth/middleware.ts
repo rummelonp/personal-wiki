@@ -1,4 +1,5 @@
 import type { Context, MiddlewareHandler } from "hono";
+import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
@@ -6,7 +7,12 @@ import type { AppEnv } from "../env";
 import { findActiveApiToken, recordApiTokenUse } from "./api-tokens";
 import { readOwnerAuthConfig } from "./owner-config";
 import { type Principal, principalHasScope, type Scope } from "./principal";
-import { sessionCookieOf, verifySessionValue } from "./session";
+import {
+  SESSION_COOKIE_ATTRIBUTES,
+  SESSION_COOKIE_NAME,
+  sessionCookieOf,
+  verifySessionValue,
+} from "./session";
 import { hashApiToken, isWellFormedApiToken } from "./token";
 
 /*
@@ -164,8 +170,12 @@ export interface ResolvePrincipalOptions {
 /**
  * Authorization が付いていれば有効な Bearer トークンでなければならず、公開ルートであっても
  * 無効なトークンは 401 にする（送った資格情報が黙って無視されないように）。
- * Authorization が無ければセッション cookie を見て、有効なら owner、無い・無効なら anonymous にする。
- * cookie を 401 にしないのは、期限切れの cookie を持つブラウザが匿名で読めるページまで失わないため。
+ * Authorization が無ければセッション cookie を見て、有効なら owner、無ければ anonymous にする。
+ * 検証できない cookie は、ここでは 401 にせず staleSession 付きの anonymous にする。401 にするかは
+ * ルートの宣言が決める。ページの読み取り（allowAnonymousRead）は 401 にして cookie を消し、
+ * ログインが切れたことを画面に伝える。匿名で 200 を返すと、owner のつもりの画面が draft の欠けた
+ * 一覧を黙って出す。SPA の配信や /api/me などの allowAnonymous() のルートは匿名として扱い、
+ * ブラウザが画面を開けなくなることを避ける。
  *
  * キャッシュの制御もここで行う。匿名を受け付けるルートも principal で内容が変わりうるので、
  * principal が決まった後の応答には Vary を付け、匿名以外の応答は共有キャッシュに載せない
@@ -203,7 +213,11 @@ async function authenticate(c: Context<AppEnv>, now: () => number): Promise<Prin
   return { kind: "token", name: found.name, scopes: found.scopes };
 }
 
-/** 設定が 1 つでも欠けていれば、cookie の中身に関係なく anonymous にする。 */
+/**
+ * 設定が 1 つでも欠けていれば、cookie の中身に関係なく staleSession の無い anonymous にする。
+ * 設定が無い環境では cookie を検証できないだけで無効とは言えず、ログインもできないので、401 で
+ * 再ログインを促す意味が無い。一時的な設定の誤りで owner の cookie を消させない意味もある。
+ */
 async function authenticateSession(c: Context<AppEnv>, now: () => number): Promise<Principal> {
   const value = sessionCookieOf(c);
   if (value === undefined) return { kind: "anonymous" };
@@ -211,7 +225,15 @@ async function authenticateSession(c: Context<AppEnv>, now: () => number): Promi
   if (config === null) return { kind: "anonymous" };
   return (await verifySessionValue(config, value, now()))
     ? { kind: "owner" }
-    : { kind: "anonymous" };
+    : { kind: "anonymous", staleSession: true };
+}
+
+/** 検証できなかったセッション cookie をブラウザから消す。次の要求からは cookie の無い匿名になる。 */
+export function clearStaleSession(c: Context<AppEnv>): void {
+  const principal = currentPrincipal(c);
+  if (principal.kind === "anonymous" && principal.staleSession === true) {
+    deleteCookie(c, SESSION_COOKIE_NAME, SESSION_COOKIE_ATTRIBUTES);
+  }
 }
 
 /**
@@ -226,7 +248,7 @@ export const enforceDeclaredPolicy = defineBaseMiddleware(
 );
 
 function currentPrincipal(c: Context<AppEnv>): Principal {
-  // resolvePrincipal より前に宣言が走る登録順の誤りでは未設定になる。anonymous として拒否側に倒す
+  // resolvePrincipal より前に宣言が走る登録順の誤りでは未設定になる。最も狭い権限の anonymous に倒す
   return c.get("principal") ?? { kind: "anonymous" };
 }
 
@@ -268,9 +290,14 @@ export function requireOwner(): MiddlewareHandler<AppEnv> {
   );
 }
 
+const ANONYMOUS_READ_METHODS = new Set(["GET", "HEAD"]);
+
 /**
  * ページの読み取り。owner、read の scope を持つ token、anonymous を受け付ける。anonymous に何を
  * 見せるかはハンドラが readableVisibilityOf で決める。
+ * - 検証できないセッション cookie は 401 にして消す（理由は resolvePrincipal）。cookie を消すので、
+ *   次の要求は cookie の無い匿名として通る
+ * - anonymous は GET と HEAD だけ。読み取りの宣言を変更系のルートに付け間違えても、匿名には開かない
  *
  * anonymous の応答には no-store を付ける。public から draft に戻したページは直ちに title で引けなく
  * なる必要があり、ETag はあっても If-None-Match に応じないので、no-cache で再検証させても得るものが無い。
@@ -281,7 +308,13 @@ export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
   return definePolicy(
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
-      if (principal.kind !== "anonymous" && !principalHasScope(principal, "read")) {
+      if (principal.kind === "anonymous") {
+        if (principal.staleSession === true) {
+          clearStaleSession(c);
+          return unauthorized(c);
+        }
+        if (!ANONYMOUS_READ_METHODS.has(c.req.method)) return unauthorized(c);
+      } else if (!principalHasScope(principal, "read")) {
         return c.json({ error: "forbidden" }, 403);
       }
       await next();

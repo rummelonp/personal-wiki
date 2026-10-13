@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { deleteCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
 import type { AccessVerifier } from "./access";
-import { allowAnonymous } from "./middleware";
+import { allowAnonymous, clearStaleSession } from "./middleware";
 import { isOwnerEmail, readOwnerAuthConfig } from "./owner-config";
 import {
   createSessionValue,
@@ -95,6 +95,9 @@ export function registerAuthRoutes(app: Hono<AppEnv>, { now, accessVerifier }: A
     })
     .get("/api/me", allowAnonymous(), (c) => {
       c.header("Cache-Control", "no-store");
+      // SPA は起動時にここで owner か匿名かを決める。検証できない cookie を消しておき、匿名の画面から
+      // 続けて呼ぶページの読み取りが 401 にならないようにする
+      clearStaleSession(c);
       const principal = c.get("principal");
       switch (principal.kind) {
         case "owner":

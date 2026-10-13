@@ -1,8 +1,12 @@
 export type Scope = "read" | "write";
 
-/** リクエストの呼び出し元。ルートの認可はこの型だけを見る。 */
+/**
+ * リクエストの呼び出し元。ルートの認可はこの型だけを見る。
+ * anonymous の staleSession は、セッション cookie を送ったが検証できなかったこと（期限切れ、署名の
+ * 不一致、OWNER_EMAILS から外れたなど）を表す。権限は cookie が無い anonymous と同じ。
+ */
 export type Principal =
-  | { kind: "anonymous" }
+  | { kind: "anonymous"; staleSession?: true }
   | { kind: "owner" }
   | { kind: "token"; name: string; scopes: Scope[] };
 
