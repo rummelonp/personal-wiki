@@ -133,6 +133,16 @@ describe("saveAllEditors", () => {
     unregisters[1]?.();
   });
 
+  it("打っている途中の title は blur を待たず確定して送る", async () => {
+    const a = setup();
+    const unregister = registerEditor(a.session);
+    a.session.editTitle("新題");
+    await saveAllEditors();
+    expect(a.put).toHaveBeenCalledWith(ID, 1, { title: "新題", body: "本文" }, {});
+    expect(a.session.getState()).toMatchObject({ titleInput: null, base: { title: "新題" } });
+    unregister();
+  });
+
   it("保存に失敗しても完了し、離脱時の退避は残る", async () => {
     const failing = setup(async () => ({ ok: false, reason: "error", message: "落ちた" }));
     const unregister = registerEditor(failing.session);

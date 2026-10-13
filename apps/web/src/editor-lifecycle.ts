@@ -48,7 +48,8 @@ export function bindLifecycle(
 }
 
 export interface SavableEditor {
-  flush(): Promise<void>;
+  /** 打っている途中の title を確定してから保存する */
+  commitTitle(): Promise<void>;
 }
 
 const editors = new Set<SavableEditor>();
@@ -66,6 +67,8 @@ export const SAVE_ALL_TIMEOUT_MS = 5000;
 /**
  * ログアウトの前に、開いている編集画面の未保存の内容を送る。
  * 先にログアウトすると保存が 401 になり、入力した内容が手元の退避だけになるため。
+ * 打っている途中の title は blur の確定に任せない。ログアウトの押下で blur が先に届く保証は無く、
+ * 届かなければ title は保存にも退避にも入らず失われるため、ここで確定してから保存する。
  *
  * 退避（localStorage）はここでは消さない。保存が失敗した、または間に合わなかった内容の唯一の写しであり、
  * 保存が成功した分はセッションが自分で消す。残った分は、次にそのページを開いたときに復元か破棄を選べる。
@@ -77,7 +80,10 @@ export async function saveAllEditors(timeoutMs = SAVE_ALL_TIMEOUT_MS): Promise<v
     timer = setTimeout(resolve, timeoutMs);
   });
   try {
-    await Promise.race([Promise.allSettled([...editors].map((editor) => editor.flush())), timeout]);
+    await Promise.race([
+      Promise.allSettled([...editors].map((editor) => editor.commitTitle())),
+      timeout,
+    ]);
   } finally {
     clearTimeout(timer);
   }
