@@ -1,6 +1,6 @@
 import { normalizeTitleKey } from "@personal-wiki/domain";
 import { isAttachmentTarget } from "./embed";
-import { extractWikiLinks, wikiLinkTargetSpan } from "./wikilink";
+import { extractWikiLinks, type WikiLinkTargetSpan, wikiLinkTargetSpan } from "./wikilink";
 
 /**
  * page の title 変更に合わせて、本文の `[[旧]]` の target を新 title に書き換える。
@@ -12,11 +12,17 @@ import { extractWikiLinks, wikiLinkTargetSpan } from "./wikilink";
  * renames のキー（`normalizeTitleKey` の結果）で同一視し、新 title の表記に揃える。
  * target が空の `[[#見出し]]` は同じ page を指すので触らない。
  *
- * 新 title が `[[...]]` に書ける文字だけで出来ていること（`wikiLinkUnsafeChars`）は
- * 呼び出し側が確かめる。ここでは検査しない。
+ * target が既に新 title と同じ文字列の link は置き換えず、数にも入れない。
+ * 呼び出し側は rewritten が 0 のとき本文が変わっていないものとして扱える。
  *
- * @param renames 旧 title の TitleKey から新 title への対応
- * @returns 書き換えた本文と、書き換えた link の数
+ * 新 title が `[[...]]` に書ける文字だけで出来ていること（`wikiLinkUnsafeChars`）は
+ * 呼び出し側が確かめる。ここでは検査しない。ただし、それを満たす新 title でも link が消えることがある。
+ * 同じ段落の前方から始まる inline の構文（バッククォートや `<` の autolink）に新 title の文字が
+ * 閉じを与えたり、`![[新]]` の新 title が添付の拡張子で終わったりする場合である。
+ * 呼び出し側は書き換え後の本文を解析し直し、旧 key が消えて新 key が現れたことを確かめる。
+ *
+ * @param renames キーは旧 title の `normalizeTitleKey` の結果、値は新 title
+ * @returns 書き換えた本文と、実際に置き換えた link の数
  */
 export function rewriteWikiLinkTargets(
   body: string,
@@ -34,10 +40,8 @@ export function rewriteWikiLinkTargets(
     const newTitle = renames.get(key.value);
     if (newTitle === undefined) continue;
     // extractWikiLinks が成立させた link なので span は非 null。`[[` の 2 文字を足して本文の位置にする。
-    const span = wikiLinkTargetSpan(body.slice(ref.from + 2, ref.to - 2)) as {
-      from: number;
-      to: number;
-    };
+    if (ref.target === newTitle) continue;
+    const span = wikiLinkTargetSpan(body.slice(ref.from + 2, ref.to - 2)) as WikiLinkTargetSpan;
     result += body.slice(cursor, ref.from + 2 + span.from) + newTitle;
     cursor = ref.from + 2 + span.to;
     rewritten += 1;

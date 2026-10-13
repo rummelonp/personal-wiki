@@ -107,6 +107,17 @@ describe("rewriteWikiLinkTargets", () => {
     expect(rewriteWikiLinkTargets(body, new Map())).toEqual({ body, rewritten: 0 });
   });
 
+  it("does not replace or count a target that already equals the new title", () => {
+    expect(rewrite("[[Note]] [[ Note |a]]", ["note", "Note"])).toEqual({
+      body: "[[Note]] [[ Note |a]]",
+      rewritten: 0,
+    });
+    expect(rewrite("[[note]] [[Note]]", ["note", "Note"])).toEqual({
+      body: "[[Note]] [[Note]]",
+      rewritten: 1,
+    });
+  });
+
   it("returns the same body when nothing matches", () => {
     const body = "[[他]] plain text";
     expect(rewrite(body, ["旧", "新"])).toEqual({ body, rewritten: 0 });

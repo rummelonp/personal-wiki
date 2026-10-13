@@ -1,6 +1,12 @@
 import { parser } from "@lezer/markdown";
 import { describe, expect, it } from "vitest";
-import { extractWikiLinks, splitWikiLinkContent, WikiLink, wikiLinkNodes } from "./wikilink";
+import {
+  extractWikiLinks,
+  splitWikiLinkContent,
+  WikiLink,
+  wikiLinkNodes,
+  wikiLinkTargetSpan,
+} from "./wikilink";
 
 const refs = (text: string) =>
   extractWikiLinks(text).map((ref) => ({
@@ -250,5 +256,47 @@ describe("splitWikiLinkContent", () => {
       heading: null,
       blockId: null,
     });
+  });
+});
+
+describe("wikiLinkTargetSpan", () => {
+  const sliced = (content: string) => {
+    const span = wikiLinkTargetSpan(content);
+    return span === null ? null : content.slice(span.from, span.to);
+  };
+
+  it("covers the target without surrounding whitespace", () => {
+    expect(wikiLinkTargetSpan("Title")).toEqual({ from: 0, to: 5 });
+    expect(wikiLinkTargetSpan("  A B  #h")).toEqual({ from: 2, to: 5 });
+    expect(wikiLinkTargetSpan(" \tA |l")).toEqual({ from: 2, to: 3 });
+  });
+
+  it("stops before the label separator, heading and block id", () => {
+    expect(sliced("A|l")).toBe("A");
+    expect(sliced("A\\|l")).toBe("A");
+    expect(sliced("A#h|l")).toBe("A");
+    expect(sliced("A^id")).toBe("A");
+    expect(sliced("A#^id")).toBe("A");
+  });
+
+  it("is empty for a same-page reference", () => {
+    expect(wikiLinkTargetSpan("#h")).toEqual({ from: 0, to: 0 });
+    expect(wikiLinkTargetSpan("  #h|l")).toEqual({ from: 2, to: 2 });
+    expect(wikiLinkTargetSpan("#^id")).toEqual({ from: 0, to: 0 });
+  });
+
+  it("returns null when the content is not a link", () => {
+    expect(wikiLinkTargetSpan("")).toBeNull();
+    expect(wikiLinkTargetSpan("   ")).toBeNull();
+    expect(wikiLinkTargetSpan("#^")).toBeNull();
+    expect(wikiLinkTargetSpan("a[b")).toBeNull();
+    expect(wikiLinkTargetSpan("a]b")).toBeNull();
+    expect(wikiLinkTargetSpan("a\nb")).toBeNull();
+  });
+
+  it("agrees with the target of splitWikiLinkContent", () => {
+    for (const content of ["A", " A b |l", "A\\|l", "A #h", "  #h", "A^id", "A#^id"]) {
+      expect(sliced(content)).toBe(splitWikiLinkContent(content)?.target);
+    }
   });
 });
