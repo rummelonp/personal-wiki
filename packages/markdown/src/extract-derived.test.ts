@@ -4,7 +4,7 @@ import { extractDerived } from "./extract-derived";
 
 describe("extractDerived", () => {
   it("returns empty data for an empty body", () => {
-    expect(extractDerived("")).toEqual({ links: [], tags: [], plainText: "" });
+    expect(extractDerived("")).toEqual({ links: [], tags: [], plainText: "", attachments: [] });
   });
 
   it("does not derive a link from a same-page heading or block reference", () => {
@@ -48,6 +48,31 @@ describe("extractDerived", () => {
       "![[Page]] ![[a.png]] ![[b.MP4]] ![[doc.pdf]] ![[song.mp3]] [[c.png]]",
     );
     expect(links.map((l) => l.targetTitle)).toEqual(["Page", "c.png"]);
+  });
+
+  it("collects attachment embeds in order, as written, without duplicates", () => {
+    const { attachments } = extractDerived(
+      "![[b.png]] ![[a.jpg|300]] ![[b.png]] ![[doc.pdf]] ![[B.PNG]]",
+    );
+    expect(attachments).toEqual(["b.png", "a.jpg", "doc.pdf", "B.PNG"]);
+  });
+
+  it("keeps page embeds in links and out of attachments", () => {
+    const derived = extractDerived("![[Page]] ![[Page#見出し]] ![[a.png]]");
+    expect(derived.links.map((l) => l.targetTitle)).toEqual(["Page"]);
+    expect(derived.attachments).toEqual(["a.png"]);
+  });
+
+  it("treats a non-embed link to an attachment name as a link, not an attachment", () => {
+    const derived = extractDerived("[[c.png]]");
+    expect(derived.links.map((l) => l.targetTitle)).toEqual(["c.png"]);
+    expect(derived.attachments).toEqual([]);
+  });
+
+  it("does not collect attachment embeds in code or frontmatter", () => {
+    const body =
+      "---\nimage: '![[fm.png]]'\n---\n\n`![[inline.png]]`\n\n```\n![[fence.png]]\n```\n\n![[real.png]]\n";
+    expect(extractDerived(body).attachments).toEqual(["real.png"]);
   });
 
   it("skips targets that have no title_key", () => {

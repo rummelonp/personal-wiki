@@ -23,10 +23,12 @@ export interface DerivedData {
   readonly links: DerivedLink[];
   readonly tags: DerivedTag[];
   readonly plainText: string;
+  /** 本文の添付の embed（`![[...]]`）の target。書かれた文字列のまま、重複は先頭の 1 件に畳む。名前の形の検査は呼び出し側が行う */
+  readonly attachments: string[];
 }
 
 /**
- * 本文から links・tags・plain text を導出する。D1 の派生テーブルと FTS はこの結果から作り直せる。
+ * 本文から links・tags・plain text・attachments を導出する。D1 の派生テーブルと FTS はこの結果から作り直せる。
  *
  * - links: 添付（画像・動画・PDF・音声）の embed は page への参照ではないので除く。title_key が同じ link は先頭の 1 件に畳む。
  *   title_key にできない target（空白だけなど）は落とす。frontmatter の中の WikiLink は link にしない。
@@ -36,8 +38,12 @@ export interface DerivedData {
 export function extractDerived(body: string): DerivedData {
   const links: DerivedLink[] = [];
   const seenLinks = new Set<string>();
+  const attachments = new Set<string>();
   for (const ref of extractWikiLinks(body)) {
-    if (ref.isEmbed && isAttachmentTarget(ref.target)) continue;
+    if (ref.isEmbed && isAttachmentTarget(ref.target)) {
+      attachments.add(ref.target);
+      continue;
+    }
     const key = normalizeTitleKey(ref.target);
     if (!key.ok || seenLinks.has(key.value)) continue;
     seenLinks.add(key.value);
@@ -60,5 +66,5 @@ export function extractDerived(body: string): DerivedData {
     tags.push({ tag: name, tagKey });
   }
 
-  return { links, tags, plainText: extractPlainText(body) };
+  return { links, tags, plainText: extractPlainText(body), attachments: [...attachments] };
 }

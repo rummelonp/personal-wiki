@@ -1,3 +1,4 @@
+import { ATTACHMENT_CONTENT_TYPES, attachmentExtensionForType } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import {
   embedKindForTarget,
@@ -6,6 +7,17 @@ import {
   parseImageEmbedLabel,
 } from "./embed";
 import { splitWikiLinkContent } from "./wikilink";
+
+describe("保存できる添付の拡張子", () => {
+  // domain は markdown に依存しないので、表示側が画像として展開できることはここで押さえる
+  it("すべて画像として展開される", () => {
+    for (const type of ATTACHMENT_CONTENT_TYPES) {
+      const ext = attachmentExtensionForType(type);
+      expect(ext, type).not.toBeNull();
+      expect(embedKindForTarget(`x.${ext}`), type).toBe("image");
+    }
+  });
+});
 
 describe("embedKindOf", () => {
   const kindOf = (content: string) => {
