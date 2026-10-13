@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ATTACHMENT_CONTENT_TYPES,
   ATTACHMENT_MAX_BYTES,
+  AVIF_BRAND_SEARCH_LIMIT,
   attachmentExtensionForType,
   attachmentTypeForName,
   isAttachmentName,
@@ -72,6 +74,16 @@ describe("content type と拡張子の対応", () => {
   ] as const)("%s は %s", (type, ext) => {
     expect(attachmentExtensionForType(type)).toBe(ext);
     expect(attachmentTypeForName(`${ID}.${ext}`)).toBe(type);
+  });
+
+  it("許可する type すべてで、名前の判定と両方向の対応が噛み合う", () => {
+    for (const type of ATTACHMENT_CONTENT_TYPES) {
+      const ext = attachmentExtensionForType(type);
+      expect(ext, type).not.toBeNull();
+      const name = `${ID}.${ext}`;
+      expect(isAttachmentName(name), name).toBe(true);
+      expect(attachmentTypeForName(name), name).toBe(type);
+    }
   });
 
   it("受けない type は null で、Object のプロパティ名も引かない", () => {
@@ -147,6 +159,44 @@ describe("matchesAttachmentMagic", () => {
   it("box の大きさの外にある avif の文字列は brand とみなさない", () => {
     const data = bytes(ftyp("heic", ["mif1"]), ascii("avif"));
     expect(matchesAttachmentMagic("image/avif", data)).toBe(false);
+  });
+
+  describe("avif の brand 探索", () => {
+    // size を 0 や巨大にして box の終わりを入力に決めさせても、探索は上限で切れる
+    function hugeFtyp(size: number, total: number, brandAt?: number): Uint8Array {
+      const data = new Uint8Array(total);
+      data.set([...u32(size), ...ascii("ftyp"), ...ascii("heic"), ...u32(0)]);
+      for (let offset = 16; offset + 4 <= total; offset += 4) data.set(ascii("mif1"), offset);
+      if (brandAt !== undefined) data.set(ascii("avif"), brandAt);
+      return data;
+    }
+    const TEN_MIB = 10 * 1024 * 1024;
+
+    it("size が 0 でも上限の内側の brand は読む", () => {
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, 64))).toBe(true);
+      expect(
+        matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, AVIF_BRAND_SEARCH_LIMIT - 4)),
+      ).toBe(true);
+    });
+
+    it("size が 0 や巨大でも、上限より後ろの avif は brand とみなさない", () => {
+      const far = AVIF_BRAND_SEARCH_LIMIT;
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, far))).toBe(false);
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0xffffffff, TEN_MIB, far))).toBe(false);
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(TEN_MIB, TEN_MIB, TEN_MIB - 4))).toBe(
+        false,
+      );
+    });
+
+    it("brand が無い 10 MiB の入力は false", () => {
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB))).toBe(false);
+    });
+
+    it("minor version の avif は brand とみなさない", () => {
+      const data = bytes(u32(16), ascii("ftyp"), ascii("heic"), ascii("avif"));
+      expect(matchesAttachmentMagic("image/avif", data)).toBe(false);
+      expect(matchesAttachmentMagic("image/avif", bytes(data, ascii("mif1")))).toBe(false);
+    });
   });
 
   it("subarray の途中から始まる bytes も読める", () => {

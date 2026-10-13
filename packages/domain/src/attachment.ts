@@ -26,7 +26,9 @@ const TYPE_BY_EXTENSION: Readonly<Record<AttachmentExtension, AttachmentContentT
   avif: "image/avif",
 };
 
-export const ATTACHMENT_CONTENT_TYPES = Object.keys(EXTENSION_BY_TYPE) as AttachmentContentType[];
+export const ATTACHMENT_CONTENT_TYPES: readonly AttachmentContentType[] = Object.keys(
+  EXTENSION_BY_TYPE,
+) as AttachmentContentType[];
 
 /** 添付 1 件の上限（バイト）。 */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
@@ -38,7 +40,11 @@ export function isAttachmentName(name: string): boolean {
   return ATTACHMENT_NAME_PATTERN.test(name);
 }
 
-/** 申告された content type から拡張子を引く。受けない type は null。パラメータ（`; charset=` など）は付けない前提。 */
+/**
+ * 申告された content type から拡張子を引く。受けない type は null。
+ * type は小文字でパラメータ（`; charset=` など）を含まない前提で、ここでは正規化しない。
+ * `Content-Type` ヘッダーの値は呼び出し側（Worker）が整えてから渡す。
+ */
 export function attachmentExtensionForType(type: string): AttachmentExtension | null {
   return Object.hasOwn(EXTENSION_BY_TYPE, type)
     ? EXTENSION_BY_TYPE[type as AttachmentContentType]
@@ -63,14 +69,21 @@ function ascii(text: string): number[] {
 const AVIF_BRANDS = [ascii("avif"), ascii("avis")];
 
 /**
+ * brand を探す範囲の上限（バイト）。ftyp box の大きさは入力が決めるので、0 や巨大な値でも
+ * 10 MiB の入力全体を走査しないよう、先頭のここまでで打ち切る。実在する ftyp は数十バイトで収まる。
+ */
+export const AVIF_BRAND_SEARCH_LIMIT = 4096;
+
+/**
  * ISO BMFF の ftyp box が avif / avis を major brand か compatible brand に持つか。
  * box の先頭 4 バイトが大きさ、その後に "ftyp"、major brand（4）、minor version（4）、
- * compatible brand が 4 バイトずつ続く。渡された bytes が box の途中で切れていれば、読めた範囲で見る。
+ * compatible brand が 4 バイトずつ続く。minor version は brand ではないので見ない。
+ * 渡された bytes が box の途中で切れていれば、読めた範囲で見る。
  */
 function matchesAvif(bytes: Uint8Array): boolean {
   if (!startsWith(bytes, ascii("ftyp"), 4)) return false;
   const size = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
-  const end = Math.min(size === 0 ? bytes.length : size, bytes.length);
+  const end = Math.min(size === 0 ? bytes.length : size, bytes.length, AVIF_BRAND_SEARCH_LIMIT);
   const isBrand = (offset: number) => AVIF_BRANDS.some((brand) => startsWith(bytes, brand, offset));
   if (end >= 12 && isBrand(8)) return true;
   for (let offset = 16; offset + 4 <= end; offset += 4) {
@@ -82,6 +95,9 @@ function matchesAvif(bytes: Uint8Array): boolean {
 /**
  * 申告された content type と、先頭の bytes（magic bytes）が合うか。
  * 拡張子や申告だけを信じると、別の形式や HTML を画像として保存して配信してしまう。
+ *
+ * 見るのは先頭の bytes だけで、全体を渡してもよい（avif は先頭 `AVIF_BRAND_SEARCH_LIMIT` バイトまで）。
+ * type は小文字でパラメータを含まない前提で、ここでは正規化しない。
  */
 export function matchesAttachmentMagic(type: string, bytes: Uint8Array): boolean {
   switch (type) {
