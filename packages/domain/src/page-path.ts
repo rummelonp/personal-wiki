@@ -11,6 +11,8 @@ import { foldTitle } from "./title";
  *   JSON の解析に失敗する
  * - `assets`: Static Assets のハッシュ付きファイルの置き場。`/assets/*` は普段 Worker を通らないが、
  *   `/assets` そのものや run_worker_first の設定が変わったときにも HTML を返さない
+ * - `oauth`: MCP の OAuth の認可、トークン、client の登録。1 つの segment にまとめ、`/token` のような
+ *   title になりうる語を予約しない
  */
 export const WORKER_PATH_SEGMENTS: readonly string[] = [
   "api",
@@ -18,6 +20,7 @@ export const WORKER_PATH_SEGMENTS: readonly string[] = [
   "_auth",
   ".well-known",
   "assets",
+  "oauth",
 ];
 
 /**

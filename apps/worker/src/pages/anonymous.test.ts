@@ -493,6 +493,17 @@ describe("匿名向けの応答の総当たり", () => {
         `/p/${open.id}`,
         `/p/${open.id}/`,
       ],
+      // OAuth の認可サーバー（auth/oauth-routes.ts）。認可は owner でなければ /_auth/login へ送る
+      "GET /.well-known/oauth-authorization-server": ["/.well-known/oauth-authorization-server"],
+      "GET /.well-known/oauth-protected-resource/mcp": [
+        "/.well-known/oauth-protected-resource/mcp",
+      ],
+      "POST /oauth/token": ["/oauth/token"],
+      "POST /oauth/register": ["/oauth/register"],
+      "GET /oauth/authorize": [
+        "/oauth/authorize",
+        `/oauth/authorize?response_type=code&client_id=${draft.id}&state=${draft.id}`,
+      ],
     };
   }
 

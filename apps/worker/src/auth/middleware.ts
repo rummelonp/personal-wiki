@@ -5,6 +5,14 @@ import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
 import type { AppEnv } from "../env";
 import { findActiveApiToken, recordApiTokenUse } from "./api-tokens";
+import {
+  authenticateOAuthAccessToken,
+  bearerChallenge,
+  isOAuthAccessTokenShape,
+  OAUTH_AUTHORIZE_PATH,
+  OAUTH_REGISTER_PATH,
+  OAUTH_TOKEN_PATH,
+} from "./oauth-server";
 import { readOwnerAuthConfig } from "./owner-config";
 import { type Principal, principalHasScope, type Scope } from "./principal";
 import {
@@ -128,7 +136,9 @@ function everyRouteDeclared(routes: readonly RouterRoute[]): boolean {
  * error パラメータ（RFC 6750 の invalid_token など）も付けない。
  */
 function unauthorized(c: Context<AppEnv>): Response {
-  return c.json({ error: "unauthorized" }, 401, { "WWW-Authenticate": "Bearer" });
+  return c.json({ error: "unauthorized" }, 401, {
+    "WWW-Authenticate": bearerChallenge(c.env, new URL(c.req.url)),
+  });
 }
 
 /**
@@ -157,11 +167,19 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * cookie の検証より前に置き、署名の有無に関係なく掛ける（ログアウトのように、期限切れの cookie
  * でも受け付けるルートを守るため）。Bearer の要求は rejectAmbiguousCredentials で cookie を
  * 持てないので、この検査を受けない。
+ *
+ * OAuth の同意画面（POST /oauth/authorize）だけはフォームの送信を受け付ける。承認の応答はクライアントの
+ * redirect URI への遷移なので fetch では送れない。同一オリジンの検査は掛けたままにし、加えて同意画面を
+ * 開いたブラウザに結び付いた 1 回限りの handle（oauth-routes.ts）で守る。
  */
 export const rejectCrossSiteCookieWrites = defineBaseMiddleware(
   createMiddleware<AppEnv>(async (c, next) => {
     if (UNSAFE_METHODS.has(c.req.method) && sessionCookieOf(c) !== undefined) {
-      if (!isSameOriginRequest(c) || !isJsonContentType(c.req.header("Content-Type"))) {
+      const acceptsForm = c.req.method === "POST" && c.req.path === OAUTH_AUTHORIZE_PATH;
+      if (
+        !isSameOriginRequest(c) ||
+        !(acceptsForm || isJsonContentType(c.req.header("Content-Type")))
+      ) {
         return c.json({ error: "csrf_rejected" }, 403);
       }
     }
@@ -229,21 +247,52 @@ export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHa
   );
 }
 
+/**
+ * Bearer トークンの種類ごとの検証。形で振り分け、どの形にも当たらないトークンは無効にする。
+ * 形が重ならない（api_tokens は `:` を含まない base64url）ので、並び順は結果に影響しない。
+ */
+interface BearerResolver {
+  accepts(token: string): boolean;
+  /** 無効なら null */
+  resolve(c: Context<AppEnv>, token: string, now: () => number): Promise<Principal | null>;
+}
+
+const apiTokenResolver: BearerResolver = {
+  accepts: isWellFormedApiToken,
+  async resolve(c, token, now) {
+    const found = await findActiveApiToken(c.env.DB, await hashApiToken(token));
+    if (found === null) return null;
+    // waitUntil に回さず待つ。書くのは 1 トークンあたり 1 時間に 1 回なので遅延は小さく、
+    // 応答の時点で記録が終わっている方がテストと運用で扱いやすい。
+    await recordApiTokenUse(c.env.DB, found, now());
+    return { kind: "token", issuer: "api", name: found.name, scopes: found.scopes };
+  },
+};
+
+const oauthTokenResolver: BearerResolver = {
+  accepts: isOAuthAccessTokenShape,
+  resolve: (c, token) => authenticateOAuthAccessToken(c.env, new URL(c.req.url), token),
+};
+
+const BEARER_RESOLVERS: readonly BearerResolver[] = [apiTokenResolver, oauthTokenResolver];
+
+/**
+ * Authorization をクライアントの認証（client_secret の Basic など）に使う OAuth のエンドポイント。
+ * ここでは Authorization を wiki の資格情報として読まず、検証をライブラリに任せる。
+ */
+const OAUTH_CLIENT_AUTH_PATHS = new Set([OAUTH_TOKEN_PATH, OAUTH_REGISTER_PATH]);
+
 /** 資格情報が無効なら null。 */
 async function authenticate(c: Context<AppEnv>, now: () => number): Promise<Principal | null> {
   const authorization = c.req.header("Authorization");
-  if (authorization === undefined) return authenticateSession(c, now);
+  if (authorization === undefined || OAUTH_CLIENT_AUTH_PATHS.has(c.req.path)) {
+    return authenticateSession(c, now);
+  }
 
   const token = BEARER_PATTERN.exec(authorization)?.[1];
-  if (token === undefined || !isWellFormedApiToken(token)) return null;
-
-  const found = await findActiveApiToken(c.env.DB, await hashApiToken(token));
-  if (found === null) return null;
-
-  // waitUntil に回さず待つ。書くのは 1 トークンあたり 1 時間に 1 回なので遅延は小さく、
-  // 応答の時点で記録が終わっている方がテストと運用で扱いやすい。
-  await recordApiTokenUse(c.env.DB, found, now());
-  return { kind: "token", name: found.name, scopes: found.scopes };
+  if (token === undefined) return null;
+  const resolver = BEARER_RESOLVERS.find((candidate) => candidate.accepts(token));
+  return resolver === undefined ? null : resolver.resolve(c, token, now);
 }
 
 /**

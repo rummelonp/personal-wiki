@@ -28,6 +28,8 @@ describe("titlePath", () => {
       "_auth",
       ".well-known",
       ".well-known/x",
+      "oauth",
+      "OAuth/token",
       "p",
       "P",
       "p/x",

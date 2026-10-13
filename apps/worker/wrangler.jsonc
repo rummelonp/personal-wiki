@@ -20,6 +20,9 @@
     }
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "personal-wiki" }],
+  // OAuth（claude.ai などのカスタムコネクタ）の client とトークンの置き場。id はローカルでは不要で、
+  // デプロイ先の ID は deploy.env に置く。deploy.env に無ければ binding を外してデプロイし、OAuth は閉じる
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
   // apps/web のビルド出力。deploy.mjs が wrangler deploy の前にビルドする。
   // `/assets/*`（ハッシュ付きのファイル）以外は Worker が先に受け、HTML へのナビゲーションにだけ
   // Worker が index.html を返す（src/spa.ts）。未定義の /api や /mcp、fetch に SPA の HTML を返さないため。

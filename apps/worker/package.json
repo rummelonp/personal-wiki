@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.2.3",
     "@modelcontextprotocol/server": "^2.0.0",
     "@personal-wiki/domain": "workspace:*",
     "@personal-wiki/markdown": "workspace:*",

@@ -7,6 +7,7 @@ import {
   rejectCrossSiteCookieWrites,
   resolvePrincipal,
 } from "./auth/middleware";
+import { registerOAuthRoutes } from "./auth/oauth-routes";
 import { registerAuthRoutes } from "./auth/routes";
 import type { AppEnv } from "./env";
 import { registerMcpRoutes } from "./mcp/server";
@@ -53,6 +54,7 @@ export function createApp({
     .use("*", enforceDeclaredPolicy)
     .get("/api/healthz", allowAnonymous(), (c) => c.json({ status: "ok" }));
   registerAuthRoutes(app, { now, accessVerifier });
+  registerOAuthRoutes(app);
   registerPageRoutes(app, { now, recordWrite });
   registerAdminRoutes(app, { recordWrite });
   registerMcpRoutes(app, { now, recordWrite });

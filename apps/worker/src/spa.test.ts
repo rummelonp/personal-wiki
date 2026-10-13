@@ -134,6 +134,8 @@ describe("SPA の配信", () => {
       "/_auth/unknown",
       "/_auth",
       "/.well-known/oauth-protected-resource",
+      "/oauth",
+      "/oauth/unknown",
       "/assets/missing.js",
     ]) {
       const res = await app.request(

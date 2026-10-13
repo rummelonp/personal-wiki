@@ -15,6 +15,11 @@ export interface Bindings {
   /** カンマ区切り */
   OWNER_EMAILS?: string;
   SESSION_SECRET?: string;
+  /**
+   * OAuth の client、grant、トークンの置き場（@cloudflare/workers-oauth-provider がこの名前で読む）。
+   * deploy.env に ID が無ければ binding ごと外れ、OAuth は閉じる（auth/oauth-server.ts）。
+   */
+  OAUTH_KV?: KVNamespace;
 }
 
 export interface AppEnv {

@@ -48,7 +48,7 @@ describe("requireToken", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await res.json()).toEqual({
-      principal: { kind: "token", name: "laptop", scopes: ["read"] },
+      principal: { kind: "token", issuer: "api", name: "laptop", scopes: ["read"] },
     });
   });
 

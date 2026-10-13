@@ -1,12 +1,16 @@
 import type { Principal } from "../auth/principal";
 
-/** revisions.actor に入れる値。anonymous は書き込めないので actor を持たない。 */
+/**
+ * revisions.actor に入れる値。anonymous は書き込めないので actor を持たない。
+ * api_tokens の名前と OAuth の client_id は別々に決まるので、prefix を分けて同じ文字列でも衝突させない。
+ * OAuth で client 名ではなく client_id を使うのは、client 名は登録時に client が自称する値で一意でないため。
+ */
 export function actorOf(principal: Principal): string {
   switch (principal.kind) {
     case "owner":
       return "owner";
     case "token":
-      return `token:${principal.name}`;
+      return principal.issuer === "oauth" ? `oauth:${principal.name}` : `token:${principal.name}`;
     case "anonymous":
       throw new Error("anonymous は書き込めない");
   }
