@@ -82,6 +82,10 @@ function toPage(row: PageRow): Page {
   };
 }
 
+/**
+ * 削除されていないページを id で引く。visibility では絞らず draft も返すので、token の読み取り用。
+ * anonymous に返す経路では使わない。
+ */
 export async function findPageById(db: D1Database, id: string): Promise<Page | null> {
   const row = await db
     .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ?1 AND deleted_at IS NULL`)
@@ -90,7 +94,10 @@ export async function findPageById(db: D1Database, id: string): Promise<Page | n
   return row === null ? null : toPage(row);
 }
 
-/** title を title_key に正規化して引く。title_key にできない title は null。 */
+/**
+ * 削除されていないページを、title を title_key に正規化して引く。title_key にできない title は null。
+ * findPageById と同じく visibility では絞らないので、token の読み取り用。
+ */
 export async function findPageByTitle(db: D1Database, title: string): Promise<Page | null> {
   const key = normalizeTitleKey(title);
   if (!key.ok) return null;
