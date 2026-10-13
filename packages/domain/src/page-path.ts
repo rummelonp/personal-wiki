@@ -49,6 +49,7 @@ export const pageIdPath = (id: string): string => `/p/${id}`;
  * パスでは `/` もエンコードするが、プロキシや配信の層が `%2F` を戻しても別のパスに入らないよう、
  * title_key と同じ畳み方（大文字小文字、全角半角を区別しない）をしてから `/` で区切って判定する。
  * 畳んでから区切るのは、NFKC で全角の `／` が `/` になるため。
+ * ただし末尾が `/` の title だけは、`%2F` を戻された URL（`/Foo/`）が末尾の `/` を除いた `Foo` を開く。
  * - 先頭が予約語か空（`/api` が `//api` になる）なら使わない。
  * - `.` と `..` の segment は URL の解決で消えたり前の segment を消したりするので、どこにあっても使わない。
  */
@@ -68,7 +69,8 @@ export type PagePath = { kind: "id"; id: string } | { kind: "title"; title: stri
  * - `/p/<id>` と `/<title>` は、どちらも末尾の `/` を 1 つまで許す。titlePath は title の `/` を
  *   `%2F` にするので、エンコードされていない末尾の `/` が title の一部になることはない
  * - title は 1 回だけ decode する。エンコードされていない途中の `/` は title の `/` として読む
- *   （配信の層が `%2F` を戻した URL でも同じページを開く）
+ *   （配信の層が `%2F` を戻した URL でも同じページを開く）。末尾の `/` だけは区切りとして除くので、
+ *   末尾が `/` の title は `%2F` を戻されると別の title（`/Foo/` なら `Foo`）を指す
  * - titlePath が null になる title（予約語、`.` の segment、空）は null。`/P/x` や `/API` も含む
  */
 export function parsePagePath(pathname: string): PagePath | null {
