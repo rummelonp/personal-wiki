@@ -37,6 +37,7 @@ pnpm db:migrate:remote  # 本番の D1 に migration を適用
 pnpm api-token issue <name> --scopes read|read,write [--remote]
 pnpm api-token revoke <name> [--remote]
 WIKI_TOKEN=<write の token> pnpm derived:rebuild [--remote]  # 全ページの派生データを作り直す
+WIKI_TOKEN=<write の token> pnpm link-rewrites [--remote] [--target <page id>]  # title の変更で待っているリンクの書き換えを最後まで進める
 pnpm backup [--remote] [--out <dir>] [--with-tokens]  # D1 の本文を SQL のダンプにして手元に残す
 pnpm backup load <dir> [--remote]  # ダンプを新しい D1 に流し込む
 ```
@@ -58,6 +59,9 @@ WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
 migration の前から在るページは、これを回すまで一覧に抜粋が出ない。
 Worker を前の版に戻して再デプロイしたあとも実行する。前の版は新しい派生データ（抜粋など）を書かないので、戻している間に保存したページの分が古いまま残る。
 失敗したページがあると、その id を標準エラーに出して終了コード 1 になる。
+
+title を変えると、他のページの `[[旧 title]]` を書き換える仕事が `link_rewrites` に積まれ、`POST /api/link-rewrites/step` が 1 回に 1 ページずつ書き換える。
+`link-rewrites` はこれを残りが 0 になるまで呼ぶ。書き換えると他のリンクやタグが変わるページは書き換えずに飛ばし、その id を標準エラーに出して終了コード 1 になる。
 
 ### バックアップと復元
 

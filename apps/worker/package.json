@@ -10,6 +10,7 @@
     "deploy:remote": "node scripts/deploy.mjs deploy",
     "api-token": "node scripts/api-token.mjs",
     "derived:rebuild": "node scripts/derived-rebuild.mjs",
+    "link-rewrites": "node scripts/link-rewrites.mjs",
     "backup": "node scripts/backup.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run"
