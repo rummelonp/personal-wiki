@@ -12,13 +12,15 @@ import {
   findPageById,
   findPageByTitle,
   type Page,
+  REBUILD_MAX_LIMIT,
+  rebuildDerived,
   updatePage,
   type WriteError,
 } from "./store";
 
 /** 書き込み 1 回分の計測値。D1 の書き込み行数（無料枠 10 万行/日）を保存 1 回あたりで集計するために出す。 */
 export interface WriteMetric {
-  op: "create" | "update" | "append" | "delete";
+  op: "create" | "update" | "append" | "delete" | "rebuild";
   rowsWritten: number;
   /** 追記で版の競合により読み直した場合の試行回数 */
   attempts?: number;
@@ -268,4 +270,29 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         return c.body(null, 204);
       })
   );
+}
+
+/**
+ * 管理用のルート。派生データの作り直しは冪等で、ページの内容も版も変えないので write の scope で許す。
+ *
+ * 作り直しは CPU 10ms に収まるよう数ページずつ進む。全ページを作り直すには、応答の next を
+ * 次のリクエストの after に渡し、next が null になるまで繰り返す:
+ *   POST /api/admin/derived/rebuild  {"after": null, "limit": 3}
+ */
+export function registerAdminRoutes(
+  app: Hono<AppEnv>,
+  { recordWrite }: Pick<PagesRoutesOptions, "recordWrite">,
+) {
+  return app.post("/api/admin/derived/rebuild", requireToken("write"), async (c) => {
+    const parsed = await readJsonBody(c, { after: "string_or_null", limit: "number" }, []);
+    if (!parsed.ok) return parsed.response;
+    const after = (parsed.value.after as string | null | undefined) ?? null;
+    const limit = (parsed.value.limit as number | undefined) ?? 1;
+    if (!Number.isInteger(limit) || limit < 1 || limit > REBUILD_MAX_LIMIT) {
+      return errorResponse(c, 400, "invalid_field", { field: "limit", max: REBUILD_MAX_LIMIT });
+    }
+    const result = await rebuildDerived(c.env.DB, { after, limit });
+    recordWrite({ op: "rebuild", rowsWritten: result.rowsWritten });
+    return c.json(result);
+  });
 }

@@ -330,3 +330,75 @@ export async function deletePage(
   returnedPage(results);
   return { ok: true, rowsWritten: sumRowsWritten(results) };
 }
+
+/**
+ * 1 回の呼び出しで作り直すページ数の上限。Workers Free の CPU 10ms と、1 invocation 50 クエリ
+ * （1 ページあたり batch で約 9 文）に収める。
+ */
+export const REBUILD_MAX_LIMIT = 3;
+
+export interface RebuildInput {
+  /** 前回の呼び出しが返した next。最初は null */
+  after: string | null;
+  limit: number;
+}
+
+export interface RebuildResult {
+  /** 作り直したページ（削除済みで派生データを消したものを含む） */
+  rebuilt: number;
+  /** 読んだあとに別の保存が入ったページ。その保存が新しい本文で派生データを書いている */
+  skipped: number;
+  /** 次の呼び出しに渡す cursor。null なら全ページを終えた */
+  next: string | null;
+  rowsWritten: number;
+}
+
+interface RebuildRow {
+  id: string;
+  title: string;
+  title_key: string;
+  body: string;
+  version: number;
+  deleted_at: number | null;
+}
+
+/**
+ * 派生データを pages の title と body から作り直す。id 順に limit 件ずつ進むので、呼び出し側は
+ * next が null になるまで繰り返す。版も revision も変えない。
+ */
+export async function rebuildDerived(db: D1Database, input: RebuildInput): Promise<RebuildResult> {
+  const { results: rows } = await db
+    .prepare(
+      `SELECT id, title, title_key, body, version, deleted_at FROM pages
+       WHERE id > ?1 ORDER BY id LIMIT ?2`,
+    )
+    .bind(input.after ?? "", input.limit)
+    .all<RebuildRow>();
+  let rebuilt = 0;
+  let skipped = 0;
+  let rowsWritten = 0;
+  for (const row of rows) {
+    // 削除済みのページは書き込み経路が無く、版の照合は要らない
+    const statements =
+      row.deleted_at === null
+        ? [
+            guardStatement(db, row.id, row.version),
+            ...derivedStatements(db, row.id, row.title_key, deriveValues(row.title, row.body)),
+          ]
+        : clearDerivedStatements(db, row.id);
+    try {
+      rowsWritten += sumRowsWritten(await db.batch(statements));
+      rebuilt += 1;
+    } catch (error) {
+      if (!isVersionConflict(error)) throw error;
+      skipped += 1;
+    }
+  }
+  const last = rows.at(-1);
+  return {
+    rebuilt,
+    skipped,
+    next: rows.length === input.limit && last !== undefined ? last.id : null,
+    rowsWritten,
+  };
+}

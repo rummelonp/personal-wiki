@@ -6,7 +6,7 @@ import {
   resolvePrincipal,
 } from "./auth/middleware";
 import type { AppEnv } from "./env";
-import { registerPageRoutes, type WriteMetric } from "./pages/routes";
+import { registerAdminRoutes, registerPageRoutes, type WriteMetric } from "./pages/routes";
 
 export interface AppOptions {
   /** UNIX エポックのミリ秒を返す時計。テストだけが差し替える。 */
@@ -33,5 +33,6 @@ export function createApp({ now = Date.now, recordWrite = logWriteMetric }: AppO
     .use("*", enforceDeclaredPolicy)
     .get("/api/healthz", allowAnonymous(), (c) => c.json({ status: "ok" }));
   registerPageRoutes(app, { now, recordWrite });
+  registerAdminRoutes(app, { recordWrite });
   return app;
 }

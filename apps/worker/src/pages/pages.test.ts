@@ -117,7 +117,7 @@ describe("POST /api/pages", () => {
 });
 
 describe("read のトークン", () => {
-  it("取得はできるが、作成・更新・追記・削除は 403", async () => {
+  it("取得はできるが、作成・更新・追記・削除・作り直しは 403", async () => {
     const writer = await buildClient();
     const page = await writer.create("p");
     const reader = await buildClient({ scopes: "read", name: "reader" });
@@ -132,6 +132,7 @@ describe("read のトークン", () => {
       }),
       reader.request(`/api/pages/${page.id}/append`, { method: "POST", json: { text: "x" } }),
       reader.request(`/api/pages/${page.id}`, { method: "DELETE", headers: ifMatch }),
+      reader.request("/api/admin/derived/rebuild", { method: "POST", json: {} }),
     ];
     for (const res of await Promise.all(attempts)) expect(res.status).toBe(403);
   });

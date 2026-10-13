@@ -1,5 +1,15 @@
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { buildClient, linksFrom, type PageJson, searchFts, tagsOf } from "../test/pages";
+import {
+  buildClient,
+  linksFrom,
+  type PageJson,
+  searchFts,
+  snapshotDb,
+  snapshotDerived,
+  tagsOf,
+} from "../test/pages";
+import { REBUILD_MAX_LIMIT } from "./store";
 
 describe("links と tags", () => {
   it("作成で本文から入り、更新で差分だけ書き換わる", async () => {
@@ -95,6 +105,70 @@ describe("links.target_page_id の解決", () => {
       { key: "new", target: page.id },
       { key: "old", target: null },
     ]);
+  });
+});
+
+async function rebuildAll(request: Awaited<ReturnType<typeof buildClient>>["request"]) {
+  let after: string | null = null;
+  let calls = 0;
+  for (;;) {
+    const res = await request("/api/admin/derived/rebuild", {
+      method: "POST",
+      json: { after, limit: 2 },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ next: string | null; rebuilt: number }>();
+    calls += 1;
+    if (body.next === null) return calls;
+    after = body.next;
+  }
+}
+
+describe("POST /api/admin/derived/rebuild", () => {
+  it("壊した派生データを、保存で書いたときと同じ行に戻す", async () => {
+    const { create, update, request } = await buildClient();
+    const a = await create("A", "[[B]] [[C]] #x #Y 本文その一");
+    const b = await create("B", "[[A]] #y 本文その二");
+    await create("C", "#z 本文その三");
+    await update(b, "B", "[[A]] [[D]] #Y #w 本文その二の改");
+    const gone = await create("Gone", "[[A]] #g 消える");
+    await request(`/api/pages/${gone.id}`, { method: "DELETE", headers: { "If-Match": '"1"' } });
+    const expected = await snapshotDb();
+
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM pages_fts"),
+      env.DB.prepare("DELETE FROM tags WHERE page_id = ?1").bind(a.id),
+      env.DB.prepare("UPDATE tags SET tag = 'wrong' WHERE page_id = ?1").bind(b.id),
+      env.DB.prepare("UPDATE links SET target_page_id = NULL"),
+      env.DB.prepare(
+        "INSERT INTO links (source_page_id, target_title_key, target_page_id) VALUES (?1, 'stale', NULL)",
+      ).bind(a.id),
+      // 削除済みのページに残った派生データも消える
+      env.DB.prepare("INSERT INTO tags (page_id, tag_key, tag) VALUES (?1, 'g', 'g')").bind(
+        gone.id,
+      ),
+    ]);
+    expect(await snapshotDerived()).not.toEqual({
+      links: expected.links,
+      tags: expected.tags,
+      fts: expected.fts,
+    });
+
+    const calls = await rebuildAll(request);
+    // 4 ページを 2 件ずつ。最後の呼び出しは 0 件で next が null になる
+    expect(calls).toBe(3);
+    expect(await snapshotDb()).toEqual(expected);
+  });
+
+  it("limit は 1 から上限まで", async () => {
+    const { request } = await buildClient();
+    for (const limit of [0, REBUILD_MAX_LIMIT + 1, 1.5]) {
+      const res = await request("/api/admin/derived/rebuild", {
+        method: "POST",
+        json: { limit },
+      });
+      expect(res.status).toBe(400);
+    }
   });
 });
 
