@@ -39,13 +39,12 @@ function findLabelSeparator(
   return { from: pipe, to: pipe + 1, text: "|" };
 }
 
-/**
- * `[[` と `]]` の間の生テキストを target・heading・blockId・label に分ける。
- * 最初の `|`（または `\|`）だけを区切りとして label を切り出し、残った target 側から
- * 最初の `#`（heading）または `^`（blockId）で target 本体を分ける。
- * link として成立しない場合は null を返す。
- */
-export function splitWikiLinkContent(content: string): WikiLinkParts | null {
+interface ParsedContent {
+  readonly parts: WikiLinkParts;
+  readonly targetSpan: WikiLinkTargetSpan;
+}
+
+function parseContent(content: string): ParsedContent | null {
   if (content.includes("[") || content.includes("]") || content.includes("\n")) return null;
   const separator = findLabelSeparator(content);
   const rawTarget = separator === null ? content : content.slice(0, separator.from);
@@ -53,7 +52,10 @@ export function splitWikiLinkContent(content: string): WikiLinkParts | null {
 
   // rawTarget は #/^ を含まない先頭部分に必ずマッチするので match は常に非 null。
   const match = /^([^#^]*)(?:([#^])(.*))?$/.exec(rawTarget) as RegExpExecArray;
-  const target = (match[1] ?? "").trim();
+  const rawName = match[1] ?? "";
+  const target = rawName.trim();
+  const from = rawName.length - rawName.trimStart().length;
+  const targetSpan = { from, to: from + target.length };
 
   const marker = match[2];
   const restTrimmed = (match[3] ?? "").trim();
@@ -65,12 +67,40 @@ export function splitWikiLinkContent(content: string): WikiLinkParts | null {
 
   const hasLabel = separator !== null && label.length > 0;
   return {
-    target,
-    label: hasLabel ? label : null,
-    labelSeparator: hasLabel ? separator.text : null,
-    heading,
-    blockId,
+    parts: {
+      target,
+      label: hasLabel ? label : null,
+      labelSeparator: hasLabel ? separator.text : null,
+      heading,
+      blockId,
+    },
+    targetSpan,
   };
+}
+
+/**
+ * `[[` と `]]` の間の生テキストを target・heading・blockId・label に分ける。
+ * 最初の `|`（または `\|`）だけを区切りとして label を切り出し、残った target 側から
+ * 最初の `#`（heading）または `^`（blockId）で target 本体を分ける。
+ * link として成立しない場合は null を返す。
+ */
+export function splitWikiLinkContent(content: string): WikiLinkParts | null {
+  return parseContent(content)?.parts ?? null;
+}
+
+/** content の中で target 本体（前後の空白を除いたもの）が占める範囲。`to` は含まない */
+export interface WikiLinkTargetSpan {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * `splitWikiLinkContent` が target とする部分の範囲を返す。target だけを書き換える処理が、
+ * 区切り・label・見出し・block id・前後の空白を保てるようにする。
+ * link として成立しない場合は null。target が空（`[[#見出し]]`）なら from と to が等しい。
+ */
+export function wikiLinkTargetSpan(content: string): WikiLinkTargetSpan | null {
+  return parseContent(content)?.targetSpan ?? null;
 }
 
 export interface WikiLinkParts {
