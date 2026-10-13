@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "node scripts/deploy.mjs migrate",
+    "deploy:remote": "node scripts/deploy.mjs deploy",
     "api-token": "node scripts/api-token.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run"

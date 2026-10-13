@@ -82,9 +82,18 @@ describe("SQL と wrangler の引数", () => {
   });
 
   it("--local と --remote を切り替える", () => {
-    expect(wranglerArgs("SELECT 1", false)).toContain("--local");
-    expect(wranglerArgs("SELECT 1", false)).not.toContain("--remote");
-    expect(wranglerArgs("SELECT 1", true)).toContain("--remote");
+    expect(wranglerArgs("SELECT 1", { remote: false })).toContain("--local");
+    expect(wranglerArgs("SELECT 1", { remote: false })).not.toContain("--remote");
+    const remote = wranglerArgs("SELECT 1", {
+      remote: true,
+      configPath: "/w/wrangler.deploy.json",
+    });
+    expect(remote).toContain("--remote");
+    expect(remote).not.toContain("--local");
+    expect(remote.slice(remote.indexOf("--config"), remote.indexOf("--config") + 2)).toEqual([
+      "--config",
+      "/w/wrangler.deploy.json",
+    ]);
   });
 });
 

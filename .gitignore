@@ -6,6 +6,10 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# デプロイ先ごとの値と、そこから合成した wrangler の設定（apps/worker/scripts/deploy-config.mjs）
+apps/worker/deploy.env
+apps/worker/wrangler.deploy.json
 *.tsbuildinfo
 .DS_Store
 

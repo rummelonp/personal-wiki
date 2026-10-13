@@ -1,5 +1,7 @@
 // ホスト名、D1、R2 の名前はデプロイ先ごとの設定値で、コードはこれらを参照しない。
-// routes の wiki.example.com はデプロイする人が自分のホスト名に置き換える。
+// デプロイ先の値（routes のホスト名、database_id など）は apps/worker/deploy.env に置く。
+// `pnpm deploy:remote` と `pnpm db:migrate:remote` は、この設定に deploy.env の値を重ねた
+// wrangler.deploy.json（gitignore 済み）を作って wrangler に渡す。このファイルには書き込まれない。
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "personal-wiki",
@@ -9,8 +11,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "routes": [{ "pattern": "wiki.example.com", "custom_domain": true }],
-  // database_id はローカルでは不要。wrangler deploy は未作成の D1 と R2 を作成し、database_id を
-  // このファイルに書き戻すので、デプロイ先のアカウントの ID をコミットしないよう注意する
+  // database_id はローカルでは不要で、デプロイ先の ID はここに書かない（コミットしない）
   "d1_databases": [
     {
       "binding": "DB",

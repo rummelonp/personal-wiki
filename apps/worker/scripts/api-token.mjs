@@ -2,6 +2,7 @@
 //   node scripts/api-token.mjs issue <name> --scopes read|read,write [--remote]
 //   node scripts/api-token.mjs revoke <name> [--remote]
 // 既定はローカルの D1（wrangler d1 execute --local）。本番に書くときだけ --remote を付ける。
+// --remote は deploy.env から合成した設定（deploy-config.mjs）で D1 を解決する。
 // pnpm 経由で標準出力をパイプに渡すときは、pnpm 自身の表示が混ざらないよう apps/worker で
 // `pnpm -s api-token` として呼ぶ（--filter を付けると -s でも実行するコマンドが表示される）。
 // 発行したトークンの平文は標準出力にだけ出す。D1 に渡すのは hash だけで、平文はコマンドラインにも載せない。
@@ -10,6 +11,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeGeneratedConfig } from "./deploy-config.mjs";
 
 const D1_BINDING = "DB";
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
@@ -93,11 +95,13 @@ export function revokeSql({ name, now }) {
 
 /**
  * @param {string} sql
- * @param {boolean} remote
+ * @param {{ remote: false } | { remote: true; configPath: string }} target
+ *   remote では、D1 の ID を持つ設定ファイルを渡す
  * @returns {string[]}
  */
-export function wranglerArgs(sql, remote) {
-  return ["d1", "execute", D1_BINDING, remote ? "--remote" : "--local", "--json", "--command", sql];
+export function wranglerArgs(sql, target) {
+  const where = target.remote ? ["--remote", "--config", target.configPath] : ["--local"];
+  return ["d1", "execute", D1_BINDING, ...where, "--json", "--command", sql];
 }
 
 /**
@@ -150,18 +154,20 @@ function runWrangler(args, io) {
 export function main(argv, io = defaultIo) {
   const args = parseArgs(argv);
   const target = args.remote ? "remote" : "local";
+  // 設定が足りないときに、トークンを作る前に止める
+  /** @type {Parameters<typeof wranglerArgs>[1]} */
+  const where = args.remote
+    ? { remote: true, configPath: writeGeneratedConfig() }
+    : { remote: false };
   const now = io.now();
   if (args.command === "issue") {
     const token = generateToken();
-    runWrangler(
-      wranglerArgs(issueSql({ ...args, tokenHash: hashToken(token), now }), args.remote),
-      io,
-    );
+    runWrangler(wranglerArgs(issueSql({ ...args, tokenHash: hashToken(token), now }), where), io);
     io.stderr.write(`issued "${args.name}" (${args.scopes}) on ${target} D1\n`);
     io.stdout.write(`${token}\n`);
     return;
   }
-  const changes = runWrangler(wranglerArgs(revokeSql({ ...args, now }), args.remote), io);
+  const changes = runWrangler(wranglerArgs(revokeSql({ ...args, now }), where), io);
   if (changes === 0) throw new Error(`no active token named "${args.name}" on ${target} D1`);
   io.stderr.write(`revoked "${args.name}" on ${target} D1\n`);
 }
