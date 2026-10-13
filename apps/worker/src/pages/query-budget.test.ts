@@ -1,6 +1,8 @@
+import { createScheduledController } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
+import { createScheduledHandler } from "../scheduled";
 import { buildClient, T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import type { LinkRewriteStepResult } from "./link-rewrites";
@@ -76,6 +78,10 @@ function expectWithinBudget(counter: { queries: number }) {
 }
 
 describe("1 invocation のクエリ数", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("append は競合が上限まで続いても収まる", async () => {
     const client = await buildClient();
     const page = await client.create("Page", "[[Other]] #tag");
@@ -133,6 +139,29 @@ describe("1 invocation のクエリ数", () => {
     expect((await conflicted.json<LinkRewriteStepResult>()).conflict).toBe(true);
     // 上に加えて、試行回数を数え直す 1
     expect(racing.counter.queries).toBe(23);
+    expectWithinBudget(racing.counter);
+  });
+
+  it("Cron の scheduled は、REST の step から認証の 2 を除いた数に収まる", async () => {
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const links = Array.from({ length: 30 }, (_, i) => `[[Old]] [[L${i}]] #t${i}`).join("\n");
+    const s = await client.create("S", links);
+    await client.update(target, "New", "");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const scheduled = createScheduledHandler({ recordWrite: () => {} });
+    const controller = createScheduledController({ cron: "* * * * *" });
+
+    const success = instrumentedDb();
+    await scheduled(controller, { ...env, DB: success.db });
+    // 選ぶ 1、ページ 1、派生データ 1、batch 16、残り 1
+    expect(success.counter.queries).toBe(20);
+
+    await client.update({ id: target.id, version: 2 }, "Newer", "");
+    const racing = instrumentedDb(() => s.id);
+    await scheduled(controller, { ...env, DB: racing.db });
+    // 上に加えて、試行回数を数え直す 1
+    expect(racing.counter.queries).toBe(21);
     expectWithinBudget(racing.counter);
   });
 });

@@ -42,7 +42,7 @@ export interface WriteMetric {
   op: "create" | "update" | "append" | "delete" | "rebuild" | "visibility" | "link_rewrite";
   /**
    * revisions.actor と同じ形式。リンクの書き換えで本文を書いたときは revision と同じく rename した
-   * actor、積んだ分を捨てただけのときは呼び出し元
+   * actor、積んだ分を捨てただけのときは呼び出し元（Cron は "cron"）
    */
   actor: string;
   /** 書いたページ。作り直しは 1 回で複数ページを扱いうるので付けない */
@@ -52,6 +52,10 @@ export interface WriteMetric {
   attempts?: number;
   /** 作り直しとリンクの書き換えで失敗したページの id */
   failed?: string[];
+}
+
+export function logWriteMetric(metric: WriteMetric): void {
+  console.log(JSON.stringify({ event: "pages.write", ...metric }));
 }
 
 export interface PageWriteContext {
@@ -130,11 +134,23 @@ export async function stepLinkRewritesAs(
   ctx: PageWriteContext,
   input: { targetPageId: string | null },
 ): Promise<LinkRewriteStepResult> {
+  return stepLinkRewritesRecorded(ctx, input, () => actorOf(ctx.principal));
+}
+
+/**
+ * principal を持たない呼び出し元（Cron）も使う。fallbackActor は、積んだ分を捨てただけで書き換えた
+ * revision が無いときの計測値の actor で、書き込みが起きたときだけ呼ぶ。
+ */
+export async function stepLinkRewritesRecorded(
+  ctx: Pick<PageWriteContext, "db" | "now" | "recordWrite">,
+  input: { targetPageId: string | null },
+  fallbackActor: () => string,
+): Promise<LinkRewriteStepResult> {
   const { result, actor } = await stepLinkRewrites(ctx.db, { ...input, now: ctx.now() });
   if (result.rowsWritten > 0) {
     ctx.recordWrite({
       op: "link_rewrite",
-      actor: actor ?? actorOf(ctx.principal),
+      actor: actor ?? fallbackActor(),
       ...(result.processed === null ? {} : { pageId: result.processed.sourcePageId }),
       rowsWritten: result.rowsWritten,
       ...(result.failed.length > 0 ? { failed: result.failed } : {}),

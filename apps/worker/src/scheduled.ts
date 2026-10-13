@@ -1,0 +1,52 @@
+import type { Bindings } from "./env";
+import { logWriteMetric, stepLinkRewritesRecorded, type WriteMetric } from "./pages/operations";
+
+export interface ScheduledOptions {
+  /** UNIX エポックのミリ秒を返す時計。テストだけが差し替える。 */
+  now?: () => number;
+  recordWrite?: (metric: WriteMetric) => void;
+}
+
+/**
+ * Cron で積んだリンクの書き換えを進める（deploy.env の LINK_REWRITE_CRON）。MCP 経由の rename は
+ * web を開かないので、書き換えが積まれたまま残るのを防ぐ。
+ *
+ * 1 回の発火で進めるのは 1 リンク元だけ。Workers Free の scheduled は CPU が 10ms で、1 リンク元の
+ * 書き換えがその大半を使うため、2 回目は呼ばない。残りは次の発火が進める。
+ * revision の actor は、積んだ rename の呼び出し元（link_rewrites.actor）になる。REST の step と同じ。
+ * 例外は発火を失敗として記録させるため、ログに出したあとで投げ直す。
+ */
+export function createScheduledHandler({
+  now = Date.now,
+  recordWrite = logWriteMetric,
+}: ScheduledOptions = {}) {
+  return async (_controller: ScheduledController, env: Bindings): Promise<void> => {
+    try {
+      const result = await stepLinkRewritesRecorded(
+        { db: env.DB, now, recordWrite },
+        { targetPageId: null },
+        () => "cron",
+      );
+      // 本文と title は出さない。リンク元は id だけ
+      console.log(
+        JSON.stringify({
+          event: "link_rewrites.scheduled",
+          processed: result.processed?.sourcePageId ?? null,
+          rewritten: result.processed?.rewritten ?? 0,
+          conflict: result.conflict,
+          failed: result.failed,
+          remaining: result.remaining,
+          rowsWritten: result.rowsWritten,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "link_rewrites.scheduled_error",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      throw error;
+    }
+  };
+}

@@ -501,6 +501,48 @@ describe("POST /api/link-rewrites/step", () => {
   });
 });
 
+describe("同じリンク元を同時に選ぶ呼び出し（web の step と Cron）", () => {
+  it("先に書いた方が書き換え、後の方は conflict で試行回数を残さない", async () => {
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const s = await client.create("S", "[[Old]]");
+    await rename(client, target, "New");
+    let other: LinkRewriteStepResult | undefined;
+    // 外側が選んで読んだあと、batch の前に内側の呼び出しが同じリンク元を選んで書き終える
+    const racing = beforeBatch(async () => {
+      other = (await stepLinkRewrites(env.DB, { targetPageId: null, now: T0 + 1000 })).result;
+    });
+    const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 });
+    expect(other).toMatchObject({ processed: { sourcePageId: s.id }, failed: [] });
+    expect(result).toMatchObject({ processed: null, conflict: true, failed: [], remaining: 0 });
+    // 書き換えは 1 回だけで、積んだ行は残らない
+    expect(await read(client, s)).toMatchObject({ body: "[[New]]", version: 2 });
+    expect(await jobs()).toEqual([]);
+  });
+
+  it("上限の 1 つ手前から同時に選ぶと、後の方が failed を返すが、書き換えは失われない", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const s = await client.create("S", "[[Old]]");
+    await rename(client, target, "New");
+    await env.DB.prepare("UPDATE link_rewrites SET attempts = ?1")
+      .bind(LINK_REWRITE_MAX_ATTEMPTS - 1)
+      .run();
+    let other: LinkRewriteStepResult | undefined;
+    // 外側は上限ちょうどで進み、内側は上限を超えて読まずに捨てる。外側の batch は読んだ状態の guard
+    // だけで通るので、内側が積んだ行を先に消しても書き換わる
+    const racing = beforeBatch(async () => {
+      other = (await stepLinkRewrites(env.DB, { targetPageId: null, now: T0 + 1000 })).result;
+    });
+    const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 });
+    expect(other).toMatchObject({ processed: null, failed: [s.id] });
+    expect(result).toMatchObject({ processed: { sourcePageId: s.id }, conflict: false });
+    expect(await read(client, s)).toMatchObject({ body: "[[New]]", version: 2 });
+    expect(await jobs()).toEqual([]);
+  });
+});
+
 /** batch を送る直前に hook を呼ぶ D1。hook の中の書き込みは env.DB に直接送る */
 function beforeBatch(hook: () => Promise<void>): D1Database {
   return new Proxy(env.DB, {

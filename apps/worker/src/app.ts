@@ -12,7 +12,7 @@ import { registerOAuthRoutes } from "./auth/oauth-routes";
 import { registerAuthRoutes } from "./auth/routes";
 import type { AppEnv } from "./env";
 import { registerMcpRoutes } from "./mcp/server";
-import type { WriteMetric } from "./pages/operations";
+import { logWriteMetric, type WriteMetric } from "./pages/operations";
 import { registerAdminRoutes, registerPageRoutes } from "./pages/routes";
 import { securityHeaders } from "./security-headers";
 import { registerSpaRoutes } from "./spa";
@@ -24,10 +24,6 @@ export interface AppOptions {
   recordWrite?: (metric: WriteMetric) => void;
   /** Access の JWKS の取得に使う fetch。テストだけが差し替える。 */
   accessFetch?: (url: string) => Promise<Response>;
-}
-
-function logWriteMetric(metric: WriteMetric): void {
-  console.log(JSON.stringify({ event: "pages.write", ...metric }));
 }
 
 /**
