@@ -99,7 +99,7 @@ export function PageEditor({ page }: { page: Page }) {
           <button
             type="button"
             className="button button-danger"
-            disabled={!idle || state.gone || state.authLost}
+            disabled={!idle || state.gone || state.authLost || state.conflict !== null}
             onClick={() => void handleDelete()}
           >
             削除

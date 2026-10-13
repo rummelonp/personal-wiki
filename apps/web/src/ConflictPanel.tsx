@@ -40,7 +40,7 @@ export function ConflictPanel({
           <dd>{local.title}</dd>
         </dl>
       )}
-      {rows.length === 0 ? (
+      {rows.every((row) => row.kind === "skip") ? (
         <p className="muted">本文に差分はありません。</p>
       ) : (
         <div className="diff">

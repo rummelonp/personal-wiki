@@ -196,11 +196,14 @@ export class EditorSession {
       return;
     }
     this.set({ busy: null });
-    await this.handleFailure(res);
+    await this.handleFailure(res, { adoptSame: true });
   }
 
   /** 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。 */
-  private async handleFailure(res: ApiFailure, options: { stash?: boolean } = {}): Promise<void> {
+  private async handleFailure(
+    res: ApiFailure,
+    options: { stash?: boolean; adoptSame?: boolean } = {},
+  ): Promise<void> {
     const stash = options.stash ?? true;
     switch (res.reason) {
       case "unauthorized":
@@ -213,8 +216,19 @@ export class EditorSession {
         return;
       case "version_conflict": {
         const latest = await this.api.getPage(this.state.base.id);
-        if (latest.ok) this.set({ conflict: latest.value });
-        else if (latest.reason === "unauthorized") this.set({ authLost: true });
+        if (latest.ok) {
+          const server = latest.value;
+          const { draft } = this.state;
+          // 別の場所で同じ内容が保存されていれば、見せる差分が無いので衝突にしない
+          // （削除や visibility の変更は、版が変わったこと自体を知らせたいので対象外）
+          if (options.adoptSame && server.title === draft.title && server.body === draft.body) {
+            this.clearTimer();
+            this.set({ base: server, error: null });
+            this.backup.remove(server.id);
+            return;
+          }
+          this.set({ conflict: server });
+        } else if (latest.reason === "unauthorized") this.set({ authLost: true });
         else if (latest.reason === "not_found") this.set({ gone: true });
         else
           this.set({

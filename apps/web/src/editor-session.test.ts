@@ -201,6 +201,18 @@ describe("409 の衝突", () => {
     expect(api.calls).toEqual(["put@1", "get"]);
   });
 
+  it("別の場所で同じ内容が保存済みなら、衝突にせず版だけ進める", async () => {
+    const { session, server, backup } = setup();
+    session.edit({ title: "題", body: "同じ" });
+    server.page = { ...server.page, body: "同じ", version: 2 };
+    await session.flush();
+    const state = session.getState();
+    expect(state.conflict).toBeNull();
+    expect(state.base.version).toBe(2);
+    expect(saveStatusOf(state)).toBe("saved");
+    expect(backup.load(ID)).toBeNull();
+  });
+
   it("衝突の時点で手元の内容を localStorage に退避する", async () => {
     const { backup } = await conflicted();
     expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
