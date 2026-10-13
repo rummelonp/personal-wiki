@@ -129,6 +129,8 @@ export const EXCLUDED_TABLES = {
   pages_fts: "derived",
   // 保存の batch が版の衝突を検出するための表。常に空
   save_guard: "transient",
+  // OAuth の client の登録数を UTC の 1 日ごとに数える表。復元しても過ぎた日の行は使われない
+  oauth_client_registrations: "transient",
 };
 
 const USAGE = `usage:
