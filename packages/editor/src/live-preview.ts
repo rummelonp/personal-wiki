@@ -19,6 +19,7 @@ const strong = Decoration.mark({ class: "cm-lp-strong" });
 const emphasis = Decoration.mark({ class: "cm-lp-em" });
 const strikethrough = Decoration.mark({ class: "cm-lp-strike" });
 const highlight = Decoration.mark({ class: "cm-lp-highlight" });
+const inlineCode = Decoration.mark({ class: "cm-lp-inline-code" });
 const headingLines = [1, 2, 3, 4, 5, 6].map((level) =>
   Decoration.line({ class: `cm-lp-heading cm-lp-h${level}` }),
 );
@@ -229,6 +230,22 @@ function build(view: EditorView): BuiltDecorations {
           if (!reveal(parent.from, parent.to)) conceal(node.from, node.to);
           return false;
         }
+        if (node.name === "InlineCode") {
+          const key = `ic:${node.from}:${node.to}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            decorations.push(inlineCode.range(node.from, node.to));
+          }
+          return true;
+        }
+        if (node.name === "CodeMark") {
+          // fenced code の CodeMark は上の CODE_BLOCK_NODES で降りないので、ここに来るのは
+          // インラインコードの `` ` `` だけだが、親を見て取り違えを避ける。
+          const parent = node.node.parent;
+          if (parent?.name !== "InlineCode") return false;
+          if (!reveal(parent.from, parent.to)) conceal(node.from, node.to);
+          return false;
+        }
         if (node.name === "HorizontalRule") {
           // node は直前の字下げを含まない。字下げを残すと横幅いっぱいの罫線が次の表示行へ
           // 折り返すので、隠す範囲に含める。`>` などの前置きは他の記法の持ち物なので残す。
@@ -354,7 +371,7 @@ function skipSpaces(text: string, offset: number): number {
 }
 
 /**
- * 見出し、強調、取り消し線、引用、callout、箇条書きの記号、markdown link、コードブロックの
+ * 見出し、強調、取り消し線、インラインコード、引用、callout、箇条書きの記号、markdown link、コードブロックの
  * Live Preview。WikiLink と tag は別の extension が持つ。
  *
  * task の行では行頭の `- ` を隠し、checkbox の描画は `taskList()` に任せる。`taskList()` を

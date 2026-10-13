@@ -260,6 +260,15 @@ export const livePreviewTheme = EditorView.baseTheme({
       "color-mix(in srgb, #ffd000 26%, var(--ui-color-background))",
     ),
   },
+  // 背景は code block の行と同じ surface 色。文字色は変えないので、code block と同じ組み合わせで読める。
+  // 等幅は構文 highlight の `t.monospace` も当てるが、mark 自身にも持たせる。記号を隠した
+  // 外側の mark と内側の span で書体が食い違うと、padding の幅が本文の書体で測られてずれる。
+  ".cm-lp-inline-code": {
+    fontFamily: "var(--ui-font-mono, ui-monospace, monospace)",
+    backgroundColor: "var(--ui-color-surface)",
+    borderRadius: "var(--ui-radius-sm, 0.25rem)",
+    padding: "0.1em 0.25em",
+  },
   ".cm-lp-comment": { color: "var(--ui-color-muted)" },
   ".cm-line.cm-lp-comment-hidden": { display: "none" },
   // frontmatter（frontmatter-block.ts）。畳んだ枠は開き `---` の行に置く。2 行目以降は畳んだ
