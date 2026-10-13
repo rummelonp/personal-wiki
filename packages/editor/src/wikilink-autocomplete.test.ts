@@ -53,6 +53,16 @@ async function typeQuery(v: EditorView, query: string, prefix = ""): Promise<voi
   await afterCompletionWouldSettle();
 }
 
+/** カーソルの位置に 1 文字打つ */
+function typeChar(v: EditorView, char: string): void {
+  const head = v.state.selection.main.head;
+  v.dispatch({
+    changes: { from: head, insert: char },
+    selection: { anchor: head + char.length },
+    userEvent: "input.type",
+  });
+}
+
 const labels = (v: EditorView) =>
   currentCompletions(v.state).map((option) => option.displayLabel ?? option.label);
 
@@ -216,6 +226,39 @@ describe("heading and block completion", () => {
     ]);
   });
 
+  // typeQuery は本文を一度に流すので、開いた候補を再利用するか（validFor）は 1 文字ずつ打たないと見えない
+  it("switches to the block ids when ^ is typed after the headings are listed", async () => {
+    const { view: v } = mount("", noteTargets());
+    await typeQuery(v, "Note#");
+    expect(labels(v)).toEqual(["概要", "使い方", "あいう"]);
+
+    typeChar(v, "^");
+    await vi.waitFor(() => expect(labels(v)).toEqual(["intro", "usage"]));
+  });
+
+  it("switches to the block ids of the current page when ^ is typed after [[#", async () => {
+    const { view: v } = mount();
+    await typeQuery(v, "#", "# 最初\n\n自分の段落 ^mine\n\n");
+    expect(labels(v)).toEqual(["最初"]);
+
+    typeChar(v, "^");
+    await vi.waitFor(() => expect(labels(v)).toEqual(["mine"]));
+  });
+
+  it("keeps the headings listed when a space is typed right after the #", async () => {
+    const { view: v } = mount("", noteTargets());
+    await typeQuery(v, "Note#");
+
+    typeChar(v, " ");
+    await vi.waitFor(() => expect(labels(v)).toEqual(["概要", "使い方", "あいう"]));
+
+    typeChar(v, "使");
+    await vi.waitFor(() => expect(labels(v)).toEqual(["使い方"]));
+    await afterInteractionDelay();
+    expect(acceptCompletion(v)).toBe(true);
+    expect(v.state.doc.toString()).toBe("[[Note# 使い方]]");
+  });
+
   it("inserts [[Title#^id]]", async () => {
     const { view: v } = mount("", noteTargets());
     await typeQuery(v, "Note#^us");
@@ -327,32 +370,32 @@ describe("heading and block completion and the IME invariants", () => {
   it("drops a result that arrives after a composition has started", async () => {
     let resolve: (targets: LinkTargets) => void = () => {};
     const slow: LinkTargetSource = {
-      load: () =>
-        new Promise((r) => {
-          resolve = r;
-        }),
+      load: vi.fn(
+        () =>
+          new Promise<LinkTargets>((r) => {
+            resolve = r;
+          }),
+      ),
     };
-    const { view: v, transactions } = mount("", slow);
+    const { view: v } = mount("", slow);
     v.dispatch({
       changes: { from: 0, insert: "[[Note#" },
       selection: { anchor: 7 },
       userEvent: "input.type",
     });
-    await vi.waitFor(() => expect(completionStatus(v.state)).toBe("pending"));
+    // source が composition 前に走り、load の応答を待っている状態にする。pending になっただけでは
+    // source が未実行のことがあり、その場合は先頭の判定で null になって await 後の判定に届かない
+    await vi.waitFor(() => expect(slow.load).toHaveBeenCalled());
 
+    // compose の transaction は流さない。それを流すと autocomplete 自身の `closeOnComposition` が
+    // pending を閉じてしまい、source 側の判定を外しても通る
     v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
-    v.dispatch({
-      changes: { from: 7, insert: "あ" },
-      selection: { anchor: 8 },
-      userEvent: "input.type.compose.start",
-    });
-    const before = transactions();
+    expect(completionStatus(v.state)).toBe("pending");
     resolve(NOTE_TARGETS);
     await afterCompletionWouldSettle();
 
     expect(completionStatus(v.state)).toBeNull();
     expect(currentCompletions(v.state)).toEqual([]);
-    expect(transactions()).toBe(before);
   });
 
   it("aborts the pending request when the cursor leaves the link", async () => {

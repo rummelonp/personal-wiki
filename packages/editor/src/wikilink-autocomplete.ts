@@ -56,7 +56,7 @@ export interface WikiLinkAutocompleteOptions {
   readonly onLatency?: (ms: number) => void;
   /**
    * `activateOnTypingDelay`。既定 0。
-   * 候補解決が同期なので、打鍵の debounce を挟む理由が無い。
+   * title の候補は `PageIndex.search` が同期に返すので、打鍵の debounce を挟む理由が無い。
    * 0 より大きくすると、composition の直前の打鍵で予約した query が composition 中に走り、
    * autocomplete の dispatch を招く窓が広がる（IME 不変条件 1）。
    */
@@ -75,9 +75,15 @@ const OPEN_LINK_AT_END = new RegExp(`${OPEN_LINK.source}$`);
  */
 const LINK_SECTION = /\[\[([^[\]|#^\n]*)#(\^?)([^[\]|#\n]*)/;
 
-/** 見出しの query が続く間、同じ候補を使い続けてよい入力 */
-const HEADING_QUERY = /^[^[\]|#\n]*$/;
-const BLOCK_QUERY = /^[^[\]|#^\n]*$/;
+/**
+ * query が続く間、同じ候補を使い続けてよい入力。
+ * 先頭の空白と、見出しの query の先頭の `^` は、候補の種類か `from` が変わる入力なので
+ * 含めない。`validFor` を外れた入力は source が再実行され、`[[Note#` の後ろの `^` で block の
+ * 一覧に、空白で query の頭を飛ばした `from` に切り替わる。再利用すると、`^` や空白が絞り込みの
+ * 文字として扱われて 0 件になり、候補が閉じる。
+ */
+const HEADING_QUERY = /^(?:[^\s[\]|#^][^[\]|#\n]*)?$/;
+const BLOCK_QUERY = /^(?:[^\s[\]|#^][^[\]|#^\n]*)?$/;
 
 /**
  * 見出しと block id の候補の、本文での並び。絞り込みの点数が同じ候補（query が空のときは全部）の
