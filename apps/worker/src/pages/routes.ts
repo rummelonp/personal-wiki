@@ -8,6 +8,7 @@ import {
   createPageAs,
   describeWriteError,
   findPageByInputId,
+  MAX_REQUEST_BYTES,
   type PageWriteContext,
   updatePageAs,
   type WriteMetric,
@@ -31,7 +32,6 @@ import {
   deletePage,
   findPageByTitle,
   MAX_BODY_BYTES,
-  MAX_TITLE_BYTES,
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,
@@ -81,16 +81,6 @@ function writeErrorResponse(
   const { status, body } = describeWriteError(error);
   return c.json(body, status);
 }
-
-/**
- * JSON を解析する前に Content-Length で拒む上限。巨大な JSON の解析で CPU を使い切らないようにする。
- * 正当なリクエストを拒まないよう、title と本文を上限まで入れ、全文字を JSON の最長のエスケープ
- * （制御文字の \u00XX で 1 バイトが 6 バイト）にした大きさに、キーと記号の分を足して決める。
- * Content-Length の無いリクエストは解析後の本文の検査に任せる。
- * MCP の tool 呼び出しも同じ title と本文を運ぶので、/mcp でも同じ上限を使う（JSON-RPC の封筒の分は
- * キーと記号の余裕に収まる）。
- */
-export const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
 
 type FieldSpec = Record<string, "string" | "number" | "string_or_null">;
 

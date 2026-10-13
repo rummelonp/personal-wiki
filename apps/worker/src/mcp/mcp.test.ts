@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
-import { MAX_REQUEST_BYTES } from "../pages/routes";
+import { MAX_REQUEST_BYTES } from "../pages/operations";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
 
 const ORIGIN = "http://localhost";
