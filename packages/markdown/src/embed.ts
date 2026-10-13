@@ -56,6 +56,13 @@ export function embedKindForTarget(target: string): MediaEmbedKind | null {
   return null;
 }
 
+/** embed の target が添付（画像・動画・PDF・音声）を指すか。page への参照ではない。 */
+export function isAttachmentTarget(target: string): boolean {
+  if (embedKindForTarget(target) !== null) return true;
+  const ext = extensionOf(target);
+  return ext !== null && OTHER_ATTACHMENT_EXTENSIONS.has(ext);
+}
+
 /**
  * embed を展開方法で分類する。展開方法を持たないもの（block を指す embed、PDF と音声）は
  * null で、呼び出し側は通常の WikiLink として扱う。

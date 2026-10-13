@@ -56,9 +56,8 @@ const NULL_SCALAR = /^(?:~|null|Null|NULL)$/;
 /**
  * 1 つのスカラを値にする。YAML の null は「値が無い」ので `null` を返し、呼び出し側が落とす。
  *
- * quote を剥がした後では `~` と `"~"` を見分けられないので、null の判定はここでしかできない
- * 。tag 名・title として読めるかどうかの判定は、剥がした後の文字列に対して
- * 呼び出し側が行う。
+ * quote を剥がした後では `~` と `"~"` を見分けられないので、null の判定はここでしかできない。
+ * tag 名・title として読めるかどうかの判定は、剥がした後の文字列に対して呼び出し側が行う。
  */
 function scalarValue(raw: string): string | null {
   return NULL_SCALAR.test(raw) ? null : unquote(raw);

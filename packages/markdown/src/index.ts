@@ -6,6 +6,7 @@ export {
   embedKindForTarget,
   embedKindOf,
   type ImageEmbedLabel,
+  isAttachmentTarget,
   MAX_EMBED_DIMENSION,
   type MediaEmbedKind,
   parseImageEmbedLabel,
