@@ -25,6 +25,7 @@ const OAUTH_KV_BINDING = "OAUTH_KV";
  *   r2BucketName: string | undefined;
  *   oauthKvNamespaceId: string | undefined;
  *   oauthRedirectUris: string | undefined;
+ *   linkRewriteCron: string | undefined;
  *   accountId: string | undefined;
  *   ownerAuth: OwnerAuthValues | undefined;
  * }} DeployValues
@@ -98,6 +99,7 @@ const KNOWN_KEYS = new Set([
   "R2_BUCKET_NAME",
   "OAUTH_KV_NAMESPACE_ID",
   "OAUTH_REDIRECT_URIS",
+  "LINK_REWRITE_CRON",
   "CLOUDFLARE_ACCOUNT_ID",
   "ACCESS_TEAM_DOMAIN",
   "ACCESS_AUD",
@@ -114,6 +116,7 @@ const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
  * OAUTH_KV_NAMESPACE_ID が空なら oauthKvNamespaceId は undefined になり、OAuth を閉じた構成にして警告する。
  * OAUTH_REDIRECT_URIS は、Worker が client の登録で完全一致で比べるので、正規化した形でなければ弾く。
+ * LINK_REWRITE_CRON が空なら linkRewriteCron は undefined になり、Cron を使わない構成にする。
  * owner のログインの 3 つの値は、すべて空なら ownerAuth を undefined にして警告する。一部だけなら
  * problems にする（ログインできないままデプロイしても気づきにくいため）。
  * @param {string} envText
@@ -154,6 +157,7 @@ export function readDeployValues(envText) {
     );
   }
   const oauthRedirectUris = readOAuthRedirectUris(get("OAUTH_REDIRECT_URIS"), problems);
+  const linkRewriteCron = readLinkRewriteCron(get("LINK_REWRITE_CRON"), problems);
   const ownerAuth = readOwnerAuth(get, problems, warnings);
   if (oauthKvNamespaceId !== undefined && ownerAuth === undefined) {
     warnings.push(
@@ -171,6 +175,7 @@ export function readDeployValues(envText) {
       r2BucketName: get("R2_BUCKET_NAME"),
       oauthKvNamespaceId,
       oauthRedirectUris,
+      linkRewriteCron,
       accountId: get("CLOUDFLARE_ACCOUNT_ID"),
       ownerAuth,
     },
@@ -198,6 +203,27 @@ function readOAuthRedirectUris(value, problems) {
     }
   }
   return uris.length === 0 ? undefined : uris.join(",");
+}
+
+// 分 時 日 月 曜日。Cloudflare が受ける範囲（名前、L、W、#）の厳密な検査は wrangler と API に任せ、
+// フィールド数の誤りと、複数の式や余計な文字をここで弾く
+const CRON_FIELD_PATTERN = /^[0-9A-Za-z*/,\-?#]+$/;
+
+/**
+ * @param {string | undefined} value
+ * @param {string[]} problems
+ * @returns {string | undefined} フィールドの間を空白 1 つに揃えた値
+ */
+function readLinkRewriteCron(value, problems) {
+  if (value === undefined) return undefined;
+  const fields = value.split(/\s+/);
+  if (fields.length !== 5 || !fields.every((field) => CRON_FIELD_PATTERN.test(field))) {
+    problems.push(
+      "LINK_REWRITE_CRON は cron 式 1 つ（分 時 日 月 曜日の 5 フィールド。例 */5 * * * *）にしてください",
+    );
+    return undefined;
+  }
+  return fields.join(" ");
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
@@ -265,6 +291,8 @@ function readOwnerAuth(get, problems, warnings) {
  * oauthKvNamespaceId が無いときは、OAuth の KV の binding を設定から外す（Worker は OAuth を閉じる）。
  * ownerAuth があれば vars に入れる。無ければ vars に入れず、Worker はログインを拒む。
  * oauthRedirectUris があれば vars の OAUTH_REDIRECT_URIS に入れる。
+ * linkRewriteCron は triggers.crons に入れる。無いときも空の配列を入れる。wrangler は crons が
+ * 未定義だとデプロイ済みの schedule に触れないので、deploy.env から消しても Cron が止まらなくなる。
  * @param {Record<string, any>} base
  * @param {DeployValues} values
  * @returns {Record<string, any>}
@@ -318,6 +346,10 @@ export function composeConfig(base, values) {
   if (values.oauthRedirectUris !== undefined) {
     config.vars = { ...config.vars, OAUTH_REDIRECT_URIS: values.oauthRedirectUris };
   }
+  config.triggers = {
+    ...config.triggers,
+    crons: values.linkRewriteCron === undefined ? [] : [values.linkRewriteCron],
+  };
   return config;
 }
 

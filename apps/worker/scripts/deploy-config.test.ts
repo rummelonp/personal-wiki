@@ -23,6 +23,7 @@ const VALUES = {
   r2BucketName: "my-wiki-files",
   oauthKvNamespaceId: KV_ID,
   oauthRedirectUris: undefined,
+  linkRewriteCron: undefined,
   accountId: undefined,
   ownerAuth: undefined,
 };
@@ -176,6 +177,33 @@ describe("readDeployValues", () => {
     }
   });
 
+  it("LINK_REWRITE_CRON は 5 フィールドの cron 式だけを許し、空なら使わない", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(readDeployValues(base)).toMatchObject({ values: { linkRewriteCron: undefined } });
+    expect(readDeployValues(`${base}LINK_REWRITE_CRON=\n`)).toMatchObject({
+      values: { linkRewriteCron: undefined },
+    });
+    for (const [raw, expected] of [
+      ["*/5 * * * *", "*/5 * * * *"],
+      ["  *   * * *  * ", "* * * * *"],
+      ["0 3 * * MON-FRI", "0 3 * * MON-FRI"],
+      ['"0,30 */2 1-15 * *"', "0,30 */2 1-15 * *"],
+    ] as const) {
+      expect(readDeployValues(`${base}LINK_REWRITE_CRON=${raw}\n`), raw).toMatchObject({
+        values: { linkRewriteCron: expected },
+      });
+    }
+    for (const raw of [
+      "* * * *",
+      "* * * * * *",
+      "every minute",
+      "*/5 * * * *; * * * * *",
+      "@daily",
+    ]) {
+      expect(readDeployValues(`${base}LINK_REWRITE_CRON=${raw}\n`), raw).toHaveProperty("problems");
+    }
+  });
+
   it("足りない必須の値をすべて挙げる。空の値は無いものとして扱う", () => {
     expect(readDeployValues("")).toEqual({
       problems: ["WIKI_HOSTNAME がありません", "D1_DATABASE_ID がありません"],
@@ -270,6 +298,13 @@ describe("composeConfig", () => {
   it("oauthRedirectUris は指定されたときだけ vars の OAUTH_REDIRECT_URIS に入れる", () => {
     const config = composeConfig(BASE, { ...VALUES, oauthRedirectUris: "https://a.example/cb" });
     expect(config.vars).toEqual({ OAUTH_REDIRECT_URIS: "https://a.example/cb" });
+  });
+
+  it("linkRewriteCron は triggers.crons に入れ、無ければ空の配列で deploy 済みの Cron を外す", () => {
+    expect(composeConfig(BASE, { ...VALUES, linkRewriteCron: "*/5 * * * *" }).triggers).toEqual({
+      crons: ["*/5 * * * *"],
+    });
+    expect(composeConfig(BASE, VALUES).triggers).toEqual({ crons: [] });
   });
 
   it("account_id は指定されたときだけ入れる", () => {

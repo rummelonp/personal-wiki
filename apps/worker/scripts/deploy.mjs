@@ -27,6 +27,10 @@ export const HELP = `usage:
        R2 を作ったときだけ R2_BUCKET_NAME を書く。空のままなら R2 の binding を付けずにデプロイする
        KV を作ったときだけ OAUTH_KV_NAMESPACE_ID に表示された id を書く。空のままなら OAuth は閉じる
        ホスト名の DNS ゾーンが、ログインしたアカウントにあること（custom_domain の前提）
+       MCP 経由の rename で積んだリンクの書き換えを自動で進めるときだけ、LINK_REWRITE_CRON に cron 式を書く
+         空のままなら Cron は付けない。アカウント全体で Cron Trigger は 5 本までなので、既定は空にしてある
+         推奨は * * * * * か */5 * * * *。1 回の発火で 1 リンク元を進め、積んだ分が無ければ D1 の読み取りは数行で済む
+         空に戻してデプロイすると、デプロイ済みの Cron も外れる
   4. owner のログイン（ブラウザからの閲覧・編集）を使うときだけ:
        Cloudflare Zero Trust で /_auth/login だけを対象にした Access のアプリケーションを作り、
        deploy.env に ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS を書く
