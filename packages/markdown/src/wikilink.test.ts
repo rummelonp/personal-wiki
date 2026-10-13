@@ -228,6 +228,8 @@ describe("splitWikiLinkContent", () => {
     expect(splitWikiLinkContent("#")).toBeNull();
     expect(splitWikiLinkContent("^abc")).toBeNull();
     expect(splitWikiLinkContent("#|ラベル")).toBeNull();
+    expect(splitWikiLinkContent("#^")).toBeNull();
+    expect(splitWikiLinkContent("# ^ |ラベル")).toBeNull();
   });
 
   it("splits on the first pipe only", () => {

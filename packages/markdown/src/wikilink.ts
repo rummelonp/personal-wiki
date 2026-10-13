@@ -59,8 +59,9 @@ export function splitWikiLinkContent(content: string): WikiLinkParts | null {
   const restTrimmed = (match[3] ?? "").trim();
   const heading = marker === "#" && restTrimmed.length > 0 ? restTrimmed : null;
   const blockId = marker === "^" && restTrimmed.length > 0 ? restTrimmed : null;
-  // target を省けるのは、同じ page の見出しと block を指す `[[#見出し]]` と `[[#^id]]` だけ
-  if (target.length === 0 && heading === null) return null;
+  // target を省けるのは、同じ page の見出しと block を指す `[[#見出し]]` と `[[#^id]]` だけ。
+  // `[[#^]]` は id の無い block 参照で、指す先が無い
+  if (target.length === 0 && (heading === null || heading === "^")) return null;
 
   const hasLabel = separator !== null && label.length > 0;
   return {

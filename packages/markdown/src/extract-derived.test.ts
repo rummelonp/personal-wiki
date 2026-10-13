@@ -13,6 +13,12 @@ describe("extractDerived", () => {
     ).toEqual(["A"]);
   });
 
+  it("derives no tag from a same-page heading link, and keeps its text in the plain text", () => {
+    const derived = extractDerived("前 [[#見出し]] [[#foo|lbl]] [[#^abc]] 後");
+    expect(derived.tags).toEqual([]);
+    expect(derived.plainText).toBe("前 #見出し lbl #^abc 後");
+  });
+
   it("derives links, tags and plain text from one body", () => {
     const derived = extractDerived("# 見出し\n\n[[読書メモ|メモ]] と #project/x を書く。\n");
     expect(derived.links).toEqual([{ targetTitle: "読書メモ", targetTitleKey: "読書メモ" }]);
