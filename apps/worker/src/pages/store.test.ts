@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { snapshotDb, tagsOf } from "../test/pages";
+import { linksFrom, snapshotDb, tagsOf } from "../test/pages";
 import {
   APPEND_MAX_ATTEMPTS,
   appendText,
@@ -126,6 +126,48 @@ describe("rebuildDerived", () => {
     expect(errors).toHaveBeenCalledWith(expect.stringContaining(first.id));
     expect(await tagsOf(first.id)).toEqual([]);
     expect(await tagsOf(second.id)).toEqual([{ key: second.title, tag: second.title }]);
+  });
+
+  it("読んでから書くまでに保存が入ったページは skipped にし、古い本文で上書きしない", async () => {
+    const page = await seedTitled("p", "[[Old]] #old");
+    const db = interruptingDb(1, async () => {
+      const result = await updatePage(env.DB, {
+        id: page.id,
+        expectedVersion: 1,
+        title: "p",
+        body: "[[New]] #new",
+        actor: "token:other",
+        now: 2,
+      });
+      if (!result.ok) throw new Error(result.reason);
+    });
+
+    const result = await rebuildDerived(db, { after: null, limit: 1 });
+
+    expect(result).toMatchObject({ rebuilt: 0, skipped: 1, failed: [], next: page.id });
+    expect(await linksFrom(page.id)).toEqual([{ key: "new", target: null }]);
+    expect(await tagsOf(page.id)).toEqual([{ key: "new", tag: "new" }]);
+  });
+
+  it("既存の links 行の target_page_id が別のページを指していたら、解決し直した値で上書きする", async () => {
+    const source = await seedTitled("source", "[[B]]");
+    const b = await seedTitled("B", "");
+    const other = await seedTitled("other", "");
+    await env.DB.prepare("UPDATE links SET target_page_id = ?1 WHERE source_page_id = ?2")
+      .bind(other.id, source.id)
+      .run();
+
+    // source だけを作り直す。他のページの作り直しが付け直す経路を通さないため
+    const { results } = await env.DB.prepare("SELECT id FROM pages WHERE id < ?1 ORDER BY id")
+      .bind(source.id)
+      .all<{ id: string }>();
+    const result = await rebuildDerived(env.DB, {
+      after: results.at(-1)?.id ?? null,
+      limit: 1,
+    });
+
+    expect(result).toMatchObject({ rebuilt: 1, next: source.id });
+    expect(await linksFrom(source.id)).toEqual([{ key: "b", target: b.id }]);
   });
 });
 
