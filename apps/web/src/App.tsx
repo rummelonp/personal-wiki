@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchMe, logout } from "./api";
+import { setDocumentTitle } from "./document-title";
 import { saveAllEditors } from "./editor-lifecycle";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
-import { Link } from "./Link";
+import { NotFound } from "./NotFound";
 import { PageView } from "./PageView";
-import { homeHref, useRoute } from "./route";
-import { SignInNotice } from "./SignInNotice";
+import { useRoute } from "./route";
 
 export function App() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
@@ -27,6 +27,11 @@ export function App() {
     };
   }, []);
 
+  // ページの title はページの画面が決める
+  useEffect(() => {
+    if (route.name === "home") setDocumentTitle(null);
+  }, [route.name]);
+
   async function handleLogout() {
     setLoggingOut(true);
     try {
@@ -40,7 +45,10 @@ export function App() {
     }
   }
 
-  const isOwner = session.status === "ready" && session.me.kind === "owner";
+  // 画面は /api/me の応答を待ってから出す。/api/me は検証できない cookie を消すので、その後の
+  // 匿名の読み取りが期限切れの cookie で 401 にならない
+  const ready = session.status === "ready";
+  const isOwner = ready && session.me.kind === "owner";
 
   return (
     <div className="app">
@@ -57,17 +65,20 @@ export function App() {
             ログインの状態を取得できませんでした。再読み込みしてください。
           </p>
         )}
-        {session.status === "ready" && !isOwner && <SignInNotice />}
-        {isOwner && route.name === "home" && <HomeView query={route.query} tag={route.tag} />}
-        {isOwner && route.name === "page" && <PageView id={route.id} />}
-        {isOwner && route.name === "unknown" && (
-          <section className="notice">
-            <h1 className="notice-title">このパスのページはありません</h1>
-            <p>
-              <Link href={homeHref()}>最近の更新へ戻る</Link>
-            </p>
-          </section>
+        {ready && route.name === "home" && <HomeView query={route.query} tag={route.tag} />}
+        {ready && (route.name === "page" || route.name === "title") && (
+          <PageView
+            // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す
+            key={isOwner ? "owner" : "reader"}
+            target={
+              route.name === "page"
+                ? { by: "id", id: route.id }
+                : { by: "title", title: route.title }
+            }
+            owner={isOwner}
+          />
         )}
+        {ready && route.name === "unknown" && <NotFound />}
       </main>
     </div>
   );

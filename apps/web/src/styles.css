@@ -264,7 +264,8 @@ a {
     border-left: 0;
   }
 
-  .title-input {
+  .title-input,
+  .note-title {
     font-size: var(--font-size-title-narrow);
   }
 
@@ -535,6 +536,19 @@ a {
 .title-input:hover,
 .title-input:focus {
   border-bottom-color: var(--color-border);
+}
+
+/* 読み取り専用の画面の title。編集の画面の title 欄と同じ位置と書体にそろえる */
+.note-title {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-serif);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-heading);
+  overflow-wrap: anywhere;
+  color: var(--color-fg);
+  border-bottom: var(--border-width) solid transparent;
 }
 
 /* 本文の書体と大きさは packages/editor が --ui-* のトークンから決める */

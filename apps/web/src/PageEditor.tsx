@@ -99,9 +99,20 @@ function useEditorSession(page: Page): EditorSession {
   return session;
 }
 
-export function PageEditor({ page }: { page: Page }) {
+interface PageEditorProps {
+  page: Page;
+  /** 保存済みの title と公開範囲が決まるたびに呼ぶ。URL と document.title を合わせるため */
+  onShown?: (page: Pick<Page, "id" | "title" | "visibility">) => void;
+}
+
+export function PageEditor({ page, onShown }: PageEditorProps) {
   const session = useEditorSession(page);
   const state = useSyncExternalStore(session.subscribe, session.getState);
+  const { title: savedTitle, visibility: savedVisibility } = state.base;
+
+  useEffect(() => {
+    onShown?.({ id: page.id, title: savedTitle, visibility: savedVisibility });
+  }, [onShown, page.id, savedTitle, savedVisibility]);
   const editor = useRef<BodyEditorHandle>(null);
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
