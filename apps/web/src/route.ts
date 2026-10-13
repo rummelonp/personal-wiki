@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
  * `/search` や `/new` のような最上位のパスは増やさない。検索はクエリ（`/?q=`）で表す。
  */
 export type Route =
-  | { name: "home"; query: string }
+  | { name: "home"; query: string; tag: string }
   | { name: "page"; id: string }
   | { name: "unknown" };
 
@@ -13,7 +13,8 @@ const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
 export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/") {
-    return { name: "home", query: new URLSearchParams(search).get("q") ?? "" };
+    const params = new URLSearchParams(search);
+    return { name: "home", query: params.get("q") ?? "", tag: params.get("tag") ?? "" };
   }
   const match = /^\/p\/([^/]+)\/?$/.exec(pathname);
   if (match !== null && PAGE_ID_PATTERN.test(match[1] as string)) {
@@ -26,6 +27,9 @@ export function homeHref(query = ""): string {
   const q = query.trim();
   return q === "" ? "/" : `/?q=${encodeURIComponent(q)}`;
 }
+
+/** タグで絞った一覧。パスは増やさず、クエリで表す。 */
+export const tagHref = (tag: string): string => `/?tag=${encodeURIComponent(tag)}`;
 
 export const pageHref = (id: string): string => `/p/${id}`;
 

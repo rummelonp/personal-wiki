@@ -4,6 +4,7 @@ import {
   deletePage,
   getPage,
   listRecent,
+  listTags,
   searchPages,
   setVisibility,
   updatePage,
@@ -125,12 +126,43 @@ describe("失敗の分類", () => {
 describe("一覧と検索", () => {
   it("最近の更新は cursor をクエリに載せる", async () => {
     const { calls, fetchFn } = recorder(() => Response.json({ pages: [], nextCursor: null }));
-    await listRecent(null, fetchFn);
-    await listRecent(`1.${ID}`, fetchFn);
+    await listRecent(null, {}, fetchFn);
+    await listRecent(`1.${ID}`, {}, fetchFn);
     expect(calls.map((call) => call.path)).toEqual([
       "/api/pages/recent",
       `/api/pages/recent?cursor=${encodeURIComponent(`1.${ID}`)}`,
     ]);
+  });
+
+  it("タグで絞るときは tag をクエリに載せる", async () => {
+    const { calls, fetchFn } = recorder(() => Response.json({ pages: [], nextCursor: null }));
+    await listRecent(null, { tag: "日記 a" }, fetchFn);
+    expect(calls[0]?.path).toBe("/api/pages/recent?tag=%E6%97%A5%E8%A8%98+a");
+  });
+
+  it("要約の抜粋とタグは省略できるが、あれば型を確かめる", async () => {
+    const ok = recorder(() =>
+      Response.json({
+        pages: [{ id: ID, title: "題", visibility: "draft", updatedAt: 1, tags: ["a"] }],
+        nextCursor: null,
+      }),
+    );
+    expect(await listRecent(null, {}, ok.fetchFn)).toMatchObject({ ok: true });
+    const bad = recorder(() =>
+      Response.json({
+        pages: [{ id: ID, title: "題", visibility: "draft", updatedAt: 1, tags: [1] }],
+        nextCursor: null,
+      }),
+    );
+    expect(await listRecent(null, {}, bad.fetchFn)).toMatchObject({ ok: false, reason: "error" });
+  });
+
+  it("タグの一覧を読む", async () => {
+    const { calls, fetchFn } = recorder(() => Response.json({ tags: [{ tag: "a", count: 2 }] }));
+    expect(await listTags(fetchFn)).toEqual({ ok: true, value: [{ tag: "a", count: 2 }] });
+    expect(calls[0]?.path).toBe("/api/tags");
+    const missing = recorder(() => new Response("{}", { status: 404 }));
+    expect(await listTags(missing.fetchFn)).toMatchObject({ ok: false, reason: "not_found" });
   });
 
   it("検索語はエンコードして渡す", async () => {

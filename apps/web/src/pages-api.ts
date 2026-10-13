@@ -15,10 +15,19 @@ export interface PageSummary {
   title: string;
   visibility: Visibility;
   updatedAt: number;
+  /** 一覧の抜粋。API が返すまでは検索結果にだけある。 */
+  excerpt?: string;
+  /** ページに付いたタグの表記。API が返すまでは無い。 */
+  tags?: string[];
 }
 
 export interface SearchHit extends PageSummary {
   excerpt: string;
+}
+
+export interface TagCount {
+  tag: string;
+  count: number;
 }
 
 export interface PageList {
@@ -115,7 +124,9 @@ function isSummary(value: unknown): value is PageSummary {
     typeof v.id === "string" &&
     typeof v.title === "string" &&
     (v.visibility === "public" || v.visibility === "draft") &&
-    typeof v.updatedAt === "number"
+    typeof v.updatedAt === "number" &&
+    (v.excerpt === undefined || typeof v.excerpt === "string") &&
+    (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === "string")))
   );
 }
 
@@ -244,10 +255,28 @@ async function listResult(res: Response | ApiFailure): Promise<ApiResult<PageLis
 
 export async function listRecent(
   cursor: string | null,
+  options: { tag?: string } = {},
   fetchFn: Fetch = fetch,
 ): Promise<ApiResult<PageList>> {
-  const query = cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+  const params = new URLSearchParams();
+  if (cursor !== null) params.set("cursor", cursor);
+  if (options.tag !== undefined && options.tag !== "") params.set("tag", options.tag);
+  const query = params.size === 0 ? "" : `?${params}`;
   return listResult(await request(fetchFn, `/api/pages/recent${query}`));
+}
+
+export async function listTags(fetchFn: Fetch = fetch): Promise<ApiResult<TagCount[]>> {
+  const res = await request(fetchFn, "/api/tags");
+  if (isFailure(res)) return res;
+  if (!res.ok) return failureOf(res);
+  const tags = recordOf(await readJson(res)).tags;
+  if (
+    !Array.isArray(tags) ||
+    !tags.every((t) => typeof recordOf(t).tag === "string" && typeof recordOf(t).count === "number")
+  ) {
+    return BAD_SHAPE;
+  }
+  return { ok: true, value: tags as TagCount[] };
 }
 
 export async function listBacklinks(
