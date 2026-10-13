@@ -6,7 +6,8 @@
 -- - 外部キーに ON DELETE を付けていないので、revisions、tags、そのページから出る links を消し、
 --   そのページを指す links.target_page_id を NULL にしてから pages の行を消す（D1 は外部キーを検査する）。
 -- - seq は AUTOINCREMENT ではなく、最大の seq の行を消すとその値が次のページに再利用される。
---   pages_fts の行（rowid = seq）を先に消さないと、新しいページが古いページの検索の行を引き継ぐ。
+--   pages_fts の行（rowid = seq）は論理削除の時点で消しているが、purge する前にも残っていないことを
+--   保証する。残っていると、seq を再利用した新しいページが古いページの検索の行を引き継ぐ。
 CREATE TABLE pages (
   -- pages_fts の rowid に使う。INTEGER PRIMARY KEY で rowid に別名を付けないと、VACUUM で
   -- rowid が振り直されて FTS の行と対応しなくなりうる。連番で推測できるので API には出さない
