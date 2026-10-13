@@ -3,47 +3,126 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 
 const INDEX_HTML = "<!doctype html><title>wiki</title>";
+const FAVICON = "fake-icon";
+const HTML_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
 
+// Static Assets と同じく、置いたファイルだけを返し、無いパスは 404 にする
 function fakeAssets() {
   const requested: string[] = [];
   const assets = {
     fetch: async (input: RequestInfo | URL) => {
-      requested.push(String(input instanceof Request ? input.url : input));
-      return new Response(INDEX_HTML, {
-        headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"index"' },
-      });
+      const url = String(input instanceof Request ? input.url : input);
+      requested.push(url);
+      const { pathname } = new URL(url);
+      if (pathname === "/") {
+        return new Response(INDEX_HTML, {
+          headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"index"' },
+        });
+      }
+      if (pathname === "/favicon.ico") {
+        return new Response(FAVICON, { headers: { "Content-Type": "image/x-icon" } });
+      }
+      return new Response("not found", { status: 404 });
     },
   } as unknown as Fetcher;
   return { assets, requested };
 }
 
 describe("SPA の配信", () => {
-  it("API 以外のナビゲーションには index.html を返す", async () => {
+  it("HTML のナビゲーションには index.html を返す", async () => {
     const { assets, requested } = fakeAssets();
     const app = createApp();
-    for (const path of ["/", "/p/abc", "/%E3%83%9A%E3%83%BC%E3%82%B8?x=1", "/index.html"]) {
-      const res = await app.request(path, {}, { ...env, ASSETS: assets });
+    for (const path of ["/", "/p/abc", "/%E3%83%9A%E3%83%BC%E3%82%B8?x=1"]) {
+      const res = await app.request(
+        path,
+        { headers: { Accept: HTML_ACCEPT } },
+        { ...env, ASSETS: assets },
+      );
       expect(res.status, path).toBe(200);
       expect(await res.text()).toBe(INDEX_HTML);
       expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
     }
-    // /index.html を引くと 307 で / に飛ばされるので、常に / を引く
-    expect(requested.every((url) => new URL(url).pathname === "/")).toBe(true);
+    // ファイルが無いときの index.html は、307 を返す /index.html ではなく / で取る
+    expect(requested.map((url) => new URL(url).pathname)).toEqual([
+      "/",
+      "/p/abc",
+      "/",
+      "/%E3%83%9A%E3%83%BC%E3%82%B8",
+      "/",
+    ]);
   });
 
-  it("返した応答のヘッダーを書き換えられる（ASSETS の応答をそのまま返さない）", async () => {
+  it("index.html に CSP、no-cache、noindex と共通のヘッダーを付ける", async () => {
     const { assets } = fakeAssets();
-    const res = await createApp().request("/p/abc", {}, { ...env, ASSETS: assets });
+    const res = await createApp().request(
+      "/p/abc",
+      { headers: { Accept: HTML_ACCEPT } },
+      { ...env, ASSETS: assets },
+    );
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self';");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(res.headers.get("Cache-Control")).toBe("no-cache");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Referrer-Policy")).toBe("same-origin");
+    // ASSETS の応答を複製して返すので、後段のミドルウェアがヘッダーを足せる
     expect(res.headers.get("Vary")).toContain("Cookie");
   });
 
-  it("/api、/mcp、/_auth の知らないパスは JSON の 404 のまま", async () => {
+  it("public に置いたファイルはそのまま返す", async () => {
+    const { assets } = fakeAssets();
+    for (const accept of [HTML_ACCEPT, "image/*"]) {
+      const res = await createApp().request(
+        "/favicon.ico",
+        { headers: { Accept: accept } },
+        { ...env, ASSETS: assets },
+      );
+      expect(res.status).toBe(200);
+      expect(new TextDecoder().decode(await res.arrayBuffer())).toBe(FAVICON);
+      expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+      expect(res.headers.get("Content-Security-Policy")).toBeNull();
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    }
+  });
+
+  it("HTML を受け付けない読み込みで無いファイルは JSON の 404", async () => {
+    const { assets } = fakeAssets();
+    const app = createApp();
+    for (const accept of [undefined, "application/json", "image/*"]) {
+      const res = await app.request(
+        "/missing.png",
+        accept === undefined ? {} : { headers: { Accept: accept } },
+        { ...env, ASSETS: assets },
+      );
+      expect(res.status, accept).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+    }
+  });
+
+  it("Worker のパスの知らないパスは ASSETS を見ずに JSON の 404", async () => {
     const { assets, requested } = fakeAssets();
     const app = createApp();
-    for (const path of ["/api/unknown", "/api", "/mcp/foo", "/_auth/unknown", "/_auth"]) {
-      const res = await app.request(path, {}, { ...env, ASSETS: assets });
+    for (const path of [
+      "/api/unknown",
+      "/api",
+      "/mcp/foo",
+      "/_auth/unknown",
+      "/_auth",
+      "/.well-known/oauth-protected-resource",
+      "/assets/missing.js",
+    ]) {
+      const res = await app.request(
+        path,
+        { headers: { Accept: HTML_ACCEPT } },
+        { ...env, ASSETS: assets },
+      );
       expect(res.status, path).toBe(404);
       expect(await res.json()).toEqual({ error: "not_found" });
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(res.headers.get("Referrer-Policy")).toBe("same-origin");
+      expect(res.headers.get("Content-Security-Policy")).toBeNull();
     }
     expect(requested).toHaveLength(0);
   });
@@ -52,7 +131,11 @@ describe("SPA の配信", () => {
     const { assets, requested } = fakeAssets();
     const res = await createApp().request(
       "/p/abc",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: HTML_ACCEPT },
+        body: "{}",
+      },
       { ...env, ASSETS: assets },
     );
     expect(res.status).toBe(404);

@@ -1,11 +1,6 @@
 import { foldTitle } from "@personal-wiki/domain";
+import { RESERVED_TITLE_SEGMENTS } from "../paths";
 import type { Page } from "./store";
-
-/**
- * `/<title>` の URL に使わない先頭の path segment。Worker の API と配信のパスと重なる。
- * `/<title>` のルーティングもこの一覧で判定し、URL を作る側と開く側で食い違わないようにする。
- */
-export const RESERVED_PATH_SEGMENTS: readonly string[] = ["api", "mcp", "assets", "_auth", "p"];
 
 /**
  * public のページを `/<title>` で開くときのパス。予約語と重なる title は null で、`/p/<id>` だけで開く。
@@ -19,7 +14,7 @@ export const RESERVED_PATH_SEGMENTS: readonly string[] = ["api", "mcp", "assets"
 export function titlePath(title: string): string | null {
   const segments = foldTitle(title).split("/");
   const head = segments[0] ?? "";
-  if (head === "" || RESERVED_PATH_SEGMENTS.includes(head)) return null;
+  if (head === "" || RESERVED_TITLE_SEGMENTS.includes(head)) return null;
   if (segments.some((segment) => segment === "." || segment === "..")) return null;
   return `/${encodeURIComponent(title)}`;
 }

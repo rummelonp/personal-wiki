@@ -11,7 +11,19 @@ describe("titlePath", () => {
   });
 
   it("予約語と重なる title は、大文字小文字と全角半角、`/` の後ろを問わず null", () => {
-    for (const title of ["api", "API", "ＭＣＰ", "assets", "_auth", "p", "P", "p/x", "api/pages"]) {
+    for (const title of [
+      "api",
+      "API",
+      "ＭＣＰ",
+      "assets",
+      "_auth",
+      ".well-known",
+      ".well-known/x",
+      "p",
+      "P",
+      "p/x",
+      "api/pages",
+    ]) {
       expect(titlePath(title)).toBeNull();
     }
   });
