@@ -1,0 +1,20 @@
+{
+  "name": "@personal-wiki/markdown",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lezer/common": "1.5.2",
+    "@lezer/highlight": "1.2.3",
+    "@lezer/markdown": "1.7.2",
+    "@personal-wiki/domain": "workspace:*"
+  }
+}
