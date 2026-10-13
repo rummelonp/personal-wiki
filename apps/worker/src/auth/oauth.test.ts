@@ -6,6 +6,7 @@ import { ownerCookie, ownerEnv } from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
+import { oauthServerFor } from "./oauth-server";
 import { safeReturnUrl } from "./routes";
 
 const ORIGIN = "http://localhost";
@@ -351,7 +352,18 @@ describe("認可と同意画面", () => {
     expect(html).toContain("&#60;script&#62;x&#60;/script&#62;");
     expect(html).toContain("<strong>claude.ai</strong>");
     expect(html).toContain(CALLBACK);
-    expect(html).toContain('value="write" checked');
+    expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
+  });
+
+  it("権限の既定は write を要求されても read にし、長い client 名は切って見せる", async () => {
+    const { request } = setup();
+    const client = await register(request, { client_name: "あ".repeat(100) });
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const { html } = await openConsent(request, path);
+    expect(html).toContain('value="read" checked');
+    expect(html).not.toContain('value="write" checked');
+    expect(html).toContain(`${"あ".repeat(40)}…`);
+    expect(html).not.toContain("あ".repeat(41));
   });
 
   it("承認すると redirect URI に code と state と iss を付けて戻す", async () => {
@@ -425,18 +437,41 @@ describe("認可と同意画面", () => {
     expect(res.status).toBe(401);
   });
 
-  it("PKCE の無い要求と plain の PKCE は同意画面を出さずに client へ戻す", async () => {
+  it("PKCE の無い要求と plain の PKCE は、client_secret を持つ client でも同意画面を出さずに戻す", async () => {
+    const { request } = setup();
+    const session = await ownerCookie(T0);
+    for (const authMethod of ["none", "client_secret_basic"]) {
+      const client = await register(request, { token_endpoint_auth_method: authMethod });
+      const withoutPkce = new URL(authorizePath(client.client_id, ""), ORIGIN);
+      withoutPkce.searchParams.delete("code_challenge");
+      withoutPkce.searchParams.delete("code_challenge_method");
+      for (const path of [
+        withoutPkce.pathname + withoutPkce.search,
+        authorizePath(client.client_id, "x".repeat(43), { code_challenge_method: "plain" }),
+        authorizePath(client.client_id, ""),
+      ]) {
+        const res = await request(path, { headers: { Cookie: session } });
+        expect(res.status, `${authMethod} ${path}`).toBe(302);
+        const location = new URL(res.headers.get("Location") ?? "");
+        expect(`${location.origin}${location.pathname}`).toBe(CALLBACK);
+        expect(location.searchParams.get("error")).toBe("invalid_request");
+        expect(location.searchParams.get("state")).toBe("state-1");
+        expect(res.headers.get("Set-Cookie")).toBeNull();
+      }
+    }
+  });
+
+  it("同意画面を開いた後で client の登録が消えたら、送信にこの画面で誤りを出す", async () => {
     const { request } = setup();
     const client = await register(request);
-    const session = await ownerCookie(T0);
-    for (const extra of [{ code_challenge_method: "plain" }, { code_challenge: "" }]) {
-      const path = authorizePath(client.client_id, "x".repeat(43), extra);
-      const res = await request(path, { headers: { Cookie: session } });
-      expect(res.status, path).toBe(302);
-      expect(new URL(res.headers.get("Location") ?? "").searchParams.get("error")).toBe(
-        "invalid_request",
-      );
-    }
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const consent = await openConsent(request, path);
+    const bindings = ownerEnv();
+    await oauthServerFor(bindings, ORIGIN).getOAuthApi(bindings).deleteClient(client.client_id);
+    const res = await submitConsent(request, path, consent);
+    expect(res.status).toBe(400);
+    expect(res.headers.get("Location")).toBeNull();
+    expect(await res.text()).toContain("登録が見つかりません");
   });
 
   it("登録されていない redirect URI には戻さず、この画面で誤りを出す", async () => {

@@ -1,5 +1,6 @@
 import {
   AuthorizationError,
+  authorizationErrorRedirect,
   CimdFetchError,
   type ConsentDescription,
 } from "@cloudflare/workers-oauth-provider";
@@ -27,6 +28,8 @@ import type { Scope } from "./principal";
  *   登録は KV に書く前に oauth-registration.ts の検査を通す
  * - 認可（同意画面）は owner のセッションを要る。無ければ /_auth/login を経由して戻す。Access の対象は
  *   /_auth/login のままで、/_auth/oauth/* は Access を通さない
+ * CORS と OPTIONS は扱わない。想定するクライアント（claude.ai など）はサーバーから呼ぶので、ブラウザで
+ * 動く MCP のクライアントは対象にしない。
  */
 export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => number }) {
   const serveProtocol = (c: Context<AppEnv>): Response | Promise<Response> => {
@@ -82,6 +85,13 @@ async function showConsent(c: Context<AppEnv>): Promise<Response> {
   const oauth = helpersOf(c);
   try {
     const request = await oauth.parseAuthRequest(c.req.raw);
+    // ライブラリは公開 client にだけ PKCE を求める。client_secret を持つ client でも、code が漏れたときに
+    // 交換させないよう PKCE を必須にする
+    if (!request.codeChallenge) {
+      return redirectToClient(
+        authorizationErrorRedirect(request, "invalid_request", "PKCE（S256）が必要です"),
+      );
+    }
     // describeConsent を先に呼ぶ。client の参照に失敗したとき、KV に同意の記録を残さないため
     const consent = await oauth.describeConsent(request);
     const { handle, headers } = await oauth.beginConsent(request);
@@ -95,10 +105,10 @@ async function showConsent(c: Context<AppEnv>): Promise<Response> {
 }
 
 /** 同意画面のラジオボタンの値と、許可する scope */
-const ACCESS_CHOICES: Readonly<Record<string, readonly Scope[]>> = {
-  read: ["read"],
-  write: ["read", "write"],
-};
+const ACCESS_CHOICES: ReadonlyMap<string, readonly Scope[]> = new Map([
+  ["read", ["read"]],
+  ["write", ["read", "write"]],
+]);
 
 async function decideConsent(c: Context<AppEnv>): Promise<Response> {
   if (!isOAuthEnabled(c.env)) return c.notFound();
@@ -120,24 +130,44 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
       return new Response(null, { status: 302, headers: denied.headers });
     }
     const access = form.get("access");
-    const scope = typeof access === "string" ? ACCESS_CHOICES[access] : undefined;
+    const scope = typeof access === "string" ? ACCESS_CHOICES.get(access) : undefined;
     if (decision !== "approve" || scope === undefined) {
       return errorPage(400, "許可する権限を選んでから送信してください。");
     }
     const approved = await oauth.approveConsent(c.req.raw, handle, { scope: [...scope] });
-    const { redirectTo } = await oauth.completeAuthorization({
-      // 認可の要求はフォームからではなく、同意画面を開いたときに保存したものを使う
-      request: approved.request,
-      userId: OAUTH_USER_ID,
-      metadata: {},
-      scope: approved.request.scope,
-      props: {},
-    });
+    let redirectTo: string;
+    try {
+      // 同じ client の以前の grant とトークンは、ライブラリが失効させる（revokeExistingGrants の既定）
+      ({ redirectTo } = await oauth.completeAuthorization({
+        // 認可の要求はフォームからではなく、同意画面を開いたときに保存したものを使う
+        request: approved.request,
+        userId: OAUTH_USER_ID,
+        metadata: {},
+        scope: approved.request.scope,
+        props: {},
+      }));
+    } catch (error) {
+      // 同意画面を開いた後で client が消えると、ライブラリは AuthorizationError ではない Error を投げる
+      if (
+        !(error instanceof AuthorizationError) &&
+        (await oauth.lookupClient(approved.request.clientId)) === null
+      ) {
+        return errorPage(400, "接続しようとしたクライアントの登録が見つかりません。");
+      }
+      throw error;
+    }
     approved.headers.set("Location", redirectTo);
     return new Response(null, { status: 302, headers: approved.headers });
   } catch (error) {
     return authorizationFailure(error);
   }
+}
+
+function redirectToClient(location: string): Response {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: location, "Cache-Control": "no-store" },
+  });
 }
 
 /**
@@ -147,12 +177,7 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
  */
 function authorizationFailure(error: unknown): Response {
   if (error instanceof AuthorizationError) {
-    if (error.redirectTo !== undefined) {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: error.redirectTo, "Cache-Control": "no-store" },
-      });
-    }
+    if (error.redirectTo !== undefined) return redirectToClient(error.redirectTo);
     return errorPage(400, error.description);
   }
   if (error instanceof CimdFetchError) {
@@ -204,12 +229,22 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-/** client 名、redirect URI、scope は client が登録時に決める値なので、すべてエスケープする。 */
+/** 登録では 100 文字まで受け付けるが、見出しが画面を埋めないよう短く切る */
+const CONSENT_NAME_LENGTH = 40;
+
+function truncate(value: string, length: number): string {
+  const chars = [...value];
+  return chars.length > length ? `${chars.slice(0, length).join("")}…` : value;
+}
+
+/**
+ * client 名、redirect URI、scope は client が登録時に決める値なので、すべてエスケープする。
+ * 権限の既定は、要求に関わらず read にする。write は owner が選んだときだけ許す。
+ */
 function consentPage(consent: ConsentDescription, handle: string): string {
-  const name = escapeHtml(consent.clientName);
+  const name = escapeHtml(truncate(consent.clientName, CONSENT_NAME_LENGTH));
   const requested =
     consent.scope.length > 0 ? consent.scope.map(escapeHtml).join(" ") : "（指定なし）";
-  const preferWrite = consent.scope.includes("write");
   const loopback = consent.redirectIsLoopback
     ? `<p class="warn">送り先はこのコンピュータ上のアプリです。どのアプリでも待ち受けられるので、いま自分で接続を始めた場合だけ許可してください。</p>`
     : "";
@@ -218,7 +253,7 @@ function consentPage(consent: ConsentDescription, handle: string): string {
     `<h1>${name} に wiki への接続を許可しますか</h1>
 <dl>
 <dt>クライアント</dt>
-<dd>${name}<br><small>名前はクライアントの自己申告で、確認されていません。</small></dd>
+<dd>${name}<br><small>名前はクライアントの自己申告で、確認されていません。</small><br><small>client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd>
 <dt>トークンの送り先</dt>
 <dd><strong>${escapeHtml(consent.redirectHost)}</strong><br><code>${escapeHtml(consent.redirectUri)}</code></dd>
 <dt>要求された権限</dt>
@@ -229,8 +264,8 @@ ${loopback}
 <input type="hidden" name="handle" value="${escapeHtml(handle)}">
 <fieldset>
 <legend>許可する権限</legend>
-<label><input type="radio" name="access" value="read"${preferWrite ? "" : " checked"}> 読み取り（read）: draft を含むページを読む</label>
-<label><input type="radio" name="access" value="write"${preferWrite ? " checked" : ""}> 読み書き（read と write）: ページを作成・更新する。公開範囲は変えられない</label>
+<label><input type="radio" name="access" value="read" checked> 読み取り（read）: draft を含むページを読む</label>
+<label><input type="radio" name="access" value="write"> 読み書き（read と write）: ページを作成・更新する。公開範囲は変えられない</label>
 </fieldset>
 <p><button name="decision" value="approve">許可する</button> <button name="decision" value="deny">拒否する</button></p>
 </form>`,
