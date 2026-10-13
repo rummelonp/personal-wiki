@@ -5,3 +5,6 @@ packages:
 # lefthook の postinstall が git フックを登録する （CI では何もしない）
 allowBuilds:
   lefthook: true
+  # wrangler と @cloudflare/vitest-plugin が使う。postinstall でプラットフォーム別のバイナリを確かめる
+  esbuild: true
+  workerd: true
