@@ -60,7 +60,14 @@ export function App() {
     try {
       await saveAllEditors();
       await logout();
-      setSession({ status: "ready", me: { kind: "anonymous" } });
+      // features は環境の性質で、ログアウトでは変わらない
+      setSession((current) => ({
+        status: "ready",
+        me: {
+          kind: "anonymous",
+          features: current.status === "ready" ? current.me.features : { attachments: false },
+        },
+      }));
     } catch {
       setSession({ status: "error" });
     } finally {

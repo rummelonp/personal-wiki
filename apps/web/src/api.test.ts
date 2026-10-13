@@ -11,21 +11,47 @@ describe("loginHref", () => {
 });
 
 describe("parseMe", () => {
+  const off = { attachments: false };
+
   it("知らない形は anonymous にする", () => {
-    expect(parseMe({ kind: "owner" })).toEqual({ kind: "owner" });
-    expect(parseMe({ kind: "token", name: "a", scopes: ["read"] })).toEqual({
-      kind: "token",
-      name: "a",
-      scopes: ["read"],
-    });
     for (const value of [
       null,
       "owner",
       { kind: "admin" },
       { kind: "token", name: 1, scopes: [] },
     ]) {
-      expect(parseMe(value)).toEqual({ kind: "anonymous" });
+      expect(parseMe(value)).toEqual({ kind: "anonymous", features: off });
     }
+  });
+
+  it("owner、token、anonymous を読み、features を添える", () => {
+    expect(parseMe({ kind: "owner" })).toEqual({ kind: "owner", features: off });
+    expect(parseMe({ kind: "token", name: "a", scopes: ["read"] })).toEqual({
+      kind: "token",
+      name: "a",
+      scopes: ["read"],
+      features: off,
+    });
+    expect(parseMe({ kind: "anonymous" })).toEqual({ kind: "anonymous", features: off });
+  });
+
+  it("features.attachments は true のときだけ true にし、項目が無ければ false にする", () => {
+    const on = { attachments: true };
+    expect(parseMe({ kind: "owner", features: on })).toEqual({ kind: "owner", features: on });
+    expect(parseMe({ kind: "anonymous", features: on })).toEqual({
+      kind: "anonymous",
+      features: on,
+    });
+    for (const features of [{ attachments: false }, {}, null, "yes", { attachments: "true" }, 1]) {
+      expect(parseMe({ kind: "owner", features })).toEqual({ kind: "owner", features: off });
+    }
+  });
+
+  it("知らない kind の応答の features は読まない", () => {
+    expect(parseMe({ kind: "admin", features: { attachments: true } })).toEqual({
+      kind: "anonymous",
+      features: off,
+    });
   });
 });
 
@@ -36,7 +62,7 @@ describe("fetchMe と logout", () => {
       calls.push([input, init]);
       return Response.json({ kind: "owner" });
     });
-    expect(me).toEqual({ kind: "owner" });
+    expect(me).toEqual({ kind: "owner", features: { attachments: false } });
     expect(calls).toEqual([["/api/me", { credentials: "same-origin", cache: "no-store" }]]);
   });
 

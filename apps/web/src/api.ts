@@ -1,25 +1,48 @@
+/** Worker が `/api/me` で知らせる、この環境で使える機能。 */
+export interface Features {
+  /** 添付（R2）を使える。R2 の bucket を束ねていない環境では false */
+  attachments: boolean;
+}
+
 /** `GET /api/me` の応答。Worker はメールアドレスを返さない。 */
-export type Me =
+export type Me = (
   | { kind: "owner" }
   | { kind: "token"; name: string; scopes: string[] }
-  | { kind: "anonymous" };
+  | { kind: "anonymous" }
+) & { features: Features };
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * 項目が無いときは false にする。Worker を前の版に戻すと features を返さなくなるので、
+ * 無いことを「使える」と読まない。
+ */
+function parseFeatures(value: unknown): Features {
+  const features =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  return { attachments: features.attachments === true };
+}
+
 /** 形の合わない応答は anonymous として扱う（ログイン中と誤って表示しない）。 */
 export function parseMe(value: unknown): Me {
-  if (typeof value !== "object" || value === null) return { kind: "anonymous" };
+  if (typeof value !== "object" || value === null) {
+    return { kind: "anonymous", features: { attachments: false } };
+  }
   const record = value as Record<string, unknown>;
-  if (record.kind === "owner") return { kind: "owner" };
+  const features = parseFeatures(record.features);
+  if (record.kind === "owner") return { kind: "owner", features };
   if (
     record.kind === "token" &&
     typeof record.name === "string" &&
     Array.isArray(record.scopes) &&
     record.scopes.every((scope) => typeof scope === "string")
   ) {
-    return { kind: "token", name: record.name, scopes: record.scopes };
+    return { kind: "token", name: record.name, scopes: record.scopes, features };
   }
-  return { kind: "anonymous" };
+  return {
+    kind: "anonymous",
+    features: record.kind === "anonymous" ? features : { attachments: false },
+  };
 }
 
 export async function fetchMe(fetchFn: Fetch = fetch): Promise<Me> {

@@ -94,10 +94,11 @@ const tagOf = (page: Page) => `${page.title}のタグ`;
  * `GET /api/pages/:id` は id を知っていれば draft も読めるので、principal で絞らない。
  * ログアウトすると、その後の要求は匿名として扱う。
  */
-function serve(me: "owner" | "anonymous", pages: readonly Page[]) {
+function serve(me: "owner" | "anonymous", pages: readonly Page[], attachments = false) {
   let signedIn = me === "owner";
   vi.mocked(fetchMe).mockImplementation(async () => ({
     kind: signedIn ? "owner" : "anonymous",
+    features: { attachments },
   }));
   vi.mocked(logout).mockImplementation(async () => {
     signedIn = false;
