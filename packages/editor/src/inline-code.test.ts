@@ -139,14 +139,14 @@ describe("inline code and the IME invariants", () => {
   it("never conceals a mark touching the cursor, wherever it sits (IME invariant 2)", () => {
     const doc = "前 `a` と ``b`c`` 後";
     const v = mount(doc);
+    const spans = ["`a`", "``b`c``"].map((source) => ({ source, from: doc.indexOf(source) }));
     for (let pos = 0; pos <= doc.length; pos += 1) {
       placeCursor(v, pos);
       const text = v.contentDOM.querySelector(".cm-line")?.textContent ?? "";
-      const touching = [...doc.matchAll(/``?[^`]+(?:`[^`]+)?``?/g)].some((match) => {
-        const from = match.index ?? 0;
-        return from <= pos && pos <= from + match[0].length;
-      });
-      if (touching) expect(text).toContain("`");
+      // 別の span のバッククォートで通らないよう、触れている span の記号つきの全文を見る
+      for (const { source, from } of spans) {
+        if (from <= pos && pos <= from + source.length) expect(text).toContain(source);
+      }
     }
   });
 
