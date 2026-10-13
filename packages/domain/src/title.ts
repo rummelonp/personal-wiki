@@ -14,15 +14,16 @@ export type TitleKeyError = { readonly kind: "empty_title" };
 /**
  * `toLowerCase` では Unicode の default case fold と異なる結果になる既知の文字だけの例外表。
  * 波ダッシュ等、NFKC で吸収されない他の表記ゆれは意図的に対象外。
+ * `toLowerCase` の後に引く。`toLowerCase` は語末の `Σ` を `ς` にする（"ΑΣ" -> "ας"）ので、
+ * 先に引くと "ΑΣ" と "ασ" が別の key になる。`ẞ` は `toLowerCase` で `ß` になる。
  */
 const CASE_FOLD_EXCEPTIONS: Readonly<Record<string, string>> = {
   ß: "ss",
-  ẞ: "ss",
   ς: "σ",
 };
 
 function caseFold(text: string): string {
-  return text.replace(/[ßẞς]/g, (ch) => CASE_FOLD_EXCEPTIONS[ch] ?? ch).toLowerCase();
+  return text.toLowerCase().replace(/[ßς]/g, (ch) => CASE_FOLD_EXCEPTIONS[ch] ?? ch);
 }
 
 /**

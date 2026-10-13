@@ -87,4 +87,12 @@ describe("normalizeTitleKey", () => {
     expect(isOk(upper) && upper.value).toBe("σ");
     expect(isOk(final) && final.value).toBe("σ");
   });
+
+  it("folds a word-final capital sigma the same as its lowercase form", () => {
+    for (const title of ["ΑΣ", "ας", "ασ", "Ας"]) {
+      const key = normalizeTitleKey(title);
+      expect(isOk(key) && key.value).toBe("ασ");
+    }
+    expect(foldTitle("ΣΑΣ ΚΑΣ")).toBe(foldTitle("σασ κασ"));
+  });
 });
