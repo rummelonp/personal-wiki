@@ -403,12 +403,30 @@ export class EditorSession {
     if (!this.canWrite()) return;
     this.clearTimer();
     if (!isDirty(this.state)) {
-      this.set({ base: server, draft: { title: server.title, body: server.body } });
-      this.removeBackup(server.id);
+      this.adoptServer(server);
       return;
     }
     this.set({ conflict: server });
     this.stash();
+  }
+
+  /**
+   * 手元に残す未保存の変更が無い（または手元がサーバーと同じ内容の）まま、サーバーの版を手元に入れる。
+   *
+   * 打っている途中の title（titleInput）は、サーバーの title が手元の既知の title（base か draft）の
+   * ままなら残す。取り込むのは本文や公開設定の変化で、打ちかけの title に影響しないため。
+   * サーバーの title が変わっていたら捨てる。残して確定すると、他で行われた改名を衝突の確認なしに
+   * 上書きする。
+   */
+  private adoptServer(server: Page): void {
+    const { base, draft, titleInput } = this.state;
+    this.clearTimer();
+    this.set({
+      base: server,
+      draft: { title: server.title, body: server.body },
+      titleInput: server.title === base.title || server.title === draft.title ? titleInput : null,
+    });
+    this.removeBackup(server.id);
   }
 
   /**
@@ -501,15 +519,7 @@ export class EditorSession {
       // 確認の応答を待つ間の入力も含めて、返ってきた時点の手元で判断する
       const same = server.title === this.state.draft.title && server.body === this.state.draft.body;
       if (!isDirty(this.state) || same) {
-        this.clearTimer();
-        this.set({
-          base: server,
-          draft: { title: server.title, body: server.body },
-          // 打っている途中の title は、取り込む前の title に対する変更として捨てる。他で title が
-          // 変わっていれば、残して確定するとその改名を衝突の確認なしに上書きするため
-          titleInput: null,
-        });
-        this.removeBackup(server.id);
+        this.adoptServer(server);
         return;
       }
       await this.takeIn(server);

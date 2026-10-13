@@ -881,13 +881,50 @@ describe("title の確定", () => {
     expect(backup.saved.size).toBe(0);
   });
 
-  it("サーバーの内容を取り込むと、打っていた title は捨てる", async () => {
+  it("サーバーの title が変わっていれば、取り込むときに打っていた title は捨てる", async () => {
     const { session, server } = setup();
     session.editTitle("打ちかけ");
     server.page = page({ title: "他で変えた", version: 2 });
     await session.checkFreshness();
     expect(session.getState().titleInput).toBeNull();
     expect(session.getState().draft.title).toBe("他で変えた");
+  });
+
+  it("リンクの書き換えの取り込みでも、サーバーの title が変わっていれば打っていた title は捨てる", async () => {
+    const { session, server } = setup();
+    session.editTitle("打ちかけ");
+    server.page = page({ title: "他で変えた", version: 2 });
+    await session.linkRewritten({ sourcePageId: ID, version: 2 });
+    expect(session.getState().titleInput).toBeNull();
+    expect(session.getState().draft.title).toBe("他で変えた");
+  });
+
+  it("サーバーの title が変わっていなければ、フォーカス復帰の取り込みでも打っていた title を残す", async () => {
+    const { session, server, api } = setup();
+    session.editTitle("新");
+    server.page = page({ body: "他の本文", version: 2 });
+    await session.checkFreshness();
+    expect(session.getState()).toMatchObject({
+      titleInput: "新",
+      base: { version: 2 },
+      draft: { title: "題", body: "他の本文" },
+    });
+    await session.commitTitle();
+    expect(api.calls).toEqual(["get", "put@2"]);
+    expect(server.page).toMatchObject({ title: "新", body: "他の本文" });
+  });
+
+  it("手元の確定済みの title がサーバーに入っていた取り込みでも、その上に打っていた title を残す", async () => {
+    const { session, server } = setup();
+    session.edit({ title: "確定", body: "本文" });
+    session.editTitle("確定の続き");
+    server.page = page({ title: "確定", version: 2 });
+    await session.checkFreshness();
+    expect(session.getState()).toMatchObject({
+      titleInput: "確定の続き",
+      base: { title: "確定", version: 2 },
+      conflict: null,
+    });
   });
 });
 
