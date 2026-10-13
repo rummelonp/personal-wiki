@@ -32,6 +32,11 @@ export interface LinkRewriteStepInput {
   /** 指定すると、このページを対象とする書き換えが残っているリンク元から選ぶ */
   targetPageId: string | null;
   now: number;
+  /**
+   * リンク元を選んだ直後に呼ぶ。以降の処理が例外で終わったとき、呼び出し側がどのリンク元だったかを
+   * ログに残せる（例外の型は変えない）。追加のクエリは使わない
+   */
+  onPicked?: (sourcePageId: string) => void;
 }
 
 export interface LinkRewriteStepResult {
@@ -234,6 +239,7 @@ export async function stepLinkRewrites(
   if (first === undefined)
     return { result: { ...idle, remaining: 0, rowsWritten: 0 }, actor: null };
   const sourcePageId = first.source_page_id;
+  input.onPicked?.(sourcePageId);
   const jobs = picked.results.sort(
     (a, b) =>
       a.created_at - b.created_at ||

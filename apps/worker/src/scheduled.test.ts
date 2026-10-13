@@ -118,7 +118,7 @@ describe("scheduled", () => {
   });
 
   it("D1 の例外はログに出して投げ直す", async () => {
-    await queueRename();
+    const { source } = await queueRename();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const failing = new Proxy(env.DB, {
       get(target, prop) {
@@ -134,11 +134,34 @@ describe("scheduled", () => {
     await expect(createScheduledHandler()(controller(), { ...env, DB: failing })).rejects.toThrow(
       "injected",
     );
-    expect(logged(error)).toEqual([{ event: "link_rewrites.scheduled_error", error: "injected" }]);
+    expect(logged(error)).toEqual([
+      { event: "link_rewrites.scheduled_error", sourcePageId: source.id, error: "injected" },
+    ]);
     // 積んだ分は残り、次の発火が試す
     const left = await env.DB.prepare("SELECT attempts FROM link_rewrites").first<{
       attempts: number;
     }>();
     expect(left?.attempts).toBe(1);
+  });
+
+  it("リンク元を選ぶ前の例外では、sourcePageId を null で記録する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "prepare") {
+          return () => {
+            throw new Error("before picked");
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(createScheduledHandler()(controller(), { ...env, DB: failing })).rejects.toThrow(
+      "before picked",
+    );
+    expect(logged(error)).toEqual([
+      { event: "link_rewrites.scheduled_error", sourcePageId: null, error: "before picked" },
+    ]);
   });
 });

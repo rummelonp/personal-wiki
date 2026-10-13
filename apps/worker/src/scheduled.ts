@@ -21,10 +21,17 @@ export function createScheduledHandler({
   recordWrite = logWriteMetric,
 }: ScheduledOptions = {}) {
   return async (_controller: ScheduledController, env: Bindings): Promise<void> => {
+    // 例外のとき、どのリンク元で起きたかをログに残す。選ぶ前の失敗では null のまま
+    let sourcePageId: string | null = null;
     try {
       const result = await stepLinkRewritesRecorded(
         { db: env.DB, now, recordWrite },
-        { targetPageId: null },
+        {
+          targetPageId: null,
+          onPicked: (id) => {
+            sourcePageId = id;
+          },
+        },
         () => "cron",
       );
       // 本文と title は出さない。リンク元は id だけ
@@ -43,6 +50,7 @@ export function createScheduledHandler({
       console.error(
         JSON.stringify({
           event: "link_rewrites.scheduled_error",
+          sourcePageId,
           error: error instanceof Error ? error.message : String(error),
         }),
       );

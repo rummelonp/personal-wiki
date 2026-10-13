@@ -1,6 +1,10 @@
 import type { Principal } from "../auth/principal";
 import { isPageId } from "./id";
-import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites";
+import {
+  type LinkRewriteStepInput,
+  type LinkRewriteStepResult,
+  stepLinkRewrites,
+} from "./link-rewrites";
 import { actorOf } from "./revisions";
 import {
   type AppendError,
@@ -143,7 +147,7 @@ export async function stepLinkRewritesAs(
  */
 export async function stepLinkRewritesRecorded(
   ctx: Pick<PageWriteContext, "db" | "now" | "recordWrite">,
-  input: { targetPageId: string | null },
+  input: Pick<LinkRewriteStepInput, "targetPageId" | "onPicked">,
   fallbackActor: () => string,
 ): Promise<LinkRewriteStepResult> {
   const { result, actor } = await stepLinkRewrites(ctx.db, { ...input, now: ctx.now() });
