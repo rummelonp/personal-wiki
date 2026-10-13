@@ -32,6 +32,7 @@ import { linkActivation } from "./link-activation";
 import { listKeymap } from "./list-keymap";
 import { livePreview } from "./live-preview";
 import type { PageIndex } from "./page-index";
+import { docReplacement } from "./replace-doc";
 import { type RevealPolicy, revealPolicy } from "./reveal";
 import { tables } from "./table";
 import { type TagClickHandler, tags } from "./tag";
@@ -57,6 +58,7 @@ const markdownWithFrontmatter = new Language(
 );
 
 export interface CreateEditorOptions {
+  /** 最初の本文。作った後に外から差し替えるときは `replaceDoc` を使う */
   readonly doc?: string;
   /** false で記法を隠さない（IME の不具合を Live Preview と切り分ける比較用）。既定 true */
   readonly livePreview?: boolean;
@@ -161,6 +163,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     linkActivation(),
     blockIdAssignment(),
     blockIdHighlight(),
+    docReplacement,
   ];
   // frontmatter を畳むのは記法を隠す表示なので、livePreview を切ったときは source のまま出す
   if (options.livePreview ?? true) {

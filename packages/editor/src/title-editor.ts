@@ -13,9 +13,11 @@ import { type Command, drawSelection, EditorView, keymap, type ViewUpdate } from
 import { imeDebug } from "./debug-ime";
 import { focusRing } from "./focus";
 import { type ImeEvent, isComposing } from "./ime";
+import { docReplacement } from "./replace-doc";
 import { editorSurfaceTheme } from "./theme";
 
 export interface CreateTitleEditorOptions {
+  /** 最初の title。作った後に外から差し替えるときは `replaceDoc` を使う */
   readonly doc?: string;
   /** Enter と ↓ で移る先の本文の view */
   readonly bodyView?: () => EditorView | null;
@@ -35,8 +37,9 @@ export interface CreateTitleEditorOptions {
 
 /**
  * この view への入力（貼り付け、drop、改行を入れる command）に含まれる改行を空白に置き換える。
- * userEvent を持たない transaction（呼び出し側が組み立てた変更）は書き換えない。
- * composition の transaction も書き換えない（IME 不変条件 1）。
+ * userEvent を持たない transaction は書き換えない。ホストからの差し替え（`replaceDoc`）は
+ * ホストが正規化した title を渡す取り決めで、ここで書き換えると保存済みの title と doc が食い違う。
+ * composition の transaction も書き換えない。変換中に doc を書き換えると確定前の文字列が壊れる。
  */
 const newlinesToSpaces = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.type.compose")) {
@@ -195,6 +198,7 @@ export function createTitleEditor(
     emptyTitleClass,
     EditorView.contentAttributes.of({ "aria-label": TITLE_LABEL, "aria-multiline": "false" }),
     titlePlaceholderAttribute,
+    docReplacement,
   ];
   if (options.onImeEvent) extensions.push(imeDebug(options.onImeEvent, "title"));
   if (options.readOnly) {

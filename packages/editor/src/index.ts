@@ -22,7 +22,14 @@ export {
   type PageEmbedResolver,
   type RenderedPageBody,
 } from "./embed";
-export { type ImeEvent, type ImeEventKind, imeEventSink, isComposing } from "./ime";
+export {
+  compositionSettled,
+  type ImeEvent,
+  type ImeEventKind,
+  imeEventSink,
+  isComposing,
+  isCompositionUnsettled,
+} from "./ime";
 export { livePreview } from "./live-preview";
 export {
   createPageEmbedCache,
@@ -36,6 +43,7 @@ export {
   type PageCandidate,
   type PageIndex,
 } from "./page-index";
+export { docReplacement, isDocReplacement, replaceDoc } from "./replace-doc";
 export { createRevealTest, type RevealPolicy, revealPolicy, shouldRevealSource } from "./reveal";
 export { type TagClick, type TagClickHandler, tags } from "./tag";
 export { type CreateTitleEditorOptions, createTitleEditor } from "./title-editor";
