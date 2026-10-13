@@ -47,7 +47,8 @@ type JsonSchemaOptions = Parameters<StandardSchemaWithJSON["~standard"]["jsonSch
 /**
  * SDK は tool を登録するたびに inputSchema を JSON Schema に変換する。zod の変換は重く、
  * リクエストごとに全 tool 分を繰り返すと CPU 時間を食うので、変換結果を初回だけ作って使い回す。
- * 共有する結果は凍結する。SDK が書き換えたら、別のリクエストに漏れる前に例外で気づける。
+ * 共有する結果は凍結し、リクエストをまたいで書き換わらないようにする。SDK が書き換えると例外になるが、
+ * SDK 側の catch で握られる経路があるので、例外で必ず気づけるわけではない（その場合は書き換えが無視される）。
  */
 function memoizeJsonSchema(schema: StandardSchemaWithJSON): StandardSchemaWithJSON {
   const std = schema["~standard"];
@@ -78,8 +79,12 @@ export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition
   // 型引数 S のままでは SDK の overload を解決できないので、StandardSchemaWithJSON に包み、
   // 検証済みの args は S の出力型に戻す
   const schema = memoizeJsonSchema(inputSchema);
-  // SDK が tools/list と登録で使う target を先に変換しておく。キーが外れても、初回の登録で変換するだけで結果は変わらない
-  schema["~standard"].jsonSchema.input({ target: SDK_JSON_SCHEMA_TARGET });
+  // SDK が tools/list と登録で使う target を先に変換しておく。キーが外れても、初回の登録で変換するだけで結果は変わらない。
+  // 変換が失敗してもモジュールの読み込みを止めない（REST と SPA まで起動しなくなる）。失敗は握り、
+  // 初回の登録時に再度変換して、従来どおり SDK の経路で扱わせる
+  try {
+    schema["~standard"].jsonSchema.input({ target: SDK_JSON_SCHEMA_TARGET });
+  } catch {}
   return {
     name,
     register(server, ctx) {
