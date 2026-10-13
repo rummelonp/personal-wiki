@@ -52,7 +52,9 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
       )}
       {failed.length > 0 && (
         <>
-          <p>次のページは、書き換えると他の部分が変わるので、リンクを書き換えませんでした。</p>
+          <p>
+            次のページはリンクを書き換えられませんでした。旧 title のリンクを手で直してください。
+          </p>
           <ul className="link-rewrites-pages">
             {failed.map((id) => (
               <li key={id}>

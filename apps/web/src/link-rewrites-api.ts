@@ -13,7 +13,7 @@ export interface LinkRewriteStepResult {
   } | null;
   /** 読んだあとにリンク元か対象ページが変わった。積んだ分は残るので、呼び直せば進む */
   conflict: boolean;
-  /** 書き換えると意図しない変化が出るので、書き換えずに捨てたリンク元の id */
+  /** 書き換えられずに捨てたリンク元の id（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
   failed: string[];
   remaining: number;
 }

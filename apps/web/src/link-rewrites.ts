@@ -22,7 +22,7 @@ export interface LinkRewriteState {
   /** done と、Worker が最後に知らせた残りの数の和 */
   total: number;
   rewritten: RewrittenPage[];
-  /** 書き換えると意図しない変化が出るので、書き換えなかったリンク元の id */
+  /** 書き換えられなかったリンク元の id（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
   failed: string[];
   /** auth はログインが切れたか書き込めない、error は通信や衝突が続いて諦めた */
   stopReason: "auth" | "error" | null;
