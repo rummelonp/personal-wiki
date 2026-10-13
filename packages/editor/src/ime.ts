@@ -23,9 +23,11 @@ import { EditorView } from "@codemirror/view";
  *    伴い、1 を破る。落ち着いた後に開き直す。
  *
  * 単体テストは本物の IME を動かせず、`CompositionEvent` や `input.type.compose` の transaction で
- * 状態の遷移を模すだけである。実際の変換に近い入力は `ime-cdp.test.ts` が CDP で流して確かめる。
- * ただし CDP の変換も Chromium のものに限られ、compositionstart と最初の変更が同じ task で届くので、
- * その間に keydown が来る場合や、Safari の compositionend と Enter の keydown の逆転は再現できない。
+ * 状態の遷移を模すだけである。`ime-cdp.test.ts` は CDP で実際の変換に近い入力を流し、1 と 4 を
+ * 確かめる。3 については、変換中の keydown を CodeMirror が keymap より前に捨てる挙動を見張るだけで、
+ * handler の guard は単体テストが合成の compositionstart で確かめる。CDP の変換も Chromium のものに
+ * 限られ、compositionstart と最初の変更が同じ task で届くので、その間に keydown が来る場合や、
+ * Safari の compositionend と Enter の keydown の逆転は再現できない。
  */
 
 /**

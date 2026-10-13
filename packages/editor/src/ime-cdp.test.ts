@@ -16,9 +16,9 @@ import { createTitleEditor } from "./title-editor";
  * IME 不変条件（ime.ts の冒頭）を、CompositionEvent を自前で dispatch するのではなく、Chromium の
  * IME の経路（CDP の Input.imeSetComposition / Input.insertText / Input.dispatchKeyEvent）で確かめる。
  * こうするとブラウザ自身が compositionstart・compositionupdate・beforeinput・compositionend を発火し、
- * 変換中の keydown は keyCode 229 と isComposing を伴い、CodeMirror は DOM の変更を読んで
- * `input.type.compose` の transaction を作る。合成イベントでは、keyCode 229 の keydown を CodeMirror が
- * keymap に渡さない挙動や、確定文字列が DOM から doc へ読み込まれる順序を再現できない。
+ * CodeMirror は DOM の変更を読んで `input.type.compose` の transaction を作る。合成の CompositionEvent は
+ * DOM の変更を伴わないので、CodeMirror の `inputState.composing` が 0 のまま進まず、確定文字列が DOM から
+ * doc へ読み込まれる順序や、`composing > 0` の間 keydown を keymap より前に捨てる挙動を再現できない。
  */
 
 let views: EditorView[] = [];
@@ -75,10 +75,7 @@ const ENTER: Key = { key: "Enter", code: "Enter", keyCode: 13 };
 const TAB: Key = { key: "Tab", code: "Tab", keyCode: 9 };
 const SHIFT_ENTER: Key = { ...ENTER, shift: true };
 
-/**
- * 変換中に IME が受け取ったキー。Chromium は IME が処理したキーを keyCode 229 の keydown として
- * 渡す。key は "Process" ではなく元のキー名にして、keymap がキー名で拾いうる厳しい側で確かめる。
- */
+/** 変換中に IME が受け取ったキー。Chromium は IME が処理したキーを keyCode 229 の keydown として渡す */
 async function keyDownToIme({ key, code, shift }: Key): Promise<void> {
   await cdp().send("Input.dispatchKeyEvent", {
     type: "rawKeyDown",
@@ -156,8 +153,8 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
     expectOnlyComposeTransactions(during);
 
     const rebuilt = kindsOf(afterComposition(), "decoration-rebuild");
-    expect(rebuilt.length).toBeGreaterThan(0);
     expect(new Set(rebuilt).size).toBe(rebuilt.length);
+    expect(new Set(rebuilt)).toEqual(new Set(kindsOf(during, "decoration-skipped")));
   });
 
   it("holds invalidateDecorations (an async wikilink resolution) until the conversion settles", async () => {
@@ -218,6 +215,10 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
   });
 });
 
+// CodeMirror は変換中（DOM の変更を読んだ後）の keydown を keymap より前に捨てるので、editor の
+// isComposing の guard（list-keymap、title-editor、acceptUnlessComposing）を外してもここは落ちない。
+// ここが見張るのは CodeMirror のその挙動が変わったときの回帰で、guard 自体は各単体テストが
+// 合成の compositionstart で確かめる。
 describe("IME invariant 3 (Enter, Tab and Shift+Enter during conversion belong to the IME)", () => {
   it("does not continue the list or indent when the IME takes those keys", async () => {
     const v = mount("- 項目");
@@ -289,6 +290,8 @@ describe("IME invariants 3 and 4 ([[ completion)", () => {
     expect(tooltip()).toBeNull();
     await compose("こーど");
     expect(completionStatus(v.state)).toBeNull();
+    // 候補はすでに閉じており、keydown も CodeMirror が keymap より前に捨てるので、acceptUnlessComposing の
+    // guard はここでは通らない（guard は wikilink-autocomplete.test.ts が確かめる）
     await keyDownToIme(ENTER);
     await commit("コード");
     await keyUp(ENTER);
