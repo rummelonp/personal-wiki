@@ -1,5 +1,6 @@
 // 理由は page-tools.ts の同じ import を参照
 import * as z from "zod/v4";
+import { readableVisibilityOf } from "../auth/principal";
 import { isPageId } from "../pages/id";
 import {
   type Cursor,
@@ -73,7 +74,12 @@ export const searchTool = defineTool({
         message: SEARCH_QUERY_MESSAGES[prepared.reason],
       });
     }
-    const results = await searchPages(ctx.db, prepared.query, limit ?? SEARCH_DEFAULT_LIMIT);
+    const results = await searchPages(
+      ctx.db,
+      prepared.query,
+      limit ?? SEARCH_DEFAULT_LIMIT,
+      readableVisibilityOf(ctx.principal),
+    );
     return toolResult({ results: results.map((hit) => withUrls(hit, ctx.origin)) });
   },
 });
@@ -97,6 +103,7 @@ export const listRecentTool = defineTool({
     const list = await listRecentPages(ctx.db, {
       limit: limit ?? LIST_DEFAULT_LIMIT,
       cursor: paging.cursor,
+      readable: readableVisibilityOf(ctx.principal),
     });
     return listResult(list, ctx.origin);
   },
@@ -121,6 +128,7 @@ export const listBacklinksTool = defineTool({
     const list = await listBacklinks(ctx.db, id, {
       limit: limit ?? LIST_DEFAULT_LIMIT,
       cursor: paging.cursor,
+      readable: readableVisibilityOf(ctx.principal),
     });
     if (list === null) return toolError({ error: "not_found" });
     return listResult(list, ctx.origin);

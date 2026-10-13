@@ -206,9 +206,9 @@ describe("GET /api/tags", () => {
     expect(await tagCounts(client)).toEqual([]);
   });
 
-  it("token が無ければ 401、read の token で 200", async () => {
+  it("token が無ければ匿名として 200、read の token で 200", async () => {
     const reader = await buildClient({ scopes: "read", name: "reader" });
-    expect((await createApp().request("/api/tags", {}, env)).status).toBe(401);
+    expect((await createApp().request("/api/tags", {}, env)).status).toBe(200);
     expect((await reader.request("/api/tags")).status).toBe(200);
   });
 });

@@ -15,7 +15,8 @@ import { hashApiToken, isWellFormedApiToken } from "./token";
  *   2. rejectCrossSiteCookieWrites: セッション cookie 付きの変更系に CSRF の検査を掛ける
  *   3. resolvePrincipal: Authorization かセッション cookie からリクエストの principal を決める
  *   4. enforceDeclaredPolicy: 宣言の無い登録がマッチしていれば、どのハンドラも呼ばずに 404 にする
- *   5. ルートごとの宣言（requireScope、requireToken、requireOwner、allowAnonymous）: principal と
+ *   5. ルートごとの宣言（requireScope、requireToken、requireOwner、allowAnonymousRead、
+ *      allowAnonymous）: principal と
  *      scope を検査する
  *
  * 4 が保証すること: マッチした登録のうち、基盤の middleware と宣言を除くすべて（ハンドラや
@@ -263,6 +264,28 @@ export function requireOwner(): MiddlewareHandler<AppEnv> {
       if (principal.kind === "anonymous") return unauthorized(c);
       if (principal.kind !== "owner") return c.json({ error: "forbidden" }, 403);
       await next();
+    }),
+  );
+}
+
+/**
+ * ページの読み取り。owner、read の scope を持つ token、anonymous を受け付ける。anonymous に何を
+ * 見せるかはハンドラが readableVisibilityOf で決める。
+ *
+ * anonymous の応答には no-store を付ける。public から draft に戻したページは直ちに title で引けなく
+ * なる必要があり、ETag はあっても If-None-Match に応じないので、no-cache で再検証させても得るものが無い。
+ * id で取った draft の本文を共有キャッシュに置かせない意味もある。owner と token の応答は
+ * resolvePrincipal が private, no-store にする。
+ */
+export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
+  return definePolicy(
+    createMiddleware<AppEnv>(async (c, next) => {
+      const principal = currentPrincipal(c);
+      if (principal.kind !== "anonymous" && !principalHasScope(principal, "read")) {
+        return c.json({ error: "forbidden" }, 403);
+      }
+      await next();
+      if (principal.kind === "anonymous") c.header("Cache-Control", "no-store");
     }),
   );
 }

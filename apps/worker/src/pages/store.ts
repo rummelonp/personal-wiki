@@ -1,4 +1,5 @@
 import { normalizeTitleKey, singleLineTitle } from "@personal-wiki/domain";
+import type { ReadableVisibility } from "../auth/principal";
 import { clearDerivedStatements, derivedStatements, deriveValues } from "./derived";
 import { generatePageId } from "./id";
 import { revisionStatements } from "./revisions";
@@ -13,6 +14,11 @@ import { revisionStatements } from "./revisions";
  */
 
 export type Visibility = "public" | "draft";
+
+/** SQL の `(?n = 0 OR visibility = 'public')` に bind する値。 */
+export function publicOnlyFlag(readable: ReadableVisibility): 0 | 1 {
+  return readable === "public" ? 1 : 0;
+}
 
 export interface Page {
   id: string;
@@ -83,8 +89,8 @@ function toPage(row: PageRow): Page {
 }
 
 /**
- * 削除されていないページを id で引く。visibility では絞らず draft も返すので、token の読み取り用。
- * anonymous に返す経路では使わない。
+ * 削除されていないページを id で引く。visibility では絞らず draft も返す。draft は id を知っていれば
+ * 読めるので、anonymous にもこのまま返す。
  */
 export async function findPageById(db: D1Database, id: string): Promise<Page | null> {
   const row = await db
@@ -96,14 +102,21 @@ export async function findPageById(db: D1Database, id: string): Promise<Page | n
 
 /**
  * 削除されていないページを、title を title_key に正規化して引く。title_key にできない title は null。
- * findPageById と同じく visibility では絞らないので、token の読み取り用。
+ * readable が public なら draft は null（無いページと区別できないようにする）。
  */
-export async function findPageByTitle(db: D1Database, title: string): Promise<Page | null> {
+export async function findPageByTitle(
+  db: D1Database,
+  title: string,
+  readable: ReadableVisibility,
+): Promise<Page | null> {
   const key = normalizeTitleKey(title);
   if (!key.ok) return null;
   const row = await db
-    .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE title_key = ?1 AND deleted_at IS NULL`)
-    .bind(key.value)
+    .prepare(
+      `SELECT ${PAGE_COLUMNS} FROM pages
+       WHERE title_key = ?1 AND deleted_at IS NULL AND (?2 = 0 OR visibility = 'public')`,
+    )
+    .bind(key.value, publicOnlyFlag(readable))
     .first<PageRow>();
   return row === null ? null : toPage(row);
 }

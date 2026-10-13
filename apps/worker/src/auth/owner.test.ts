@@ -468,11 +468,23 @@ describe("owner のページ API", () => {
     expect(results.map((r) => r.actor)).toEqual(["owner"]);
   });
 
-  it("匿名はページ API に 401 のまま", async () => {
+  it("匿名はページの書き込みに 401 のまま", async () => {
     const { request } = await setup();
-    for (const path of ["/api/pages/recent", "/api/search?q=abc", "/api/tags"]) {
-      const res = await request(path);
-      expect(res.status).toBe(401);
+    const id = "AAAAAAAAAAAAAAAAAAAAAA";
+    const json = { "Content-Type": "application/json", "If-Match": '"1"' };
+    for (const [method, path, body] of [
+      ["POST", "/api/pages", { title: "x", body: "" }],
+      ["PUT", `/api/pages/${id}`, { title: "x", body: "" }],
+      ["POST", `/api/pages/${id}/append`, { text: "x" }],
+      ["DELETE", `/api/pages/${id}`, undefined],
+      ["POST", "/api/admin/derived/rebuild", {}],
+    ] as const) {
+      const res = await request(path, {
+        method,
+        headers: json,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      expect(res.status, `${method} ${path}`).toBe(401);
     }
   });
 

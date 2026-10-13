@@ -1,6 +1,7 @@
 import type { Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { requireOwner, requireScope } from "../auth/middleware";
+import { allowAnonymousRead, requireOwner, requireScope } from "../auth/middleware";
+import { readableVisibilityOf } from "../auth/principal";
 import type { AppEnv } from "../env";
 import { isPageId } from "./id";
 import {
@@ -226,8 +227,10 @@ function readPaging(c: PagesContext): Parsed<{ limit: number; cursor: Cursor | n
 }
 
 /**
- * `/api/pages` のルートを app に登録する。owner と token を受け付ける（anonymous の読み取りは
- * 別の Work Item）。ページの id は形式が違えば D1 を引かずに 404 にする。
+ * `/api/pages` のルートを app に登録する。書き込みは owner と token だけが呼べる。読み取りは
+ * anonymous も呼べ、title での取得と一覧系は public だけを返す（readableVisibilityOf）。
+ * 匿名から見た draft の title、存在しない id、削除済みの id は、どれも notFound の同じ 404 にする。
+ * ページの id は形式が違えば D1 を引かずに 404 にする。
  *
  * 認可の宣言はハンドラと同じ method・path の登録に、ハンドラより前に付ける。子の app を route() で
  * 合成したり、prefix の use() で一括に掛けたりすると、宣言の検査がルートを見つけられない。
@@ -256,15 +259,19 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         return pageResponse(c, result.page, 201);
       })
       // title は `/` や `#` を含みうるので、パスに埋め込まずクエリで受け取る
-      .get("/api/pages/by-title", requireScope("read"), async (c) => {
+      .get("/api/pages/by-title", allowAnonymousRead(), async (c) => {
         const title = c.req.query("title");
         if (title === undefined) return errorResponse(c, 400, "missing_field", { field: "title" });
-        const page = await findPageByTitle(c.env.DB, title);
+        const page = await findPageByTitle(
+          c.env.DB,
+          title,
+          readableVisibilityOf(c.get("principal")),
+        );
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
       // `/api/pages/:id` より前に登録する。後ろだと :id のハンドラが "recent" を id として先に 404 にする
-      .get("/api/pages/recent", requireScope("read"), async (c) => {
+      .get("/api/pages/recent", allowAnonymousRead(), async (c) => {
         const paging = readPaging(c);
         if (!paging.ok) return paging.response;
         const rawTag = c.req.query("tag");
@@ -273,13 +280,15 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         const { pages, nextCursor } = await listRecentPages(c.env.DB, {
           ...paging.value,
           tagKey: tag?.key ?? null,
+          readable: readableVisibilityOf(c.get("principal")),
         });
         return c.json({ pages, nextCursor });
       })
-      .get("/api/tags", requireScope("read"), async (c) => {
-        return c.json({ tags: await listTagCounts(c.env.DB) });
+      .get("/api/tags", allowAnonymousRead(), async (c) => {
+        const tags = await listTagCounts(c.env.DB, readableVisibilityOf(c.get("principal")));
+        return c.json({ tags });
       })
-      .get("/api/search", requireScope("read"), async (c) => {
+      .get("/api/search", allowAnonymousRead(), async (c) => {
         const raw = c.req.query("q");
         if (raw === undefined) return errorResponse(c, 400, "missing_field", { field: "q" });
         const query = prepareSearchQuery(raw);
@@ -291,19 +300,29 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         }
         const limit = readLimit(c, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);
         if (!limit.ok) return limit.response;
-        return c.json({ results: await searchPages(c.env.DB, query.query, limit.value) });
+        const results = await searchPages(
+          c.env.DB,
+          query.query,
+          limit.value,
+          readableVisibilityOf(c.get("principal")),
+        );
+        return c.json({ results });
       })
-      .get("/api/pages/:id", requireScope("read"), async (c) => {
+      // draft も id を知っていれば読めるので、principal に関係なく visibility で絞らない
+      .get("/api/pages/:id", allowAnonymousRead(), async (c) => {
         const page = await findPageByInputId(c.env.DB, c.req.param("id"));
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
-      .get("/api/pages/:id/backlinks", requireScope("read"), async (c) => {
+      .get("/api/pages/:id/backlinks", allowAnonymousRead(), async (c) => {
         const id = c.req.param("id");
         if (!isPageId(id)) return c.notFound();
         const paging = readPaging(c);
         if (!paging.ok) return paging.response;
-        const list = await listBacklinks(c.env.DB, id, paging.value);
+        const list = await listBacklinks(c.env.DB, id, {
+          ...paging.value,
+          readable: readableVisibilityOf(c.get("principal")),
+        });
         if (list === null) return c.notFound();
         return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })

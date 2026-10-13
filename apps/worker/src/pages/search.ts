@@ -1,10 +1,12 @@
 import { foldTitle } from "@personal-wiki/domain";
+import type { ReadableVisibility } from "../auth/principal";
 import { foldForSearch } from "./derived";
-import type { Visibility } from "./store";
+import { publicOnlyFlag, type Visibility } from "./store";
 
 /*
- * 検索・最近の更新・backlink・タグの読み取り。どれも visibility で絞らず draft も返すので、
- * token の読み取り用。anonymous に返す経路では使わない。
+ * 検索・最近の更新・backlink・タグの読み取り。どれも readable（readableVisibilityOf の値）を必須で
+ * 受け取り、public なら draft を SQL の段階で除く。取得後に配列から除くと、LIMIT と nextCursor が
+ * 除く前の行で決まり、件数が欠けたり cursor に draft の id が入ったりする。
  */
 
 export interface PageSummary {
@@ -147,7 +149,7 @@ export function prepareTagFilter(raw: string): TagFilter {
 }
 
 /**
- * 削除されていないページを更新日時の降順で返す。visibility では絞らず draft も返すので、token の読み取り用。
+ * 削除されていないページを更新日時の降順で返す。
  *
  * tagKey（prepareTagFilter の値）を渡すと、そのタグが付いたページに絞る。ネストタグは親で子も拾い、
  * `a` は `a/b`、`a/b/c` が付いたページにも一致する（Obsidian の検索と同じ）。tag_key は `/` 区切りの
@@ -166,13 +168,19 @@ export async function listRecentPages(
     limit,
     cursor,
     tagKey = null,
-  }: { limit: number; cursor: Cursor | null; tagKey?: string | null },
+    readable,
+  }: {
+    limit: number;
+    cursor: Cursor | null;
+    tagKey?: string | null;
+    readable: ReadableVisibility;
+  },
 ): Promise<PageList<ListedPage>> {
   const { results } = await db
     .prepare(
       `SELECT p.id, p.title, p.visibility, p.updated_at, e.excerpt
        FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
-       WHERE p.deleted_at IS NULL
+       WHERE p.deleted_at IS NULL AND (?7 = 0 OR p.visibility = 'public')
          AND (?1 IS NULL OR p.updated_at < ?1 OR (p.updated_at = ?1 AND p.id < ?2))
          AND (?4 IS NULL OR p.id IN (
            SELECT page_id FROM tags WHERE tag_key = ?4 OR (tag_key >= ?5 AND tag_key < ?6)))
@@ -185,6 +193,7 @@ export async function listRecentPages(
       tagKey,
       tagKey === null ? null : `${tagKey}/`,
       tagKey === null ? null : `${tagKey}0`,
+      publicOnlyFlag(readable),
     )
     .all<ExcerptRow>();
   const list = pageOf(results, limit, toSummary);
@@ -214,30 +223,41 @@ export interface TagCount {
 
 /**
  * 削除されていないページに付いたタグを、ページ数の降順で返す。同数は tag_key の順（大文字小文字を畳んだ順）。
- * visibility では絞らず draft も数えるので、token の読み取り用。
  *
  * count は listRecentPages の tagKey に同じ表記を渡したときの件数に合わせ、子のタグが付いたページを含む
  * （重複は 1 と数える）。ページに書かれた子のタグ `a/b` から作った親 `a` は、ページに直接書かれていなければ
  * 一覧に出ない。tag は、そのタグが付いたページの表記のうち文字コード順で先頭のもの。
- * tags の削除済みページの行は削除時に消えているので、pages とは結合しない。
+ * tags の削除済みページの行は削除時に消えているので、削除の判定に pages は要らない。
+ *
+ * readable が public なら、一覧に出すタグ、件数、表記のどれも public のページだけから作る。draft に
+ * しか付いていないタグは出さず、draft の表記（`Beta` と `beta` の違いなど）も表に出さない。
  */
-export async function listTagCounts(db: D1Database): Promise<TagCount[]> {
+export async function listTagCounts(
+  db: D1Database,
+  readable: ReadableVisibility,
+): Promise<TagCount[]> {
   const { results } = await db
     .prepare(
-      `SELECT min(t.tag) AS tag,
-         (SELECT count(DISTINCT c.page_id) FROM tags AS c
+      `WITH visible AS (
+         SELECT page_id, tag_key, tag FROM tags
+         WHERE ?1 = 0 OR page_id IN (SELECT id FROM pages WHERE visibility = 'public')
+       )
+       SELECT min(t.tag) AS tag,
+         (SELECT count(DISTINCT c.page_id) FROM visible AS c
           WHERE c.tag_key = t.tag_key
              OR (c.tag_key >= t.tag_key || '/' AND c.tag_key < t.tag_key || '0')) AS count
-       FROM tags AS t GROUP BY t.tag_key ORDER BY count DESC, t.tag_key`,
+       FROM visible AS t GROUP BY t.tag_key ORDER BY count DESC, t.tag_key`,
     )
+    .bind(publicOnlyFlag(readable))
     .all<TagCount>();
   return results;
 }
 
 /**
  * pageId を指す links を持つ、削除されていないページを更新日時の降順で返す。
- * pageId のページが無い・削除済みなら null。visibility では絞らず draft も返すので、token の読み取り用。
- * 自分自身へのリンクは含めない。
+ * pageId のページが無い・削除済みなら null。自分自身へのリンクは含めない。
+ * readable が public なら、リンク元を public のページに絞る。pageId 自体は draft でもよい
+ * （id を知っていれば draft を読めるのと同じ扱いで、返すのは public のページだけ）。
  *
  * links.target_page_id は保存と削除のたびに付け直されるので、改題や削除の後は古い title で書かれた
  * リンクが外れ、新しい title で書かれたリンクが入る。
@@ -245,7 +265,11 @@ export async function listTagCounts(db: D1Database): Promise<TagCount[]> {
 export async function listBacklinks(
   db: D1Database,
   pageId: string,
-  { limit, cursor }: { limit: number; cursor: Cursor | null },
+  {
+    limit,
+    cursor,
+    readable,
+  }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
 ): Promise<PageList | null> {
   const exists = await db
     .prepare("SELECT 1 AS found FROM pages WHERE id = ?1 AND deleted_at IS NULL")
@@ -257,10 +281,17 @@ export async function listBacklinks(
       `SELECT p.id, p.title, p.visibility, p.updated_at
        FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
        WHERE l.target_page_id = ?1 AND p.id <> ?1 AND p.deleted_at IS NULL
+         AND (?5 = 0 OR p.visibility = 'public')
          AND (?2 IS NULL OR p.updated_at < ?2 OR (p.updated_at = ?2 AND p.id < ?3))
        ORDER BY p.updated_at DESC, p.id DESC LIMIT ?4`,
     )
-    .bind(pageId, cursor?.updatedAt ?? null, cursor?.id ?? null, limit + 1)
+    .bind(
+      pageId,
+      cursor?.updatedAt ?? null,
+      cursor?.id ?? null,
+      limit + 1,
+      publicOnlyFlag(readable),
+    )
     .all<SummaryRow>();
   return pageOf(results, limit, toSummary);
 }
@@ -309,7 +340,7 @@ const compact = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
  * 削除されていないページを title と本文の部分一致で探す。query は prepareSearchQuery を通した値。
- * visibility では絞らず draft も返すので、token の読み取り用。
+ * readable が public なら draft を除く。
  *
  * - 3 文字以上: FTS5 の MATCH。query 全体を `"` で囲んだ phrase として渡し、`"` は二重にする。
  *   FTS5 の構文（`*`、`OR`、`NEAR(`、列指定）として解釈させないため。
@@ -324,7 +355,9 @@ export async function searchPages(
   db: D1Database,
   query: string,
   limit: number,
+  readable: ReadableVisibility,
 ): Promise<SearchHit[]> {
+  const publicOnly = publicOnlyFlag(readable);
   if ([...query].length >= TRIGRAM_MIN_CHARS) {
     const { results } = await db
       .prepare(
@@ -332,9 +365,10 @@ export async function searchPages(
                 snippet(pages_fts, 1, '', '', ?3, ?4) AS excerpt
          FROM pages_fts JOIN pages AS p ON p.seq = pages_fts.rowid
          WHERE pages_fts MATCH ?1 AND p.deleted_at IS NULL
+           AND (?5 = 0 OR p.visibility = 'public')
          ORDER BY bm25(pages_fts, 4.0, 1.0), p.updated_at DESC, p.id DESC LIMIT ?2`,
       )
-      .bind(`"${query.replaceAll('"', '""')}"`, limit, ELLIPSIS, EXCERPT_CHARS)
+      .bind(`"${query.replaceAll('"', '""')}"`, limit, ELLIPSIS, EXCERPT_CHARS, publicOnly)
       .all<FtsRow>();
     const tags = await tagsByPage(
       db,
@@ -358,11 +392,12 @@ export async function searchPages(
                 length(f.body) AS length
          FROM pages_fts AS f JOIN pages AS p ON p.seq = f.rowid
          WHERE (f.title LIKE ?1 ESCAPE '\\' OR f.body LIKE ?1 ESCAPE '\\') AND p.deleted_at IS NULL
+           AND (?6 = 0 OR p.visibility = 'public')
          ORDER BY p.updated_at DESC, p.id DESC LIMIT ?3
        )
        ORDER BY updated_at DESC, id DESC`,
     )
-    .bind(pattern, query, limit, EXCERPT_CHARS, EXCERPT_LEAD_CHARS)
+    .bind(pattern, query, limit, EXCERPT_CHARS, EXCERPT_LEAD_CHARS, publicOnly)
     .all<LikeRow>();
   const tags = await tagsByPage(
     db,

@@ -1,5 +1,6 @@
 // "zod" の `z` を経由すると zod の全ロケールがバンドルに入る（約 580KB）。SDK と同じ "zod/v4" から名前空間で取る
 import * as z from "zod/v4";
+import { readableVisibilityOf } from "../auth/principal";
 import {
   appendToPageAs,
   createPageAs,
@@ -64,7 +65,7 @@ export const readPageTool = defineTool({
     }
     const page =
       id === undefined
-        ? await findPageByTitle(ctx.db, title as string)
+        ? await findPageByTitle(ctx.db, title as string, readableVisibilityOf(ctx.principal))
         : await findPageByInputId(ctx.db, id);
     if (page === null) return toolError({ error: "not_found" });
     return toolResult({

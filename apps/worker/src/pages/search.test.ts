@@ -214,9 +214,9 @@ describe("GET /api/search", () => {
     expect(titles(await search(client, "秘密の"))).toEqual(["下書き"]);
   });
 
-  it("token が無ければ 401、read の token で 200", async () => {
+  it("token が無ければ匿名として 200、read の token で 200", async () => {
     const reader = await buildClient({ scopes: "read", name: "reader" });
-    expect((await withoutToken("/api/search?q=abc")).status).toBe(401);
+    expect((await withoutToken("/api/search?q=abc")).status).toBe(200);
     expect((await reader.request("/api/search?q=abc")).status).toBe(200);
   });
 });
@@ -311,9 +311,9 @@ describe("GET /api/pages/recent", () => {
     expect((await client.request("/api/pages/recent?limit=100")).status).toBe(200);
   });
 
-  it("/api/pages/:id と重ならず、token が無ければ 401、read の token で 200", async () => {
+  it("/api/pages/:id と重ならず、token が無ければ匿名として 200、read の token で 200", async () => {
     const reader = await buildClient({ scopes: "read", name: "reader" });
-    expect((await withoutToken("/api/pages/recent")).status).toBe(401);
+    expect((await withoutToken("/api/pages/recent")).status).toBe(200);
     expect((await reader.request("/api/pages/recent")).status).toBe(200);
     // :id の経路は従来どおり、形式の違う id を 404 にする
     expect((await reader.request("/api/pages/recen")).status).toBe(404);
@@ -423,13 +423,13 @@ describe("GET /api/pages/:id/backlinks", () => {
     expect((await backlinks(client, target.id, "?limit=101")).status).toBe(400);
   });
 
-  it("無いページと形式の違う id は 404、token が無ければ 401", async () => {
+  it("無いページと形式の違う id は 404、token が無ければ匿名として 200", async () => {
     const client = await buildClient();
     for (const id of ["AAAAAAAAAAAAAAAAAAAAAA", "short", "recent"]) {
       expect((await backlinks(client, id)).status).toBe(404);
     }
     const page = await client.create("x");
-    expect((await withoutToken(`/api/pages/${page.id}/backlinks`)).status).toBe(401);
+    expect((await withoutToken(`/api/pages/${page.id}/backlinks`)).status).toBe(200);
     const reader = await buildClient({ scopes: "read", name: "reader" });
     expect((await backlinks(reader, page.id)).status).toBe(200);
   });

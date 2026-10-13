@@ -26,3 +26,20 @@ export function principalHasScope(principal: Principal, required: Scope): boolea
       return false;
   }
 }
+
+/**
+ * 読み取りで見せるページの範囲。`public` は title での取得と一覧系（最近の更新、タグ、検索、backlink）を
+ * public のページだけに絞る。id での取得は範囲に関係なく draft も返す（id を知っていれば読める）。
+ */
+export type ReadableVisibility = "all" | "public";
+
+/** anonymous は public だけ。owner と token は draft も読む（token の scope は宣言の側で検査する）。 */
+export function readableVisibilityOf(principal: Principal): ReadableVisibility {
+  switch (principal.kind) {
+    case "owner":
+    case "token":
+      return "all";
+    case "anonymous":
+      return "public";
+  }
+}
