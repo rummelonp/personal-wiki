@@ -184,6 +184,21 @@ importers:
 
   apps/web:
     dependencies:
+      '@codemirror/autocomplete':
+        specifier: 6.20.3
+        version: 6.20.3
+      '@codemirror/state':
+        specifier: 6.7.5
+        version: 6.7.5
+      '@codemirror/view':
+        specifier: 6.43.12
+        version: 6.43.12
+      '@personal-wiki/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@personal-wiki/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
       '@personal-wiki/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
@@ -206,12 +221,21 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.2
         version: 6.1.2(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(yaml@2.9.1))
+      '@vitest/browser-playwright':
+        specifier: ^5.0.4
+        version: 5.0.4(playwright@1.63.0)(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(yaml@2.9.1))(vitest@5.0.4)
+      playwright:
+        specifier: 1.63.0
+        version: 1.63.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vite:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(yaml@2.9.1)
+      vitest:
+        specifier: ^5.0.4
+        version: 5.0.4(@types/node@22.20.5)(@vitest/browser-playwright@5.0.4)(@vitest/ui@5.0.4)(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(yaml@2.9.1))
 
   apps/worker:
     dependencies:

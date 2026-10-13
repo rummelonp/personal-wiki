@@ -537,19 +537,14 @@ a {
   border-bottom-color: var(--color-border);
 }
 
-.body-editor {
-  display: block;
-  width: 100%;
+/* 本文の書体と大きさは packages/editor が --ui-* のトークンから決める */
+.body-editor .cm-editor {
   min-height: var(--editor-min-height);
-  padding: var(--space-4);
-  font-family: var(--font-sans);
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-prose);
-  color: var(--color-fg);
-  background: var(--color-input);
-  border: 0;
-  border-radius: var(--radius-md);
-  resize: vertical;
+}
+
+/* 本文の下の余白をクリックしても、本文の末尾にカーソルが置けるようにする */
+.body-editor .cm-scroller {
+  flex-grow: 1;
 }
 
 /* 衝突 */

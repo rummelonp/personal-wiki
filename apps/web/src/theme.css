@@ -96,10 +96,35 @@
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
   --diff-max-height: 50vh; /* 衝突の差分の欄の高さの上限（超えるとスクロール） */
   --dot-size: 0.5rem; /* ログイン中と保存済みの点 */
+
+  /*
+   * packages/editor が読むトークン。値は上のトークンから写すだけにして、ここで新しい色を作らない。
+   * --ui-light / --ui-dark は editor の明暗の切り替えで、選んだ側を initial、もう片方を空にする。
+   */
+  --ui-light: initial;
+  --ui-dark: ;
+  --ui-color-background: var(--color-bg);
+  --ui-color-surface: var(--color-input);
+  --ui-color-text: var(--color-fg);
+  --ui-color-muted: var(--color-fg-muted);
+  --ui-color-border: var(--color-border);
+  --ui-color-accent: var(--color-accent);
+  --ui-color-accent-soft: var(--color-tag-bg);
+  --ui-color-on-accent: var(--color-accent-fg);
+  --ui-color-danger: var(--color-danger);
+  --ui-font-body: var(--font-sans);
+  --ui-font-heading: var(--font-serif);
+  --ui-font-mono: var(--font-mono);
+  --ui-radius-sm: var(--radius-sm);
+  /* --ui-space-* は置かない。editor の段階（6 が 1.5rem）とこのファイルの段階が揃っていないので、
+     editor の既定値を使う */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --ui-light: ;
+    --ui-dark: initial;
+
     --color-bg: #111317;
     --color-surface: #15181d;
     --color-input: #1a1d23;
