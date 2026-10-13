@@ -890,4 +890,32 @@ describe("自分のタブの外で走ったリンクの書き換え", () => {
     expect(session.getState().conflict).toMatchObject({ body: "[[新]] 他の編集" });
     expect(session.getState().draft.body).toBe("[[旧]] 本文 追記");
   });
+
+  it("手元が title だけの変更なら、書き換え以外の本文の変更も取り込み、title は残して送り直す", async () => {
+    const { session, server, api } = setup({ server: base() });
+    session.edit({ title: "新題", body: "[[旧]] 本文" });
+    rewritten(server, "他の編集");
+    await session.flush();
+    expect(api.calls).toEqual(["put@1", "get", "put@2"]);
+    expect(session.getState().conflict).toBeNull();
+    expect(server.page).toMatchObject({ title: "新題", body: "他の編集", version: 3 });
+  });
+
+  it("title だけの変更でも、server の title が変わっていれば衝突にする", async () => {
+    const { session, server } = setup({ server: base() });
+    session.edit({ title: "新題", body: "[[旧]] 本文" });
+    server.page = { ...server.page, title: "別題", body: "他の編集", version: 2 };
+    await session.flush();
+    expect(session.getState().conflict).toMatchObject({ title: "別題" });
+  });
+
+  it("本文が変わらず版だけ進んだ（公開設定の変更など）なら、衝突にせず手元の編集を送り直す", async () => {
+    const { session, server, api } = setup({ server: base() });
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    server.page = { ...server.page, visibility: "public", version: 2 };
+    await session.flush();
+    expect(api.calls).toEqual(["put@1", "get", "put@2"]);
+    expect(session.getState().conflict).toBeNull();
+    expect(server.page).toMatchObject({ body: "[[旧]] 本文 追記", visibility: "public" });
+  });
 });

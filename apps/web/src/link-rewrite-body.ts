@@ -59,8 +59,13 @@ export function renamesBetween(before: string, after: string): Map<string, strin
 /**
  * サーバーがリンクの書き換えだけを加えた本文（base → server）に、手元の未保存の編集（base → draft）を
  * 重ねた本文。書き換えだけでは説明できない変化なら null（呼び出し側は衝突として扱う）。
+ *
+ * 片方の本文が base のままなら、もう片方をそのまま採る（本文の 3-way merge）。手元の本文が base なら
+ * server の変更が書き換え以外でも採る。重ねる編集が無く、どちらの側からも失うものが無いため。
+ * title の食い違いはここでは見ないので、呼び出し側で先に確かめる。
  */
 export function rebaseOnLinkRewrite(base: string, server: string, draft: string): string | null {
+  if (server === base) return draft;
   if (draft === base) return server;
   const renames = renamesBetween(base, server);
   if (renames === null) return null;

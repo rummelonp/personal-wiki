@@ -330,6 +330,10 @@ export class EditorSession {
    * server が base にリンクの書き換えだけを加えた版なら、手元の未保存の編集を重ねて base を server に
    * 進め、true を返す。自分のタブの外で走った step（起動時の再開、Cron、別のタブ）が開いているページを
    * 書き換えても、衝突の画面にしない。衝突の画面で上書きを選ぶと、その書き換えが消えるため。
+   *
+   * 手元の本文が base のまま（title だけの変更）なら、server の本文はリンクの書き換え以外の変更でも
+   * 取り込む。本文には重ねる編集が無く、title は server と base が同じことを先に確かめているので、
+   * どちらの変更も失わない。
    */
   private async rebaseOnServer(server: Page): Promise<boolean> {
     if (server.title !== this.state.base.title) return false;
@@ -346,7 +350,7 @@ export class EditorSession {
   }
 
   /**
-   * サーバーで進んだ版を手元に入れる。リンクの書き換えだけの差分なら手元の編集に重ね、そうでなければ、
+   * サーバーで進んだ版を手元に入れる。重ねられる差分（rebaseOnServer）なら手元の編集に重ね、そうでなければ、
    * 手元に未保存の変更が無いときだけそのまま取り込み、あれば衝突にする。
    */
   private async takeIn(server: Page): Promise<void> {

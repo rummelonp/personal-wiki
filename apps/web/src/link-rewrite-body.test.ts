@@ -34,4 +34,14 @@ describe("renamesBetween と rebaseOnLinkRewrite", () => {
   it("書き換えで説明できない変化なら null", () => {
     expect(rebaseOnLinkRewrite("[[旧]] 本文", "[[旧]] 他の編集", "[[旧]] 手元")).toBeNull();
   });
+
+  it("手元の本文が base のままなら、書き換え以外の server の変更もそのまま採る", () => {
+    expect(rebaseOnLinkRewrite("[[旧]] 本文", "[[旧]] 他の編集", "[[旧]] 本文")).toBe(
+      "[[旧]] 他の編集",
+    );
+  });
+
+  it("server の本文が base のままなら、手元の編集をそのまま採る", () => {
+    expect(rebaseOnLinkRewrite("[[旧]] 本文", "[[旧]] 本文", "[[旧]] 手元")).toBe("[[旧]] 手元");
+  });
 });
