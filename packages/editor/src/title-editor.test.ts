@@ -1,0 +1,186 @@
+import { EditorSelection, StateEffect } from "@codemirror/state";
+import { EditorView, runScopeHandlers } from "@codemirror/view";
+import { afterEach, describe, expect, test } from "vitest";
+import { createEditor } from "./create-editor";
+import { createTitleEditor } from "./title-editor";
+
+const cleanups: (() => void)[] = [];
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+});
+
+function mount(create: (parent: HTMLElement) => EditorView): EditorView {
+  const parent = document.createElement("div");
+  document.body.append(parent);
+  const view = create(parent);
+  cleanups.push(() => {
+    view.destroy();
+    parent.remove();
+  });
+  return view;
+}
+
+function setup(title = "題名", body = "一行目\n二行目") {
+  const bodyView = mount((parent) => createEditor(parent, { doc: body }));
+  const titleView = mount((parent) =>
+    createTitleEditor(parent, { doc: title, bodyView: () => bodyView }),
+  );
+  titleView.dispatch({ selection: EditorSelection.cursor(title.length) });
+  return { titleView, bodyView };
+}
+
+const press = (view: EditorView, key: string, init: KeyboardEventInit = {}) =>
+  runScopeHandlers(view, new KeyboardEvent("keydown", { key, ...init }), "editor");
+
+function placeholderOf(view: EditorView): string {
+  const line = view.contentDOM.querySelector(".cm-line");
+  if (!line) throw new Error("the title has no line");
+  return getComputedStyle(line, "::before").content;
+}
+
+/** 空の alt text 付きの「タイトルを入力」。a11y ツリーには出ない */
+const PLACEHOLDER = '"タイトルを入力" / ""';
+
+describe("createTitleEditor", () => {
+  test("replaces newlines in pasted text with spaces", () => {
+    const { titleView } = setup();
+    titleView.dispatch({
+      changes: { from: 2, insert: "a\nb\r\nc" },
+      selection: { anchor: 7 },
+      userEvent: "input.paste",
+    });
+    expect(titleView.state.doc.toString()).toBe("題名a b c");
+    expect(titleView.state.doc.lines).toBe(1);
+    expect(titleView.state.selection.main.head).toBe(7);
+  });
+
+  test("Enter moves to the end of the body's first line without touching the title", () => {
+    const { titleView, bodyView } = setup();
+    expect(press(titleView, "Enter")).toBe(true);
+    expect(titleView.state.doc.toString()).toBe("題名");
+    expect(document.activeElement).toBe(bodyView.contentDOM);
+    expect(bodyView.state.selection.main.head).toBe("一行目".length);
+  });
+
+  test("Shift+Enter and Mod-Enter never insert a newline either", () => {
+    const { titleView } = setup();
+    press(titleView, "Enter", { shiftKey: true });
+    press(titleView, "Enter", { ctrlKey: true });
+    press(titleView, "Enter", { metaKey: true });
+    expect(titleView.state.doc.toString()).toBe("題名");
+  });
+
+  test("Enter without a body view does not insert a newline", () => {
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "題名" }));
+    titleView.dispatch({ selection: EditorSelection.cursor(2) });
+    expect(press(titleView, "Enter")).toBe(true);
+    expect(titleView.state.doc.toString()).toBe("題名");
+  });
+
+  test("Enter calls onCommit before the body takes focus, and ArrowDown does not", () => {
+    const bodyView = mount((parent) => createEditor(parent, { doc: "一行目" }));
+    const focusedOnCommit: (Element | null)[] = [];
+    const titleView = mount((parent) =>
+      createTitleEditor(parent, {
+        doc: "題名",
+        bodyView: () => bodyView,
+        onCommit: () => focusedOnCommit.push(document.activeElement),
+      }),
+    );
+
+    titleView.dispatch({ selection: EditorSelection.cursor(2) });
+    press(titleView, "ArrowDown");
+    expect(focusedOnCommit).toHaveLength(0);
+
+    titleView.focus();
+    press(titleView, "Enter");
+    expect(focusedOnCommit).toEqual([titleView.contentDOM]);
+    expect(document.activeElement).toBe(bodyView.contentDOM);
+  });
+
+  test("Enter calls onCommit even without a body view to move to", () => {
+    let commits = 0;
+    const titleView = mount((parent) =>
+      createTitleEditor(parent, {
+        doc: "題名",
+        onCommit: () => {
+          commits += 1;
+        },
+      }),
+    );
+    press(titleView, "Enter");
+    expect(commits).toBe(1);
+  });
+
+  test("ArrowDown moves to the start of the body", () => {
+    const { titleView, bodyView } = setup();
+    bodyView.dispatch({ selection: EditorSelection.cursor(5) });
+    expect(press(titleView, "ArrowDown")).toBe(true);
+    expect(document.activeElement).toBe(bodyView.contentDOM);
+    expect(bodyView.state.selection.main.head).toBe(0);
+  });
+
+  test("ArrowDown in a wrapped title moves between its lines before moving to the body", () => {
+    const bodyView = mount((parent) => createEditor(parent, { doc: "本文" }));
+    const title = "折り返す長いタイトル".repeat(4);
+    const titleView = mount((parent) => {
+      parent.style.width = "160px";
+      return createTitleEditor(parent, { doc: title, bodyView: () => bodyView });
+    });
+    titleView.dispatch({ selection: EditorSelection.cursor(0) });
+
+    press(titleView, "ArrowDown");
+    expect(document.activeElement).not.toBe(bodyView.contentDOM);
+    expect(titleView.state.selection.main.head).toBeGreaterThan(0);
+
+    titleView.dispatch({ selection: EditorSelection.cursor(title.length) });
+    expect(press(titleView, "ArrowDown")).toBe(true);
+    expect(document.activeElement).toBe(bodyView.contentDOM);
+  });
+
+  test("line commands of the default keymap leave the title alone", () => {
+    const { titleView } = setup();
+    press(titleView, "ArrowDown", { shiftKey: true, altKey: true });
+    press(titleView, "ArrowUp", { shiftKey: true, altKey: true });
+    press(titleView, "o", { ctrlKey: true });
+    expect(titleView.state.doc.toString()).toBe("題名");
+  });
+
+  test("shows the placeholder only while the title is empty, outside the document", () => {
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "" }));
+    expect(placeholderOf(titleView)).toBe(PLACEHOLDER);
+    expect(titleView.contentDOM.getAttribute("aria-placeholder")).toBe("タイトルを入力");
+    // 文字は疑似要素にしか無いので、選択やコピー、composition の DOM に入らない
+    expect(titleView.contentDOM.textContent).toBe("");
+
+    titleView.dispatch({ changes: { from: 0, insert: "題" }, userEvent: "input.type" });
+    expect(placeholderOf(titleView)).toBe("none");
+
+    titleView.dispatch({ changes: { from: 0, to: 1 }, userEvent: "delete.backward" });
+    expect(placeholderOf(titleView)).toBe(PLACEHOLDER);
+  });
+
+  test("a read-only title shows no placeholder, judged from the editable facet rather than the option", () => {
+    const readOnly = mount((parent) => createTitleEditor(parent, { doc: "", readOnly: true }));
+    expect(placeholderOf(readOnly)).toBe("none");
+    expect(readOnly.contentDOM.getAttribute("aria-placeholder")).toBeNull();
+
+    // 今のホストは editable が変わると view を作り直す。ここでは option を経ずに facet だけを
+    // 変え、Compartment で切り替えるようにしても追従することを確かめる
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "" }));
+    expect(placeholderOf(titleView)).toBe(PLACEHOLDER);
+    titleView.dispatch({ effects: StateEffect.appendConfig.of(EditorView.editable.of(false)) });
+    expect(placeholderOf(titleView)).toBe("none");
+    expect(titleView.contentDOM.getAttribute("aria-placeholder")).toBeNull();
+  });
+
+  test("the placeholder takes no room, so the caret and the field height stay put", () => {
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "" }));
+    const emptyHeight = titleView.dom.getBoundingClientRect().height;
+    const emptyCaret = titleView.coordsAtPos(0);
+
+    titleView.dispatch({ changes: { from: 0, insert: "題" } });
+    expect(titleView.dom.getBoundingClientRect().height).toBe(emptyHeight);
+    expect(titleView.coordsAtPos(0)?.left).toBeCloseTo(emptyCaret?.left ?? Number.NaN, 0);
+  });
+});

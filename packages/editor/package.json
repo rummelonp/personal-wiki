@@ -1,0 +1,33 @@
+{
+  "name": "@personal-wiki/editor",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/language-data": "6.5.2",
+    "@codemirror/state": "6.7.5",
+    "@codemirror/view": "6.43.12",
+    "@lezer/common": "1.5.2",
+    "@lezer/highlight": "1.2.3",
+    "@lezer/markdown": "1.7.2",
+    "@personal-wiki/markdown": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitest/browser-playwright": "^5.0.4",
+    "playwright": "1.63.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}
