@@ -47,8 +47,12 @@ function modeExtensions(readOnly: boolean): Extension {
 /**
  * 補完は readOnly の Compartment に入れず、ずっと積んでおく。補完の ViewPlugin は destroy で
  * debounce の timer を止めないので、入力直後や取得の途中に extension ごと外すと、残った timer が
- * 外れた StateField を読んで例外を投げる。読み取り専用では入力が起きないので打鍵では開かず、
- * 開いていた候補は切り替え時に閉じ、候補の適用は wikiLinkAutocomplete 自身と changeFilter が拒む。
+ * 外れた StateField を読んで例外を投げる。
+ *
+ * そのため読み取り専用でも補完は生きている。打鍵では開かないが、明示の起動（Ctrl-Space など）と
+ * 変換の確定後の再開では候補が開き、`[[Title#` なら linkTargets の取得も走る。開いていた候補は
+ * 切り替え時に閉じ、候補の適用は wikiLinkAutocomplete 自身と changeFilter が拒むので、doc は
+ * 変わらない。読み取り専用で候補自体を出さないには、補完の source 側で readOnly を見る必要がある。
  */
 function completionExtensions(
   pageIndex: PageIndex | undefined,
@@ -193,10 +197,13 @@ export function BodyEditor({
     });
   }, [readOnly]);
 
+  // doc と同じ value でも replaceDoc に渡す。変換中は保留した差し替えを最後の value で上書きさせ、
+  // 途中の値（A → S → A の S）を落ち着いた後に一度入れることを防ぐ。doc と同じ本文の適用は
+  // replaceDoc が何もしない
   useLayoutEffect(() => {
     const editor = view.current;
     if (editor === null) return;
-    if (editor.state.doc.toString() !== value) replaceDoc(editor, value);
+    replaceDoc(editor, value);
   }, [value]);
 
   useImperativeHandle(ref, () => ({

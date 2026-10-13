@@ -6,7 +6,7 @@ import {
   isDocReplacement,
   type LinkTargetSource,
 } from "@personal-wiki/editor";
-import { act, createRef } from "react";
+import { act, createRef, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
@@ -63,12 +63,20 @@ function render(props: BodyEditorProps): {
   };
 }
 
-/** 持ち主（PageEditor の EditorSession）の代わり。onChange を受けて value を返し直す */
-function controlled(initial: string, props: Partial<BodyEditorProps> = {}) {
+/**
+ * 持ち主（PageEditor の EditorSession）の代わり。onChange を受けて value を返し直す。
+ * `echo: "microtask"` は本番と同じ時機（useSyncExternalStore の通知は microtask で描く）で描き直す。
+ */
+function controlled(
+  initial: string,
+  props: Partial<BodyEditorProps> = {},
+  echo: "sync" | "microtask" = "sync",
+) {
   let value = initial;
   const onChange = vi.fn((next: string) => {
     value = next;
-    api.rerender({ value });
+    if (echo === "sync") api.rerender({ value });
+    else queueMicrotask(() => api.rerender({ value }));
   });
   const api = render({ value, onChange, ...props });
   return { ...api, onChange, value: () => value };
@@ -110,29 +118,6 @@ describe("本文の受け渡し", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("変換中に外から変わった value は、落ち着いてから差し替える", async () => {
-    const { view, rerender, replacements } = controlled("下書き");
-    const v = view();
-    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
-    rerender({ value: "サーバーの本文" });
-    expect(v.state.doc.toString()).toBe("下書き");
-    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
-    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("サーバーの本文"));
-    expect(replacements).toHaveLength(1);
-  });
-
-  it("差し替えを保留している間に持ち主が入力を受け取ったら、持ち主の本文に合わせ直す", async () => {
-    const { view, rerender, value } = controlled("下書き");
-    const v = view();
-    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
-    rerender({ value: "サーバーの本文" });
-    typeAtEnd(v, "と入力", "input.type.compose");
-    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
-    expect(value()).toBe("下書きと入力");
-    await settle();
-    await vi.waitFor(() => expect(v.state.doc.toString()).toBe(value()));
-  });
-
   it("再描画で EditorView を作り直さない", () => {
     const { view, rerender } = controlled("本文");
     const first = view();
@@ -148,6 +133,102 @@ describe("本文の受け渡し", () => {
     view().focus();
     view().contentDOM.blur();
     expect(onBlur).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe.each([
+  ["同期で描き直す持ち主", "sync"],
+  ["microtask で描き直す持ち主", "microtask"],
+] as const)("変換中の差し替え（%s）", (_, echo) => {
+  /** 変換が落ち着き、保留していた dispatch の task まで済むのを待つ */
+  async function settleComposition(v: EditorView) {
+    await vi.waitFor(() => expect(isCompositionUnsettled(v)).toBe(false));
+    await settle();
+  }
+
+  it("変換中に外から変わった value は、落ち着いてから差し替える", async () => {
+    const { view, rerender, replacements } = controlled("下書き", {}, echo);
+    const v = view();
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    rerender({ value: "サーバーの本文" });
+    expect(v.state.doc.toString()).toBe("下書き");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("サーバーの本文"));
+    expect(replacements).toHaveLength(1);
+  });
+
+  it("差し替えを保留している間に持ち主が入力を受け取ったら、持ち主の本文のまま差し替えない", async () => {
+    const { view, rerender, value, replacements } = controlled("下書き", {}, echo);
+    const v = view();
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    rerender({ value: "サーバーの本文" });
+    typeAtEnd(v, "と入力", "input.type.compose");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    expect(value()).toBe("下書きと入力");
+    await settleComposition(v);
+    expect(v.state.doc.toString()).toBe("下書きと入力");
+    expect(v.state.selection.main.head).toBe("下書きと入力".length);
+    expect(replacements).toHaveLength(0);
+  });
+
+  it("変換中に value が A → S → A と動いたら、途中の S を入れない", async () => {
+    const { view, rerender, replacements } = controlled("下書きの本文", {}, echo);
+    const v = view();
+    v.dispatch({ selection: { anchor: 2 } });
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    rerender({ value: "サーバー" });
+    rerender({ value: "下書きの本文" });
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await settleComposition(v);
+    expect(v.state.doc.toString()).toBe("下書きの本文");
+    expect(v.state.selection.main.head).toBe(2);
+    expect(replacements).toHaveLength(0);
+  });
+});
+
+describe("StrictMode", () => {
+  it("EditorView を 1 つだけ残し、入力と readOnly の切り替えが効く", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    let value = "本文";
+    let readOnly = false;
+    const draw = () =>
+      act(() =>
+        mounted.render(
+          <StrictMode>
+            <BodyEditor value={value} onChange={onChange} readOnly={readOnly} />
+          </StrictMode>,
+        ),
+      );
+    const onChange = vi.fn((next: string) => {
+      value = next;
+      queueMicrotask(draw);
+    });
+    draw();
+
+    expect(container.querySelectorAll(".cm-editor")).toHaveLength(1);
+    const content = container.querySelector<HTMLElement>(".cm-content");
+    const v = content ? EditorView.findFromDOM(content) : null;
+    if (!v) throw new Error("EditorView が無い");
+
+    v.focus();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    await userEvent.keyboard("x");
+    expect(onChange).toHaveBeenLastCalledWith("本文x");
+    expect(v.state.doc.toString()).toBe("本文x");
+
+    readOnly = true;
+    draw();
+    expect(v.state.readOnly).toBe(true);
+    await userEvent.keyboard("y");
+    expect(v.state.doc.toString()).toBe("本文x");
+
+    readOnly = false;
+    draw();
+    expect(v.state.readOnly).toBe(false);
+    expect(container.querySelectorAll(".cm-editor")).toHaveLength(1);
   });
 });
 

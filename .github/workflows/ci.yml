@@ -29,8 +29,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      # packages/editor のテストは headless の Chromium の中で動かす。headless では
-      # headless shell しか使わないので、それだけを入れる
+      # packages/editor と apps/web のテストは headless の Chromium の中で動かす。headless では
+      # headless shell しか使わないので、それだけを入れる。
+      # ブラウザは editor の playwright の版で入れるので、apps/web の playwright は editor と
+      # 同じ版に固定する（片方だけ上げると、web のテストが自分の版のブラウザを見つけられない）。
+      # @codemirror/* も editor と web で同じ版にする（版が割れると @codemirror/state が 2 つ
+      # 読み込まれ、web から渡した extension を editor の view が受け付けない）
       - id: playwright
         run: echo "version=$(pnpm --filter @personal-wiki/editor exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6.1.0

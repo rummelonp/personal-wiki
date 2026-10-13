@@ -65,6 +65,20 @@ describe("createTitleIndex", () => {
     expect(index.search("Note")).toHaveLength(1);
   });
 
+  it("途中で失敗したら、取れた分までを候補にする", async () => {
+    const responses: (() => Promise<ApiResult<PageList<PageSummary>>>)[] = [
+      async () => listOk([summary("1", "一枚目")], "c1"),
+      async () => listOk([summary("2", "二枚目")], "c2"),
+      async () => ({ ok: false, reason: "error", message: "サーバーに接続できない" }),
+    ];
+    const list = vi.fn<ListTitles>(() => (responses.shift() as () => Promise<never>)());
+    const index = createTitleIndex(list);
+    await expect(index.refresh()).resolves.toBeUndefined();
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(index.search("一枚目")).toContainEqual({ id: "1", title: "一枚目" });
+    expect(index.search("二枚目")).toContainEqual({ id: "2", title: "二枚目" });
+  });
+
   it("遅れて終わった古い取り直しで上書きしない", async () => {
     let release: (() => void) | undefined;
     const responses = [
