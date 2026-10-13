@@ -1116,4 +1116,37 @@ describe("リンクの書き換えの取り込み", () => {
     expect(container?.textContent).toContain("この title はリンクに書けないので");
     expect(stepLinkRewrites).not.toHaveBeenCalled();
   });
+
+  it("リンクに書けない title の案内は、書き換えの数を返さない保存で title を変えたら消す", async () => {
+    vi.mocked(updatePage).mockImplementationOnce(async (_id, version, input) =>
+      ok({
+        ...PAGE,
+        ...input,
+        version: version + 1,
+        linkRewrites: { queued: 0, skipped: "unsafe_title" },
+      }),
+    );
+    const { view } = renderPage();
+    act(() => titleInput().focus());
+    typeTitle("新#");
+    act(() => titleInput().blur());
+    await flushAsync();
+    expect(container?.textContent).toContain("この title はリンクに書けないので");
+
+    // 本文だけの保存（title が変わらない）では消さない
+    view().focus();
+    typeAtEnd(view(), "追記");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(2);
+    expect(container?.textContent).toContain("この title はリンクに書けないので");
+
+    // リンク元が無い title への変更は、応答に linkRewrites が付かない
+    act(() => titleInput().focus());
+    typeTitle("新");
+    act(() => titleInput().blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(3);
+    expect(container?.textContent).not.toContain("この title はリンクに書けないので");
+  });
 });

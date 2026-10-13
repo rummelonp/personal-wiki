@@ -45,15 +45,15 @@ import { homeHref, navigate, pageHrefFor } from "./route";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
-/** 保存の応答のリンクの書き換えの数は、セッションに渡さず onLinkRewrites に渡す。 */
-function editorApi(onLinkRewrites: (queued: LinkRewritesQueued) => void): EditorApi {
+/** 保存の応答のリンクの書き換えの数は、セッションに渡さず、保存した title と一緒に onLinkRewrites に渡す。 */
+function editorApi(onLinkRewrites: (title: string, queued: LinkRewritesQueued) => void): EditorApi {
   return {
     getPage: (id) => getPage(id),
     updatePage: async (id, version, input, options) => {
       const res = await updatePage(id, version, input, options);
       if (!res.ok) return res;
       const { linkRewrites: queued, ...page } = res.value;
-      if (queued !== undefined) onLinkRewrites(queued);
+      if (queued !== undefined) onLinkRewrites(page.title, queued);
       return { ok: true, value: page };
     },
     setVisibility: (id, version, visibility) => setVisibility(id, version, visibility),
@@ -105,7 +105,7 @@ type LinkNotice =
 function useEditorSession(
   page: Page,
   whenSettled: () => Promise<void>,
-  onLinkRewrites: (queued: LinkRewritesQueued) => void,
+  onLinkRewrites: (title: string, queued: LinkRewritesQueued) => void,
 ): EditorSession {
   const [session] = useState(
     () =>
@@ -146,12 +146,14 @@ interface PageEditorProps {
 
 export function PageEditor({ page, attachments = false, onShown }: PageEditorProps) {
   const editor = useRef<BodyEditorHandle>(null);
-  const [unsafeTitle, setUnsafeTitle] = useState(false);
+  // リンクに書けないと知らされた title。保存の応答は、積んだものも飛ばしたものも無ければ書き換えの
+  // 数を返さないので、応答ではなく保存済みの title と比べて、別の title に変えたら案内を消す
+  const [unsafeTitle, setUnsafeTitle] = useState<string | null>(null);
   const session = useEditorSession(
     page,
     () => editor.current?.whenSettled() ?? Promise.resolve(),
-    (queued) => {
-      setUnsafeTitle(queued.skipped === "unsafe_title");
+    (title, queued) => {
+      setUnsafeTitle(queued.skipped === "unsafe_title" ? title : null);
       if (queued.queued > 0) linkRewrites.start(queued.queued);
     },
   );
@@ -460,11 +462,11 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           </section>
         )}
 
-        {unsafeTitle && (
+        {unsafeTitle !== null && unsafeTitle === savedTitle && (
           <section className="message message-warn" role="alert">
             <p>この title はリンクに書けないので、他のページのリンクは自動では書き換わらない。</p>
             <div className="actions">
-              <button type="button" className="button" onClick={() => setUnsafeTitle(false)}>
+              <button type="button" className="button" onClick={() => setUnsafeTitle(null)}>
                 閉じる
               </button>
             </div>
