@@ -486,7 +486,13 @@ describe("匿名向けの応答の総当たり", () => {
         `/api/pages/${draft.id}/backlinks`,
         `/api/pages/${gone.id}/backlinks`,
       ],
-      "GET /*": ["/", `/${encodeURIComponent("Hidden Plan")}`, `/p/${open.id}`],
+      "GET /*": [
+        "/",
+        `/${encodeURIComponent("Hidden Plan")}`,
+        `/${encodeURIComponent("Hidden Plan")}/`,
+        `/p/${open.id}`,
+        `/p/${open.id}/`,
+      ],
     };
   }
 
