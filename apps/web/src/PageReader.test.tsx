@@ -73,7 +73,10 @@ afterEach(() => {
   history.replaceState(null, "", startUrl);
 });
 
-function renderReader(page: Page = PAGE, onShown?: Parameters<typeof PageReader>[0]["onShown"]) {
+function renderReader(
+  page: Page = PAGE,
+  onShown: (page: Pick<Page, "id" | "title" | "visibility">) => void = () => {},
+) {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
