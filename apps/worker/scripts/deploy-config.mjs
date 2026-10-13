@@ -15,6 +15,7 @@ export const GENERATED_CONFIG_PATH = `${WORKER_DIR}wrangler.deploy.json`;
 // wrangler.jsonc の bindings の名前。値を差し替える対象をこの名前で探す。
 const D1_BINDING = "DB";
 const R2_BINDING = "BUCKET";
+const OAUTH_KV_BINDING = "OAUTH_KV";
 
 /**
  * @typedef {{
@@ -22,6 +23,7 @@ const R2_BINDING = "BUCKET";
  *   d1DatabaseName: string;
  *   d1DatabaseId: string;
  *   r2BucketName: string | undefined;
+ *   oauthKvNamespaceId: string | undefined;
  *   accountId: string | undefined;
  *   ownerAuth: OwnerAuthValues | undefined;
  * }} DeployValues
@@ -93,6 +95,7 @@ const KNOWN_KEYS = new Set([
   "D1_DATABASE_ID",
   "D1_DATABASE_NAME",
   "R2_BUCKET_NAME",
+  "OAUTH_KV_NAMESPACE_ID",
   "CLOUDFLARE_ACCOUNT_ID",
   "ACCESS_TEAM_DOMAIN",
   "ACCESS_AUD",
@@ -101,11 +104,13 @@ const KNOWN_KEYS = new Set([
 const OWNER_AUTH_KEYS = ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "OWNER_EMAILS"];
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 
 /**
  * deploy.env の内容から、デプロイ先ごとの値を取り出す。
  * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
+ * OAUTH_KV_NAMESPACE_ID が空なら oauthKvNamespaceId は undefined になり、OAuth を閉じた構成にして警告する。
  * owner のログインの 3 つの値は、すべて空なら ownerAuth を undefined にして警告する。一部だけなら
  * problems にする（ログインできないままデプロイしても気づきにくいため）。
  * @param {string} envText
@@ -135,6 +140,16 @@ export function readDeployValues(envText) {
       "D1_DATABASE_ID は UUID 形式（wrangler d1 create が表示する database_id）にしてください",
     );
   }
+  const oauthKvNamespaceId = get("OAUTH_KV_NAMESPACE_ID");
+  if (oauthKvNamespaceId === undefined) {
+    warnings.push(
+      "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai などのカスタムコネクタからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）",
+    );
+  } else if (!KV_NAMESPACE_ID_PATTERN.test(oauthKvNamespaceId)) {
+    problems.push(
+      "OAUTH_KV_NAMESPACE_ID は wrangler kv namespace create が表示する 32 桁の 16 進の id にしてください",
+    );
+  }
   const ownerAuth = readOwnerAuth(get, problems, warnings);
   if (problems.length > 0 || hostname === undefined || d1DatabaseId === undefined) {
     return { problems };
@@ -145,6 +160,7 @@ export function readDeployValues(envText) {
       d1DatabaseId,
       d1DatabaseName: get("D1_DATABASE_NAME") ?? "personal-wiki",
       r2BucketName: get("R2_BUCKET_NAME"),
+      oauthKvNamespaceId,
       accountId: get("CLOUDFLARE_ACCOUNT_ID"),
       ownerAuth,
     },
@@ -199,6 +215,7 @@ function readOwnerAuth(get, problems, warnings) {
  * 差し替える箇所は binding の名前で探し、見つからなければ例外にする。
  * routes は元の内容を捨てて、ホスト名 1 件の custom_domain に置き換える。
  * r2BucketName が無いときは、R2 の binding を設定から外す。
+ * oauthKvNamespaceId が無いときは、OAuth の KV の binding を設定から外す（Worker は OAuth を閉じる）。
  * ownerAuth があれば vars に入れる。無ければ vars に入れず、Worker はログインを拒む。
  * @param {Record<string, any>} base
  * @param {DeployValues} values
@@ -225,6 +242,21 @@ export function composeConfig(base, values) {
     if (r2 === undefined)
       throw new Error(`wrangler.jsonc に R2 binding "${R2_BINDING}" がありません`);
     r2.bucket_name = values.r2BucketName;
+  }
+  const namespaces = config.kv_namespaces ?? [];
+  if (values.oauthKvNamespaceId === undefined) {
+    const rest = namespaces.filter(
+      (/** @type {{ binding: string }} */ b) => b.binding !== OAUTH_KV_BINDING,
+    );
+    if (rest.length > 0) config.kv_namespaces = rest;
+    else delete config.kv_namespaces;
+  } else {
+    const kv = namespaces.find(
+      (/** @type {{ binding: string }} */ b) => b.binding === OAUTH_KV_BINDING,
+    );
+    if (kv === undefined)
+      throw new Error(`wrangler.jsonc に KV binding "${OAUTH_KV_BINDING}" がありません`);
+    kv.id = values.oauthKvNamespaceId;
   }
   if (values.accountId !== undefined) config.account_id = values.accountId;
   if (values.ownerAuth !== undefined) {

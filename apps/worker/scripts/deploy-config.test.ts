@@ -14,12 +14,14 @@ import {
 } from "./deploy-config.mjs";
 
 const UUID = "00000000-0000-0000-0000-000000000000";
+const KV_ID = "0123456789abcdef0123456789abcdef";
 
 const VALUES = {
   hostname: "wiki.test.example",
   d1DatabaseName: "my-wiki",
   d1DatabaseId: UUID,
   r2BucketName: "my-wiki-files",
+  oauthKvNamespaceId: KV_ID,
   accountId: undefined,
   ownerAuth: undefined,
 };
@@ -28,6 +30,8 @@ const AUD = "0123456789abcdef".repeat(4);
 const OWNER_AUTH_ENV = `ACCESS_TEAM_DOMAIN=team.cloudflareaccess.com\nACCESS_AUD=${AUD}\nOWNER_EMAILS= a@example.com , b@example.com \n`;
 const NO_OWNER_AUTH_WARNING =
   "ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS が無いので、owner のログインは使えません（token の API と MCP は使えます）";
+const NO_OAUTH_WARNING =
+  "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai などのカスタムコネクタからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）";
 
 const BASE = {
   name: "personal-wiki",
@@ -38,6 +42,7 @@ const BASE = {
     { binding: "OTHER", database_name: "other" },
   ],
   r2_buckets: [{ binding: "BUCKET", bucket_name: "personal-wiki" }],
+  kv_namespaces: [{ binding: "OAUTH_KV" }],
 };
 
 describe("stripJsonc", () => {
@@ -63,11 +68,12 @@ describe("stripJsonc", () => {
     const config = JSON.parse(stripJsonc(text));
     expect(config.d1_databases[0].binding).toBe("DB");
     expect(config.r2_buckets[0].binding).toBe("BUCKET");
+    expect(config.kv_namespaces[0].binding).toBe("OAUTH_KV");
   });
 });
 
 describe("readDeployValues", () => {
-  it("必須の値と任意の値を読み、D1 の名前は既定値で補う。R2 は空なら使わない", () => {
+  it("必須の値と任意の値を読み、D1 の名前は既定値で補う。R2 と OAuth の KV は空なら使わない", () => {
     const result = readDeployValues(
       `WIKI_HOSTNAME=wiki.test.example\nD1_DATABASE_ID=${UUID}\n# コメント\nR2_BUCKET_NAME=\nCLOUDFLARE_ACCOUNT_ID=acct\n`,
     );
@@ -77,16 +83,17 @@ describe("readDeployValues", () => {
         d1DatabaseId: UUID,
         d1DatabaseName: "personal-wiki",
         r2BucketName: undefined,
+        oauthKvNamespaceId: undefined,
         accountId: "acct",
         ownerAuth: undefined,
       },
-      warnings: [NO_OWNER_AUTH_WARNING],
+      warnings: [NO_OAUTH_WARNING, NO_OWNER_AUTH_WARNING],
     });
   });
 
   it("owner のログインの値を読み、メールの前後の空白を除く", () => {
     const result = readDeployValues(
-      `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n${OWNER_AUTH_ENV}`,
+      `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\nOAUTH_KV_NAMESPACE_ID=${KV_ID}\n${OWNER_AUTH_ENV}`,
     );
     expect(result).toEqual({
       values: expect.objectContaining({
@@ -129,6 +136,19 @@ describe("readDeployValues", () => {
     expect(result).toMatchObject({ values: { r2BucketName: "files" } });
   });
 
+  it("OAUTH_KV_NAMESPACE_ID があれば使い、32 桁の 16 進でなければ弾く", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(readDeployValues(`${base}OAUTH_KV_NAMESPACE_ID=${KV_ID}\n`)).toMatchObject({
+      values: { oauthKvNamespaceId: KV_ID },
+      warnings: [NO_OWNER_AUTH_WARNING],
+    });
+    for (const id of ["OAUTH_KV", UUID, `${KV_ID}0`]) {
+      expect(readDeployValues(`${base}OAUTH_KV_NAMESPACE_ID=${id}\n`), id).toHaveProperty(
+        "problems",
+      );
+    }
+  });
+
   it("足りない必須の値をすべて挙げる。空の値は無いものとして扱う", () => {
     expect(readDeployValues("")).toEqual({
       problems: ["WIKI_HOSTNAME がありません", "D1_DATABASE_ID がありません"],
@@ -155,7 +175,7 @@ describe("readDeployValues", () => {
     );
     expect(result).toMatchObject({
       values: { hostname: "h.example" },
-      warnings: ["未知のキー R2_BUCKET は使われません", NO_OWNER_AUTH_WARNING],
+      warnings: ["未知のキー R2_BUCKET は使われません", NO_OAUTH_WARNING, NO_OWNER_AUTH_WARNING],
     });
   });
 });
@@ -191,6 +211,17 @@ describe("composeConfig", () => {
     ).not.toThrow();
   });
 
+  it("oauthKvNamespaceId があれば OAUTH_KV に id を入れ、無ければ OAUTH_KV を外す", () => {
+    expect(composeConfig(BASE, VALUES).kv_namespaces).toEqual([{ binding: "OAUTH_KV", id: KV_ID }]);
+    expect(composeConfig(BASE, { ...VALUES, oauthKvNamespaceId: undefined })).not.toHaveProperty(
+      "kv_namespaces",
+    );
+    const withOther = { ...BASE, kv_namespaces: [...BASE.kv_namespaces, { binding: "OTHER" }] };
+    expect(
+      composeConfig(withOther, { ...VALUES, oauthKvNamespaceId: undefined }).kv_namespaces,
+    ).toEqual([{ binding: "OTHER" }]);
+  });
+
   it("入力を書き換えない", () => {
     const before = structuredClone(BASE);
     composeConfig(BASE, VALUES);
@@ -223,6 +254,7 @@ describe("composeConfig", () => {
   it("対象の binding が無ければ例外にする", () => {
     expect(() => composeConfig({ ...BASE, d1_databases: [] }, VALUES)).toThrow(/"DB"/);
     expect(() => composeConfig({ ...BASE, r2_buckets: [] }, VALUES)).toThrow(/"BUCKET"/);
+    expect(() => composeConfig({ ...BASE, kv_namespaces: [] }, VALUES)).toThrow(/"OAUTH_KV"/);
   });
 });
 
@@ -245,7 +277,8 @@ describe("writeGeneratedConfig", () => {
     expect(written.routes[0].pattern).toBe("h.example");
     expect(written).not.toHaveProperty("r2_buckets");
     expect(written.vars.ACCESS_AUD).toBe(AUD);
-    expect(opts.warnings).toHaveLength(1);
+    expect(written).not.toHaveProperty("kv_namespaces");
+    expect(opts.warnings).toHaveLength(2);
     expect(opts.warnings[0]).toContain(opts.envPath);
   });
 

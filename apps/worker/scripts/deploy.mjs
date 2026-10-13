@@ -21,8 +21,11 @@ export const HELP = `usage:
        pnpm exec wrangler d1 create personal-wiki --update-config=false
      R2 は添付とバックアップで使う。ダッシュボードで R2 を有効にしてから作る（有効化前は省略してよい）
        pnpm exec wrangler r2 bucket create personal-wiki --update-config=false
+     claude.ai や Claude Desktop のカスタムコネクタ（OAuth）から MCP に接続するときだけ、KV を作る
+       pnpm exec wrangler kv namespace create personal-wiki-oauth --update-config=false
   3. cp deploy.env.example deploy.env を実行し、ホスト名と database_id を書く
        R2 を作ったときだけ R2_BUCKET_NAME を書く。空のままなら R2 の binding を付けずにデプロイする
+       KV を作ったときだけ OAUTH_KV_NAMESPACE_ID に表示された id を書く。空のままなら OAuth は閉じる
        ホスト名の DNS ゾーンが、ログインしたアカウントにあること（custom_domain の前提）
   4. owner のログイン（ブラウザからの閲覧・編集）を使うときだけ:
        Cloudflare Zero Trust で /_auth/login だけを対象にした Access のアプリケーションを作り、
@@ -38,6 +41,10 @@ export const HELP = `usage:
   8. MCP 接続（MCP エンドポイントの実装後。パスは実装に合わせる）
        claude mcp add --transport http personal-wiki https://<ホスト名>/mcp \\
          --header "Authorization: Bearer <トークン>"
+  9. claude.ai や Claude Desktop のカスタムコネクタ（手順 2 の KV と手順 4 の owner のログインが要る）:
+       コネクタの URL に https://<ホスト名>/mcp を入れて接続する。ブラウザで同意画面が開くので、
+       クライアント名と送り先のホストを確かめ、read か read と write を選んで許可する
+       （ログインしていなければ /_auth/login を経由してから同意画面に戻る）
 
 更新のとき（migration を含む版をデプロイするとき）は、次の順に実行する:
   pnpm db:migrate:remote
@@ -49,7 +56,7 @@ export const HELP = `usage:
   書かないので、戻している間に保存したページの分が古いまま残る
 
 ここでの deploy は wrangler の自動プロビジョニングを無効にする（--x-provision=false）。
-D1 と R2 は手順 2 で作ったものだけを使う。
+D1、R2、KV は手順 2 で作ったものだけを使う。
 
 owner のセッションを切るとき:
   - SESSION_SECRET を入れ替えると、発行済みのセッション cookie はすべてすぐに無効になる。
