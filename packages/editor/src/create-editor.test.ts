@@ -48,9 +48,9 @@ function dispatchDrop(v: EditorView, dataTransfer: DataTransfer) {
 }
 
 // 閲覧のみの view も focus・カーソル移動はできる（`EditorView.editable` は true のまま）。
-// `EditorState.readOnly` が入力側の transaction だけを拒む。IME の確定を拒むことは
-// packages/editor の Vitest browser mode では作れない composition が要るため、
-// e2e で確かめる。
+// `EditorState.readOnly` が入力側の transaction だけを拒む。IME の確定を拒むことは、
+// 本物の composition を作れないこのテストでは確かめられない。CDP で IME 入力を流す E2E を
+// 足すまでは未確認のまま残る。
 describe("createEditor({ readOnly: true })", () => {
   it("keeps the view focusable so the cursor can move in", async () => {
     const v = mount("本文");

@@ -78,10 +78,11 @@ function sameContent(a: PageEmbedContent, b: PageEmbedContent): boolean {
  * 取り直して内容が変わらなければ前のオブジェクトを返し続け、`onChange` も呼ばない
  * （widget が DOM を作り直さない）。
  *
- * 取得の失敗（404 以外）は未解決にしない。未解決は「無いか読めない」だけを意味し
+ * 取得の失敗（404 以外）は未解決にしない。未解決は「無いか読めない」だけを意味する
  * ので、一時的な失敗を混ぜると reload するまで無い page に見える。
  * 失敗したら前の内容（一度も取得できていなければ取得中）を残し、間隔を空けて再試行する。
- * `refresh`（本文の更新が届いた）はサーバー側が動いている目安になる（API の応答の保証ではない）ので、再試行の待ちを解いてすぐ取り直す。
+ * `refresh`（本文の更新が届いた）はサーバー側が動いている目安になる（API の応答の保証ではない）
+ * ので、再試行の待ちを解いてすぐ取り直す。
  * 失敗の回数は残すので、また失敗すれば続きの間隔から待つ。
  */
 export function createPageEmbedCache(options: PageEmbedCacheOptions): PageEmbedCache {

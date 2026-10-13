@@ -620,7 +620,7 @@ describe("with history", () => {
 });
 
 // CodeMirror は composition 中の keydown（keyCode 229）を keymap に渡す前に捨てるので、実際の
-// キー入力（e2e）ではこのガードに届かない。Safari のように compositionend と keydown の順序が
+// キー入力ではこのガードに届かない。Safari のように compositionend と keydown の順序が
 // 入れ替わったときに頼るガードなので、ここでは keymap を直接呼んで確かめる。
 // 既定の keymap を載せると、ガードが false を返した後の Shift+Enter を insertNewlineAndIndent が
 // 拾ってしまうので、list-keymap だけの view で見る。

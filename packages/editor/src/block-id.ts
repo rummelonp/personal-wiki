@@ -155,7 +155,7 @@ const HIGHLIGHT_DURATION_MS = 2000;
  * dispatch してしまうため、plugin の destroy でタイマーを解除する。
  *
  * タイマー発火時に composition 中だと、確定前の文字列がある DOM へ dispatch してしまい
- * IME 不変条件を破る（decoration-plugin.ts の「IME 不変条件 1」と同種の問題）。
+ * IME 不変条件 1（ime.ts）を破る。
  * その場合は dispatch を見送り、`compositionSettled`（ime.ts、composition 終了を通知する
  * 空の transaction）を待って 1 回だけ flush する。
  */

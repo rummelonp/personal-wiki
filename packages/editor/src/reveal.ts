@@ -5,8 +5,8 @@ import type { EditorView } from "@codemirror/view";
  * source を出す範囲の広さ。
  *
  * `"range"` は記法そのものと selection の交差だけを見る既定。
- * `"line"` は交差判定をカーソル行全体まで広げる。IME が記法の隣で壊れる場合の
- * 緩和策を、各 extension を書き換えずに切り替えるための口。
+ * `"line"` は交差判定をカーソル行全体まで広げる。記法の隣で変換が壊れる IME が見つかったとき、
+ * 各 extension を書き換えずに切り替えられる緩和策として残している。
  */
 export type RevealPolicy = "range" | "line";
 
