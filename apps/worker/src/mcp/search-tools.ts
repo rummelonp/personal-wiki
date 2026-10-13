@@ -54,7 +54,8 @@ export const searchTool = defineTool({
   scope: "read",
   title: "ページを探す",
   description: [
-    "title と本文の部分一致でページを探し、id、title、本文の抜粋を返す。draft も含む。",
+    "title と本文の部分一致でページを探し、id、title、本文の抜粋、tags を返す。draft も含む。",
+    "excerpt は一致した位置の周辺の本文で、tags はページに付いたタグの表記。",
     "3 文字以上は全文検索で関連度の順、2 文字以下は部分一致で更新が新しい順。短い語で見つからなければ語を足す。",
     "全角半角と、英字の大文字小文字は区別しない。",
   ].join("\n"),
@@ -81,8 +82,10 @@ export const listRecentTool = defineTool({
   name: "list_recent",
   scope: "read",
   title: "最近の更新",
-  description:
+  description: [
     "ページを更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
+    "各件に tags（ページに付いたタグの表記）と、本文の先頭の excerpt を付ける。本文が空のページと、抜粋を作り直す前のページには excerpt が無い。",
+  ].join("\n"),
   inputSchema: z.strictObject({
     limit: limitSchema(LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT),
     cursor: cursorSchema,
