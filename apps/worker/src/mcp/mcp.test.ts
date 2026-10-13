@@ -269,6 +269,9 @@ describe("tools/list", () => {
     expect(byName.update_page?.description).toContain("read_page で取った version が必須");
     expect(byName.update_page?.description).toContain("上書きで押し切らない");
     expect(byName.append_to_page?.description).toContain("そのまま送り直してよい");
+    for (const name of ["create_page", "update_page", "append_to_page"]) {
+      expect(byName[name]?.description).toContain("秘密を書かない");
+    }
   });
 
   it("2025 年版のプロトコルの initialize と、ヘッダー付きの tools/list に応える", async () => {

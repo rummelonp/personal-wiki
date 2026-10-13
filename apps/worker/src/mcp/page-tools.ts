@@ -18,6 +18,9 @@ import { pageUrls } from "../pages/urls";
 import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool";
 
 const LIMITS = `上限は UTF-8 で title が ${MAX_TITLE_BYTES} バイト、body が ${MAX_BODY_BYTES} バイト。`;
+/** instructions を AI に渡さないクライアントもあるので、書き込みの tool ごとに description にも書く */
+const NO_SECRETS =
+  "draft も URL を知っていれば誰でも読めるので、パスワードやトークンなどの秘密を書かない。";
 
 /** 書き込みの結果。上限近い本文を書き込みのたびに送り返さないよう、本文は含めない。 */
 function pageSummary(page: Page, origin: string) {
@@ -84,6 +87,7 @@ export const createPageTool = defineTool({
     "ページを新しく作る。作る前に search で同じ主題を探し、あれば作らずに append_to_page か update_page を使う。",
     "ページは常に draft で作られる。title は wiki 全体で一意で、重なると title_conflict になる。",
     LIMITS,
+    NO_SECRETS,
   ].join("\n"),
   inputSchema: z.strictObject({
     title: z.string().describe("ページの title（1 行）"),
@@ -114,6 +118,7 @@ export const updatePageTool = defineTool({
     "read_page で取った version が必須。title を変えないときも読んだ title を渡す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して変更を載せ直し、current.version で保存し直す。上書きで押し切らない。",
     LIMITS,
+    NO_SECRETS,
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema,
@@ -166,6 +171,7 @@ export const appendToPageTool = defineTool({
     "本文が改行で終わっていなければ改行を 1 つ挟む。段落を分けたいときは text の先頭に空行を入れる。",
     "append_conflict（他の保存との競合が続いた）で失敗したら、同じ text をそのまま送り直してよい。",
     LIMITS,
+    NO_SECRETS,
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema,
