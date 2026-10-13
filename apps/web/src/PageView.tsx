@@ -55,6 +55,11 @@ export function PageView({ target, owner }: PageViewProps) {
     };
   }, [targetKey]);
 
+  // ページを表示していない間は、前に開いたページの title を残さない。表示した後は onShown が決める
+  useEffect(() => {
+    if (state.status !== "ready") setDocumentTitle(null);
+  }, [state.status]);
+
   const show = useCallback((page: Pick<PageSummary, "id" | "title" | "visibility">) => {
     const path = pageHrefFor(page);
     shownPath.current = path;

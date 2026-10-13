@@ -14,6 +14,7 @@ import {
   type Page,
   resolvePages,
 } from "./pages-api";
+import { navigate } from "./route";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -155,6 +156,16 @@ describe("App の匿名の画面", () => {
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
     expect(document.title).toBe("公開の題 - personal-wiki");
+  });
+
+  it("次のページを読み込む間は、前のページの title を document.title に残さない", async () => {
+    serve("anonymous", [PUBLIC]);
+    await renderAt(titleUrl(PUBLIC.title));
+    await vi.waitFor(() => expect(document.title).toBe("公開の題 - personal-wiki"));
+    vi.mocked(findPageByTitle).mockReturnValue(new Promise(() => {}));
+    act(() => navigate(titleUrl("次の題")));
+    await vi.waitFor(() => expect(main()?.textContent).toContain("読み込み中"));
+    expect(document.title).toBe("personal-wiki");
   });
 
   it("/p/<id> で開いた公開ページは /<title> に置き換え、取り直さない", async () => {
