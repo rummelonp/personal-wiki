@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { fetchMe } from "./api";
+import { fetchMe, logout } from "./api";
 import {
   type ApiResult,
   findPageByTitle,
@@ -85,18 +85,36 @@ afterEach(() => {
   history.replaceState(null, "", startUrl);
 });
 
-/** API が返す内容を owner と匿名で分けて与える。匿名には draft が無いものとして返る */
+const tagOf = (page: Page) => `${page.title}のタグ`;
+
+/**
+ * Worker の API と同じ範囲を返す。title、一覧、タグでは、匿名に draft を無いものとして返す。
+ * `GET /api/pages/:id` は id を知っていれば draft も読めるので、principal で絞らない。
+ * ログアウトすると、その後の要求は匿名として扱う。
+ */
 function serve(me: "owner" | "anonymous", pages: readonly Page[]) {
-  vi.mocked(fetchMe).mockResolvedValue({ kind: me });
-  const visible = pages.filter((page) => me === "owner" || page.visibility === "public");
+  let signedIn = me === "owner";
+  vi.mocked(fetchMe).mockImplementation(async () => ({
+    kind: signedIn ? "owner" : "anonymous",
+  }));
+  vi.mocked(logout).mockImplementation(async () => {
+    signedIn = false;
+  });
+  const listed = () => pages.filter((page) => signedIn || page.visibility === "public");
   vi.mocked(getPage).mockImplementation(async (id) => {
-    const page = visible.find((p) => p.id === id);
+    const page = pages.find((p) => p.id === id);
     return page ? ok(page) : notFound;
   });
   vi.mocked(findPageByTitle).mockImplementation(async (title) => {
-    const page = visible.find((p) => p.title === title);
+    const page = listed().find((p) => p.title === title);
     return page ? ok(page) : notFound;
   });
+  vi.mocked(listRecent).mockImplementation(async () =>
+    ok({ pages: listed().map((page) => ({ ...page, tags: [tagOf(page)] })), nextCursor: null }),
+  );
+  vi.mocked(listTags).mockImplementation(async () =>
+    ok(listed().map((page) => ({ tag: tagOf(page), count: 1 }))),
+  );
 }
 
 async function renderAt(path: string) {
@@ -114,17 +132,14 @@ const header = () => container?.querySelector("header");
 
 describe("App の匿名の画面", () => {
   it("トップで公開ページの一覧と検索とタグを出し、owner の操作を出さない", async () => {
-    serve("anonymous", [PUBLIC]);
-    vi.mocked(listRecent).mockResolvedValue(
-      ok({ pages: [{ ...PUBLIC, tags: ["タグ"] }], nextCursor: null }),
-    );
-    vi.mocked(listTags).mockResolvedValue(ok([{ tag: "タグ", count: 1 }]));
+    serve("anonymous", [PUBLIC, DRAFT]);
     await renderAt("/");
     await vi.waitFor(() =>
       expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
     );
     expect(main()?.querySelector("input[type='search'], form input")).not.toBeNull();
-    expect(main()?.textContent).toContain("タグ");
+    expect(main()?.textContent).toContain(tagOf(PUBLIC));
+    expect(main()?.textContent).not.toContain(DRAFT.title);
     expect(main()?.querySelectorAll("button")).toHaveLength(0);
     expect(header()?.querySelectorAll("button")).toHaveLength(0);
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
@@ -152,13 +167,21 @@ describe("App の匿名の画面", () => {
     expect(findPageByTitle).not.toHaveBeenCalled();
   });
 
-  it("draft と存在しないページで同じ 404 を出す", async () => {
+  it("/p/<id> で開いた draft は読み取り専用で読め、URL は /p/<id> のまま", async () => {
+    serve("anonymous", [PUBLIC, DRAFT]);
+    await renderAt(`/p/${DRAFT.id}`);
+    await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("下書きの題"));
+    expect(main()?.querySelector(".title-input")).toBeNull();
+    expect(location.pathname).toBe(`/p/${DRAFT.id}`);
+    expect(getPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("title で引いた draft と存在しないページで同じ 404 を出す", async () => {
     serve("anonymous", [PUBLIC, DRAFT]);
     const shown: string[] = [];
     for (const path of [
       titleUrl(DRAFT.title),
       titleUrl("存在しない題"),
-      `/p/${DRAFT.id}`,
       "/p/ZZZZZZZZZZZZZZZZZZZZZZ",
     ]) {
       await renderAt(path);
@@ -183,6 +206,34 @@ describe("App の匿名の画面", () => {
 });
 
 describe("App の owner の画面", () => {
+  it("トップでログアウトすると、一覧とタグを匿名として取り直し、draft を残さない", async () => {
+    serve("owner", [PUBLIC, DRAFT]);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='/p/${DRAFT.id}']`)).not.toBeNull(),
+    );
+    expect(main()?.textContent).toContain(tagOf(DRAFT));
+    const recentCalls = vi.mocked(listRecent).mock.calls.length;
+    const tagCalls = vi.mocked(listTags).mock.calls.length;
+
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
+    );
+    expect(main()?.querySelector(`a[href='/p/${DRAFT.id}']`)).toBeNull();
+    expect(main()?.textContent).not.toContain(DRAFT.title);
+    expect(main()?.textContent).not.toContain("下書き");
+    expect(vi.mocked(listRecent).mock.calls.length).toBeGreaterThan(recentCalls);
+    expect(vi.mocked(listTags).mock.calls.length).toBeGreaterThan(tagCalls);
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
   it("ログイン中に /<title> を開くと編集の画面を出す", async () => {
     serve("owner", [PUBLIC]);
     await renderAt(titleUrl(PUBLIC.title));

@@ -88,7 +88,14 @@ export function App() {
             ログインの状態を取得できませんでした。再読み込みしてください。
           </p>
         )}
-        {ready && route.name === "home" && <HomeView query={route.query} tag={route.tag} />}
+        {ready && route.name === "home" && (
+          <HomeView
+            // 一覧とタグは owner なら draft を含む。ログアウトの後に残さないよう取り直す
+            key={isOwner ? "owner" : "reader"}
+            query={route.query}
+            tag={route.tag}
+          />
+        )}
         {ready && (route.name === "page" || route.name === "title") && (
           <Suspense fallback={<p className="muted">読み込み中…</p>}>
             <PageView
