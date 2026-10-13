@@ -69,7 +69,7 @@ export function PageEditor({ page }: { page: Page }) {
   const session = useEditorSession(page);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const status = saveStatusOf(state);
-  const readOnly = state.conflict !== null || state.gone || state.authLost;
+  const readOnly = state.conflict !== null || state.gone;
   const idle = state.busy === null;
   const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
 
