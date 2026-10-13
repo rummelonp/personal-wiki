@@ -639,13 +639,21 @@ describe("検索と一覧の tool", () => {
     const ids: string[] = [];
     for (const title of ["One", "Two", "Three"]) {
       clock.now += 1000;
-      ids.push((await call("create_page", { title, body: "" })).json.id as string);
+      const body = title === "Three" ? "三つ目の本文 #memo #Work/Sub" : "";
+      ids.push((await call("create_page", { title, body })).json.id as string);
     }
     const first = await call("list_recent", { limit: 2 });
     expect(first.isError).toBe(false);
     const firstPages = first.json.pages as { id: string; url: string; titleUrl: null }[];
     expect(firstPages.map((p) => p.id)).toEqual([ids[2], ids[1]]);
     expect(firstPages[0]).toMatchObject({ url: `${ORIGIN}/p/${ids[2]}`, titleUrl: null });
+    // 本文の先頭の抜粋とタグ。本文が空のページは excerpt が無い
+    expect(firstPages[0]).toMatchObject({
+      excerpt: "三つ目の本文 #memo #Work/Sub",
+      tags: ["memo", "Work/Sub"],
+    });
+    expect(firstPages[1]).toEqual(expect.objectContaining({ tags: [] }));
+    expect(firstPages[1]).not.toHaveProperty("excerpt");
     expect(first.json.nextCursor).toEqual(expect.any(String));
 
     const rest = await call("list_recent", { limit: 2, cursor: first.json.nextCursor });

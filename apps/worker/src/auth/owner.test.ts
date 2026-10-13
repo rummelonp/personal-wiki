@@ -425,7 +425,7 @@ describe("owner のページ API", () => {
 
     const created = await request(
       "/api/pages",
-      ownerInit(cookie, "POST", { title: "Owner Page", body: "hello world" }),
+      ownerInit(cookie, "POST", { title: "Owner Page", body: "hello world #owner" }),
     );
     expect(created.status).toBe(201);
     const page = (await created.json()) as { id: string; version: number; visibility: string };
@@ -440,6 +440,10 @@ describe("owner のページ API", () => {
     expect((await get("/api/pages/by-title?title=Owner%20Page")).status).toBe(200);
     expect((await get("/api/search?q=hello")).status).toBe(200);
     expect((await get("/api/pages/recent")).status).toBe(200);
+    expect((await get("/api/pages/recent?tag=owner")).status).toBe(200);
+    const tags = await get("/api/tags");
+    expect(tags.status).toBe(200);
+    expect(await tags.json()).toEqual({ tags: [{ tag: "owner", count: 1 }] });
     const backlinks = await get(`/api/pages/${page.id}/backlinks`);
     expect(((await backlinks.json()) as { pages: unknown[] }).pages).toHaveLength(1);
 
@@ -466,7 +470,7 @@ describe("owner のページ API", () => {
 
   it("匿名はページ API に 401 のまま", async () => {
     const { request } = await setup();
-    for (const path of ["/api/pages/recent", "/api/search?q=abc"]) {
+    for (const path of ["/api/pages/recent", "/api/search?q=abc", "/api/tags"]) {
       const res = await request(path);
       expect(res.status).toBe(401);
     }

@@ -216,4 +216,29 @@ describe("rows_written の記録", () => {
     // 差分更新が効いていれば、本文だけの更新は全入れ替えより明確に少ない
     expect(update).toBeLessThan(replace as number);
   });
+
+  it("抜粋が変わらない保存では page_excerpts を書き換えない", async () => {
+    const { create, update } = await buildClient();
+    // 抜粋は先頭の 120 字なので、それより後ろだけを変える更新では値が変わらない
+    const head = "あ".repeat(130);
+    const page = await create("p", `${head}\n最初の末尾`);
+    // UPDATE の回数を数える。行が変わらない upsert は WHERE で更新を飛ばすので、trigger は動かない
+    await env.DB.batch([
+      env.DB.prepare("CREATE TABLE excerpt_updates (page_id TEXT NOT NULL)"),
+      env.DB.prepare(
+        `CREATE TRIGGER excerpt_updated AFTER UPDATE ON page_excerpts
+         BEGIN INSERT INTO excerpt_updates VALUES (new.page_id); END`,
+      ),
+    ]);
+    const count = async () =>
+      (await env.DB.prepare("SELECT count(*) AS n FROM excerpt_updates").first<{ n: number }>())?.n;
+
+    const tailOnly = await update(page, "p", `${head}\n次の末尾`);
+    expect(tailOnly.status).toBe(200);
+    expect(await count()).toBe(0);
+
+    const changed = await update({ id: page.id, version: 2 }, "p", `い${head.slice(1)}\n次の末尾`);
+    expect(changed.status).toBe(200);
+    expect(await count()).toBe(1);
+  });
 });
