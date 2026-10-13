@@ -80,11 +80,14 @@ export interface RenderedPageBody {
  * 埋め込み先の本文を `parent` に描き、描いたものの後始末を返す。`onResize` は描いた本文の
  * 高さが変わったときに呼ぶ。create-editor が読み取り専用の EditorView を作る関数を渡す
  * （この extension が create-editor を import すると循環する）。
+ * `target` は埋め込み先を指す、埋め込み元に書かれたままの title。本文中の `[[#見出し]]` のように
+ * target を省いた link が、埋め込み元ではなく埋め込み先のページを指すために使う。
  */
 export type PageBodyRenderer = (
   parent: HTMLElement,
   text: string,
   onResize: () => void,
+  target: string,
 ) => RenderedPageBody;
 
 export interface PageEmbedOptions {
@@ -368,7 +371,12 @@ class PageEmbedWidget extends WidgetType {
         body.className = "cm-embed-page-body";
         // 本文の高さが変わっても外側の editor には transaction にならない（widget の内側の
         // DOM 変化は読まれない）。行の高さの測り直しだけを頼む。画像の読み込み完了と同じ扱い。
-        const rendered = this.page.render(body, content.text, () => view.requestMeasure());
+        const rendered = this.page.render(
+          body,
+          content.text,
+          () => view.requestMeasure(),
+          this.target,
+        );
         const unregister = rendered.invalidate
           ? registerNestedInvalidator(view, rendered.invalidate.bind(rendered))
           : () => {};

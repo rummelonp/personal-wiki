@@ -164,7 +164,7 @@ const clickToNavigate = EditorView.domEventHandlers({
     const element =
       event.target instanceof Element ? event.target.closest(`[${TARGET_ATTR}]`) : null;
     const target = element?.getAttribute(TARGET_ATTR);
-    if (!element || target === null || target === undefined) return false;
+    if (!element || target === null) return false;
     const link: WikiLinkClick = {
       target,
       label: element.getAttribute(LABEL_ATTR),

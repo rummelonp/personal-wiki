@@ -47,6 +47,7 @@ import { type TagClickHandler, tags } from "./tag";
 import { taskList } from "./task-list";
 import { codeHighlighting, editorSurfaceTheme, livePreviewTheme, typographyTheme } from "./theme";
 import {
+  type WikiLinkClick,
   type WikiLinkClickHandler,
   type WikiLinkHref,
   type WikiLinkResolver,
@@ -239,15 +240,18 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
   if (!resolvePageEmbed) return undefined;
   return {
     resolve: resolvePageEmbed,
-    render: (parent, text, onResize) => {
+    render: (parent, text, onResize, embedTarget) => {
+      // 埋め込み先の本文にある `[[#見出し]]` は、埋め込み元ではなく埋め込み先のページを指す
+      const own = (link: WikiLinkClick): WikiLinkClick =>
+        link.target === "" ? { ...link, target: embedTarget } : link;
       const nested = createEditor(parent, {
         doc: text,
         readOnly: true,
         readOnlyFocusable: false,
         history: false,
         ...(options.livePreview === undefined ? {} : { livePreview: options.livePreview }),
-        ...(onWikiLinkClick ? { onWikiLinkClick } : {}),
-        ...(hrefForWikiLink ? { hrefForWikiLink } : {}),
+        ...(onWikiLinkClick ? { onWikiLinkClick: (link) => onWikiLinkClick(own(link)) } : {}),
+        ...(hrefForWikiLink ? { hrefForWikiLink: (link) => hrefForWikiLink(own(link)) } : {}),
         ...(resolveWikiLink ? { resolveWikiLink } : {}),
         ...(onTagClick ? { onTagClick } : {}),
         ...(resolveAttachmentUrl ? { resolveAttachmentUrl } : {}),

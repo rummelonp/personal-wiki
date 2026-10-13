@@ -906,6 +906,47 @@ describe("page embed", () => {
   });
 
   describe("wikilinks inside the embedded body", () => {
+    it("points a target-less link at the embedded page, in both the click and the href", () => {
+      const onWikiLinkClick = vi.fn();
+      const hrefForWikiLink = vi.fn((link: { target: string; heading: string | null }) =>
+        link.target === "" ? "#外側" : `/p/${link.target}#${link.heading}`,
+      );
+      const resolveWikiLink = vi.fn(() => true);
+      const v = mount("![[B]]", {
+        resolvePageEmbed: () => resolved("B", "[[#節X]] と [[C#節Y]]"),
+        onWikiLinkClick,
+        hrefForWikiLink,
+        resolveWikiLink,
+      });
+      const body = bodyOf(v, "B");
+
+      const own = body?.querySelector('[data-wikilink-heading="節X"]');
+      expect(own?.getAttribute("href")).toBe("/p/B#節X");
+      own?.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+      expect(onWikiLinkClick).toHaveBeenLastCalledWith({
+        target: "B",
+        label: null,
+        blockId: null,
+        heading: "節X",
+      });
+
+      expect(resolveWikiLink).not.toHaveBeenCalledWith("");
+
+      const other = body?.querySelector('[data-wikilink-heading="節Y"]');
+      expect(other?.getAttribute("href")).toBe("/p/C#節Y");
+      other?.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+      expect(onWikiLinkClick).toHaveBeenLastCalledWith({
+        target: "C",
+        label: null,
+        blockId: null,
+        heading: "節Y",
+      });
+    });
+
     const unresolvedIn = (v: EditorView) =>
       [...(bodyOf(v, "Note")?.querySelectorAll(".cm-wikilink-unresolved") ?? [])].map(
         (e) => e.textContent,
