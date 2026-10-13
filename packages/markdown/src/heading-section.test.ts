@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createHeadingSectionExtractor,
   extractHeadingSection,
+  extractLinkableHeadings,
   isBlockReferenceHeading,
 } from "./heading-section";
 
@@ -111,6 +112,38 @@ describe("createHeadingSectionExtractor", () => {
     expect(extract("B")).toBe("## B\n\nB の本文");
     expect(extract("A")).toBe("## A\n\nA の本文");
     expect(extract("C")).toBeNull();
+  });
+});
+
+describe("extractLinkableHeadings", () => {
+  it("lists ATX and setext headings in document order", () => {
+    const text = "# A\n\nB\n---\n\n長い\n見出し\n===\n\n### C ###";
+    expect(extractLinkableHeadings(text)).toEqual(["A", "B", "長い 見出し", "C"]);
+  });
+
+  it("drops headings that a WikiLink cannot point at", () => {
+    const text = "# 正常\n\n## a#b\n\n## a|b\n\n## [x]\n\n## ^id\n\n## 末尾";
+    expect(extractLinkableHeadings(text)).toEqual(["正常", "末尾"]);
+  });
+
+  it("keeps a ^ that is not at the start", () => {
+    expect(extractLinkableHeadings("# A^b")).toEqual(["A^b"]);
+  });
+
+  it("lists a repeated heading once", () => {
+    expect(extractLinkableHeadings("# A\n\n## A\n\n# B")).toEqual(["A", "B"]);
+  });
+
+  it("skips headings in code, comments, frontmatter, and quotes", () => {
+    const text = "---\ntitle: x\n---\n\n```\n# code\n```\n\n%% # hidden %%\n\n> # quoted\n\n# 実際";
+    expect(extractLinkableHeadings(text)).toEqual(["実際"]);
+  });
+
+  it("returns only headings that extractHeadingSection resolves", () => {
+    const text = "# A\n\nB\n---\n\n## a#b\n\n## C";
+    for (const heading of extractLinkableHeadings(text)) {
+      expect(extractHeadingSection(text, heading)).not.toBeNull();
+    }
   });
 });
 

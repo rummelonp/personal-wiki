@@ -73,6 +73,23 @@ export function isBlockReferenceHeading(heading: string): boolean {
 }
 
 /**
+ * 本文 `text` の見出しのうち、`[[Note#見出し]]` で指せるものの文を、現れる順に返す。
+ * `extractHeadingSection` が同じ文で見つけられる見出しだけを返す（`#`、`|`、`[`、`]` を含む見出しと
+ * `^` で始まる見出しは指せないので除く）。同じ文の見出しは先に現れる 1 つにまとめる。
+ * 補完の候補に使う。候補が指す先は `extractHeadingSection` が解決する先と一致する。
+ */
+export function extractLinkableHeadings(text: string): string[] {
+  const seen = new Set<string>();
+  for (const heading of topLevelHeadings(text)) {
+    if (heading.text.length === 0 || /[#|[\]]/.test(heading.text) || heading.text.startsWith("^")) {
+      continue;
+    }
+    seen.add(heading.text);
+  }
+  return [...seen];
+}
+
+/**
  * 本文 `text` から、WikiLink の heading（`[[Note#A#B]]` の `A#B`）が指す見出しの範囲を返す。
  * 範囲は見出しの行から、次に現れる同じか上の level の見出しの直前まで（Obsidian と同じ）。
  * `A#B` は A の範囲の中にある B を指す。同じ文の見出しが複数あれば先に現れるほうを使う。
