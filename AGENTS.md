@@ -11,6 +11,7 @@ pnpm workspace の構成で、アプリは `apps/*`、共有パッケージは `
 - `apps/worker`: Hono の Worker（REST の `/api/*` と MCP の `/mcp`）、D1 の migration、デプロイとトークン発行のスクリプト
 - `packages/domain`: title の正規化と Result 型など、実行環境に依存しない規則
 - `packages/markdown`: Markdown の解析（wikilink、タグ、frontmatter の抽出、差分など）
+- `packages/editor`: CodeMirror 6 の Live Preview エディタ（React に依存しない）
 
 ## コマンド
 
@@ -23,6 +24,8 @@ pnpm format        # biome check --write
 pnpm typecheck     # tsc --noEmit
 pnpm test          # vitest run
 ```
+
+`packages/editor` のテストは Playwright の Chromium の中で動く。初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れる。
 
 Worker の開発とデプロイは `apps/worker` で実行する。
 

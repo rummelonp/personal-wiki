@@ -13,7 +13,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit && pnpm -r --if-present run typecheck",
-    "test": "vitest run && pnpm --filter @personal-wiki/worker test"
+    "test": "vitest run && pnpm --filter @personal-wiki/worker --filter @personal-wiki/editor test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

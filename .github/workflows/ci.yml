@@ -29,4 +29,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      # packages/editor のテストはブラウザの中で動かす
+      - run: pnpm --filter @personal-wiki/editor exec playwright install --with-deps chromium
       - run: pnpm test
