@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { failureMessage, listRecent, type PageSummary, searchPages } from "./pages-api";
+import { failureMessage, type ListedPage, listRecent, searchPages } from "./pages-api";
 
 export type ListState =
   | { status: "loading" }
-  | { status: "ready"; entries: PageSummary[]; next: string | null; loadingMore: boolean }
+  | { status: "ready"; entries: ListedPage[]; next: string | null; loadingMore: boolean }
   | { status: "unauthorized" }
   | { status: "error"; message: string };
 

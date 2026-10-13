@@ -15,14 +15,23 @@ export interface PageSummary {
   title: string;
   visibility: Visibility;
   updatedAt: number;
-  /** 一覧の抜粋。API が返すまでは検索結果にだけある。 */
-  excerpt?: string;
-  /** ページに付いたタグの表記。API が返すまでは無い。 */
-  tags?: string[];
 }
 
+/** 最近の更新の 1 件。 */
+export interface ListedPage extends PageSummary {
+  /**
+   * 本文の先頭 120 文字の抜粋。保存時に作る派生データで、それ以前に作ったページと本文が空のページには無い。
+   */
+  excerpt?: string;
+  /** タグの表記。本文に最初に現れた表記で、tag_key の順 */
+  tags: string[];
+}
+
+/** 検索結果の 1 件。ListedPage に代入できる（一覧の行は同じ部品で描く）。 */
 export interface SearchHit extends PageSummary {
+  /** 一致した位置の周辺 64 文字の抜粋。ListedPage.excerpt（先頭 120 文字）と違い、検索語が当たった箇所を見せる。 */
   excerpt: string;
+  tags: string[];
 }
 
 export interface TagCount {
@@ -30,8 +39,8 @@ export interface TagCount {
   count: number;
 }
 
-export interface PageList {
-  pages: PageSummary[];
+export interface PageList<T extends PageSummary = PageSummary> {
+  pages: T[];
   nextCursor: string | null;
 }
 
@@ -54,7 +63,10 @@ export type ApiResult<T> = { ok: true; value: T } | ApiFailure;
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** keepalive の本文は 64 KiB までなので、余裕を見て超えたら通常の fetch にする。 */
+/**
+ * 同一オリジンで飛行中の keepalive の本文は合計 64 KiB までで、超えると fetch が失敗する。
+ * 複数のタブやページの保存が重なる余裕を見て、1 件は 60,000 バイトまでにし、超えたら通常の fetch にする。
+ */
 const KEEPALIVE_MAX_BYTES = 60_000;
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -124,10 +136,23 @@ function isSummary(value: unknown): value is PageSummary {
     typeof v.id === "string" &&
     typeof v.title === "string" &&
     (v.visibility === "public" || v.visibility === "draft") &&
-    typeof v.updatedAt === "number" &&
-    (v.excerpt === undefined || typeof v.excerpt === "string") &&
-    (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === "string")))
+    typeof v.updatedAt === "number"
   );
+}
+
+const isTags = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((t) => typeof t === "string");
+
+function isListedPage(value: unknown): value is ListedPage {
+  const v = recordOf(value);
+  return (
+    isSummary(value) && isTags(v.tags) && (v.excerpt === undefined || typeof v.excerpt === "string")
+  );
+}
+
+function isSearchHit(value: unknown): value is SearchHit {
+  const v = recordOf(value);
+  return isSummary(value) && isTags(v.tags) && typeof v.excerpt === "string";
 }
 
 const BAD_SHAPE: ApiFailure = {
@@ -243,11 +268,14 @@ export async function deletePage(
   return { ok: true, value: null };
 }
 
-async function listResult(res: Response | ApiFailure): Promise<ApiResult<PageList>> {
+async function listResult<T extends PageSummary>(
+  res: Response | ApiFailure,
+  guard: (value: unknown) => value is T,
+): Promise<ApiResult<PageList<T>>> {
   if (isFailure(res)) return res;
   if (!res.ok) return failureOf(res);
   const json = recordOf(await readJson(res));
-  if (!Array.isArray(json.pages) || !json.pages.every(isSummary)) return BAD_SHAPE;
+  if (!Array.isArray(json.pages) || !json.pages.every(guard)) return BAD_SHAPE;
   const next = json.nextCursor;
   if (next !== null && typeof next !== "string") return BAD_SHAPE;
   return { ok: true, value: { pages: json.pages, nextCursor: next } };
@@ -257,12 +285,12 @@ export async function listRecent(
   cursor: string | null,
   options: { tag?: string } = {},
   fetchFn: Fetch = fetch,
-): Promise<ApiResult<PageList>> {
+): Promise<ApiResult<PageList<ListedPage>>> {
   const params = new URLSearchParams();
   if (cursor !== null) params.set("cursor", cursor);
   if (options.tag !== undefined && options.tag !== "") params.set("tag", options.tag);
   const query = params.size === 0 ? "" : `?${params}`;
-  return listResult(await request(fetchFn, `/api/pages/recent${query}`));
+  return listResult(await request(fetchFn, `/api/pages/recent${query}`), isListedPage);
 }
 
 export async function listTags(fetchFn: Fetch = fetch): Promise<ApiResult<TagCount[]>> {
@@ -287,6 +315,7 @@ export async function listBacklinks(
   const query = cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`;
   return listResult(
     await request(fetchFn, `/api/pages/${encodeURIComponent(id)}/backlinks${query}`),
+    isSummary,
   );
 }
 
@@ -300,11 +329,6 @@ export async function searchPages(
   if (!res.ok) return failureOf(res);
   const json = recordOf(await readJson(res));
   const results = json.results;
-  if (
-    !Array.isArray(results) ||
-    !results.every((r) => isSummary(r) && typeof recordOf(r).excerpt === "string")
-  ) {
-    return BAD_SHAPE;
-  }
-  return { ok: true, value: results as SearchHit[] };
+  if (!Array.isArray(results) || !results.every(isSearchHit)) return BAD_SHAPE;
+  return { ok: true, value: results };
 }

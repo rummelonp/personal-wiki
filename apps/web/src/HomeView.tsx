@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { EntryList } from "./EntryRow";
+import { Link } from "./Link";
 import { RailLayout } from "./Rail";
+import { homeHref, tagHref } from "./route";
 import { SearchBox } from "./SearchBox";
 import { SignInNotice } from "./SignInNotice";
 import { TagsPanel, useTags } from "./TagsPanel";
@@ -17,14 +19,16 @@ interface HomeViewProps {
  */
 export function HomeView({ query, tag }: HomeViewProps) {
   const trimmed = query.trim();
-  const { state, loadMore } = useEntryList({ query: trimmed, tag });
+  const searching = trimmed !== "";
+  // 検索 API に tag の絞り込みは無いので、検索中は tag を一覧の取得にも強調にも使わない
+  const effectiveTag = searching ? "" : tag;
+  const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag });
   const tags = useTags();
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 
-  const searching = trimmed !== "";
   const heading = searching
     ? `「${trimmed}」の検索結果`
     : tag !== ""
@@ -32,10 +36,18 @@ export function HomeView({ query, tag }: HomeViewProps) {
       : "最近の更新";
 
   return (
-    <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={tag} />}>
+    <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
       <div className="home">
         <SearchBox query={trimmed} />
         <h1 className="list-title">{heading}</h1>
+        {searching && tag !== "" && (
+          <p className="muted">
+            検索ではタグ「{tag}」で絞り込めないので、全ページから探しています。{" "}
+            <Link href={tagHref(tag)}>タグだけで見る</Link>
+            {" / "}
+            <Link href={homeHref(trimmed)}>タグを外す</Link>
+          </p>
+        )}
         {state.status === "loading" && <p className="muted">読み込み中…</p>}
         {state.status === "error" && (
           <p className="message message-error" role="alert">

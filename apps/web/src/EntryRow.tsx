@@ -1,10 +1,10 @@
 import { formatRowTime } from "./format";
 import { Link } from "./Link";
-import type { PageSummary } from "./pages-api";
+import type { ListedPage } from "./pages-api";
 import { pageHref, tagHref } from "./route";
 
 /** 一覧の 1 行（タイトル、抜粋、更新日、タグ）。配置は持たず、並べ方は呼び出し側が決める。 */
-export function EntryRow({ entry, now }: { entry: PageSummary; now: number }) {
+export function EntryRow({ entry, now }: { entry: ListedPage; now: number }) {
   return (
     <li className="entry">
       <div className="entry-head">
@@ -19,7 +19,7 @@ export function EntryRow({ entry, now }: { entry: PageSummary; now: number }) {
       {entry.excerpt !== undefined && entry.excerpt !== "" && (
         <p className="entry-excerpt">{entry.excerpt}</p>
       )}
-      {entry.tags !== undefined && entry.tags.length > 0 && (
+      {entry.tags.length > 0 && (
         <ul className="chips">
           {entry.tags.map((tag) => (
             <li key={tag}>
@@ -34,7 +34,7 @@ export function EntryRow({ entry, now }: { entry: PageSummary; now: number }) {
   );
 }
 
-export function EntryList({ entries, now }: { entries: PageSummary[]; now: number }) {
+export function EntryList({ entries, now }: { entries: ListedPage[]; now: number }) {
   return (
     <ul className="entries">
       {entries.map((entry) => (

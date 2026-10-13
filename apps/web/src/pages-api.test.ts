@@ -3,6 +3,7 @@ import {
   createPage,
   deletePage,
   getPage,
+  listBacklinks,
   listRecent,
   listTags,
   searchPages,
@@ -140,21 +141,36 @@ describe("一覧と検索", () => {
     expect(calls[0]?.path).toBe("/api/pages/recent?tag=%E6%97%A5%E8%A8%98+a");
   });
 
-  it("要約の抜粋とタグは省略できるが、あれば型を確かめる", async () => {
-    const ok = recorder(() =>
+  it("最近の更新は tags が必須で、excerpt は省略できる", async () => {
+    const entry = { id: ID, title: "題", visibility: "draft", updatedAt: 1 };
+    const respond = (pages: unknown[]) =>
+      recorder(() => Response.json({ pages, nextCursor: null })).fetchFn;
+    expect(await listRecent(null, {}, respond([{ ...entry, tags: ["a"] }]))).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await listRecent(null, {}, respond([{ ...entry, tags: [], excerpt: "先頭" }])),
+    ).toMatchObject({ ok: true });
+    expect(await listRecent(null, {}, respond([entry]))).toMatchObject({
+      ok: false,
+      reason: "error",
+    });
+    expect(await listRecent(null, {}, respond([{ ...entry, tags: [1] }]))).toMatchObject({
+      ok: false,
+    });
+    expect(await listRecent(null, {}, respond([{ ...entry, tags: [], excerpt: 1 }]))).toMatchObject(
+      { ok: false },
+    );
+  });
+
+  it("被リンクは tags なしの要約のままで通る", async () => {
+    const { fetchFn } = recorder(() =>
       Response.json({
-        pages: [{ id: ID, title: "題", visibility: "draft", updatedAt: 1, tags: ["a"] }],
+        pages: [{ id: ID, title: "題", visibility: "draft", updatedAt: 1 }],
         nextCursor: null,
       }),
     );
-    expect(await listRecent(null, {}, ok.fetchFn)).toMatchObject({ ok: true });
-    const bad = recorder(() =>
-      Response.json({
-        pages: [{ id: ID, title: "題", visibility: "draft", updatedAt: 1, tags: [1] }],
-        nextCursor: null,
-      }),
-    );
-    expect(await listRecent(null, {}, bad.fetchFn)).toMatchObject({ ok: false, reason: "error" });
+    expect(await listBacklinks(ID, null, fetchFn)).toMatchObject({ ok: true });
   });
 
   it("タグの一覧を読む", async () => {
@@ -163,6 +179,18 @@ describe("一覧と検索", () => {
     expect(calls[0]?.path).toBe("/api/tags");
     const missing = recorder(() => new Response("{}", { status: 404 }));
     expect(await listTags(missing.fetchFn)).toMatchObject({ ok: false, reason: "not_found" });
+  });
+
+  it("検索結果は excerpt と tags が必須", async () => {
+    const hit = { id: ID, title: "題", visibility: "draft", updatedAt: 1 };
+    const respond = (results: unknown[]) => recorder(() => Response.json({ results })).fetchFn;
+    expect(await searchPages("a", respond([{ ...hit, excerpt: "…a…", tags: [] }]))).toMatchObject({
+      ok: true,
+    });
+    expect(await searchPages("a", respond([{ ...hit, tags: [] }]))).toMatchObject({ ok: false });
+    expect(await searchPages("a", respond([{ ...hit, excerpt: "…a…" }]))).toMatchObject({
+      ok: false,
+    });
   });
 
   it("検索語はエンコードして渡す", async () => {
