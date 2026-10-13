@@ -4,11 +4,11 @@ import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
+import { bindLifecycle, registerEditor } from "./editor-lifecycle";
 import {
   type EditorApi,
   EditorSession,
   type FailedOp,
-  isDirty,
   isReadOnly,
   type SaveStatus,
   saveStatusOf,
@@ -60,25 +60,11 @@ function useEditorSession(page: Page): EditorSession {
   );
 
   useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") void session.flush({ keepalive: true });
-      else void session.checkFreshness();
-    };
-    const onFocus = () => void session.checkFreshness();
-    const onPageHide = () => void session.leave();
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      const state = session.getState();
-      if (isDirty(state) || state.busy === "saving") event.preventDefault();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("pagehide", onPageHide);
-    window.addEventListener("beforeunload", onBeforeUnload);
+    const unbind = bindLifecycle(session, document, window);
+    const unregister = registerEditor(session);
     return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pagehide", onPageHide);
-      window.removeEventListener("beforeunload", onBeforeUnload);
+      unbind();
+      unregister();
       // アプリ内の遷移でも、未保存の変更をここで送る
       void session.leave();
     };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchMe, logout } from "./api";
+import { saveAllEditors } from "./editor-lifecycle";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
 import { Link } from "./Link";
@@ -29,6 +30,7 @@ export function App() {
   async function handleLogout() {
     setLoggingOut(true);
     try {
+      await saveAllEditors();
       await logout();
       setSession({ status: "ready", me: { kind: "anonymous" } });
     } catch {
