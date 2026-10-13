@@ -91,9 +91,9 @@ type LinkNotice =
   | { kind: "missing"; title: string; busy: boolean; error: string | null }
   | { kind: "error" };
 
-function useEditorSession(page: Page): EditorSession {
+function useEditorSession(page: Page, whenSettled: () => Promise<void>): EditorSession {
   const [session] = useState(
-    () => new EditorSession(page, { api, backup: createLocalBackupStore() }),
+    () => new EditorSession(page, { api, backup: createLocalBackupStore(), whenSettled }),
   );
 
   useEffect(() => {
@@ -123,14 +123,14 @@ interface PageEditorProps {
 }
 
 export function PageEditor({ page, attachments = false, onShown }: PageEditorProps) {
-  const session = useEditorSession(page);
+  const editor = useRef<BodyEditorHandle>(null);
+  const session = useEditorSession(page, () => editor.current?.whenSettled() ?? Promise.resolve());
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const { title: savedTitle, visibility: savedVisibility } = state.base;
 
   useEffect(() => {
     onShown?.({ id: page.id, title: savedTitle, visibility: savedVisibility });
   }, [onShown, page.id, savedTitle, savedVisibility]);
-  const editor = useRef<BodyEditorHandle>(null);
   const { goTo } = useFragmentJump(editor);
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
@@ -453,12 +453,16 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
         <input
           className="title-input"
           aria-label="title"
-          value={state.draft.title}
+          value={state.titleInput ?? state.draft.title}
           readOnly={readOnly}
-          onChange={(event) =>
-            session.edit({ ...session.getState().draft, title: event.target.value })
-          }
-          onBlur={() => void session.flush()}
+          onChange={(event) => session.editTitle(event.target.value)}
+          onKeyDown={(event) => {
+            // 変換中の Enter は IME の確定に使われる。確定の Enter で title を保存しない
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            void session.commitTitle();
+          }}
+          onBlur={() => void session.commitTitle()}
         />
         <BodyEditor
           ref={editor}

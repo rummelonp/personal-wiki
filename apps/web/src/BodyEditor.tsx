@@ -30,6 +30,11 @@ export interface BodyEditorHandle {
    * （既定は立てない。ページを開いただけでモバイルのキーボードが出ないようにする）。
    */
   jumpToFragment: (fragment: PageFragment, options?: { focus?: boolean }) => void;
+  /**
+   * IME の変換が落ち着いたら resolve する。落ち着いていればすぐに resolve する。
+   * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
+   */
+  whenSettled: () => Promise<void>;
 }
 
 export interface BodyEditorProps {
@@ -76,6 +81,7 @@ export interface BodyEditorProps {
 const NO_EMBED: PageEmbedContent = { kind: "unresolved" };
 
 const jumpKey = Symbol("jumpTo");
+const settledKey = Symbol("whenSettled");
 
 /**
  * カーソルを `offset` に置き、その行を画面の上端の近くまでスクロールする。見出しへの移動は
@@ -115,6 +121,8 @@ export function BodyEditor({
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
+  /** whenSettled を待っている resolve。破棄したときは dispatchWhenSettled が捨てるので、ここで呼ぶ */
+  const settledWaiters = useRef<(() => void)[]>([]);
 
   // EditorView の listener は作ったときに 1 度だけ結ぶので、最新の props は ref から読む
   const latest = useRef({
@@ -206,9 +214,11 @@ export function BodyEditor({
     });
     created = editor;
     view.current = editor;
+    const waiters = settledWaiters.current;
     return () => {
       view.current = null;
       editor.destroy();
+      for (const resolve of waiters.splice(0)) resolve();
     };
   }, []);
 
@@ -258,6 +268,18 @@ export function BodyEditor({
         }
         const offset = findHeadingOffset(editor.state.doc.toString(), fragment.heading);
         if (offset !== null) moveTo(editor, offset, focus);
+      });
+    },
+    whenSettled() {
+      const editor = view.current;
+      if (editor === null) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const waiters = settledWaiters.current;
+        waiters.push(resolve);
+        // 同じ key の保留は最後の 1 つに畳まれるので、待っている全員をまとめて起こす
+        dispatchWhenSettled(editor, settledKey, () => {
+          for (const wake of waiters.splice(0)) wake();
+        });
       });
     },
   }));

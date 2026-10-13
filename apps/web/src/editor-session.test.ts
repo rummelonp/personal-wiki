@@ -606,3 +606,146 @@ describe("公開設定と削除の失敗", () => {
     expect(session.getState().failedOp).toBeNull();
   });
 });
+
+describe("title の確定", () => {
+  it("打っている途中の title は保存せず、本文の自動保存も保存済みの title を送る", async () => {
+    const { session, api } = setup();
+    const put = vi.spyOn(api, "updatePage");
+    session.editTitle("新しい");
+    session.editTitle("新しい題");
+    expect(saveStatusOf(session.getState())).toBe("unsaved");
+    session.edit({ ...session.getState().draft, body: "本文 追記" });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledWith(ID, 1, { title: "題", body: "本文 追記" }, {});
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(session.getState().titleInput).toBe("新しい題");
+  });
+
+  it("確定で 1 回だけ保存し、前後の空白は落とす。変わっていなければ送らない", async () => {
+    const { session, api } = setup();
+    const put = vi.spyOn(api, "updatePage");
+    session.editTitle("  新  ");
+    await session.commitTitle();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledWith(ID, 1, { title: "新", body: "本文" }, {});
+    expect(session.getState().titleInput).toBeNull();
+    expect(saveStatusOf(session.getState())).toBe("saved");
+    session.editTitle("新");
+    await session.commitTitle();
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it("自分への [[旧 title]] は、title と同じ保存で新しい title に書き換える", async () => {
+    const { session, api } = setup({ server: page({ body: "[[題]] と [[別]]" }) });
+    const put = vi.spyOn(api, "updatePage");
+    session.editTitle("新");
+    await session.commitTitle();
+    expect(put).toHaveBeenCalledWith(ID, 1, { title: "新", body: "[[新]] と [[別]]" }, {});
+  });
+
+  it("離脱すると、打っていた title を確定して送る", async () => {
+    const backup = memoryBackup();
+    const { session, api } = setup({ backup });
+    const put = vi.spyOn(api, "updatePage");
+    session.editTitle("新");
+    await session.leave();
+    expect(put).toHaveBeenCalledWith(ID, 1, { title: "新", body: "本文" }, { keepalive: true });
+    expect(backup.saved.size).toBe(0);
+  });
+
+  it("サーバーの内容を取り込むと、打っていた title は捨てる", async () => {
+    const { session, server } = setup();
+    session.editTitle("打ちかけ");
+    server.page = page({ title: "他で変えた", version: 2 });
+    await session.checkFreshness();
+    expect(session.getState().titleInput).toBeNull();
+    expect(session.getState().draft.title).toBe("他で変えた");
+  });
+});
+
+describe("リンクの書き換えの取り込み", () => {
+  /** step が開いているページを書き換えたことにする */
+  function rewriteOnServer(server: { page: Page }, body: string) {
+    server.page = { ...server.page, body, version: server.page.version + 1 };
+    return { processed: { sourcePageId: ID, version: server.page.version } };
+  }
+
+  it("手元に変更が無ければ、書き換えた版をそのまま取り込む", async () => {
+    const { session, server } = setup({ server: page({ body: "[[旧]]" }) });
+    await session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]]"));
+    expect(session.getState().base.version).toBe(2);
+    expect(session.getState().draft.body).toBe("[[新]]");
+    expect(saveStatusOf(session.getState())).toBe("saved");
+  });
+
+  it("未保存の編集があれば書き換えを重ね、新しい版に対して保存する（409 にしない）", async () => {
+    const { session, server, api } = setup({ server: page({ body: "[[旧]] 本文" }) });
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    await session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]] 本文"));
+    expect(session.getState().draft.body).toBe("[[新]] 本文 追記");
+    expect(session.getState().conflict).toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(api.calls).toEqual(["get", "put@2"]);
+    expect(server.page).toMatchObject({ body: "[[新]] 本文 追記", version: 3 });
+  });
+
+  it("step は保存と重ならず、保存中の step は保存が終わってから走る", async () => {
+    const { session, server, api } = setup({ server: page({ body: "[[旧]]" }) });
+    session.edit({ title: "題", body: "[[旧]] 追記" });
+    const saving = session.flush();
+    const stepping = session.runLinkRewriteStep(async () => {
+      api.calls.push("step");
+      return rewriteOnServer(server, server.page.body.replace("[[旧]]", "[[新]]"));
+    });
+    await Promise.all([saving, stepping]);
+    expect(api.calls).toEqual(["put@1", "step", "get"]);
+    expect(session.getState()).toMatchObject({
+      base: { version: 3 },
+      draft: { body: "[[新]] 追記" },
+      conflict: null,
+    });
+  });
+
+  it("変換が落ち着くまで、手元の本文に重ねない", async () => {
+    let settle = () => {};
+    const whenSettled = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { session, server } = setup({
+      server: page({ body: "[[旧]]" }),
+      deps: { whenSettled },
+    });
+    session.edit({ title: "題", body: "[[旧]] へんかん" });
+    const stepping = session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]]"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(whenSettled).toHaveBeenCalledTimes(1);
+    // 変換中の入力（未確定文字を含む）が届く
+    session.edit({ title: "題", body: "[[旧]] 変換" });
+    expect(session.getState().base.version).toBe(1);
+    settle();
+    await stepping;
+    expect(session.getState().draft.body).toBe("[[新]] 変換");
+    expect(session.getState().base.version).toBe(2);
+  });
+
+  it("書き換え以外の変化が混ざっていれば、手元を失わないよう衝突にする", async () => {
+    const { session, server } = setup({ server: page({ body: "[[旧]] 本文" }) });
+    session.edit({ title: "題", body: "[[旧]] 手元" });
+    await session.runLinkRewriteStep(async () => rewriteOnServer(server, "[[新]] 他の編集"));
+    expect(session.getState().conflict).toMatchObject({ body: "[[新]] 他の編集" });
+    expect(session.getState().draft.body).toBe("[[旧]] 手元");
+  });
+
+  it("他のページの書き換えでは何も取りに行かない", async () => {
+    const { session, api } = setup();
+    await session.runLinkRewriteStep(async () => ({
+      processed: { sourcePageId: "BBBBBBBBBBBBBBBBBBBBBB", version: 5 },
+    }));
+    expect(api.calls).toEqual([]);
+  });
+});

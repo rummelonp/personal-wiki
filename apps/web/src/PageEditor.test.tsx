@@ -898,3 +898,82 @@ describe("添付の貼り付けと表示", () => {
     expect(srcs).toEqual([]);
   });
 });
+
+function titleInput(): HTMLInputElement {
+  const input = container?.querySelector<HTMLInputElement>("input.title-input");
+  if (!input) throw new Error("title の入力が無い");
+  return input;
+}
+
+function typeTitle(text: string): void {
+  const input = titleInput();
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function pressEnter(isComposing: boolean): void {
+  act(() => {
+    titleInput().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", isComposing, bubbles: true, cancelable: true }),
+    );
+  });
+}
+
+describe("title の確定", () => {
+  it("打っている間は保存せず、Enter で確定して保存する。変換中の Enter では保存しない", async () => {
+    renderPage();
+    act(() => titleInput().focus());
+    typeTitle("しんしい");
+    await flushAsync();
+    pressEnter(true);
+    typeTitle("新しい題");
+    await flushAsync();
+    expect(updatePage).not.toHaveBeenCalled();
+    expect(container?.querySelector(".save-state")?.textContent).toContain("未保存");
+
+    pressEnter(false);
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    expect(updatePage).toHaveBeenCalledWith(
+      ID,
+      1,
+      { title: "新しい題", body: "本文" },
+      expect.anything(),
+    );
+    // 確定済みなので、その後の blur では送らない
+    act(() => titleInput().blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+  });
+
+  it("blur で確定して保存する", async () => {
+    renderPage();
+    act(() => titleInput().focus());
+    typeTitle("別の題");
+    act(() => titleInput().blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledWith(
+      ID,
+      1,
+      { title: "別の題", body: "本文" },
+      expect.anything(),
+    );
+  });
+
+  it("確定前に本文の自動保存が走っても、打っている途中の title は送らない", async () => {
+    const { view } = renderPage();
+    typeAtEnd(view(), "を書き足す");
+    // 本文の自動保存の待ちの間に title を打つ（focus は動かさない）
+    typeTitle("打ちかけ");
+    await vi.waitFor(() => expect(updatePage).toHaveBeenCalled(), { timeout: 4000 });
+    expect(updatePage).toHaveBeenCalledWith(
+      ID,
+      1,
+      { title: "題", body: "本文を書き足す" },
+      expect.anything(),
+    );
+    expect(titleInput().value).toBe("打ちかけ");
+  });
+});

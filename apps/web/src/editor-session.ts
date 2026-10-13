@@ -1,4 +1,6 @@
+import { singleLineTitle } from "@personal-wiki/domain/title";
 import type { Backup, BackupStore } from "./draft-backup";
+import { rebaseOnLinkRewrite, rewriteOwnTitleLinks } from "./link-rewrite-body";
 import {
   type ApiFailure,
   type ApiResult,
@@ -35,6 +37,17 @@ export interface EditorDeps {
   minCheckIntervalMs?: number;
   /** ログイン切れの間の入力を localStorage へ書くまでの待ち。入力のたびに書かず、まとめる。 */
   stashMs?: number;
+  /**
+   * 本文のエディタの IME の変換が落ち着くまで待つ。サーバーの書き換えを手元の本文に重ねる直前に呼ぶ。
+   * 変換中に本文を差し替えると、確定前の文字を含む入力が差し替えを上書きして書き換えが戻るため。
+   * エディタが無くなったときも resolve すること（書き込みの列がそこで止まる）。
+   */
+  whenSettled?: () => Promise<void>;
+}
+
+/** リンクの書き換えの step（`POST /api/link-rewrites/step`）の結果のうち、セッションが見る部分。 */
+export interface LinkRewriteStepLike {
+  processed: { sourcePageId: string; version: number } | null;
 }
 
 export type FailedOp =
@@ -62,6 +75,12 @@ export interface EditorState {
   gone: boolean;
   /** 前回退避した内容。復元か破棄を選ばせる。 */
   pendingBackup: Backup | null;
+  /**
+   * title 欄に打っている途中の、まだ確定していない title。null なら draft.title を表示する。
+   * 確定（commitTitle、離脱）するまで draft に入れず、保存にも退避にも含めない。title の変更は
+   * 他のページのリンクの書き換えを積むので、打っている途中の title で改名を繰り返さない。
+   */
+  titleInput: string | null;
 }
 
 export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "conflict" | "auth" | "gone";
@@ -74,6 +93,10 @@ export const isDirty = (state: Pick<EditorState, "base" | "draft">): boolean =>
  * 退避が未決の間を含めるのは、入力すると localStorage の退避を上書きし、復元か破棄を選ぶ前に
  * 前回の内容を失うため。
  */
+/** title 欄に、確定していない変更がある。 */
+export const hasPendingTitle = (state: Pick<EditorState, "draft" | "titleInput">): boolean =>
+  state.titleInput !== null && state.titleInput !== state.draft.title;
+
 export const isReadOnly = (
   state: Pick<EditorState, "conflict" | "gone" | "pendingBackup">,
 ): boolean => state.conflict !== null || state.gone || state.pendingBackup !== null;
@@ -84,7 +107,7 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.conflict !== null) return "conflict";
   if (state.busy === "saving") return "saving";
   if (state.error !== null && state.failedOp?.kind === "save") return "error";
-  return isDirty(state) ? "unsaved" : "saved";
+  return isDirty(state) || hasPendingTitle(state) ? "unsaved" : "saved";
 }
 
 const DEFAULT_AUTOSAVE_MS = 2000;
@@ -106,6 +129,7 @@ export class EditorSession {
   private readonly autosaveMs: number;
   private readonly minCheckMs: number;
   private readonly stashMs: number;
+  private readonly whenSettled: () => Promise<void>;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stashTimer: ReturnType<typeof setTimeout> | null = null;
   private tail: Promise<unknown> = Promise.resolve();
@@ -118,6 +142,7 @@ export class EditorSession {
     this.autosaveMs = deps.autosaveMs ?? DEFAULT_AUTOSAVE_MS;
     this.minCheckMs = deps.minCheckIntervalMs ?? DEFAULT_MIN_CHECK_MS;
     this.stashMs = deps.stashMs ?? DEFAULT_STASH_MS;
+    this.whenSettled = deps.whenSettled ?? (() => Promise.resolve());
     const saved = this.backup.load(page.id);
     const differs = saved !== null && (saved.title !== page.title || saved.body !== page.body);
     if (saved !== null && !differs) this.backup.remove(page.id);
@@ -130,6 +155,7 @@ export class EditorSession {
       authLost: false,
       gone: false,
       pendingBackup: differs ? saved : null,
+      titleInput: null,
     };
   }
 
@@ -216,6 +242,32 @@ export class EditorSession {
         void this.flush();
       }, this.autosaveMs);
     }
+  }
+
+  /** title 欄の入力。確定するまで保存しない。 */
+  editTitle(title: string): void {
+    if (isReadOnly(this.state)) return;
+    this.set({ titleInput: title });
+  }
+
+  /** title 欄の確定（blur、Enter）。打っていた title を draft に入れて、すぐに保存する。 */
+  commitTitle(): Promise<void> {
+    this.applyPendingTitle();
+    return this.flush();
+  }
+
+  /**
+   * 打っていた title を draft に入れる。自分への `[[旧 title]]` も同じ保存で新しい title に書き換える。
+   * 読み取り専用の間は入れずに残す（表示は残るので、解決したあとの確定か離脱で入る）。
+   */
+  private applyPendingTitle(): void {
+    const { titleInput, draft } = this.state;
+    if (titleInput === null || isReadOnly(this.state)) return;
+    // サーバーは前後の空白を落として保存する。手元も揃えないと、保存のたびに draft と base が食い違う
+    const title = singleLineTitle(titleInput);
+    this.set({ titleInput: null });
+    if (title === draft.title) return;
+    this.edit({ title, body: rewriteOwnTitleLinks(draft.body, draft.title, title) });
   }
 
   /** 変更が無ければ何も送らない。blur と離脱でも呼ぶ。 */
@@ -323,7 +375,11 @@ export class EditorSession {
       const same = server.title === this.state.draft.title && server.body === this.state.draft.body;
       if (!isDirty(this.state) || same) {
         this.clearTimer();
-        this.set({ base: server, draft: { title: server.title, body: server.body } });
+        this.set({
+          base: server,
+          draft: { title: server.title, body: server.body },
+          titleInput: null,
+        });
         this.removeBackup(server.id);
         return;
       }
@@ -331,6 +387,69 @@ export class EditorSession {
       this.set({ conflict: server });
       this.stash();
     });
+  }
+
+  /**
+   * リンクの書き換えの step を、このページの書き込みと重ならないように走らせる。step が開いている
+   * このページを書き換えたら、その版を同じ区切りの中で取り込む。保存の要求と step が行き違うと、
+   * 保存が古い版で 409 になり衝突の表示になるため、列に並べて直列にする。
+   */
+  runLinkRewriteStep<T extends LinkRewriteStepLike>(step: () => Promise<T>): Promise<T> {
+    return this.enqueue(async () => {
+      const result = await step();
+      const { processed } = result;
+      if (processed !== null && processed.sourcePageId === this.state.base.id) {
+        await this.adoptLinkRewrite(processed.version);
+      }
+      return result;
+    });
+  }
+
+  /**
+   * step が書き換えた版を取り込む。手元に未保存の編集があれば、サーバーの書き換えを重ねる。
+   * 書き換えだけでは説明できない変化（別の場所の保存）が混ざっていれば、フォーカス復帰と同じく衝突にする。
+   */
+  private async adoptLinkRewrite(version: number): Promise<void> {
+    if (!this.canWrite() || this.state.base.version >= version) return;
+    const res = await this.api.getPage(this.state.base.id);
+    if (!res.ok) {
+      if (res.reason === "unauthorized") {
+        this.set({ authLost: true });
+        this.stashIfDirty();
+      } else if (res.reason === "not_found") {
+        this.set({ gone: true });
+        this.stashIfDirty();
+      }
+      // 通信の失敗では取り込まない。次の保存が 409 になり、衝突として差分を見せる
+      return;
+    }
+    const server = res.value;
+    if (server.version <= this.state.base.version) return;
+    await this.whenSettled();
+    if (!this.canWrite()) return;
+    const { base, draft } = this.state;
+    // step は title を変えない。手元の確定済みで未保存の title はそのまま残す
+    const body =
+      server.title === base.title ? rebaseOnLinkRewrite(base.body, server.body, draft.body) : null;
+    if (body === null || this.state.pendingBackup !== null) {
+      if (!isDirty(this.state)) {
+        this.clearTimer();
+        this.set({ base: server, draft: { title: server.title, body: server.body } });
+        this.removeBackup(server.id);
+        return;
+      }
+      this.clearTimer();
+      this.set({ conflict: server });
+      this.stash();
+      return;
+    }
+    this.set({ base: server, draft: { title: draft.title, body } });
+    if (isDirty(this.state)) {
+      this.edit(this.state.draft);
+    } else {
+      this.clearTimer();
+      this.removeBackup(server.id);
+    }
   }
 
   /** 衝突を手元の内容で解決する。サーバーの最新の版に重ねて保存する。 */
@@ -352,6 +471,7 @@ export class EditorSession {
       base: conflict,
       draft: { title: conflict.title, body: conflict.body },
       conflict: null,
+      titleInput: null,
       ...NO_ERROR,
     });
     this.removeBackup(conflict.id);
@@ -371,7 +491,7 @@ export class EditorSession {
     const saved = this.state.pendingBackup;
     if (saved === null) return;
     const draft = { title: saved.title, body: saved.body };
-    this.set({ pendingBackup: null });
+    this.set({ pendingBackup: null, titleInput: null });
     if (saved.baseVersion !== this.state.base.version) {
       this.set({ draft, conflict: this.state.base });
       return;
@@ -435,8 +555,9 @@ export class EditorSession {
     });
   }
 
-  /** ページを離れるとき。タイマーを止めて、未保存の内容を退避してから保存を試みる。 */
+  /** ページを離れるとき。打っていた title を確定し、未保存の内容を退避してから保存を試みる。 */
   leave(): Promise<void> {
+    this.applyPendingTitle();
     this.clearTimer();
     this.clearStashTimer();
     if (!this.state.gone) this.stashIfDirty();

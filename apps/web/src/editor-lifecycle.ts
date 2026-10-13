@@ -1,4 +1,4 @@
-import { type EditorState, isDirty } from "./editor-session";
+import { type EditorState, hasPendingTitle, isDirty } from "./editor-session";
 
 export interface LifecycleSession {
   getState(): EditorState;
@@ -31,7 +31,9 @@ export function bindLifecycle(
   const onPageHide = () => void session.leave();
   const onBeforeUnload = (event: Event) => {
     const state = session.getState();
-    if (isDirty(state) || state.busy === "saving") event.preventDefault();
+    if (isDirty(state) || hasPendingTitle(state) || state.busy === "saving") {
+      event.preventDefault();
+    }
   };
   doc.addEventListener("visibilitychange", onVisibility);
   win.addEventListener("focus", onFocus);
