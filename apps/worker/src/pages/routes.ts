@@ -61,7 +61,10 @@ function pageResponse(c: PagesContext, page: Page, status: 200 | 201 = 200): Res
   );
 }
 
-function writeErrorResponse(c: PagesContext, error: WriteError | AppendError): Response {
+function writeErrorResponse(
+  c: PagesContext,
+  error: WriteError | AppendError,
+): Response | Promise<Response> {
   switch (error.reason) {
     case "invalid_title":
       return errorResponse(c, 400, "invalid_title", {
@@ -70,7 +73,7 @@ function writeErrorResponse(c: PagesContext, error: WriteError | AppendError): R
     case "body_too_large":
       return errorResponse(c, 413, "body_too_large");
     case "not_found":
-      return errorResponse(c, 404, "not_found");
+      return c.notFound();
     case "version_conflict":
       return errorResponse(c, 409, "version_conflict", {
         message: "版が合わない。最新版を読み直してから保存し直す",
@@ -207,18 +210,18 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         const title = c.req.query("title");
         if (title === undefined) return errorResponse(c, 400, "missing_field", { field: "title" });
         const page = await findPageByTitle(c.env.DB, title);
-        if (page === null) return errorResponse(c, 404, "not_found");
+        if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
       .get("/api/pages/:id", requireToken("read"), async (c) => {
         const id = c.req.param("id");
         const page = isPageId(id) ? await findPageById(c.env.DB, id) : null;
-        if (page === null) return errorResponse(c, 404, "not_found");
+        if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
       .put("/api/pages/:id", requireToken("write"), async (c) => {
         const id = c.req.param("id");
-        if (!isPageId(id)) return errorResponse(c, 404, "not_found");
+        if (!isPageId(id)) return c.notFound();
         const ifMatch = requireIfMatch(c);
         if (!ifMatch.ok) return ifMatch.response;
         const parsed = await readJsonBody(c, { title: "string", body: "string" }, [
@@ -240,7 +243,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
       })
       .post("/api/pages/:id/append", requireToken("write"), async (c) => {
         const id = c.req.param("id");
-        if (!isPageId(id)) return errorResponse(c, 404, "not_found");
+        if (!isPageId(id)) return c.notFound();
         const parsed = await readJsonBody(c, { text: "string" }, ["text"]);
         if (!parsed.ok) return parsed.response;
         const text = parsed.value.text as string;
@@ -257,7 +260,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
       })
       .delete("/api/pages/:id", requireToken("write"), async (c) => {
         const id = c.req.param("id");
-        if (!isPageId(id)) return errorResponse(c, 404, "not_found");
+        if (!isPageId(id)) return c.notFound();
         const ifMatch = requireIfMatch(c);
         if (!ifMatch.ok) return ifMatch.response;
         const result = await deletePage(c.env.DB, {
