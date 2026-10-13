@@ -560,25 +560,45 @@ describe("Shift+Enter", () => {
 });
 
 describe("with history", () => {
-  function setupWithHistory(docWithCursor: string): EditorView {
+  /** `|` の位置にカーソルを置き、doc を変えた transaction の数を数える */
+  function setupCounting(docWithCursor: string): { view: EditorView; edits: () => number } {
     const cursor = docWithCursor.indexOf("|");
-    const view = mount((parent) => createEditor(parent, { doc: docWithCursor.replace("|", "") }));
+    let edits = 0;
+    const view = mount((parent) =>
+      createEditor(parent, {
+        doc: docWithCursor.replace("|", ""),
+        onUpdate: (update) => {
+          edits += update.transactions.filter((tr) => tr.docChanged).length;
+        },
+      }),
+    );
     view.dispatch({ selection: EditorSelection.cursor(cursor) });
-    return view;
+    return { view, edits: () => edits };
   }
 
-  test("one Tab is one undo step", () => {
-    const view = setupWithHistory("1. p\n   1. a\n2. b|\n3. c\n   more");
+  test("one Tab is one transaction and one undo step", () => {
+    const { view, edits } = setupCounting("1. p\n   1. a\n2. b|\n3. c\n   more");
     tab(view);
     expect(view.state.doc.toString()).toBe("1. p\n   1. a\n   2. b\n2. c\n   more");
+    expect(edits()).toBe(1);
+    expect(undoDepth(view.state)).toBe(1);
 
     undo(view);
     expect(view.state.doc.toString()).toBe("1. p\n   1. a\n2. b\n3. c\n   more");
   });
 
+  test("Shift+Tab and Shift+Enter are one transaction each", () => {
+    const { view, edits } = setupCounting("- a\n  - b|");
+    shiftTab(view);
+    expect(edits()).toBe(1);
+    shiftEnter(view);
+    expect(edits()).toBe(2);
+    expect(view.state.doc.toString()).toBe("- a\n- b\n  ");
+  });
+
   // newGroupDelay（500ms）の内側でも、直前と直後の入力とはまとめない
   test("a Tab between quick typing is its own undo step", () => {
-    const view = setupWithHistory("- a\n- |");
+    const { view } = setupCounting("- a\n- |");
     view.dispatch({
       changes: { from: 6, insert: "b" },
       selection: { anchor: 7 },
