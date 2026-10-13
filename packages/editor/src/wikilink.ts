@@ -13,9 +13,13 @@ import { isModifiedClick } from "./link-activation";
 import { createRevealTest } from "./reveal";
 
 export interface WikiLinkClick {
+  /** link 先の title。空なら同じ page の見出しか block（`[[#見出し]]`、`[[#^id]]`）。 */
   readonly target: string;
   readonly label: string | null;
+  /** `[[Note^id]]` の id。`[[Note#^id]]` の block は heading に `^id` として入る。 */
   readonly blockId: string | null;
+  /** `[[Note#見出し]]` の `#` の後ろ。 */
+  readonly heading: string | null;
 }
 
 export type WikiLinkClickHandler = (link: WikiLinkClick) => void;
@@ -45,12 +49,18 @@ export const wikiLinkResolver = Facet.define<WikiLinkResolver>();
 const TARGET_ATTR = "data-wikilink-target";
 const LABEL_ATTR = "data-wikilink-label";
 const BLOCK_ID_ATTR = "data-wikilink-block-id";
+const HEADING_ATTR = "data-wikilink-heading";
 const hide = Decoration.replace({});
 
 /** 最初に URL を返した facet の値を採る（複数ぶら下げるのはテストだけを想定） */
 function hrefOf(hrefs: readonly WikiLinkHref[], link: WikiLinkClick): string | null {
   for (const href of hrefs) {
-    const url = href({ target: link.target, label: link.label, blockId: link.blockId });
+    const url = href({
+      target: link.target,
+      label: link.label,
+      blockId: link.blockId,
+      heading: link.heading,
+    });
     if (url !== null) return url;
   }
   return null;
@@ -92,9 +102,13 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
         const attributes: Record<string, string> = { [TARGET_ATTR]: parts.target };
         if (parts.label !== null) attributes[LABEL_ATTR] = parts.label;
         if (parts.blockId !== null) attributes[BLOCK_ID_ATTR] = parts.blockId;
+        if (parts.heading !== null) attributes[HEADING_ATTR] = parts.heading;
         // resolver 未設定（テストや resolver 導入前）では判定不能として resolved 扱いにする。
+        // target が空の同じ page への link は、page の存在を問うまでもなく resolved。
         const resolved =
-          resolvers.length === 0 || resolvers.some((resolve) => resolve(parts.target));
+          parts.target === "" ||
+          resolvers.length === 0 ||
+          resolvers.some((resolve) => resolve(parts.target));
         const cls = resolved ? "cm-wikilink" : "cm-wikilink cm-wikilink-unresolved";
         const href = hrefOf(hrefs, parts);
         if (href !== null) {
@@ -150,11 +164,12 @@ const clickToNavigate = EditorView.domEventHandlers({
     const element =
       event.target instanceof Element ? event.target.closest(`[${TARGET_ATTR}]`) : null;
     const target = element?.getAttribute(TARGET_ATTR);
-    if (!element || !target) return false;
+    if (!element || target === null || target === undefined) return false;
     const link: WikiLinkClick = {
       target,
       label: element.getAttribute(LABEL_ATTR),
       blockId: element.getAttribute(BLOCK_ID_ATTR),
+      heading: element.getAttribute(HEADING_ATTR),
     };
     for (const handler of handlers) handler(link);
     event.preventDefault();

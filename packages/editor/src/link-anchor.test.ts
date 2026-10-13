@@ -163,6 +163,7 @@ describe("link activation", () => {
       target: "Some Page",
       label: null,
       blockId: null,
+      heading: null,
     });
     expect(seen).toHaveLength(0);
     // 素のクリックでも native の追従は止める（readonly な view と埋め込みでの二重遷移を防ぐ）

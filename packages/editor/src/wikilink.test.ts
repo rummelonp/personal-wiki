@@ -183,7 +183,74 @@ describe("escaped label pipe (\\|)", () => {
     view = createEditor(host, { doc: "| h |\n| - |\n| [[C\\|D]] |", onWikiLinkClick });
     const link = view.contentDOM.querySelector('[data-wikilink-target="C"]');
     link?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
-    expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "C", label: "D", blockId: null });
+    expect(onWikiLinkClick).toHaveBeenCalledWith({
+      target: "C",
+      label: "D",
+      blockId: null,
+      heading: null,
+    });
+  });
+});
+
+describe("WikiLink to a heading or a block", () => {
+  const click = (v: EditorView, selector: string) =>
+    v.contentDOM
+      .querySelector(selector)
+      ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+
+  it("passes the heading to the click handler and to the href", () => {
+    const onWikiLinkClick = vi.fn();
+    const hrefForWikiLink = vi.fn(() => "/x");
+    host = document.createElement("div");
+    document.body.append(host);
+    view = createEditor(host, {
+      doc: "[[A#見出し]] [[A#^abc]] [[A^def]]",
+      onWikiLinkClick,
+      hrefForWikiLink,
+    });
+    click(view, '[data-wikilink-heading="見出し"]');
+    click(view, '[data-wikilink-heading="^abc"]');
+    click(view, '[data-wikilink-block-id="def"]');
+    expect(onWikiLinkClick.mock.calls.map(([link]) => link)).toEqual([
+      { target: "A", label: null, blockId: null, heading: "見出し" },
+      { target: "A", label: null, blockId: null, heading: "^abc" },
+      { target: "A", label: null, blockId: "def", heading: null },
+    ]);
+    expect(hrefForWikiLink).toHaveBeenCalledWith({
+      target: "A",
+      label: null,
+      blockId: null,
+      heading: "見出し",
+    });
+  });
+
+  it("draws a same-page link as resolved and passes an empty target on click", () => {
+    const onWikiLinkClick = vi.fn();
+    const resolveWikiLink = vi.fn(() => false);
+    host = document.createElement("div");
+    document.body.append(host);
+    view = createEditor(host, {
+      doc: "[[#見出し]] と [[#^abc|ラベル]]",
+      onWikiLinkClick,
+      resolveWikiLink,
+    });
+    expect(view.contentDOM.querySelectorAll(".cm-wikilink")).toHaveLength(2);
+    expect(view.contentDOM.querySelector(".cm-wikilink-unresolved")).toBeNull();
+    expect(resolveWikiLink).not.toHaveBeenCalled();
+    click(view, '[data-wikilink-heading="見出し"]');
+    expect(onWikiLinkClick).toHaveBeenLastCalledWith({
+      target: "",
+      label: null,
+      blockId: null,
+      heading: "見出し",
+    });
+    click(view, '[data-wikilink-heading="^abc"]');
+    expect(onWikiLinkClick).toHaveBeenLastCalledWith({
+      target: "",
+      label: "ラベル",
+      blockId: null,
+      heading: "^abc",
+    });
   });
 });
 

@@ -258,7 +258,10 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
       return { destroy: () => nested.destroy(), invalidate: () => invalidateDecorations(nested) };
     },
     ...(onWikiLinkClick
-      ? { open: (target: string) => onWikiLinkClick({ target, label: null, blockId: null }) }
+      ? {
+          open: (target: string) =>
+            onWikiLinkClick({ target, label: null, blockId: null, heading: null }),
+        }
       : {}),
   };
 }

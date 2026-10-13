@@ -877,7 +877,12 @@ describe("page embed", () => {
       ?.querySelector(".cm-embed-page-title")
       ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
 
-    expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "note", label: null, blockId: null });
+    expect(onWikiLinkClick).toHaveBeenCalledWith({
+      target: "note",
+      label: null,
+      blockId: null,
+      heading: null,
+    });
     expect(v.state.selection.main.head).toBe(doc.length);
   });
 
@@ -892,7 +897,12 @@ describe("page embed", () => {
       ?.querySelector('[data-wikilink-target="Other"]')
       ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
 
-    expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "Other", label: null, blockId: null });
+    expect(onWikiLinkClick).toHaveBeenCalledWith({
+      target: "Other",
+      label: null,
+      blockId: null,
+      heading: null,
+    });
   });
 
   describe("wikilinks inside the embedded body", () => {
@@ -1061,11 +1071,16 @@ describe("section embed", () => {
     view?.contentDOM
       .querySelector(".cm-embed-page-title")
       ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
-    expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "Note", label: null, blockId: null });
+    expect(onWikiLinkClick).toHaveBeenCalledWith({
+      target: "Note",
+      label: null,
+      blockId: null,
+      heading: null,
+    });
   });
 
   it("does not treat a same-page heading embed as an embed", () => {
-    // [[#見出し]] は target が空なので WikiLink にならない（同じ page の見出しへの link は未対応）
+    // 同じ page の見出しへの link は WikiLink だが、自分自身の embed は展開しない
     const resolve = vi.fn(() => PAGE);
     const v = mount("前 ![[#A]] 後", { resolvePageEmbed: resolve });
     expect(v.contentDOM.querySelector(".cm-embed-page")).toBeNull();
