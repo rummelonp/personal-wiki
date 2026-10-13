@@ -174,13 +174,18 @@ export interface ResolvePrincipalOptions {
  * 検証できない cookie は、ここでは 401 にせず staleSession 付きの anonymous にする。401 にするかは
  * ルートの宣言が決める。ページの読み取り（allowAnonymousRead）は 401 にして cookie を消し、
  * ログインが切れたことを画面に伝える。匿名で 200 を返すと、owner のつもりの画面が draft の欠けた
- * 一覧を黙って出す。SPA の配信や /api/me などの allowAnonymous() のルートは匿名として扱い、
- * ブラウザが画面を開けなくなることを避ける。
+ * 一覧を黙って出す。SPA の配信や /api/me などの allowAnonymous() のルートは匿名として 200 を返す。
+ * HTML まで 401 にすると、ブラウザが画面を開けず、ログインへ進む導線も出せない。
  *
- * キャッシュの制御もここで行う。匿名を受け付けるルートも principal で内容が変わりうるので、
- * principal が決まった後の応答には Vary を付け、匿名以外の応答は共有キャッシュに載せない
- * （401 と 400 の早期返却はキャッシュされないステータスなので付けない）。ルートの宣言ではなく
- * principal を起点にするのは、宣言の種類を増やしたときに付け忘れないようにするため。
+ * キャッシュの制御もここで行う。ルートの宣言ではなく principal を起点にするのは、宣言の種類や
+ * 匿名に開くルートを増やしたときに付け忘れないようにするため（401 と 400 の早期返却は
+ * キャッシュされないステータスなので付けない）。
+ * - principal で内容が変わりうるので、principal が決まった後の応答には Vary を付ける
+ * - owner と token の応答は private, no-store で上書きする
+ * - 匿名の応答は、ハンドラが Cache-Control を付けていなければ no-store にする。public から draft に
+ *   戻したページは直ちに title で引けなくなる必要があり、ETag はあっても If-None-Match に応じないので、
+ *   no-cache で再検証させても得るものが無い。id で取った draft の本文を共有キャッシュに置かせない意味も
+ *   ある。キャッシュさせてよい応答（SPA の HTML の no-cache など）は、ハンドラが明示して外す
  */
 export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHandler<AppEnv> {
   return defineBaseMiddleware(
@@ -192,6 +197,7 @@ export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHa
       // next() の後に付けるのは、ハンドラが c.json などを使わずに返した Response にも効かせるため
       c.header("Vary", "Authorization, Cookie", { append: true });
       if (principal.kind !== "anonymous") c.header("Cache-Control", "private, no-store");
+      else if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "no-store");
     }),
   );
 }
@@ -298,11 +304,8 @@ const ANONYMOUS_READ_METHODS = new Set(["GET", "HEAD"]);
  * - 検証できないセッション cookie は 401 にして消す（理由は resolvePrincipal）。cookie を消すので、
  *   次の要求は cookie の無い匿名として通る
  * - anonymous は GET と HEAD だけ。読み取りの宣言を変更系のルートに付け間違えても、匿名には開かない
- *
- * anonymous の応答には no-store を付ける。public から draft に戻したページは直ちに title で引けなく
- * なる必要があり、ETag はあっても If-None-Match に応じないので、no-cache で再検証させても得るものが無い。
- * id で取った draft の本文を共有キャッシュに置かせない意味もある。owner と token の応答は
- * resolvePrincipal が private, no-store にする。
+ * - 応答の Cache-Control は resolvePrincipal が principal から決める。ハンドラは Cache-Control を
+ *   付けない（付けると anonymous の no-store が外れる）
  */
 export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
   return definePolicy(
@@ -318,7 +321,6 @@ export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
         return c.json({ error: "forbidden" }, 403);
       }
       await next();
-      if (principal.kind === "anonymous") c.header("Cache-Control", "no-store");
     }),
   );
 }

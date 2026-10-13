@@ -327,6 +327,22 @@ describe("同じパスに付けた宣言", () => {
   });
 });
 
+describe("/api/* の X-Robots-Tag", () => {
+  it("早期の 401 と 404 も含めて noindex を付ける", async () => {
+    const { request } = buildApp();
+    for (const [path, headers, status] of [
+      ["/api/healthz", {}, 200],
+      ["/api/test/read", {}, 401],
+      ["/api/healthz", bearer(generateTestToken()), 401],
+      ["/api/test/missing", {}, 404],
+    ] as const) {
+      const res = await request(path, headers);
+      expect(res.status, path).toBe(status);
+      expect(res.headers.get("X-Robots-Tag"), path).toBe("noindex");
+    }
+  });
+});
+
 describe("allowAnonymousRead", () => {
   it("変更系の method に付けても、匿名は 401 で、read の token は通る", async () => {
     const token = await insertToken({ name: "reader", scopes: "read" });
@@ -368,10 +384,20 @@ describe("キャッシュの制御", () => {
     }
   });
 
-  it("匿名の応答には Vary だけを付ける", async () => {
-    const res = await buildApp().request("/api/healthz");
-    expect(res.headers.get("Cache-Control")).toBeNull();
-    expect(res.headers.get("Vary")).toBe("Authorization, Cookie");
+  it("匿名の応答は、ハンドラが Cache-Control を付けていなければ no-store にする", async () => {
+    const app = createApp()
+      .get("/api/test/plain", allowAnonymous(), (c) => c.json({ ok: true }))
+      .get("/api/test/cacheable", allowAnonymous(), (c) => {
+        c.header("Cache-Control", "no-cache");
+        return c.json({ ok: true });
+      });
+    for (const path of ["/api/healthz", "/api/test/plain", "/api/test/missing"]) {
+      const res = await app.request(path, {}, env);
+      expect(res.headers.get("Cache-Control"), path).toBe("no-store");
+      expect(res.headers.get("Vary"), path).toBe("Authorization, Cookie");
+    }
+    const cacheable = await app.request("/api/test/cacheable", {}, env);
+    expect(cacheable.headers.get("Cache-Control")).toBe("no-cache");
   });
 
   it("ハンドラが直接返した Response にも付ける", async () => {

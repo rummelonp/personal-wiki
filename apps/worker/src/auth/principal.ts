@@ -37,13 +37,11 @@ export function principalHasScope(principal: Principal, required: Scope): boolea
  */
 export type ReadableVisibility = "all" | "public";
 
-/** anonymous は public だけ。owner と token は draft も読む（token の scope は宣言の側で検査する）。 */
+/**
+ * read の scope を持つ principal（owner と read の token）は draft も読み、それ以外は public だけ。
+ * 宣言の検査を経ないルート（allowAnonymous() など）から呼ばれても、scope の無い token に draft を
+ * 見せないよう、ここでも scope を見る。
+ */
 export function readableVisibilityOf(principal: Principal): ReadableVisibility {
-  switch (principal.kind) {
-    case "owner":
-    case "token":
-      return "all";
-    case "anonymous":
-      return "public";
-  }
+  return principalHasScope(principal, "read") ? "all" : "public";
 }
