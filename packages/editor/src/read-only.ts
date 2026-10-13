@@ -9,7 +9,9 @@ const readOnlyMode = new Compartment();
 /**
  * `EditorState.readOnly` が拒むのは CodeMirror 自身の入力経路だけなので、changeFilter で
  * `state.readOnly` を見ずに doc を書く extension が後から増えても入力を通さない。
- * `replaceDoc`（ホストからの差し替え）だけは通す。
+ * `replaceDoc`（ホストからの差し替え）だけは通す。`replaceDoc` と `setReadOnly` はどちらも変換が
+ * 落ち着くまで保留され、最初に保留した順に実行されるので、readOnly に切り替えた後に差し替えが
+ * 届くことがある。ここで差し替えを落とすと、ホストの本文と view の doc がずれたまま残る。
  */
 const readOnlyOn: Extension = [
   EditorState.readOnly.of(true),

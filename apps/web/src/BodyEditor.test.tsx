@@ -290,6 +290,35 @@ describe("読み取り専用", () => {
     await vi.waitFor(() => expect(v.state.readOnly).toBe(true));
     await vi.waitFor(() => expect(v.state.doc.toString()).toBe("下書き"));
   });
+
+  it("変換中に外から本文が変わってから読み取り専用になったら、落ち着いてから持ち主の本文にして切り替える", async () => {
+    // 差し替えが readOnly の切り替えより先に保留される順。持ち主は読み取り専用の間の入力を受け取らない
+    let value = "下書き";
+    let locked = false;
+    const onChange = vi.fn((next: string) => {
+      if (locked) return;
+      value = next;
+      api.rerender({ value });
+    });
+    const api = render({ value, onChange });
+    const v = api.view();
+
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    value = "サーバーの本文";
+    api.rerender({ value });
+    locked = true;
+    api.rerender({ readOnly: true });
+    typeAtEnd(v, "かくてい", "input.type.compose");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    expect(v.state.doc.toString()).toBe("下書きかくてい");
+    expect(v.state.readOnly).toBe(false);
+
+    await vi.waitFor(() => expect(v.state.readOnly).toBe(true));
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("サーバーの本文"));
+    await settle();
+    expect(v.state.doc.toString()).toBe("サーバーの本文");
+    expect(v.state.readOnly).toBe(true);
+  });
 });
 
 describe("jumpTo", () => {

@@ -177,12 +177,21 @@ describe("PageEditor と本文のエディタ", () => {
     await flushAsync();
     expect(v.state.doc.toString()).toBe(server.body);
 
-    act(() => {
-      v.contentDOM.dispatchEvent(
-        new InputEvent("beforeinput", { inputType: "historyUndo", cancelable: true }),
-      );
-    });
-    await flushAsync();
+    const undo = async () => {
+      act(() => {
+        v.contentDOM.dispatchEvent(
+          new InputEvent("beforeinput", { inputType: "historyUndo", cancelable: true }),
+        );
+      });
+      await flushAsync();
+    };
+    await undo();
+    expect(v.state.doc.toString()).toBe(server.body);
+
+    // 取り込んだ後の編集は、同じ操作で取り消せる（undo の操作が届いていることの確認）
+    typeAtEnd(v, "!");
+    expect(v.state.doc.toString()).toBe(`${server.body}!`);
+    await undo();
     expect(v.state.doc.toString()).toBe(server.body);
   });
 
