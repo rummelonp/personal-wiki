@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import * as z from "zod/v4";
 import type { Principal } from "../auth/principal";
 import { defineTool, toolResult } from "./tool";
 
