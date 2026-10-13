@@ -15,6 +15,9 @@ coverage/
 apps/worker/deploy.env
 apps/worker/wrangler.deploy.json
 
+# D1 のバックアップ（draft の本文を含む。apps/worker/scripts/backup.mjs の既定の出力先）
+apps/worker/backups/
+
 # AI エージェントの作業用ファイル
 .claude/plans/
 .claude/worktrees/
