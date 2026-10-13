@@ -242,7 +242,9 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-line.cm-lp-h4, .cm-line.cm-lp-h5, .cm-line.cm-lp-h6": {
     paddingTop: "var(--ui-space-2, 0.5rem)",
   },
-  ".cm-line.cm-lp-heading.cm-lp-heading-leading": { paddingTop: "0" },
+  ".cm-line.cm-lp-heading.cm-lp-heading-leading, .cm-line.cm-lp-heading.cm-lp-heading-continued": {
+    paddingTop: "0",
+  },
   // ぶら下げインデント。`--cm-lp-list-indent` は行頭から本文の始まりまでの幅（list-indent.ts）。
   // padding を広げて負の text-indent で 1 行目を戻す形にしないのは、タブ位置が padding の内側の端
   // （折り返した行の始まり）を起点に並ぶため。行頭の記号の前後にタブがあると本文の始まりがその格子に

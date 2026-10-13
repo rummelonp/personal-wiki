@@ -28,6 +28,11 @@ const leadingHeadingLines = [1, 2, 3, 4, 5, 6].map((level) =>
   Decoration.line({ class: `cm-lp-heading cm-lp-h${level} cm-lp-heading-leading` }),
 );
 
+/** 複数行にわたる setext 見出しの 2 行目以降。上の余白は見出しの先頭の行だけが持つ */
+const continuedHeadingLines = [1, 2, 3, 4, 5, 6].map((level) =>
+  Decoration.line({ class: `cm-lp-heading cm-lp-h${level} cm-lp-heading-continued` }),
+);
+
 /** 箇条書きの `-`/`*`/`+` を置き換える記号。番号付きリストの `1.` 等は対象外。 */
 class ListBulletWidget extends WidgetType {
   override toDOM(): HTMLElement {
@@ -47,6 +52,7 @@ class ListBulletWidget extends WidgetType {
 const listBullet = Decoration.replace({ widget: new ListBulletWidget() });
 
 const ATX_HEADING = /^ATXHeading([1-6])$/;
+const SETEXT_HEADING = /^SetextHeading([12])$/;
 
 class HorizontalRuleWidget extends WidgetType {
   override toDOM(): HTMLElement {
@@ -187,6 +193,31 @@ function build(view: EditorView): BuiltDecorations {
           if (line && !seen.has(`h:${lineFrom}`)) {
             seen.add(`h:${lineFrom}`);
             decorations.push(line.range(lineFrom));
+          }
+          return true;
+        }
+        const setext = SETEXT_HEADING.exec(node.name);
+        if (setext?.[1]) {
+          // 見出しの文は複数行にわたりうる。下線の行は見出しの大きさにせず、記号も隠さない
+          // （Obsidian の Live Preview も下線を source のまま残す）。
+          const level = Number(setext[1]);
+          const underline = node.node.lastChild;
+          if (underline?.name !== "HeaderMark") return true;
+          const first = state.doc.lineAt(node.from);
+          const last = state.doc.lineAt(underline.from);
+          for (let number = first.number; number < last.number; number += 1) {
+            const line = state.doc.line(number);
+            const lines =
+              number > first.number
+                ? continuedHeadingLines
+                : line.from === 0
+                  ? leadingHeadingLines
+                  : headingLines;
+            const decoration = lines[level - 1];
+            if (decoration && !seen.has(`h:${line.from}`)) {
+              seen.add(`h:${line.from}`);
+              decorations.push(decoration.range(line.from));
+            }
           }
           return true;
         }
