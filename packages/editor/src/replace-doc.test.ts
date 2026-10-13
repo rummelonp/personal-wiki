@@ -33,6 +33,14 @@ function mount(
   return { v: view, replacements };
 }
 
+function typeAt(v: EditorView, at: number, text: string): void {
+  v.dispatch({
+    changes: { from: at, insert: text },
+    selection: { anchor: at + text.length },
+    userEvent: "input.type",
+  });
+}
+
 describe("changedRange", () => {
   const state = (doc: string) => EditorState.create({ doc });
 
@@ -62,19 +70,58 @@ describe("changedRange", () => {
 });
 
 describe("replaceDoc", () => {
-  it("applies at once outside composition, without an undo step", () => {
+  it("applies at once outside composition", () => {
     const { v, replacements } = mount("one two three");
-    v.dispatch({ changes: { from: 0, insert: "> " }, userEvent: "input.type" });
+    replaceDoc(v, "one TWO three");
+    expect(v.state.doc.toString()).toBe("one TWO three");
+    expect(replacements).toHaveLength(1);
+  });
+
+  it("cuts the undo history so that undo does not bring back edits made before the replacement", () => {
+    // 差し替えた本文にも残る編集（保存済みの入力など）。履歴が残ると、undo で新しい本文から消える
+    const { v } = mount("one two three");
+    typeAt(v, 0, "> ");
     expect(undoDepth(v.state)).toBe(1);
 
     replaceDoc(v, "> one TWO three");
+    expect(undoDepth(v.state)).toBe(0);
+    expect(undo(v)).toBe(false);
     expect(v.state.doc.toString()).toBe("> one TWO three");
-    expect(replacements).toHaveLength(1);
+
+    // 差し替えの後の入力は、差し替えた本文まで戻せる
+    typeAt(v, v.state.doc.length, "!");
+    expect(undo(v)).toBe(true);
+    expect(v.state.doc.toString()).toBe("> one TWO three");
+  });
+
+  it("keeps the undo history when the text is the same as the doc", () => {
+    const { v } = mount("one");
+    typeAt(v, 3, " two");
+    replaceDoc(v, "one two");
+    expect(undoDepth(v.state)).toBe(1);
+    expect(undo(v)).toBe(true);
+    expect(v.state.doc.toString()).toBe("one");
+  });
+
+  it("cuts the undo history in the title view as well", () => {
+    const { v } = mount("Title", createTitleEditor);
+    typeAt(v, 0, "My ");
+    replaceDoc(v, "My Title 2");
+    expect(undoDepth(v.state)).toBe(0);
+    expect(undo(v)).toBe(false);
+    expect(v.state.doc.toString()).toBe("My Title 2");
+  });
+
+  it("cuts the undo history only when a held replacement is applied", async () => {
+    const { v } = mount("draft");
+    typeAt(v, 0, "> ");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    replaceDoc(v, "> draft 2");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
     expect(undoDepth(v.state)).toBe(1);
 
-    // undo はユーザーの入力だけを戻し、差し替えた部分は残す
-    undo(v);
-    expect(v.state.doc.toString()).toBe("one TWO three");
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("> draft 2"));
+    expect(undoDepth(v.state)).toBe(0);
   });
 
   it("maps the selection through the changed span", () => {

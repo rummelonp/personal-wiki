@@ -1,10 +1,25 @@
-import { Annotation, type EditorState, Transaction } from "@codemirror/state";
+import { history } from "@codemirror/commands";
+import {
+  Annotation,
+  Compartment,
+  type EditorState,
+  type Extension,
+  Transaction,
+  type TransactionSpec,
+} from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { dispatchWhenSettled, settledDispatch } from "./settled-dispatch";
 
 const docReplaced = Annotation.define<true>();
 
 const replaceKey = Symbol("replaceDoc");
+
+const historyMode = new Compartment();
+
+/** `history()` の代わりに積む。`replaceDoc` が差し替えたときに undo の履歴を切れるようにする */
+export function resettableHistory(): Extension {
+  return historyMode.of(history());
+}
 
 /**
  * `replaceDoc` が使う extension。`createEditor` と `createTitleEditor` の view には最初から入っている。
@@ -21,7 +36,9 @@ export const docReplacement = settledDispatch;
  *   保留中に何度呼ばれても、最後に渡した `text` だけを適用する。
  * - 変わった範囲だけを書き換えるので、変わっていない部分の selection と装飾はそのまま残る。
  *   selection は変更に沿って写す。
- * - undo の履歴には積まない。ユーザーが undo しても、差し替える前の内容には戻らない。
+ * - undo の履歴を切る（`createEditor` と `createTitleEditor` の view。他の view では履歴に積まない
+ *   だけ）。残すと、差し替えの前の編集を写した変更が新しい本文の上で取り消され、ホストの本文と
+ *   ずれた内容が保存されうる。`text` が doc と同じで何もしないときは、ユーザーの undo を残す。
  * - `readOnly` の view にも適用する（readOnly が止めるのはユーザーの入力だけ）。
  *
  * 保留している間にユーザーが入力した内容は、適用時に `text` で上書きされる。上書きしてよいかは
@@ -40,10 +57,22 @@ export function isDocReplacement(tr: Transaction): boolean {
 function apply(view: EditorView, text: string): void {
   const change = changedRange(view.state, text);
   if (!change) return;
-  view.dispatch({
+  const replacement: TransactionSpec = {
     changes: change,
     annotations: [Transaction.addToHistory.of(false), docReplaced.of(true)],
-  });
+  };
+  const historyExtension = historyMode.get(view.state);
+  if (historyExtension === undefined) {
+    view.dispatch(replacement);
+    return;
+  }
+  // history の StateField はモジュールに 1 つで、積み直しても値を引き継ぐ。差し替えの transaction で
+  // 一度外し、次の transaction で積み直して、空の履歴から作り直させる
+  const replaced = view.state.update({ ...replacement, effects: historyMode.reconfigure([]) });
+  view.dispatch([
+    replaced,
+    replaced.state.update({ effects: historyMode.reconfigure(historyExtension) }),
+  ]);
 }
 
 /**

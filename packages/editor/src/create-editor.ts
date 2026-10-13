@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Language } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
@@ -33,7 +33,7 @@ import { listKeymap } from "./list-keymap";
 import { livePreview } from "./live-preview";
 import type { PageIndex } from "./page-index";
 import { readOnlyCompartment } from "./read-only";
-import { docReplacement } from "./replace-doc";
+import { docReplacement, resettableHistory } from "./replace-doc";
 import { type RevealPolicy, revealPolicy } from "./reveal";
 import { tables } from "./table";
 import { type TagClickHandler, tags } from "./tag";
@@ -149,7 +149,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     codeHighlighting,
     drawSelection(),
     EditorView.lineWrapping,
-    useHistory ? history() : [],
+    useHistory ? resettableHistory() : [],
     keymap.of([...defaultKeymap, ...(useHistory ? historyKeymap : [])]),
     listKeymap(),
     editorSurfaceTheme,

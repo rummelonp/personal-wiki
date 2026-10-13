@@ -2,7 +2,6 @@ import {
   copyLineDown,
   copyLineUp,
   defaultKeymap,
-  history,
   historyKeymap,
   insertBlankLine,
   insertNewlineAndIndent,
@@ -13,7 +12,7 @@ import { type Command, drawSelection, EditorView, keymap, type ViewUpdate } from
 import { imeDebug } from "./debug-ime";
 import { focusRing } from "./focus";
 import { type ImeEvent, isComposing } from "./ime";
-import { docReplacement } from "./replace-doc";
+import { docReplacement, resettableHistory } from "./replace-doc";
 import { editorSurfaceTheme } from "./theme";
 
 export interface CreateTitleEditorOptions {
@@ -185,7 +184,7 @@ export function createTitleEditor(
   const extensions: Extension[] = [
     newlinesToSpaces,
     titleKeymap(options.bodyView, options.onCommit),
-    history(),
+    resettableHistory(),
     keymap.of([...titleDefaultKeymap, ...historyKeymap]),
     drawSelection(),
     EditorView.lineWrapping,
