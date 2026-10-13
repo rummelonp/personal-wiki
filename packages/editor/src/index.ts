@@ -1,3 +1,21 @@
+/**
+ * @packageDocumentation
+ * CodeMirror 6 の Live Preview エディタ。React には依存しない。
+ *
+ * 色と書体はホストの CSS 変数から受け取るので、ホストは editor の祖先（通常は `:root`）に次を置く。
+ * - 色: `--ui-color-background`、`-surface`、`-text`、`-muted`、`-border`、`-accent`、
+ *   `-accent-soft`、`-on-accent`、`-danger`
+ * - 書体: `--ui-font-body`、`--ui-font-heading`、`--ui-font-mono`
+ * - 明暗の切り替え: ライトでは `--ui-light: initial; --ui-dark: ;`、ダークでは逆にする。
+ *   editor の一部の色は `var(--ui-light, 明) var(--ui-dark, 暗)` の形で、`initial` にした側の
+ *   値が残り、空にした側は消える。
+ * - 任意（無ければ既定値）: `--ui-radius-sm`、`--ui-space-2`、`-3`、`-4`、`-6`
+ *
+ * 値の出発点は `test-tokens.ts` のテスト用ホストにある（`data-ui-scheme` と `--ui-editor-hue` は
+ * そのホストの切り替え方で、editor 自身は読まない）。
+ *
+ * doc を外から差し替えるときは `view.dispatch` ではなく `replaceDoc` を使う（IME 不変条件 1）。
+ */
 export type { EditorView, ViewUpdate } from "@codemirror/view";
 export {
   attachmentUpload,
