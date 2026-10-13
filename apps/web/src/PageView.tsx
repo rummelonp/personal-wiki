@@ -21,7 +21,11 @@ interface PageViewProps {
   target: PageTarget;
   /** owner なら編集の画面、それ以外は読み取り専用の画面で開く。切り替わるときは作り直させる（key） */
   owner: boolean;
-  /** 添付（画像）を使える環境か。`/api/me` の features */
+  /**
+   * 添付（画像）を使える環境か。`/api/me` の features。
+   * 作った時点の値で固定される（エディタを作り直さない限り反映されない）。
+   * 後から変わりうるなら、key に含めて画面ごと作り直させる。
+   */
   attachments: boolean;
 }
 

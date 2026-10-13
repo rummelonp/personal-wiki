@@ -279,6 +279,31 @@ describe("App の添付", () => {
       );
     },
   );
+
+  it("owner が draft の画像を埋め込んだページを開いてログアウトすると、その後は draft の id の画像を要求しない", async () => {
+    const recorder = recordImageSrcs();
+    restore = recorder.restore;
+    const draft = { ...DRAFT, body: `![[${NAME}]]` };
+    const page = { ...PUBLIC, body: `前文\n\n![[${draft.title}]]\n\n末尾` };
+    serve("owner", [page, draft], true);
+    await renderAt(titleUrl(page.title));
+    const draftSrc = `/api/pages/${draft.id}/attachments/${NAME}`;
+    await vi.waitFor(() => expect(recorder.srcs).toContain(draftSrc));
+
+    const requestedBefore = recorder.srcs.length;
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe(page.title));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(recorder.srcs.slice(requestedBefore).filter((src) => src.includes(draft.id))).toEqual(
+      [],
+    );
+  });
 });
 
 describe("App の owner の画面", () => {
