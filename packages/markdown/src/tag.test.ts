@@ -48,6 +48,50 @@ describe("extractTags", () => {
   });
 });
 
+describe("extractTags の境界", () => {
+  it.each([
+    ["https://example.com/page#section"],
+    ["foo#bar"],
+    ["[リンク](https://example.com/#top)"],
+    ["<https://example.com/#top>"],
+    ["a #ok と https://example.com/a#b"],
+  ])("# の直前が空白でなければ tag にしない: %s", (text) => {
+    expect(extractTags(text).filter((name) => name !== "ok")).toEqual([]);
+  });
+
+  it("行頭、空白、タブ、改行、全角空白の直後は tag にする", () => {
+    expect(extractTags("#a")).toEqual(["a"]);
+    expect(extractTags("x #b")).toEqual(["b"]);
+    expect(extractTags("x\t#c")).toEqual(["c"]);
+    expect(extractTags("x\n#d")).toEqual(["d"]);
+    expect(extractTags("メモ\u3000#e")).toEqual(["e"]);
+    expect(extractTags("- #f\n> #g")).toEqual(["f", "g"]);
+  });
+
+  it("記号だけの本体は tag にしない", () => {
+    for (const text of ["#/", "#-", "#_", "#--", "#_-", "x #/ y"]) {
+      expect(extractTags(text)).toEqual([]);
+    }
+  });
+
+  it("記号を含んでも文字か数字があれば tag にする", () => {
+    expect(extractTags("#-a #_b")).toEqual(["-a", "_b"]);
+  });
+
+  it("`/` が先頭、末尾、連続にある形は tag にしない", () => {
+    expect(extractTags("#/a")).toEqual([]);
+    expect(extractTags("#tag/")).toEqual([]);
+    expect(extractTags("#a/b/")).toEqual([]);
+    expect(extractTags("#a//b")).toEqual([]);
+    expect(extractTags("#a/b/c")).toEqual(["a/b/c"]);
+  });
+
+  it("ハイライトとコメントの開きの直後は tag にする", () => {
+    expect(extractTags("==#a== %%#b%%")).toEqual(["a", "b"]);
+    expect(extractTags("a=#b")).toEqual([]);
+  });
+});
+
 describe("frontmatterTagName", () => {
   it.each(["仕事", "foo/bar", "a-b_c", "1984"])("tag として読める値を返す: %s", (value) => {
     expect(frontmatterTagName(value)).toBe(value);
@@ -61,7 +105,7 @@ describe("frontmatterTagName", () => {
     expect(frontmatterTagName("##仕事")).toBe(null);
   });
 
-  it.each(["", "~", "a, b", "a b", "#", "a#b", "[[a]]"])(
+  it.each(["", "~", "a, b", "a b", "#", "a#b", "[[a]]", "-", "_", "/", "a/", "/a"])(
     "tag として読めない値は null: %s",
     (value) => {
       expect(frontmatterTagName(value)).toBe(null);
