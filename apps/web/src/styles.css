@@ -74,7 +74,7 @@ a {
 }
 
 .search {
-  flex: 1 1 12rem;
+  flex: 1 1 var(--search-min-width);
   max-width: var(--hero-search-width);
 }
 
@@ -579,7 +579,7 @@ a {
 }
 
 .diff {
-  max-height: 50vh;
+  max-height: var(--diff-max-height);
   margin: var(--space-3) 0;
   overflow: auto;
   font-family: var(--font-mono);

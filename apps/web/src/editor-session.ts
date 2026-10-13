@@ -33,6 +33,8 @@ export interface EditorDeps {
   autosaveMs?: number;
   /** フォーカス復帰の確認の最小間隔。visibilitychange と focus が続けて来ても 1 回にする。 */
   minCheckIntervalMs?: number;
+  /** ログイン切れの間の入力を localStorage へ書くまでの待ち。入力のたびに書かず、まとめる。 */
+  stashMs?: number;
 }
 
 export type FailedOp =
@@ -87,6 +89,7 @@ export function saveStatusOf(state: EditorState): SaveStatus {
 
 const DEFAULT_AUTOSAVE_MS = 2000;
 const DEFAULT_MIN_CHECK_MS = 3000;
+const DEFAULT_STASH_MS = 1000;
 
 /**
  * ページ 1 件の編集状態。React から切り離してあり、タイマーと API は注入できる。
@@ -102,7 +105,9 @@ export class EditorSession {
   private readonly now: () => number;
   private readonly autosaveMs: number;
   private readonly minCheckMs: number;
+  private readonly stashMs: number;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private stashTimer: ReturnType<typeof setTimeout> | null = null;
   private tail: Promise<unknown> = Promise.resolve();
   private lastCheckAt = Number.NEGATIVE_INFINITY;
 
@@ -112,6 +117,7 @@ export class EditorSession {
     this.now = deps.now ?? Date.now;
     this.autosaveMs = deps.autosaveMs ?? DEFAULT_AUTOSAVE_MS;
     this.minCheckMs = deps.minCheckIntervalMs ?? DEFAULT_MIN_CHECK_MS;
+    this.stashMs = deps.stashMs ?? DEFAULT_STASH_MS;
     const saved = this.backup.load(page.id);
     const differs = saved !== null && (saved.title !== page.title || saved.body !== page.body);
     if (saved !== null && !differs) this.backup.remove(page.id);
@@ -144,6 +150,11 @@ export class EditorSession {
   private clearTimer(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  private clearStashTimer(): void {
+    if (this.stashTimer !== null) clearTimeout(this.stashTimer);
+    this.stashTimer = null;
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -189,7 +200,13 @@ export class EditorSession {
     const { authLost } = this.state;
     this.set({ draft, ...NO_ERROR });
     if (authLost) {
-      this.stashIfDirty();
+      // 保存はできないので、入力のたびに localStorage へ書かず、止まってからまとめて書く。
+      // 離脱（leave）では待たずに書く
+      this.clearStashTimer();
+      this.stashTimer = setTimeout(() => {
+        this.stashTimer = null;
+        this.stashIfDirty();
+      }, this.stashMs);
       return;
     }
     this.clearTimer();
@@ -283,7 +300,7 @@ export class EditorSession {
   /** フォーカス復帰で呼ぶ。手元に未保存の変更が無ければ最新を読み直し、あれば衝突にする。 */
   checkFreshness(): Promise<void> {
     return this.enqueue(async () => {
-      if (!this.canWrite() || this.state.busy !== null) return;
+      if (!this.canWrite()) return;
       const at = this.now();
       if (at - this.lastCheckAt < this.minCheckMs) return;
       this.lastCheckAt = at;
@@ -421,6 +438,7 @@ export class EditorSession {
   /** ページを離れるとき。タイマーを止めて、未保存の内容を退避してから保存を試みる。 */
   leave(): Promise<void> {
     this.clearTimer();
+    this.clearStashTimer();
     if (!this.state.gone) this.stashIfDirty();
     return this.flush({ keepalive: true });
   }

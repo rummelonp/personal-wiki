@@ -350,9 +350,30 @@ describe("ログイン切れ", () => {
     expect(saveStatusOf(session.getState())).toBe("auth");
     expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
     session.edit({ title: "題", body: "手元 続き" });
+    session.edit({ title: "題", body: "手元 続き 続き" });
+    expect(backup.load(ID)?.body).toBe("手元");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(backup.load(ID)?.body).toBe("手元 続き 続き");
     await vi.advanceTimersByTimeAsync(5000);
     expect(api.updatePage).toHaveBeenCalledTimes(1);
+  });
+
+  it("ログイン切れの間の入力は、離脱すれば待たずに退避する", async () => {
+    const { session, api, backup } = setup();
+    api.updatePage = async () => ({ ok: false, reason: "unauthorized" });
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    session.edit({ title: "題", body: "手元 続き" });
+    await session.leave();
     expect(backup.load(ID)?.body).toBe("手元 続き");
+  });
+
+  it("フォーカス復帰で 401 を受けても、未保存が無ければ何も退避しない", async () => {
+    const { session, api, backup } = setup();
+    api.getPage = async () => ({ ok: false, reason: "unauthorized" });
+    await session.checkFreshness();
+    expect(saveStatusOf(session.getState())).toBe("auth");
+    expect(backup.load(ID)).toBeNull();
   });
 
   it("再試行でログインし直した後の保存が通る", async () => {

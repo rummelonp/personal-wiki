@@ -9,6 +9,7 @@ import {
   type EditorApi,
   EditorSession,
   type FailedOp,
+  isDirty,
   isReadOnly,
   type SaveStatus,
   saveStatusOf,
@@ -177,7 +178,11 @@ export function PageEditor({ page }: { page: Page }) {
 
         {state.authLost && (
           <section className="message message-warn" role="alert">
-            <p>ログインの期限が切れました。未保存の内容はこの端末に退避してあります。</p>
+            <p>
+              {isDirty(state)
+                ? "ログインの期限が切れました。未保存の内容はこの端末に退避してあります。"
+                : "ログインの期限が切れました。未保存の変更はありません。"}
+            </p>
             <div className="actions">
               <a className="button button-primary" href={loginHref(window.location)}>
                 ログインし直す
