@@ -1,84 +1,136 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   backup,
   backupDirName,
-  countInserts,
   countSql,
   DATA_TABLES,
+  defaultIo,
   EXCLUDED_TABLES,
-  exportArgs,
+  executeArgs,
   load,
   loadArgs,
+  migrationsCompatible,
   parseArgs,
-  parseCounts,
   parseManifest,
+  rowStatements,
   run,
+  STATEMENT_LIMIT,
+  sanitizeStderr,
+  selectSql,
+  TABLES,
   TOKEN_TABLES,
   tablesToDump,
 } from "./backup.mjs";
 
 const MIGRATIONS_DIR = new URL("../migrations/", import.meta.url);
+const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR).sort();
 
-const DUMP = [
-  "PRAGMA defer_foreign_keys=TRUE;",
-  `INSERT INTO "pages" ("seq","id") VALUES(1,'a');`,
-  `INSERT INTO "pages" ("seq","id","body") VALUES(2,'b',replace('1\\n2','\\n',char(10)));`,
-  `INSERT INTO "revisions" ("page_id") VALUES('a');`,
-  `INSERT INTO "api_tokens" ("name") VALUES('t');`,
-  "",
-].join("\n");
-
-interface Recorded {
-  spawns: string[][];
-  files: Map<string, string>;
-  removed: string[];
-  stderr: string;
+const tmpDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function tmp() {
+  const dir = mkdtempSync(join(tmpdir(), "backup-test-"));
+  tmpDirs.push(dir);
+  return dir;
 }
 
-/**
- * wrangler とファイルを差し替えた Io。export は DUMP を出力先に書き、execute は counts を順に返す。
- * counts は { 表: 行数 } の並びで、1 回の行数の問い合わせにつき 1 つ使う。
- */
-function fakeIo(options: { counts?: Record<string, number>[]; failOn?: string } = {}) {
-  const rec: Recorded = { spawns: [], files: new Map(), removed: [], stderr: "" };
-  const counts = [...(options.counts ?? [])];
-  const io = {
-    spawn: (_command: string, args: string[]) => {
-      // 先頭は wrangler の bin のパス。以降が wrangler への引数
-      const wranglerArgs = args.slice(1);
-      rec.spawns.push(wranglerArgs);
-      if (options.failOn !== undefined && wranglerArgs.includes(options.failOn)) {
-        return { status: 1, stdout: "" };
-      }
-      if (wranglerArgs[1] === "export") {
-        rec.files.set(wranglerArgs[wranglerArgs.indexOf("--output") + 1] as string, DUMP);
-        return { status: 0, stdout: "" };
-      }
-      if (wranglerArgs.includes("--json")) {
-        const next = counts.shift() ?? {};
-        const results = Object.entries(next).map(([t, n]) => ({ t, n }));
-        return { status: 0, stdout: JSON.stringify([{ results }]) };
-      }
-      return { status: 0, stdout: "" };
-    },
-    stderr: { write: (chunk: string) => (rec.stderr += chunk) },
-    now: () => new Date("2026-10-14T12:34:56.789Z"),
-    fs: {
-      mkdir: () => {},
-      rm: (path: string) => rec.removed.push(path),
-      read: (path: string) => {
-        const text = rec.files.get(path);
-        if (text === undefined) throw new Error(`ENOENT: ${path}`);
-        return text;
-      },
-      write: (path: string, text: string) => rec.files.set(path, text),
-      exists: (path: string) => rec.files.has(path),
-      restrict: () => {},
-    },
-    resolveRemote: () => "/work/wrangler.deploy.json",
+/** migration を適用した D1 の代わりの SQLite。wrangler が付ける d1_migrations も作る */
+function migratedDb(files = MIGRATION_FILES) {
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)");
+  for (const name of files) {
+    db.exec(readFileSync(new URL(name, MIGRATIONS_DIR), "utf8"));
+    db.prepare("INSERT INTO d1_migrations (name) VALUES (?)").run(name);
+  }
+  return db;
+}
+
+type Spawn = (command: string, args: string[]) => { status: number | null; stdout: string };
+
+/** `wrangler d1 execute` を SQLite に対して実行する。onCommand で呼び出しを観測・割り込みできる */
+function fakeWrangler(db: DatabaseSync, onCommand?: (sql: string) => void): Spawn {
+  return (_command, args) => {
+    const w = args.slice(1);
+    const command = w.indexOf("--command");
+    if (command >= 0) {
+      const sql = w[command + 1] as string;
+      onCommand?.(sql);
+      return { status: 0, stdout: JSON.stringify([{ results: db.prepare(sql).all() }]) };
+    }
+    db.exec(readFileSync(w[w.indexOf("--file") + 1] as string, "utf8"));
+    return { status: 0, stdout: "" };
   };
-  return { io, rec };
+}
+
+function ioFor(
+  db: DatabaseSync,
+  over: Record<string, unknown> = {},
+  onCommand?: (sql: string) => void,
+) {
+  const out = { stderr: "" };
+  const io = {
+    ...defaultIo,
+    spawn: fakeWrangler(db, onCommand),
+    stderr: { write: (chunk: string) => (out.stderr += chunk) },
+    now: () => new Date("2026-10-14T12:34:56.789Z"),
+    ...over,
+  } as typeof defaultIo;
+  return { io, out };
+}
+
+/** 文字列を CAST(X'…' AS TEXT) で SQL に書く。NUL や改行、引用符を含んでも変わらない */
+const lit = (s: string | null) =>
+  s === null ? "NULL" : `CAST(X'${Buffer.from(s).toString("hex")}' AS TEXT)`;
+
+interface PageSeed {
+  id: string;
+  title: string;
+  body: string;
+  versions?: number;
+  deleted?: boolean;
+}
+
+function seedPage(db: DatabaseSync, p: PageSeed) {
+  const versions = p.versions ?? 1;
+  const deleted = p.deleted === true;
+  db.exec(
+    `INSERT INTO pages (id, visibility, version, created_at, updated_at, deleted_at, deleted_by, title_key, title, body) VALUES (${lit(p.id)}, 'draft', ${versions}, 1, 2, ${deleted ? 3 : "NULL"}, ${deleted ? lit("owner") : "NULL"}, ${lit(p.id)}, ${lit(p.title)}, ${lit(p.body)})`,
+  );
+  for (let v = 1; v <= versions; v++) {
+    db.exec(
+      `INSERT INTO revisions (page_id, version, actor, created_at, title, body) VALUES (${lit(p.id)}, ${v}, ${lit(`token:t${v}`)}, ${v}, ${lit(p.title)}, ${lit(`${p.body}#${v}`)})`,
+    );
+  }
+}
+
+/** 本文の復元で壊れやすいものを集めたページ */
+const NASTY_BODY = [
+  "literal backslash-n: a\\nb and a\\rb and \\\\ and \\0",
+  "real newline:\nCR:\rCRLF:\r\nend",
+  "quotes: ' \" `; semicolon; -- comment /* x */",
+  "emoji: 😀👨‍👩‍👧 日本語 ｶﾅ",
+  "nul:\u0000in the middle\u0000",
+].join("\n");
+
+function seedNasty(db: DatabaseSync) {
+  seedPage(db, { id: "aaaaaaaaaaaaaaaaaaaaaa", title: NASTY_BODY, body: NASTY_BODY, versions: 2 });
+  seedPage(db, { id: "bbbbbbbbbbbbbbbbbbbbbb", title: "", body: "", deleted: true });
+  seedPage(db, { id: "cccccccccccccccccccccc", title: "x", body: "a\\nb" });
+}
+
+function dump(db: DatabaseSync, table: string) {
+  const columns = (TABLES[table]?.columns ?? []).map((c) =>
+    c.kind === "text" ? `hex(${c.name}) AS ${c.name}, typeof(${c.name}) AS ${c.name}_t` : c.name,
+  );
+  const key = TABLES[table]?.key.join(", ");
+  return JSON.stringify(
+    db.prepare(`SELECT ${columns.join(", ")} FROM ${table} ORDER BY ${key}`).all(),
+  );
 }
 
 describe("parseArgs", () => {
@@ -110,6 +162,8 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--force"])).toThrow("unknown option");
     expect(() => parseArgs(["extra"])).toThrow("unexpected argument");
     expect(() => parseArgs(["--out"])).toThrow("--out needs");
+    expect(() => parseArgs(["--out", "--remote"])).toThrow("--out needs");
+    expect(() => parseArgs(["--out=-x"])).toThrow("--out needs");
     expect(() => parseArgs(["load"])).toThrow("load needs");
     expect(() => parseArgs(["load", "a", "b"])).toThrow("unexpected argument");
     expect(() => parseArgs(["load", "a", "--with-tokens"])).toThrow("only for backup");
@@ -121,56 +175,62 @@ describe("ダンプする表", () => {
   it("既定は pages と revisions で、api_tokens は --with-tokens でだけ足す", () => {
     expect(tablesToDump(false)).toEqual(["pages", "revisions"]);
     expect(tablesToDump(true)).toEqual(["pages", "revisions", "api_tokens"]);
-  });
-
-  it("migrations の表は、ダンプするか除外するかのどちらかに分類されている", () => {
-    const created = new Set<string>();
-    for (const name of readdirSync(MIGRATIONS_DIR)) {
-      const sql = readFileSync(new URL(name, MIGRATIONS_DIR), "utf8");
-      for (const m of sql.matchAll(/^CREATE (?:VIRTUAL )?TABLE (\w+)/gm)) {
-        created.add(m[1] as string);
-      }
-    }
-    const classified = new Set([...DATA_TABLES, ...TOKEN_TABLES, ...Object.keys(EXCLUDED_TABLES)]);
-    expect([...created].filter((t) => !classified.has(t))).toEqual([]);
-    expect([...classified].filter((t) => !created.has(t))).toEqual([]);
-  });
-
-  it("FTS の仮想テーブルはダンプしない", () => {
     expect(DATA_TABLES).not.toContain("pages_fts");
-    expect(TOKEN_TABLES).not.toContain("pages_fts");
+    expect(TOKEN_TABLES).toEqual(["api_tokens"]);
+  });
+
+  it("migration を適用した DB の表は、ダンプするか除外するかのどちらかに分類されている", () => {
+    const db = migratedDb();
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'pages_fts_%' AND name <> 'd1_migrations'",
+      )
+      .all()
+      .map((r) => r.name as string);
+    const classified = new Set([...Object.keys(TABLES), ...Object.keys(EXCLUDED_TABLES)]);
+    expect(tables.filter((t) => !classified.has(t))).toEqual([]);
+    expect([...classified].filter((t) => !tables.includes(t))).toEqual([]);
+  });
+
+  it("TABLES の列は、migration を適用した DB の列と順序も型も一致する", () => {
+    const db = migratedDb();
+    for (const [table, spec] of Object.entries(TABLES)) {
+      const actual = db
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .map((r) => `${r.name}:${String(r.type).toUpperCase() === "INTEGER" ? "int" : "text"}`);
+      expect(spec.columns.map((c) => `${c.name}:${c.kind}`)).toEqual(actual);
+      const pk = db
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .filter((r) => Number(r.pk) > 0)
+        .map((r) => r.name);
+      expect([...pk].sort()).toEqual([...spec.key].sort());
+    }
   });
 });
 
 describe("wrangler への引数", () => {
-  it("export は表を 1 回にまとめ、スキーマを出さない", () => {
-    expect(exportArgs(["pages", "revisions"], "/o/data.sql", { remote: false })).toEqual([
+  it("execute は --json で SELECT を渡し、remote は合成した設定を付ける", () => {
+    expect(executeArgs("SELECT 1", { remote: false })).toEqual([
       "d1",
-      "export",
+      "execute",
       "DB",
       "--local",
-      "--no-schema",
-      "--table",
-      "pages",
-      "--table",
-      "revisions",
-      "--output",
-      "/o/data.sql",
-      "--skip-confirmation",
+      "--json",
+      "--command",
+      "SELECT 1",
     ]);
-  });
-
-  it("remote は合成した設定を渡す", () => {
-    const args = exportArgs(["pages"], "/o/data.sql", { remote: true, configPath: "/c.json" });
-    expect(args).toContain("--remote");
-    expect(args.slice(args.indexOf("--config"), args.indexOf("--config") + 2)).toEqual([
+    const remote = executeArgs("SELECT 1", { remote: true, configPath: "/c.json" });
+    expect(remote).toContain("--remote");
+    expect(remote.slice(remote.indexOf("--config"), remote.indexOf("--config") + 2)).toEqual([
       "--config",
       "/c.json",
     ]);
-    expect(args).not.toContain("--local");
+    expect(remote).not.toContain("--local");
   });
 
-  it("load は SQL ファイルを --file で流す", () => {
+  it("load は SQL ファイルを --file で流し、d1 export は使わない", () => {
     expect(loadArgs("/o/data.sql", { remote: false })).toEqual([
       "d1",
       "execute",
@@ -180,23 +240,55 @@ describe("wrangler への引数", () => {
       "--file",
       "/o/data.sql",
     ]);
+    expect(selectSql("pages", null)).not.toContain("export");
+  });
+
+  it("SELECT は文字列の列を hex() で受け、続きは主キーの後ろから読む", () => {
+    expect(selectSql("pages", null)).toContain('hex("body")');
+    expect(selectSql("pages", null)).not.toContain('hex("seq")');
+    expect(selectSql("pages", [5])).toContain('("seq") > (5)');
+    expect(selectSql("revisions", ["6162", 3])).toContain(
+      '("page_id", "version") > (CAST(X\'6162\' AS TEXT), 3)',
+    );
+    expect(() => selectSql("revisions", ["x'; DROP", 3])).toThrow("not a hex string");
   });
 
   it("行数の SQL は表ごとの SELECT を UNION ALL でつなぐ", () => {
     expect(countSql(["pages", "revisions"])).toBe(
-      "SELECT 'pages' AS t, count(*) AS n FROM pages UNION ALL SELECT 'revisions' AS t, count(*) AS n FROM revisions",
+      "SELECT 'pages' AS t, count(*) AS n FROM \"pages\" UNION ALL SELECT 'revisions' AS t, count(*) AS n FROM \"revisions\"",
     );
   });
 });
 
-describe("countInserts", () => {
-  it("行頭の INSERT を表ごとに数え、本文中の改行は退避済みとして 1 行に数える", () => {
-    expect(countInserts(DUMP, ["pages", "revisions", "api_tokens"])).toEqual({
-      pages: 2,
-      revisions: 1,
-      api_tokens: 1,
+describe("rowStatements", () => {
+  it("本文が最大（64 KiB）でも、すべての文が D1 の上限（100 KB）に収まる", () => {
+    // 3 バイトと 4 バイトの文字を混ぜ、分割位置が文字の途中にならないことも確かめる
+    const body = `${"あ😀".repeat(9362)}aa`;
+    expect(Buffer.byteLength(body)).toBe(65536);
+    const hex = Buffer.from(body).toString("hex").toUpperCase();
+    const row = [1, "AA", "6472616674", 1, 1, 2, null, null, "AA", "AA", hex];
+    const statements = rowStatements("pages", row);
+    expect(statements.length).toBeGreaterThan(1);
+    for (const s of statements) expect(Buffer.byteLength(s)).toBeLessThan(STATEMENT_LIMIT);
+    expect(statements.every((s) => !s.includes("\n"))).toBe(true);
+
+    const db = migratedDb();
+    db.exec(statements.join("\n"));
+    const restored = db.prepare("SELECT hex(body) AS h FROM pages").get() as { h: string };
+    expect(restored.h).toBe(hex);
+  });
+
+  it("空の本文は空文字列として入り、NULL とは区別される", () => {
+    const db = migratedDb();
+    db.exec(
+      rowStatements("pages", [1, "AA", "6472616674", 1, 1, 2, null, null, "AA", "", ""]).join("\n"),
+    );
+    expect(
+      db.prepare("SELECT typeof(body) AS b, typeof(deleted_at) AS d FROM pages").get(),
+    ).toMatchObject({
+      b: "text",
+      d: "null",
     });
-    expect(countInserts(DUMP, ["pages", "revisions"])).toEqual({ pages: 2, revisions: 1 });
   });
 });
 
@@ -208,161 +300,263 @@ describe("backupDirName", () => {
   });
 });
 
-describe("backup", () => {
-  it("日時のディレクトリに data.sql と manifest.json を置く", () => {
-    const { io, rec } = fakeIo();
-    const result = backup({ command: "backup", remote: false, out: "/b", withTokens: false }, io);
-    expect(result.dir).toBe("/b/2026-10-14T12-34-56Z-local");
-    expect(rec.spawns).toHaveLength(1);
-    expect(rec.spawns[0]).toContain("--local");
-    expect(rec.spawns[0]).not.toContain("api_tokens");
-    const manifest = JSON.parse(rec.files.get(`${result.dir}/manifest.json`) as string);
-    expect(manifest).toEqual({
-      version: 1,
-      createdAt: "2026-10-14T12:34:56.789Z",
-      target: "local",
-      file: "data.sql",
-      rows: { pages: 2, revisions: 1 },
+describe("backup と load の往復", () => {
+  it("2 文字の \\n と本物の改行、NUL、引用符、絵文字、空文字列、NULL を含む本文が完全に一致する", () => {
+    const source = migratedDb();
+    seedNasty(source);
+    source.exec(
+      `INSERT INTO api_tokens (name, token_hash, scopes, created_at) VALUES (${lit("t1")}, ${lit("deadbeef")}, ${lit("read write")}, 1)`,
+    );
+    const out = tmp();
+    const { io, out: log } = ioFor(source);
+    const result = backup({ command: "backup", remote: false, out, withTokens: true }, io);
+    expect(result.tables).toMatchObject({
+      pages: { rows: 3 },
+      revisions: { rows: 4 },
+      api_tokens: { rows: 1 },
     });
+    expect(result.skippedRevisions).toBe(0);
+    const files = readdirSync(result.dir).sort();
+    expect(files).toEqual(["data.sql", "manifest.json"]);
+    for (const line of readFileSync(join(result.dir, "data.sql"), "utf8").split("\n")) {
+      expect(Buffer.byteLength(line)).toBeLessThan(STATEMENT_LIMIT);
+    }
+
+    const dest = migratedDb();
+    const loaded = load({ command: "load", remote: false, dir: result.dir }, ioFor(dest).io);
+    expect(loaded.tables).toEqual(result.tables);
+    for (const table of ["pages", "revisions", "api_tokens"]) {
+      expect(dump(dest, table)).toBe(dump(source, table));
+    }
+    // hex の突き合わせに加えて、文字列としても同じか
+    expect(
+      dest.prepare("SELECT body FROM pages WHERE id = 'cccccccccccccccccccccc'").get(),
+    ).toEqual({
+      body: "a\\nb",
+    });
+    expect(log.stderr).toBe("");
   });
 
-  it("--with-tokens では api_tokens も出す", () => {
-    const { io, rec } = fakeIo();
-    const result = backup({ command: "backup", remote: false, out: "/b", withTokens: true }, io);
-    expect(rec.spawns[0]).toContain("api_tokens");
-    expect(result.rows.api_tokens).toBe(1);
+  it("既定では api_tokens を出さない", () => {
+    const source = migratedDb();
+    seedNasty(source);
+    source.exec(
+      `INSERT INTO api_tokens (name, token_hash, scopes, created_at) VALUES (${lit("t1")}, ${lit("deadbeef")}, ${lit("read")}, 1)`,
+    );
+    const { io } = ioFor(source);
+    const result = backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
+    expect(Object.keys(result.tables)).toEqual(["pages", "revisions"]);
+    expect(readFileSync(join(result.dir, "data.sql"), "utf8")).not.toContain("api_tokens");
   });
 
-  it("--remote は deploy.env から合成した設定で export する", () => {
-    const { io, rec } = fakeIo();
-    backup({ command: "backup", remote: true, out: "/b", withTokens: false }, io);
-    expect(rec.spawns[0]).toContain("--remote");
-    expect(rec.spawns[0]).toContain("/work/wrangler.deploy.json");
+  it("大きな本文が多くても batch に分けて読み、往復で一致する", () => {
+    const source = migratedDb();
+    const body = "x\\n".repeat(15_000);
+    const commands: string[] = [];
+    for (let i = 0; i < 130; i++) {
+      seedPage(source, {
+        id: `p${String(i).padStart(21, "0")}`,
+        title: `t${i}`,
+        body: `${body}${i}`,
+        versions: i % 3 === 0 ? 2 : 1,
+      });
+    }
+    const { io } = ioFor(source, {}, (sql) => commands.push(sql));
+    const result = backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
+    expect(commands.filter((c) => c.includes('FROM "pages"')).length).toBeGreaterThan(3);
+    expect(result.tables.pages?.rows).toBe(130);
+    expect(result.tables.revisions?.rows).toBe(130 + 44);
+
+    const dest = migratedDb();
+    load({ command: "load", remote: false, dir: result.dir }, ioFor(dest).io);
+    expect(dump(dest, "pages")).toBe(dump(source, "pages"));
+    expect(dump(dest, "revisions")).toBe(dump(source, "revisions"));
   });
 
-  it("wrangler が失敗したら、作りかけのディレクトリを消して例外にする", () => {
-    const { io, rec } = fakeIo({ failOn: "export" });
+  it("読んでいる間に増えたページと版は、dump に入れず、load が失敗しない", () => {
+    const source = migratedDb();
+    seedPage(source, { id: "aaaaaaaaaaaaaaaaaaaaaa", title: "a", body: "a", versions: 1 });
+    let injected = false;
+    const { io, out } = ioFor(source, {}, (sql) => {
+      // pages を読み終えて revisions に移った時点で、保存とページの作成を割り込ませる
+      if (!injected && sql.includes('FROM "revisions"')) {
+        injected = true;
+        source.exec("UPDATE pages SET version = 2 WHERE id = 'aaaaaaaaaaaaaaaaaaaaaa'");
+        source.exec(
+          `INSERT INTO revisions (page_id, version, actor, created_at, title, body) VALUES ('aaaaaaaaaaaaaaaaaaaaaa', 2, 'owner', 2, 'a', 'a2')`,
+        );
+        seedPage(source, { id: "bbbbbbbbbbbbbbbbbbbbbb", title: "b", body: "b" });
+      }
+    });
+    const result = backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
+    expect(injected).toBe(true);
+    expect(result.tables.pages?.rows).toBe(1);
+    expect(result.tables.revisions?.rows).toBe(1);
+    expect(result.skippedRevisions).toBe(2);
+
+    const dest = migratedDb();
+    load({ command: "load", remote: false, dir: result.dir }, ioFor(dest).io);
+    expect(dest.prepare("SELECT version FROM pages").all()).toEqual([{ version: 1 }]);
+    expect(out.stderr).toBe("");
+  });
+
+  it("remote で pages が 0 件なら失敗し、local では警告にとどめる", () => {
+    const empty = migratedDb();
+    const remote = ioFor(empty, { resolveRemote: () => "/c.json" });
     expect(() =>
-      backup({ command: "backup", remote: false, out: "/b", withTokens: false }, io),
-    ).toThrow("wrangler exited with 1");
-    expect(rec.removed).toEqual(["/b/2026-10-14T12-34-56Z-local"]);
-    expect(rec.files.size).toBe(0);
+      backup({ command: "backup", remote: true, out: tmp(), withTokens: false }, remote.io),
+    ).toThrow("not keeping an empty backup");
+    const local = ioFor(empty);
+    expect(run(["--out", tmp()], local.io)).toBe(0);
+    expect(local.out.stderr).toContain("warning: no pages were dumped");
   });
 });
 
-describe("run (backup)", () => {
-  it("行数を表示し、pages が空なら警告する", () => {
-    const { io, rec } = fakeIo();
-    expect(run(["--out", "/b"], io)).toBe(0);
-    expect(rec.stderr).toContain("pages 2, revisions 1");
-    expect(rec.stderr).not.toContain("warning");
+describe("load の検証", () => {
+  function backedUp() {
+    const source = migratedDb();
+    seedNasty(source);
+    const result = backup(
+      { command: "backup", remote: false, out: tmp(), withTokens: false },
+      ioFor(source).io,
+    );
+    return result.dir;
+  }
+  const args = (dir: string) => ({ command: "load", remote: false, dir }) as const;
 
-    const empty = fakeIo();
-    empty.io.spawn = (_c, args) => {
-      empty.rec.files.set(args[args.indexOf("--output") + 1] as string, "PRAGMA x;\n");
-      return { status: 0, stdout: "" };
-    };
-    expect(run(["--out", "/b"], empty.io)).toBe(0);
-    expect(empty.rec.stderr).toContain("warning: no pages were dumped");
+  it("対象の表に行があれば、何も流さずに拒否する", () => {
+    const dir = backedUp();
+    const dest = migratedDb();
+    seedPage(dest, { id: "zzzzzzzzzzzzzzzzzzzzzz", title: "z", body: "z" });
+    expect(() => load(args(dir), ioFor(dest).io)).toThrow("not empty (pages, revisions)");
+    expect(dest.prepare("SELECT count(*) AS n FROM pages").get()).toEqual({ n: 1 });
   });
 
-  it("不正な引数では wrangler を呼ばずに終了コード 1 にする", () => {
-    const { io, rec } = fakeIo();
-    expect(run(["--bogus"], io)).toBe(1);
-    expect(rec.spawns).toHaveLength(0);
-    expect(rec.stderr).toContain("unknown option");
+  it("migration が未適用の D1 は拒否する", () => {
+    const dir = backedUp();
+    const dest = new DatabaseSync(":memory:");
+    expect(() => load(args(dir), ioFor(dest).io)).toThrow("cannot read d1_migrations");
+  });
+
+  it("migration の一覧が食い違えば拒否し、復元先が先に進んでいるのは許す", () => {
+    const dir = backedUp();
+    const behind = migratedDb(MIGRATION_FILES.slice(0, 2));
+    expect(() => load(args(dir), ioFor(behind).io)).toThrow("migrations differ");
+
+    const ahead = migratedDb();
+    ahead.prepare("INSERT INTO d1_migrations (name) VALUES (?)").run("9999_future.sql");
+    expect(load(args(dir), ioFor(ahead).io).ahead).toEqual(["9999_future.sql"]);
+
+    expect(migrationsCompatible(["a", "b"], ["a", "b", "c"])).toBe(true);
+    expect(migrationsCompatible(["a", "b"], ["a", "c"])).toBe(false);
+    expect(migrationsCompatible(["a", "b"], ["a"])).toBe(false);
+  });
+
+  it("行数が同じでも、内容が違えば digest で検出する", () => {
+    const dir = backedUp();
+    const dataPath = join(dir, "data.sql");
+    const data = readFileSync(dataPath, "utf8");
+    // actor の token:t1 の 1 文字を変える（長さも行数も変わらない）
+    const draft = Buffer.from("token:t1").toString("hex").toUpperCase();
+    expect(data).toContain(draft);
+    writeFileSync(
+      dataPath,
+      data.replace(draft, Buffer.from("token:t9").toString("hex").toUpperCase()),
+    );
+    expect(() => load(args(dir), ioFor(migratedDb()).io)).toThrow("restored data differs");
+  });
+
+  it("manifest の無い（不完全な）ディレクトリは拒否する", () => {
+    const dir = backedUp();
+    rmSync(join(dir, "manifest.json"));
+    expect(() => load(args(dir), ioFor(migratedDb()).io)).toThrow("not a complete backup");
+  });
+});
+
+describe("backup の失敗", () => {
+  it("wrangler が失敗したら作りかけのディレクトリを消し、標準出力を表示しない", () => {
+    const out = tmp();
+    const { io } = ioFor(migratedDb(), {
+      spawn: () => ({
+        status: 1,
+        stdout: "SECRET-BODY https://signed.example/url",
+        stderr: `failed ${"ab".repeat(100)}`,
+      }),
+    });
+    let message = "";
+    try {
+      backup({ command: "backup", remote: false, out, withTokens: false }, io);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("wrangler exited with 1");
+    expect(message).not.toContain("SECRET-BODY");
+    expect(message).not.toContain("ab".repeat(30));
+    expect(readdirSync(out)).toEqual([]);
+  });
+
+  it("出力先が既にあれば失敗し、前のバックアップを消さない", () => {
+    const out = tmp();
+    const existing = join(out, backupDirName(new Date("2026-10-14T12:34:56.789Z"), false));
+    mkdirSync(existing);
+    writeFileSync(join(existing, "keep.txt"), "previous");
+    const { io } = ioFor(migratedDb());
+    expect(() => backup({ command: "backup", remote: false, out, withTokens: false }, io)).toThrow(
+      "EEXIST",
+    );
+    expect(readFileSync(join(existing, "keep.txt"), "utf8")).toBe("previous");
+  });
+
+  it("出力が JSON でなければ、出力を含めずに失敗する", () => {
+    const { io } = ioFor(migratedDb(), { spawn: () => ({ status: 0, stdout: "private text" }) });
+    expect(() =>
+      backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io),
+    ).toThrow(/^unexpected output from wrangler d1 execute$/);
+  });
+});
+
+describe("sanitizeStderr", () => {
+  it("長い hex の並びを省き、長さを切る", () => {
+    expect(sanitizeStderr(`error ${"AB".repeat(50)} end`)).toBe("error … end");
+    expect(sanitizeStderr("x".repeat(2000)).length).toBeLessThan(1100);
   });
 });
 
 describe("parseManifest", () => {
+  const sha = "a".repeat(64);
   const valid = {
     version: 1,
     createdAt: "2026-10-14T00:00:00.000Z",
     target: "local",
     file: "data.sql",
-    rows: { pages: 1, revisions: 2 },
+    migrations: ["0001_a.sql"],
+    tables: { pages: { rows: 1, sha256: sha }, revisions: { rows: 2, sha256: sha } },
   };
 
   it("許可した表だけの manifest を通す", () => {
-    expect(parseManifest(valid).rows).toEqual({ pages: 1, revisions: 2 });
-    expect(parseManifest({ ...valid, rows: { ...valid.rows, api_tokens: 0 } }).rows).toHaveProperty(
-      "api_tokens",
-    );
+    expect(parseManifest(valid).tables.pages?.rows).toBe(1);
+    expect(
+      parseManifest({
+        ...valid,
+        tables: { ...valid.tables, api_tokens: { rows: 0, sha256: sha } },
+      }),
+    ).toBeTruthy();
   });
 
-  it("SQL に埋め込めない表名、必須の表の欠落、別のファイル名を拒否する", () => {
-    expect(() => parseManifest({ ...valid, rows: { pages: 1, revisions: 1, "x; --": 1 } })).toThrow(
+  it("SQL に埋め込めない表名、必須の表の欠落、不正な digest、別のファイル名を拒否する", () => {
+    const bad = (patch: object) => () => parseManifest({ ...valid, ...patch });
+    expect(bad({ tables: { ...valid.tables, "x; --": { rows: 1, sha256: sha } } })).toThrow(
       "unexpected tables",
     );
-    expect(() => parseManifest({ ...valid, rows: { pages: 1 } })).toThrow("unexpected tables");
-    expect(() => parseManifest({ ...valid, rows: { pages: -1, revisions: 1 } })).toThrow(
+    expect(bad({ tables: { pages: valid.tables.pages } })).toThrow("unexpected tables");
+    expect(bad({ tables: { ...valid.tables, pages: { rows: -1, sha256: sha } } })).toThrow(
       "unexpected tables",
     );
-    expect(() => parseManifest({ ...valid, file: "../x.sql" })).toThrow("not a backup manifest");
+    expect(bad({ tables: { ...valid.tables, pages: { rows: 1, sha256: "zz" } } })).toThrow(
+      "unexpected tables",
+    );
+    expect(bad({ file: "../x.sql" })).toThrow("not a backup manifest");
+    expect(bad({ migrations: "x" })).toThrow("not a backup manifest");
     expect(() => parseManifest(null)).toThrow("not a backup manifest");
-  });
-});
-
-describe("parseCounts", () => {
-  it("wrangler d1 execute --json の出力から表ごとの行数を取る", () => {
-    expect(parseCounts(JSON.stringify([{ results: [{ t: "pages", n: 3 }] }]))).toEqual({
-      pages: 3,
-    });
-  });
-});
-
-describe("load", () => {
-  const dir = "/b/2026-10-14T12-34-56Z-local";
-  const manifest = JSON.stringify({
-    version: 1,
-    createdAt: "2026-10-14T00:00:00.000Z",
-    target: "local",
-    file: "data.sql",
-    rows: { pages: 2, revisions: 1 },
-  });
-
-  function ready(counts: Record<string, number>[]) {
-    const made = fakeIo({ counts });
-    made.rec.files.set(`${dir}/manifest.json`, manifest);
-    made.rec.files.set(`${dir}/data.sql`, DUMP);
-    return made;
-  }
-  const args = { command: "load", remote: false, dir } as const;
-
-  it("空の D1 に data.sql を流し、行数が manifest と一致するのを確かめる", () => {
-    const { io, rec } = ready([
-      { pages: 0, revisions: 0 },
-      { pages: 2, revisions: 1 },
-    ]);
-    expect(load(args, io)).toEqual({ pages: 2, revisions: 1 });
-    expect(rec.spawns).toHaveLength(3);
-    expect(rec.spawns[1]).toEqual(loadArgs(`${dir}/data.sql`, { remote: false }));
-  });
-
-  it("対象の表に行があれば、何も流さずに拒否する", () => {
-    const { io, rec } = ready([{ pages: 1, revisions: 0 }]);
-    expect(() => load(args, io)).toThrow("not empty (pages)");
-    expect(rec.spawns).toHaveLength(1);
-  });
-
-  it("表が無い（migration 未適用）なら、何も流さずに拒否する", () => {
-    const { io, rec } = ready([]);
-    io.spawn = () => ({ status: 1, stdout: "" });
-    expect(() => load(args, io)).toThrow("apply the migrations first");
-    expect(rec.spawns).toHaveLength(0);
-  });
-
-  it("流した後の行数が manifest と違えば例外にする", () => {
-    const { io } = ready([
-      { pages: 0, revisions: 0 },
-      { pages: 2, revisions: 0 },
-    ]);
-    expect(() => load(args, io)).toThrow("revisions 0 (expected 1)");
-  });
-
-  it("manifest が無い（不完全な）ディレクトリは拒否する", () => {
-    const { io, rec } = fakeIo();
-    rec.files.set(`${dir}/data.sql`, DUMP);
-    expect(() => load(args, io)).toThrow("not a complete backup");
   });
 });

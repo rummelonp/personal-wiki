@@ -3,14 +3,20 @@
 //   node scripts/backup.mjs [--remote] [--out <dir>] [--with-tokens]
 //   node scripts/backup.mjs load <dir> [--remote]
 // 既定はローカルの D1。--remote は deploy.env から合成した設定（deploy-config.mjs）で D1 を解決する。
-// 実行ごとに <out>/<UTC の日時>-<local|remote>/ を作り、data.sql（INSERT 文だけ）と manifest.json を置く。
+// 実行ごとに <out>/<UTC の日時>-<local|remote>/ を作り、data.sql（INSERT と UPDATE だけ）と manifest.json を置く。
 // 既定の出力先 apps/worker/backups/ は gitignore 済み。draft の本文を含むので、別の場所を指定するときも
 // 追跡される場所には置かない。
+//
+// データは wrangler d1 export ではなく、SELECT で読んで INSERT を自分で組み立てる。export の形式は、
+// 本文にもとからある 2 文字の `\n`（バックスラッシュと n）を、改行を逃がした `\n` と区別せず、
+// 復元後に本物の改行へ変えてしまう。ここでは文字列の列を hex() で受け取り、CAST(X'…' AS TEXT) で戻すので、
+// NUL を含むどんなバイト列も変わらない。
 // load は、migration を適用済みで対象の表が空の D1 にだけ戻す。派生データ（links、tags、抜粋、検索の索引）は
 // ダンプに含まれないので、load のあとに Worker をデプロイして derived:rebuild を回す。
-
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
@@ -30,27 +36,96 @@ export const DEFAULT_OUT_DIR = `${WORKER_DIR}backups`;
 const DATA_FILE = "data.sql";
 const MANIFEST_FILE = "manifest.json";
 
-/** ダンプする表。本文の正本なので、これが欠けると復元できない。 */
-export const DATA_TABLES = ["pages", "revisions"];
+/** D1 の SQL 文の長さの上限（バイト）。`d1 execute --file` の 1 文ごとにも掛かる */
+export const STATEMENT_LIMIT = 100_000;
+/** 上限に余裕を持たせた、1 文の長さの目標。長い列を分けるときの基準にする */
+const STATEMENT_BUDGET = 90_000;
+/** 1 回の SELECT で読む行数の上限。ウィンドウ関数の対象を絞り、読み取る行数が表の大きさの 2 乗に増えないようにする */
+const BATCH_ROWS = 100;
+/**
+ * 1 回の SELECT で受け取る本文などの合計（hex にする前のバイト数）の目安。hex で 2 倍、JSON で少し増えるので、
+ * 応答は 1 MB 弱になる。D1 の応答の大きさの上限は公式の limits に書かれておらず、remote では確かめていない。
+ * 行の大きさの上限は 2 MB なので、これを超える 1 行でも単独で読める（超えた行で打ち切る）。
+ */
+const BATCH_BYTES = 256 * 1024;
 
 /**
- * --with-tokens でだけダンプする表。token_hash を含み、ダンプの流出がそのまま token の流出になる。
- * 既定で出さないのは、復元後に発行し直せば済むため。ただし失効済みの名前は再利用できず、
- * revisions.actor（token:<名前>）の指す先でもあるので、発行し直す名前は以前と変えること。
+ * @typedef {{ name: string; kind: "int" | "text" }} Column
+ * @typedef {{ columns: Column[]; key: string[]; long?: string }} TableSpec
  */
+
+/** @param {string} name */
+const int = (name) => /** @type {Column} */ ({ name, kind: "int" });
+/** @param {string} name */
+const text = (name) => /** @type {Column} */ ({ name, kind: "text" });
+
+/**
+ * ダンプする表の列と、読む順序の主キー。列は migrations/*.sql の定義の順で、テストが突き合わせる。
+ * long は 1 文に収まらないことがある列（本文は最大 64 KiB で、hex にすると 128 KiB になる）。
+ * pages と revisions は正本、api_tokens は --with-tokens でだけ出す。
+ * @type {Record<string, TableSpec>}
+ */
+export const TABLES = {
+  pages: {
+    columns: [
+      int("seq"),
+      text("id"),
+      text("visibility"),
+      int("version"),
+      int("created_at"),
+      int("updated_at"),
+      int("deleted_at"),
+      text("deleted_by"),
+      text("title_key"),
+      text("title"),
+      text("body"),
+    ],
+    key: ["seq"],
+    long: "body",
+  },
+  revisions: {
+    columns: [
+      text("page_id"),
+      int("version"),
+      text("actor"),
+      int("created_at"),
+      text("title"),
+      text("body"),
+    ],
+    key: ["page_id", "version"],
+    long: "body",
+  },
+  // token_hash を含み、ダンプの流出がそのまま token の流出になる。既定で出さないのは、復元後に
+  // 発行し直せば済むため。ただし失効済みの名前は再利用できず、revisions.actor（token:<名前>）の
+  // 指す先でもあるので、発行し直す名前は以前と変えること
+  api_tokens: {
+    columns: [
+      int("id"),
+      text("name"),
+      text("token_hash"),
+      text("scopes"),
+      int("created_at"),
+      int("last_used_at"),
+      int("revoked_at"),
+    ],
+    key: ["id"],
+  },
+};
+
+export const DATA_TABLES = ["pages", "revisions"];
 export const TOKEN_TABLES = ["api_tokens"];
 
 /**
- * ダンプしない表と、その理由。migrations/*.sql の表がこのどちらかか DATA_TABLES、TOKEN_TABLES に
- * 入っていることをテストが検査する（表を足したときに、バックアップの要否を決め忘れないため）。
+ * ダンプしない表と、その理由。migrations/*.sql の表が TABLES かここに入っていることをテストが検査する
+ * （表を足したときに、バックアップの要否を決め忘れないため）。
  */
 export const EXCLUDED_TABLES = {
   // 派生データ。pages と revisions の本文から derived:rebuild で作り直せる。
-  // 復元後は rebuild が必要になる（FTS は export できない）ので、同じ経路にそろえて外部キーの順序を避ける
+  // FTS5 は復元後に rebuild が必ず要るので、同じ経路にそろえて外部キーの順序を避ける
   links: "derived",
   tags: "derived",
   page_excerpts: "derived",
-  // FTS5 の仮想テーブルは D1 の export ができない。shadow table（pages_fts_*）は仮想テーブルが作る
+  // FTS5 の仮想テーブルは D1 の export もできない。shadow table（pages_fts_*）は仮想テーブルが作る
   pages_fts: "derived",
   // 保存の batch が版の衝突を検出するための表。常に空
   save_guard: "transient",
@@ -58,7 +133,8 @@ export const EXCLUDED_TABLES = {
 
 const USAGE = `usage:
   backup [--remote] [--out <dir>] [--with-tokens]
-  backup load <dir> [--remote]`;
+  backup load <dir> [--remote]
+  相対パスの起点は、コマンドを実行したディレクトリ（pnpm なら apps/worker）`;
 
 /**
  * @typedef {{ command: "backup"; remote: boolean; out: string; withTokens: boolean }
@@ -80,13 +156,13 @@ export function parseArgs(argv) {
     if (arg === "--remote") remote = true;
     else if (arg === "--local") remote = false;
     else if (arg === "--with-tokens") withTokens = true;
-    else if (arg === "--out") out = argv[++i];
+    else if (arg === "--out") out = argv[++i] ?? "";
     else if (arg.startsWith("--out=")) out = arg.slice("--out=".length);
     else if (arg.startsWith("-")) throw new Error(`unknown option: ${arg}`);
     else positional.push(arg);
   }
-  if (argv.includes("--out") && (out === undefined || out === "")) {
-    throw new Error("--out needs a directory");
+  if (out !== undefined && (out === "" || out.startsWith("-"))) {
+    throw new Error("--out needs a directory (a value starting with - is not accepted)");
   }
   if (positional[0] === "load") {
     if (out !== undefined || withTokens) {
@@ -106,39 +182,16 @@ export function tablesToDump(withTokens) {
   return withTokens ? [...DATA_TABLES, ...TOKEN_TABLES] : DATA_TABLES;
 }
 
-/**
- * @param {{ remote: false } | { remote: true; configPath: string }} target
- *   remote では、D1 の ID を持つ設定ファイルを渡す
- */
+/** @typedef {{ remote: false } | { remote: true; configPath: string }} Target */
+
+/** @param {Target} target */
 function targetFlags(target) {
   return target.remote ? ["--remote", "--config", target.configPath] : ["--local"];
 }
 
 /**
- * 表を 1 回の export にまとめるのは、export の途中でリクエストが止まるので 1 つの時点のダンプになり、
- * 表ごとに分けると pages と revisions の間に保存が割り込みうるため。
- * スキーマは migration が作るので --no-schema にする。
- * @param {string[]} tables
- * @param {string} outputPath
- * @param {{ remote: false } | { remote: true; configPath: string }} target
- */
-export function exportArgs(tables, outputPath, target) {
-  return [
-    "d1",
-    "export",
-    D1_BINDING,
-    ...targetFlags(target),
-    "--no-schema",
-    ...tables.flatMap((table) => ["--table", table]),
-    "--output",
-    outputPath,
-    "--skip-confirmation",
-  ];
-}
-
-/**
  * @param {string} sql
- * @param {{ remote: false } | { remote: true; configPath: string }} target
+ * @param {Target} target
  */
 export function executeArgs(sql, target) {
   return ["d1", "execute", D1_BINDING, ...targetFlags(target), "--json", "--command", sql];
@@ -146,36 +199,145 @@ export function executeArgs(sql, target) {
 
 /**
  * @param {string} filePath
- * @param {{ remote: false } | { remote: true; configPath: string }} target
+ * @param {Target} target
  */
 export function loadArgs(filePath, target) {
   return ["d1", "execute", D1_BINDING, ...targetFlags(target), "--yes", "--file", filePath];
 }
 
+/** @param {string} name */
+const quoteIdent = (name) => `"${name}"`;
+
 /**
- * 表の行数を 1 つの SELECT で返す SQL。表名は固定の一覧から選び、外から来た値は埋め込まない。
- * @param {string[]} tables
+ * 読む順序の主キーの値を SQL のリテラルにする。text の値は hex のまま持っているので、
+ * 引用符の扱いを考えずに済む形で書く。
+ * @param {Column} column
+ * @param {number | string | null} value
  */
-export function countSql(tables) {
-  return tables.map((t) => `SELECT '${t}' AS t, count(*) AS n FROM ${t}`).join(" UNION ALL ");
+function literal(column, value) {
+  if (value === null) return "NULL";
+  if (column.kind === "int") {
+    if (!Number.isSafeInteger(value)) throw new Error(`${column.name} is not an integer`);
+    return String(value);
+  }
+  if (typeof value !== "string" || !/^[0-9A-Fa-f]*$/.test(value)) {
+    throw new Error(`${column.name} is not a hex string`);
+  }
+  return value === "" ? "''" : `CAST(X'${value}' AS TEXT)`;
 }
 
 /**
- * ダンプの INSERT 文を表ごとに数える。export は改行を replace(..., '\n', char(10)) で退避して
- * 1 行 1 文にするので、行頭の INSERT で数えられる。
- * @param {string} sql
- * @param {string[]} tables
- * @returns {Record<string, number>}
+ * 表を主キーの順に、本文の大きさで区切って読む SELECT。文字列の列は hex() で受け取り（NULL は NULL のまま）、
+ * 列は c0, c1, … の別名で返す。
+ * 区切りは「それまでの合計が BATCH_BYTES に達していない行まで」で、最初の行は必ず入るので読み進められる。
+ * @param {string} table
+ * @param {(number | string | null)[] | null} after 直前の batch の最後の行の主キー。最初は null
  */
-export function countInserts(sql, tables) {
-  /** @type {Record<string, number>} */
-  const counts = Object.fromEntries(tables.map((t) => [t, 0]));
-  for (const line of sql.split("\n")) {
-    const match = /^INSERT INTO "([^"]+)" /.exec(line);
-    const table = match?.[1];
-    if (table !== undefined && table in counts) counts[table] = (counts[table] ?? 0) + 1;
+export function selectSql(table, after) {
+  const spec = /** @type {TableSpec} */ (TABLES[table]);
+  const byName = new Map(spec.columns.map((c) => [c.name, c]));
+  const keyColumns = spec.key.map((k) => /** @type {Column} */ (byName.get(k)));
+  const keyList = spec.key.map(quoteIdent).join(", ");
+  const where =
+    after === null
+      ? "1"
+      : `(${keyList}) > (${keyColumns.map((c, i) => literal(c, after[i] ?? null)).join(", ")})`;
+  const size = `${spec.columns
+    .filter((c) => c.kind === "text")
+    .map((c) => `coalesce(length(CAST(${quoteIdent(c.name)} AS BLOB)), 0)`)
+    .join(" + ")} + 64`;
+  const select = spec.columns
+    .map((c, i) => {
+      const q = quoteIdent(c.name);
+      return c.kind === "int"
+        ? `${q} AS c${i}`
+        : `CASE WHEN ${q} IS NULL THEN NULL ELSE hex(${q}) END AS c${i}`;
+    })
+    .join(", ");
+  return (
+    `SELECT ${select} FROM (` +
+    `SELECT *, ${size} AS _size, SUM(${size}) OVER (ORDER BY ${keyList}) AS _run FROM (` +
+    `SELECT * FROM ${quoteIdent(table)} WHERE ${where} ORDER BY ${keyList} LIMIT ${BATCH_ROWS}` +
+    `)) WHERE _run - _size < ${BATCH_BYTES} ORDER BY ${keyList}`
+  );
+}
+
+/**
+ * 表ごとの行数を 1 つの SELECT で返す SQL。表名は TABLES のキーだけ。
+ * @param {string[]} tables
+ */
+export function countSql(tables) {
+  return tables
+    .map((t) => `SELECT '${t}' AS t, count(*) AS n FROM ${quoteIdent(t)}`)
+    .join(" UNION ALL ");
+}
+
+export const MIGRATIONS_SQL = "SELECT name FROM d1_migrations ORDER BY id";
+
+/**
+ * 1 行（selectSql の c0, c1, … の順）。int は数値、text は hex の文字列、NULL は null。
+ * @typedef {(number | string | null)[]} Row
+ */
+
+/** @param {string} hex */
+const hexToText = (hex) => Buffer.from(hex, "hex").toString("utf8");
+
+/**
+ * INSERT と、1 文に収まらない本文を足す UPDATE を組み立てる。文は 1 行に 1 つで、改行を含まない。
+ * 本文は UTF-8 の文字の途中で切らずに分け、UPDATE は blob として連結する（text の連結は NUL で切れない
+ * ことを確かめてあるが、blob の方が型の変換に依存しない）。
+ * @param {string} table
+ * @param {Row} row
+ * @returns {string[]}
+ */
+export function rowStatements(table, row) {
+  const spec = /** @type {TableSpec} */ (TABLES[table]);
+  const columnList = spec.columns.map((c) => quoteIdent(c.name)).join(", ");
+  const longIndex =
+    spec.long === undefined ? -1 : spec.columns.findIndex((c) => c.name === spec.long);
+  const longHex = longIndex < 0 ? null : (row[longIndex] ?? null);
+  /** @param {string} bodyHex */
+  const insert = (bodyHex) =>
+    `INSERT INTO ${quoteIdent(table)} (${columnList}) VALUES(${spec.columns
+      .map((c, i) => (i === longIndex ? literal(c, bodyHex) : literal(c, row[i] ?? null)))
+      .join(",")});`;
+  const keyWhere = spec.key
+    .map((k) => {
+      const i = spec.columns.findIndex((c) => c.name === k);
+      return `${quoteIdent(k)} = ${literal(/** @type {Column} */ (spec.columns[i]), row[i] ?? null)}`;
+    })
+    .join(" AND ");
+  /** @param {string} chunkHex */
+  const append = (chunkHex) =>
+    `UPDATE ${quoteIdent(table)} SET ${quoteIdent(/** @type {string} */ (spec.long))} = CAST(CAST(${quoteIdent(/** @type {string} */ (spec.long))} AS BLOB) || X'${chunkHex}' AS TEXT) WHERE ${keyWhere};`;
+
+  if (typeof longHex !== "string") return checked([insert("")]);
+  const bytes = Buffer.from(longHex, "hex");
+  const overhead = Math.max(Buffer.byteLength(insert("")), Buffer.byteLength(append("")));
+  const chunkBytes = Math.floor((STATEMENT_BUDGET - overhead) / 2);
+  if (chunkBytes < 16) throw new Error(`a row of ${table} is too large for one statement`);
+  /** @type {string[]} */
+  const chunks = [];
+  let pos = 0;
+  do {
+    let end = Math.min(pos + chunkBytes, bytes.length);
+    // 次の byte が UTF-8 の継続 byte なら、文字の途中なので手前の文字の境界まで戻る
+    while (end < bytes.length && end > pos && ((bytes[end] ?? 0) & 0xc0) === 0x80) end--;
+    if (end === pos && pos < bytes.length) throw new Error("cannot split a body at a character");
+    chunks.push(bytes.subarray(pos, end).toString("hex").toUpperCase());
+    pos = end;
+  } while (pos < bytes.length);
+  return checked([insert(chunks[0] ?? ""), ...chunks.slice(1).map(append)]);
+}
+
+/** @param {string[]} statements */
+function checked(statements) {
+  for (const s of statements) {
+    if (Buffer.byteLength(s) >= STATEMENT_LIMIT) {
+      throw new Error("a generated statement exceeds the D1 statement size limit");
+    }
   }
-  return counts;
+  return statements;
 }
 
 /**
@@ -193,40 +355,51 @@ export function backupDirName(date, remote) {
  *   createdAt: string;
  *   target: "local" | "remote";
  *   file: string;
- *   rows: Record<string, number>;
+ *   migrations: string[];
+ *   tables: Record<string, { rows: number; sha256: string }>;
  * }} Manifest
  */
 
 /**
- * manifest は手元のファイルだが、load が SQL に埋め込む表名の出どころなので、許可した表名だけを通す。
+ * manifest は手元のファイルだが、load が SQL に埋め込む表名の出どころなので、TABLES にある表名だけを通す。
  * @param {unknown} value
  * @returns {Manifest}
  */
 export function parseManifest(value) {
-  const allowed = new Set([...DATA_TABLES, ...TOKEN_TABLES]);
   const v = /** @type {Record<string, any> | null} */ (value);
   if (
     typeof v !== "object" ||
     v === null ||
     v.version !== 1 ||
     v.file !== DATA_FILE ||
-    typeof v.rows !== "object" ||
-    v.rows === null
+    !Array.isArray(v.migrations) ||
+    !v.migrations.every((/** @type {unknown} */ m) => typeof m === "string") ||
+    typeof v.tables !== "object" ||
+    v.tables === null
   ) {
     throw new Error(`${MANIFEST_FILE} is not a backup manifest`);
   }
-  const tables = Object.keys(v.rows);
+  const names = Object.keys(v.tables);
   const valid =
-    DATA_TABLES.every((t) => tables.includes(t)) &&
-    tables.every((t) => allowed.has(t) && Number.isInteger(v.rows[t]) && v.rows[t] >= 0);
-  if (!valid) throw new Error(`${MANIFEST_FILE} has unexpected tables or row counts`);
+    DATA_TABLES.every((t) => names.includes(t)) &&
+    names.every((t) => {
+      const entry = v.tables[t];
+      return (
+        Object.hasOwn(TABLES, t) &&
+        Number.isInteger(entry?.rows) &&
+        entry.rows >= 0 &&
+        typeof entry.sha256 === "string" &&
+        /^[0-9a-f]{64}$/.test(entry.sha256)
+      );
+    });
+  if (!valid) throw new Error(`${MANIFEST_FILE} has unexpected tables, row counts or digests`);
   return /** @type {Manifest} */ (v);
 }
 
 /**
  * テストで wrangler の実行、ファイル、時刻、出力先を差し替えるための口。
  * @typedef {{
- *   spawn: (command: string, args: string[], options: import("node:child_process").SpawnSyncOptionsWithStringEncoding) => { status: number | null; stdout: string };
+ *   spawn: (command: string, args: string[], options: import("node:child_process").SpawnSyncOptionsWithStringEncoding) => { status: number | null; stdout: string; stderr?: string; error?: Error };
  *   stderr: { write(chunk: string): unknown };
  *   now: () => Date;
  *   fs: {
@@ -234,6 +407,7 @@ export function parseManifest(value) {
  *     rm: (path: string) => void;
  *     read: (path: string) => string;
  *     write: (path: string, text: string) => void;
+ *     append: (path: string, text: string) => void;
  *     exists: (path: string) => boolean;
  *     restrict: (path: string, mode: number) => void;
  *   };
@@ -242,15 +416,20 @@ export function parseManifest(value) {
  */
 
 /** @type {Io} */
-const defaultIo = {
+export const defaultIo = {
   spawn: spawnSync,
   stderr: process.stderr,
   now: () => new Date(),
   fs: {
-    mkdir: (path) => mkdirSync(path, { recursive: true, mode: 0o700 }),
+    // 末端のディレクトリは recursive にせず作り、既にあれば失敗させる（失敗時の掃除で前のバックアップを消さない）
+    mkdir: (path) => {
+      mkdirSync(dirname(path), { recursive: true });
+      mkdirSync(path, { mode: 0o700 });
+    },
     rm: (path) => rmSync(path, { recursive: true, force: true }),
     read: (path) => readFileSync(path, "utf8"),
     write: (path, text) => writeFileSync(path, text, { mode: 0o600 }),
+    append: (path, text) => appendFileSync(path, text, { mode: 0o600 }),
     exists: (path) => existsSync(path) && statSync(path).isFile(),
     restrict: (path, mode) => chmodSync(path, mode),
   },
@@ -258,7 +437,17 @@ const defaultIo = {
 };
 
 /**
- * wrangler を実行して標準出力を返す。
+ * 失敗時にエラーへ出す wrangler の stderr。本文や hash を含みうる長い hex の並びは省き、長さも切る。
+ * @param {string} stderr
+ */
+export function sanitizeStderr(stderr) {
+  const cleaned = stderr.replace(/[0-9A-Fa-f]{40,}/g, "…").trim();
+  return cleaned.length > 1000 ? `${cleaned.slice(0, 1000)}…` : cleaned;
+}
+
+/**
+ * wrangler を実行して標準出力を返す。失敗時は標準出力を出さない（SELECT の結果の本文や、
+ * remote の export の署名付き URL を表示しないため）。
  * @param {string[]} args
  * @param {Io} io
  */
@@ -268,76 +457,197 @@ function runWrangler(args, io) {
   const result = io.spawn(process.execPath, [wranglerBin, ...args], {
     cwd: WORKER_DIR,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 256 * 1024 * 1024,
   });
   if (result.status !== 0) {
-    io.stderr.write(result.stdout ?? "");
-    throw new Error(`wrangler exited with ${result.status}`);
+    const detail = sanitizeStderr(result.stderr ?? result.error?.message ?? "");
+    throw new Error(`wrangler exited with ${result.status}${detail === "" ? "" : `:\n${detail}`}`);
   }
   return result.stdout ?? "";
 }
 
 /**
- * @param {ParsedArgs} args
- * @param {Io} io
- * @returns {{ remote: false } | { remote: true; configPath: string }}
+ * wrangler d1 execute --json の出力から行を取り出す。解析できないときは、出力を含めずに失敗する。
+ * @param {string} stdout
+ * @returns {Record<string, any>[]}
  */
-function resolveTarget(args, io) {
-  return args.remote ? { remote: true, configPath: io.resolveRemote() } : { remote: false };
+function parseRows(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    return parsed.flatMap((/** @type {{ results?: unknown[] }} */ set) => set.results ?? []);
+  } catch {
+    throw new Error("unexpected output from wrangler d1 execute");
+  }
 }
 
 /**
+ * @param {string} sql
+ * @param {Target} target
+ * @param {Io} io
+ */
+function query(sql, target, io) {
+  return parseRows(runWrangler(executeArgs(sql, target), io));
+}
+
+/**
+ * 表の全行を、主キーの順に batch ごとに読む。
+ * @param {string} table
+ * @param {Target} target
+ * @param {Io} io
+ * @returns {Generator<Row[]>}
+ */
+function* readBatches(table, target, io) {
+  const spec = /** @type {TableSpec} */ (TABLES[table]);
+  const keyIndexes = spec.key.map((k) => spec.columns.findIndex((c) => c.name === k));
+  /** @type {(number | string | null)[] | null} */
+  let after = null;
+  for (;;) {
+    /** @type {Row[]} */
+    const rows = query(selectSql(table, after), target, io).map((record) =>
+      spec.columns.map((_, i) => /** @type {number | string | null} */ (record[`c${i}`] ?? null)),
+    );
+    const last = /** @type {Row | undefined} */ (rows[rows.length - 1]);
+    if (last === undefined) return;
+    yield rows;
+    after = keyIndexes.map((i) => last[i] ?? null);
+  }
+}
+
+/**
+ * 行の列挙から、行数と全列の digest を求める。backup と load の検証で同じ形に揃える。
+ * @param {Iterable<Row[]>} batches
+ * @param {(rows: Row[]) => Row[]} [visit] batch ごとに呼び、digest に入れる行を返す
+ */
+function digestOf(batches, visit = (rows) => rows) {
+  const hash = createHash("sha256");
+  let rows = 0;
+  for (const batch of batches) {
+    for (const row of visit(batch)) {
+      hash.update(`${JSON.stringify(row)}\n`);
+      rows += 1;
+    }
+  }
+  return { rows, sha256: hash.digest("hex") };
+}
+
+/**
+ * @param {Target} target
+ * @param {Io} io
+ * @returns {string[]}
+ */
+function readMigrations(target, io) {
+  return query(MIGRATIONS_SQL, target, io).map((r) => String(r.name));
+}
+
+/**
+ * @typedef {{
+ *   dir: string;
+ *   tables: Record<string, { rows: number; sha256: string }>;
+ *   skippedRevisions: number;
+ * }} BackupResult
+ */
+
+/**
+ * pages を先に読んで INSERT を書き、revisions はその pages の版までのものだけを書く。
+ * 読んでいる間にも保存は続くので、表を複数回に分けて読むと時点がずれる。ずれは次の 2 つに限り、
+ * どちらも dump の外に出すので、load は外部キーでも版の衝突でも失敗しない。
+ *   - 読んだ後に作られたページ: pages に無いので、その revisions は書かない
+ *   - 読んだ後に保存されたページ: revisions のうち pages.version より新しい版は書かない
+ * revisions は追記だけで更新も削除もないので、書いた分は pages の版と整合する。
+ * ページ同士の時点は揃わない（先に読んだページは古く、後に読んだページは新しい）。
  * @param {Extract<ParsedArgs, { command: "backup" }>} args
  * @param {Io} io
- * @returns {{ dir: string; rows: Record<string, number> }}
+ * @returns {BackupResult}
  */
 export function backup(args, io) {
   const target = resolveTarget(args, io);
-  const tables = tablesToDump(args.withTokens);
   const dir = join(resolve(args.out), backupDirName(io.now(), args.remote));
   const dataPath = join(dir, DATA_FILE);
-  /** @type {Record<string, number>} */
-  let rows;
   io.fs.mkdir(dir);
   try {
-    runWrangler(exportArgs(tables, dataPath, target), io);
+    const migrations = readMigrations(target, io);
+    io.fs.write(dataPath, "");
     io.fs.restrict(dataPath, 0o600);
-    rows = countInserts(io.fs.read(dataPath), tables);
+    /** @param {string} table @param {Row[]} rows */
+    const write = (table, rows) => {
+      if (rows.length === 0) return;
+      io.fs.append(dataPath, `${rows.flatMap((row) => rowStatements(table, row)).join("\n")}\n`);
+    };
+
+    /** @type {Map<string, number>} */
+    const versions = new Map();
+    /** @type {BackupResult["tables"]} */
+    const tables = {};
+    let skippedRevisions = 0;
+    for (const table of tablesToDump(args.withTokens)) {
+      const spec = /** @type {TableSpec} */ (TABLES[table]);
+      const idIndex = spec.columns.findIndex(
+        (c) => c.name === (table === "pages" ? "id" : "page_id"),
+      );
+      const versionIndex = spec.columns.findIndex((c) => c.name === "version");
+      tables[table] = digestOf(readBatches(table, target, io), (batch) => {
+        let kept = batch;
+        if (table === "pages") {
+          for (const row of batch) {
+            versions.set(hexToText(String(row[idIndex])), Number(row[versionIndex]));
+          }
+        } else if (table === "revisions") {
+          kept = batch.filter((row) => {
+            const pageVersion = versions.get(hexToText(String(row[idIndex])));
+            return pageVersion !== undefined && Number(row[versionIndex]) <= pageVersion;
+          });
+          skippedRevisions += batch.length - kept.length;
+        }
+        write(table, kept);
+        return kept;
+      });
+    }
+    if ((tables.pages?.rows ?? 0) === 0 && args.remote) {
+      throw new Error("no pages were read from the remote D1; not keeping an empty backup");
+    }
     /** @type {Manifest} */
     const manifest = {
       version: 1,
       createdAt: io.now().toISOString(),
       target: args.remote ? "remote" : "local",
       file: DATA_FILE,
-      rows,
+      migrations,
+      tables,
     };
     // manifest は最後に書く。プロセスが強制終了されて manifest の無いまま残ったディレクトリは、
     // 不完全なバックアップとして load が拒む
     io.fs.write(join(dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
+    return { dir, tables, skippedRevisions };
   } catch (error) {
     io.fs.rm(dir);
     throw error;
   }
-  return { dir, rows };
 }
 
 /**
- * @param {string} stdout wrangler d1 execute --json の出力
- * @returns {Record<string, number>}
+ * @param {ParsedArgs} args
+ * @param {Io} io
+ * @returns {Target}
  */
-export function parseCounts(stdout) {
-  /** @type {{ results?: { t: string; n: number }[] }[]} */
-  const parsed = JSON.parse(stdout);
-  /** @type {Record<string, number>} */
-  const counts = {};
-  for (const set of parsed) for (const row of set.results ?? []) counts[row.t] = row.n;
-  return counts;
+function resolveTarget(args, io) {
+  return args.remote ? { remote: true, configPath: io.resolveRemote() } : { remote: false };
+}
+
+/**
+ * migration の一覧が、バックアップの時点のものを先頭に含むか。復元先が先に進んでいるのは許す
+ * （新しい migration を足したあとに、古いバックアップを新しい D1 へ戻せるように）。
+ * @param {string[]} backupMigrations
+ * @param {string[]} targetMigrations
+ */
+export function migrationsCompatible(backupMigrations, targetMigrations) {
+  return backupMigrations.every((name, i) => targetMigrations[i] === name);
 }
 
 /**
  * @param {Extract<ParsedArgs, { command: "load" }>} args
  * @param {Io} io
- * @returns {Record<string, number>} 復元後の行数
+ * @returns {{ tables: Manifest["tables"]; ahead: string[] }} 復元後の行数と digest、復元先だけにある migration
  */
 export function load(args, io) {
   const dir = resolve(args.dir);
@@ -347,33 +657,50 @@ export function load(args, io) {
     throw new Error(`${dir} is not a complete backup (${MANIFEST_FILE} and ${DATA_FILE} needed)`);
   }
   const manifest = parseManifest(JSON.parse(io.fs.read(manifestPath)));
-  const tables = Object.keys(manifest.rows);
+  const names = Object.keys(manifest.tables);
   const target = resolveTarget(args, io);
 
-  // 表が無ければ migration が未適用で、空でなければ INSERT が主キーの衝突で途中まで入って止まる
-  let before;
+  // migrations の表が無いのは migration が未適用、一覧の食い違いは別の版の schema
+  /** @type {string[]} */
+  let applied;
   try {
-    before = parseCounts(runWrangler(executeArgs(countSql(tables), target), io));
+    applied = readMigrations(target, io);
   } catch (error) {
     throw new Error(
-      `cannot count rows in the target D1 (apply the migrations first): ${error instanceof Error ? error.message : error}`,
+      `cannot read d1_migrations in the target D1 (run db:migrate:remote first): ${error instanceof Error ? error.message : error}`,
     );
   }
-  const filled = tables.filter((t) => (before[t] ?? 0) > 0);
+  if (!migrationsCompatible(manifest.migrations, applied)) {
+    throw new Error(
+      `migrations differ: the backup was taken at [${manifest.migrations.join(", ")}] but the target D1 has [${applied.join(", ")}]. Apply the same migrations (db:migrate:remote) to the new D1 first`,
+    );
+  }
+  const before = Object.fromEntries(
+    query(countSql(names), target, io).map((r) => [String(r.t), Number(r.n)]),
+  );
+  const filled = names.filter((t) => (before[t] ?? 0) > 0);
   if (filled.length > 0) {
     throw new Error(`target D1 is not empty (${filled.join(", ")}); load only into a new D1`);
   }
 
   runWrangler(loadArgs(dataPath, target), io);
 
-  const after = parseCounts(runWrangler(executeArgs(countSql(tables), target), io));
-  const mismatched = tables.filter((t) => after[t] !== manifest.rows[t]);
+  // 行数だけでなく全列の digest も、復元先から読み直して照合する
+  /** @type {Manifest["tables"]} */
+  const after = {};
+  for (const table of names) after[table] = digestOf(readBatches(table, target, io));
+  const mismatched = names.filter((t) => {
+    const expected = /** @type {{ rows: number; sha256: string }} */ (manifest.tables[t]);
+    return after[t]?.rows !== expected.rows || after[t]?.sha256 !== expected.sha256;
+  });
   if (mismatched.length > 0) {
     throw new Error(
-      `row counts differ after load: ${mismatched.map((t) => `${t} ${after[t]} (expected ${manifest.rows[t]})`).join(", ")}`,
+      `restored data differs from the backup: ${mismatched
+        .map((t) => `${t} ${after[t]?.rows} rows (expected ${manifest.tables[t]?.rows})`)
+        .join(", ")}`,
     );
   }
-  return after;
+  return { tables: after, ahead: applied.slice(manifest.migrations.length) };
 }
 
 /**
@@ -386,24 +713,31 @@ export function run(argv, io = defaultIo) {
   try {
     const args = parseArgs(argv);
     const where = args.remote ? "remote" : "local";
+    /** @param {Record<string, { rows: number }>} tables */
+    const summary = (tables) =>
+      Object.entries(tables)
+        .map(([t, v]) => `${t} ${v.rows}`)
+        .join(", ");
     if (args.command === "backup") {
-      const { dir, rows } = backup(args, io);
-      io.stderr.write(
-        `backed up ${where} D1 to ${dir} (${Object.entries(rows)
-          .map(([t, n]) => `${t} ${n}`)
-          .join(", ")})\n`,
-      );
-      // migration 前の D1 や、別の D1 を指していても export は成功する。空のダンプに気づけるようにする
-      if (rows.pages === 0) io.stderr.write("warning: no pages were dumped\n");
+      const result = backup(args, io);
+      io.stderr.write(`backed up ${where} D1 to ${result.dir} (${summary(result.tables)})\n`);
+      if (result.skippedRevisions > 0) {
+        io.stderr.write(
+          `${result.skippedRevisions} revisions were saved while reading and are not in the backup\n`,
+        );
+      }
+      if ((result.tables.pages?.rows ?? 0) === 0)
+        io.stderr.write("warning: no pages were dumped\n");
       return 0;
     }
-    const counts = load(args, io);
-    io.stderr.write(
-      `loaded ${Object.entries(counts)
-        .map(([t, n]) => `${t} ${n}`)
-        .join(", ")} into ${where} D1\n` +
-        "next: deploy the Worker, issue an API token, then run derived:rebuild\n",
-    );
+    const result = load(args, io);
+    io.stderr.write(`loaded ${summary(result.tables)} into ${where} D1 (digests match)\n`);
+    if (result.ahead.length > 0) {
+      io.stderr.write(
+        `note: the target D1 has newer migrations than the backup (${result.ahead.join(", ")})\n`,
+      );
+    }
+    io.stderr.write("next: deploy the Worker, issue an API token, then run derived:rebuild\n");
     return 0;
   } catch (error) {
     io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n${USAGE}\n`);
