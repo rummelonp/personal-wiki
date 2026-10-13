@@ -32,6 +32,8 @@ const NO_OWNER_AUTH_WARNING =
   "ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS が無いので、owner のログインは使えません（token の API と MCP は使えます）";
 const NO_OAUTH_WARNING =
   "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai などのカスタムコネクタからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）";
+const OAUTH_WITHOUT_OWNER_WARNING =
+  "OAUTH_KV_NAMESPACE_ID はありますが、owner のログインが無いので OAuth は使えません（同意画面に owner のログインが要ります）";
 
 const BASE = {
   name: "personal-wiki",
@@ -140,7 +142,7 @@ describe("readDeployValues", () => {
     const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
     expect(readDeployValues(`${base}OAUTH_KV_NAMESPACE_ID=${KV_ID}\n`)).toMatchObject({
       values: { oauthKvNamespaceId: KV_ID },
-      warnings: [NO_OWNER_AUTH_WARNING],
+      warnings: [NO_OWNER_AUTH_WARNING, OAUTH_WITHOUT_OWNER_WARNING],
     });
     for (const id of ["OAUTH_KV", UUID, `${KV_ID}0`]) {
       expect(readDeployValues(`${base}OAUTH_KV_NAMESPACE_ID=${id}\n`), id).toHaveProperty(

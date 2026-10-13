@@ -1,11 +1,13 @@
 import { OAuthAuthorizationServer } from "@cloudflare/workers-oauth-provider";
 import type { Bindings } from "../env";
+import { readOwnerAuthConfig } from "./owner-config";
 import type { Principal, Scope } from "./principal";
 
 /*
  * claude.ai などのカスタムコネクタが /mcp に接続するための OAuth の認可サーバー。
  * 発行したアクセストークンは /mcp だけで受け付ける（audience が /mcp。REST の /api/* は api_tokens だけ）。
- * OAUTH_KV が無い環境では OAuth を閉じる。エンドポイントは 404、/mcp の 401 は素の Bearer の challenge になる。
+ * OAUTH_KV か owner のログインの設定が無い環境では OAuth を閉じる。エンドポイントは 404、/mcp の 401 は
+ * 素の Bearer の challenge になる。
  *
  * KV の無料枠（1 日に書き込み 1,000 回、読み取り 100,000 回）に収めるための見積もり:
  * - /mcp の呼び出しは 1 回ごとに KV の読み取りが 1 回
@@ -48,8 +50,12 @@ const REFRESH_TOKEN_IDLE_TTL_SECONDS = 30 * DAY_SECONDS;
  */
 const CLIENT_REGISTRATION_TTL_SECONDS = 90 * DAY_SECONDS;
 
+/**
+ * OAUTH_KV と owner のログインの設定がそろったときだけ OAuth を開く。同意画面は owner のセッションを
+ * 要るので、ログインできない環境でメタデータを出すと、クライアントは登録まで進んでから同意で行き詰まる。
+ */
 export function isOAuthEnabled(env: Bindings): boolean {
-  return env.OAUTH_KV !== undefined;
+  return env.OAUTH_KV !== undefined && readOwnerAuthConfig(env) !== null;
 }
 
 export function mcpResourceOf(origin: string): string {

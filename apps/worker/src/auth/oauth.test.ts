@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
+import type { Bindings } from "../env";
 import { ownerCookie, ownerEnv } from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
@@ -13,9 +14,15 @@ const RESOURCE_METADATA_URL = `${ORIGIN}/.well-known/oauth-protected-resource/mc
 const SAME_ORIGIN = { Origin: ORIGIN, "Sec-Fetch-Site": "same-origin" };
 const FORM = "application/x-www-form-urlencoded";
 
-function setup({ oauthKv = true }: { oauthKv?: boolean } = {}) {
+function setup({
+  oauthKv = true,
+  overrides = {},
+}: {
+  oauthKv?: boolean;
+  overrides?: Partial<Bindings>;
+} = {}) {
   const app = createApp({ now: () => T0 });
-  const bindings = ownerEnv();
+  const bindings = ownerEnv(overrides);
   if (!oauthKv) delete bindings.OAUTH_KV;
   const request = (path: string, init: RequestInit = {}) => app.request(path, init, bindings);
   return { app, request };
@@ -497,9 +504,8 @@ describe("OAuth のトークンでの /mcp", () => {
   });
 });
 
-describe("OAUTH_KV が無い環境", () => {
-  it("OAuth のエンドポイントは 404、/mcp の challenge は素の Bearer になる", async () => {
-    const { request } = setup({ oauthKv: false });
+describe("OAuth を閉じた環境", () => {
+  async function expectOAuthClosed(request: Request) {
     for (const [method, path] of [
       ["GET", "/.well-known/oauth-authorization-server"],
       ["GET", "/.well-known/oauth-protected-resource/mcp"],
@@ -511,14 +517,25 @@ describe("OAUTH_KV が無い環境", () => {
       expect(res.status, path).toBe(404);
       expect(await res.json()).toEqual({ error: "not_found" });
     }
+    const mcp = await postMcp(request, undefined, "tools/list");
+    expect(mcp.status).toBe(401);
+    expect(mcp.headers.get("WWW-Authenticate")).toBe("Bearer");
+  }
+
+  it("OAUTH_KV が無ければ、OAuth のエンドポイントは 404、/mcp の challenge は素の Bearer になる", async () => {
+    const { request } = setup({ oauthKv: false });
+    await expectOAuthClosed(request);
     const owner = await request("/_auth/oauth/authorize", {
       headers: { Cookie: await ownerCookie(T0) },
     });
     expect(owner.status).toBe(404);
+  });
 
-    const mcp = await postMcp(request, undefined, "tools/list");
-    expect(mcp.status).toBe(401);
-    expect(mcp.headers.get("WWW-Authenticate")).toBe("Bearer");
+  it("owner のログインの設定が欠けていれば、OAUTH_KV があっても閉じる", async () => {
+    for (const overrides of [{ SESSION_SECRET: "" }, { ACCESS_AUD: "" }, { OWNER_EMAILS: "" }]) {
+      const { request } = setup({ overrides });
+      await expectOAuthClosed(request);
+    }
   });
 
   it("KV があったときに発行したトークンは、KV を外すと 401 になり、api_tokens は動く", async () => {

@@ -21,7 +21,7 @@ import {
 import type { Scope } from "./principal";
 
 /**
- * OAuth の認可サーバーのルートを登録する。OAUTH_KV が無ければどれも 404 にする。
+ * OAuth の認可サーバーのルートを登録する。OAuth を閉じた環境（isOAuthEnabled）ではどれも 404 にする。
  * - メタデータ 2 つ、トークン、client の登録は匿名に開く（クライアントは wiki の資格情報を持たない）。
  *   トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す
  * - 認可（同意画面）は owner のセッションを要る。無ければ /_auth/login を経由して戻す。Access の対象は

@@ -151,6 +151,11 @@ export function readDeployValues(envText) {
     );
   }
   const ownerAuth = readOwnerAuth(get, problems, warnings);
+  if (oauthKvNamespaceId !== undefined && ownerAuth === undefined) {
+    warnings.push(
+      "OAUTH_KV_NAMESPACE_ID はありますが、owner のログインが無いので OAuth は使えません（同意画面に owner のログインが要ります）",
+    );
+  }
   if (problems.length > 0 || hostname === undefined || d1DatabaseId === undefined) {
     return { problems };
   }

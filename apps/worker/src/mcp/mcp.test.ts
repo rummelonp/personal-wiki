@@ -95,9 +95,7 @@ describe("/mcp の認可", () => {
       env,
     );
     expect(res.status).toBe(401);
-    expect(res.headers.get("WWW-Authenticate")).toBe(
-      `Bearer realm="OAuth", resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp"`,
-    );
+    expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
   });
 
   it("read の token は read_page を使えるが、create_page は isError で何も書かない", async () => {
