@@ -64,6 +64,7 @@ export async function snapshotDb() {
     revisions: await all("SELECT * FROM revisions ORDER BY page_id, version"),
     links: await all("SELECT * FROM links ORDER BY source_page_id, target_title_key"),
     tags: await all("SELECT * FROM tags ORDER BY page_id, tag_key"),
+    excerpts: await all("SELECT * FROM page_excerpts ORDER BY page_id"),
     fts: await all("SELECT rowid, title, body FROM pages_fts ORDER BY rowid"),
     guard: await all("SELECT * FROM save_guard"),
   };
@@ -71,8 +72,8 @@ export async function snapshotDb() {
 
 /** 派生データだけ（作り直しの前後の比較用）。 */
 export async function snapshotDerived() {
-  const { links, tags, fts } = await snapshotDb();
-  return { links, tags, fts };
+  const { links, tags, excerpts, fts } = await snapshotDb();
+  return { links, tags, excerpts, fts };
 }
 
 export async function linksFrom(pageId: string) {

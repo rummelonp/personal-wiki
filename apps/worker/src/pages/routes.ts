@@ -21,8 +21,10 @@ import {
   LIST_MAX_LIMIT,
   listBacklinks,
   listRecentPages,
+  listTagCounts,
   parseCursor,
   prepareSearchQuery,
+  prepareTagFilter,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
   SEARCH_QUERY_MESSAGES,
@@ -265,8 +267,17 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
       .get("/api/pages/recent", requireScope("read"), async (c) => {
         const paging = readPaging(c);
         if (!paging.ok) return paging.response;
-        const { pages, nextCursor } = await listRecentPages(c.env.DB, paging.value);
+        const rawTag = c.req.query("tag");
+        const tag = rawTag === undefined ? null : prepareTagFilter(rawTag);
+        if (tag?.ok === false) return errorResponse(c, 400, "invalid_field", { field: "tag" });
+        const { pages, nextCursor } = await listRecentPages(c.env.DB, {
+          ...paging.value,
+          tagKey: tag?.key ?? null,
+        });
         return c.json({ pages, nextCursor });
+      })
+      .get("/api/tags", requireScope("read"), async (c) => {
+        return c.json({ tags: await listTagCounts(c.env.DB) });
       })
       .get("/api/search", requireScope("read"), async (c) => {
         const raw = c.req.query("q");

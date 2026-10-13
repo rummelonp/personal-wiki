@@ -605,6 +605,7 @@ describe("検索と一覧の tool", () => {
             visibility: "public",
             updatedAt: T0,
             excerpt: "検索の対象の本文",
+            tags: [],
             url: `${ORIGIN}/p/${a.id}`,
             titleUrl: `${ORIGIN}/Alpha`,
           },

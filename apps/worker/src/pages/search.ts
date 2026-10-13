@@ -1,8 +1,9 @@
+import { foldTitle } from "@personal-wiki/domain";
 import { foldForSearch } from "./derived";
 import type { Visibility } from "./store";
 
 /*
- * 検索・最近の更新・backlink の読み取り。どれも visibility で絞らず draft も返すので、
+ * 検索・最近の更新・backlink・タグの読み取り。どれも visibility で絞らず draft も返すので、
  * token の読み取り用。anonymous に返す経路では使わない。
  */
 
@@ -13,13 +14,28 @@ export interface PageSummary {
   updatedAt: number;
 }
 
-export interface SearchHit extends PageSummary {
-  /** NFKC 後の plainText から作るので、元の本文の表記（全角英数や半角カナ）と異なりうる */
-  excerpt: string;
+/** 最近の更新の 1 件。 */
+export interface ListedPage extends PageSummary {
+  /**
+   * 本文の先頭の抜粋。保存時に作った派生データで、それより前から在るページは rebuild するまで無い。
+   * 本文が空のページにも無い。
+   */
+  excerpt?: string;
+  /** タグの表記。本文に最初に現れた表記で、tag_key の順 */
+  tags: string[];
 }
 
-export interface PageList {
-  pages: PageSummary[];
+export interface SearchHit extends PageSummary {
+  /**
+   * 一致した位置の周辺の抜粋。ListedPage.excerpt（本文の先頭）と違い、検索語がどこに当たったかを見せる。
+   * NFKC 後の plainText から作るので、元の本文の表記（全角英数や半角カナ）と異なりうる
+   */
+  excerpt: string;
+  tags: string[];
+}
+
+export interface PageList<T extends PageSummary = PageSummary> {
+  pages: T[];
   /** 続きがあれば、次のリクエストの cursor に渡す不透明な文字列。無ければ null */
   nextCursor: string | null;
 }
@@ -29,6 +45,11 @@ interface SummaryRow {
   title: string;
   visibility: Visibility;
   updated_at: number;
+}
+
+interface ExcerptRow extends SummaryRow {
+  /** page_excerpts の行が無いページは null */
+  excerpt: string | null;
 }
 
 const toSummary = (row: SummaryRow): PageSummary => ({
@@ -71,8 +92,12 @@ export function parseCursor(value: string): Cursor | null {
 }
 
 /** limit + 1 件取った行から、limit 件と続きの cursor を作る。 */
-function pageOf(rows: SummaryRow[], limit: number): PageList {
-  const pages = rows.slice(0, limit).map(toSummary);
+function pageOf<T extends PageSummary>(
+  rows: SummaryRow[],
+  limit: number,
+  map: (row: SummaryRow) => T,
+): PageList<T> {
+  const pages = rows.slice(0, limit).map(map);
   const last = pages.at(-1);
   return {
     pages,
@@ -80,8 +105,47 @@ function pageOf(rows: SummaryRow[], limit: number): PageList {
   };
 }
 
+/** 複数のページのタグの表記を 1 クエリで引く。タグの無いページは Map に入らない。 */
+async function tagsByPage(db: D1Database, pageIds: string[]): Promise<Map<string, string[]>> {
+  const byPage = new Map<string, string[]>();
+  if (pageIds.length === 0) return byPage;
+  // id を個別に bind すると D1 の bind 100 個の上限に近づくので、JSON 1 個で渡す
+  const { results } = await db
+    .prepare(
+      `SELECT page_id, tag FROM tags
+       WHERE page_id IN (SELECT value FROM json_each(?1)) ORDER BY page_id, tag_key`,
+    )
+    .bind(JSON.stringify(pageIds))
+    .all<{ page_id: string; tag: string }>();
+  for (const row of results) {
+    const tags = byPage.get(row.page_id);
+    if (tags === undefined) byPage.set(row.page_id, [row.tag]);
+    else tags.push(row.tag);
+  }
+  return byPage;
+}
+
+/** タグの絞り込みに渡す tag_key。`#` は 1 つだけ剥がす（frontmatter の tags と同じ許容）。 */
+export type TagFilter = { ok: true; key: string } | { ok: false };
+
+/** タグの表記の長さ（UTF-16 単位）の上限。本文のタグは長くても数十字で、検索語と同様に照合量を抑える。 */
+const TAG_MAX_LENGTH = 200;
+
+/** 表記を tags.tag_key と同じ畳み方（foldTitle）にする。ページをまたぐ照合はこの値で行う。 */
+export function prepareTagFilter(raw: string): TagFilter {
+  const key = foldTitle(raw.startsWith("#") ? raw.slice(1) : raw);
+  return key === "" || key.length > TAG_MAX_LENGTH ? { ok: false } : { ok: true, key };
+}
+
 /**
  * 削除されていないページを更新日時の降順で返す。visibility では絞らず draft も返すので、token の読み取り用。
+ *
+ * tagKey（prepareTagFilter の値）を渡すと、そのタグが付いたページに絞る。ネストタグは親で子も拾い、
+ * `a` は `a/b`、`a/b/c` が付いたページにも一致する（Obsidian の検索と同じ）。tag_key は `/` 区切りの
+ * 文字列なので、子は `a/` 以上 `a0` 未満（`/` の次の文字が `0`）の範囲になり、tags_tag_key の索引を
+ * 使える。LIKE は大文字小文字を畳むため索引を使えず、tag_key の畳み方とも合わない。
+ * 子のタグを複数持つページは 1 件にまとめる。
+ *
  * keyset のページングなので、走査中に更新されたページは先頭へ移り、後続のページでは返らない。
  * 差分の同期には使えず、先頭から取り直す。
  * pages に updated_at の索引は無く、全ページを走査して並べ替える。ページ数が数千を超えて
@@ -89,18 +153,76 @@ function pageOf(rows: SummaryRow[], limit: number): PageList {
  */
 export async function listRecentPages(
   db: D1Database,
-  { limit, cursor }: { limit: number; cursor: Cursor | null },
-): Promise<PageList> {
+  {
+    limit,
+    cursor,
+    tagKey = null,
+  }: { limit: number; cursor: Cursor | null; tagKey?: string | null },
+): Promise<PageList<ListedPage>> {
   const { results } = await db
     .prepare(
-      `SELECT id, title, visibility, updated_at FROM pages
-       WHERE deleted_at IS NULL
-         AND (?1 IS NULL OR updated_at < ?1 OR (updated_at = ?1 AND id < ?2))
-       ORDER BY updated_at DESC, id DESC LIMIT ?3`,
+      `SELECT p.id, p.title, p.visibility, p.updated_at, e.excerpt
+       FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
+       WHERE p.deleted_at IS NULL
+         AND (?1 IS NULL OR p.updated_at < ?1 OR (p.updated_at = ?1 AND p.id < ?2))
+         AND (?4 IS NULL OR p.id IN (
+           SELECT page_id FROM tags WHERE tag_key = ?4 OR (tag_key >= ?5 AND tag_key < ?6)))
+       ORDER BY p.updated_at DESC, p.id DESC LIMIT ?3`,
     )
-    .bind(cursor?.updatedAt ?? null, cursor?.id ?? null, limit + 1)
-    .all<SummaryRow>();
-  return pageOf(results, limit);
+    .bind(
+      cursor?.updatedAt ?? null,
+      cursor?.id ?? null,
+      limit + 1,
+      tagKey,
+      tagKey === null ? null : `${tagKey}/`,
+      tagKey === null ? null : `${tagKey}0`,
+    )
+    .all<ExcerptRow>();
+  const list = pageOf(results, limit, toSummary);
+  const excerpts = new Map(results.map((row) => [row.id, row.excerpt]));
+  const tags = await tagsByPage(
+    db,
+    list.pages.map((page) => page.id),
+  );
+  return {
+    pages: list.pages.map((page) => {
+      const excerpt = excerpts.get(page.id);
+      return {
+        ...page,
+        ...(excerpt ? { excerpt } : {}),
+        tags: tags.get(page.id) ?? [],
+      };
+    }),
+    nextCursor: list.nextCursor,
+  };
+}
+
+/** タグの表記と、そのタグ（子のタグを含む）が付いたページの数。 */
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+/**
+ * 削除されていないページに付いたタグを、ページ数の降順で返す。同数は tag_key の順（大文字小文字を畳んだ順）。
+ * visibility では絞らず draft も数えるので、token の読み取り用。
+ *
+ * count は listRecentPages の tagKey に同じ表記を渡したときの件数に合わせ、子のタグが付いたページを含む
+ * （重複は 1 と数える）。ページに書かれた子のタグ `a/b` から作った親 `a` は、ページに直接書かれていなければ
+ * 一覧に出ない。tag は、そのタグが付いたページの表記のうち文字コード順で先頭のもの。
+ * tags の削除済みページの行は削除時に消えているので、pages とは結合しない。
+ */
+export async function listTagCounts(db: D1Database): Promise<TagCount[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT min(t.tag) AS tag,
+         (SELECT count(DISTINCT c.page_id) FROM tags AS c
+          WHERE c.tag_key = t.tag_key
+             OR (c.tag_key >= t.tag_key || '/' AND c.tag_key < t.tag_key || '0')) AS count
+       FROM tags AS t GROUP BY t.tag_key ORDER BY count DESC, t.tag_key`,
+    )
+    .all<TagCount>();
+  return results;
 }
 
 /**
@@ -131,7 +253,7 @@ export async function listBacklinks(
     )
     .bind(pageId, cursor?.updatedAt ?? null, cursor?.id ?? null, limit + 1)
     .all<SummaryRow>();
-  return pageOf(results, limit);
+  return pageOf(results, limit, toSummary);
 }
 
 export type SearchQuery =
@@ -205,7 +327,15 @@ export async function searchPages(
       )
       .bind(`"${query.replaceAll('"', '""')}"`, limit, ELLIPSIS, EXCERPT_CHARS)
       .all<FtsRow>();
-    return results.map((row) => ({ ...toSummary(row), excerpt: compact(row.excerpt) }));
+    const tags = await tagsByPage(
+      db,
+      results.map((row) => row.id),
+    );
+    return results.map((row) => ({
+      ...toSummary(row),
+      excerpt: compact(row.excerpt),
+      tags: tags.get(row.id) ?? [],
+    }));
   }
 
   const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
@@ -225,9 +355,17 @@ export async function searchPages(
     )
     .bind(pattern, query, limit, EXCERPT_CHARS, EXCERPT_LEAD_CHARS)
     .all<LikeRow>();
+  const tags = await tagsByPage(
+    db,
+    results.map((row) => row.id),
+  );
   return results.map((row) => {
     const head = row.start > 1 ? ELLIPSIS : "";
     const tail = row.start + EXCERPT_CHARS - 1 < row.length ? ELLIPSIS : "";
-    return { ...toSummary(row), excerpt: `${head}${compact(row.excerpt)}${tail}` };
+    return {
+      ...toSummary(row),
+      excerpt: `${head}${compact(row.excerpt)}${tail}`,
+      tags: tags.get(row.id) ?? [],
+    };
   });
 }

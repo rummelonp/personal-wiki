@@ -39,6 +39,7 @@ describe("GET /api/search", () => {
         visibility: "draft",
         updatedAt: T0,
         excerpt: expect.stringContaining("隠し味"),
+        tags: [],
       },
     ]);
     // 抜粋は plainText から取るので、Markdown の記号を含まない
@@ -245,8 +246,16 @@ describe("GET /api/pages/recent", () => {
     });
     const body = await recent(client);
     expect(body.pages).toEqual([
-      { id: a.id, title: "a", visibility: "draft", updatedAt: T0 + 3000 },
-      { id: c.id, title: "c", visibility: "draft", updatedAt: T0 + 2000 },
+      {
+        id: a.id,
+        title: "a",
+        visibility: "draft",
+        updatedAt: T0 + 3000,
+        excerpt: "更新",
+        tags: [],
+      },
+      // 本文が空のページは excerpt を返さない
+      { id: c.id, title: "c", visibility: "draft", updatedAt: T0 + 2000, tags: [] },
     ]);
     expect(body.nextCursor).toBeNull();
   });

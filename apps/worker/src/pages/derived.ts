@@ -8,6 +8,23 @@ export interface DerivedValues {
   tagsJson: string;
   ftsTitle: string;
   ftsBody: string;
+  /** 一覧に出す本文の先頭。NFKC にはかけず、書かれた表記のまま持つ */
+  excerpt: string;
+}
+
+/** 抜粋の長さ（文字数）。超えたら末尾に省略記号を付ける。 */
+export const EXCERPT_CHARS = 120;
+
+/** plainText の先頭から文字単位（サロゲートペアを割らない）で切る。本文全体を配列にしない。 */
+function excerptOf(plainText: string): string {
+  let count = 0;
+  let end = 0;
+  for (const char of plainText) {
+    if (count === EXCERPT_CHARS) return `${plainText.slice(0, end)}…`;
+    count += 1;
+    end += char.length;
+  }
+  return plainText;
 }
 
 /**
@@ -25,11 +42,12 @@ export function deriveValues(title: string, body: string): DerivedValues {
     tagsJson: JSON.stringify(derived.tags.map(({ tagKey, tag }) => ({ key: tagKey, tag }))),
     ftsTitle: foldForSearch(title),
     ftsBody: foldForSearch(derived.plainText),
+    excerpt: excerptOf(derived.plainText),
   };
 }
 
 /**
- * ページ 1 件の派生データ（links、tags、pages_fts）を、そのページの body から作った値に合わせる文。
+ * ページ 1 件の派生データ（links、tags、page_excerpts、pages_fts）を、そのページの body から作った値に合わせる文。
  * 作成・更新・作り直しで同じ文を使い、どの経路で書いても同じ行になるようにする。
  *
  * - pages の行がすでにあり、id と seq が変わらないことを前提にする。pages の title や version には依存しない
@@ -89,6 +107,14 @@ export function derivedStatements(
          ON CONFLICT (page_id, tag_key) DO UPDATE SET tag = excluded.tag WHERE tag <> excluded.tag`,
       )
       .bind(pageId, values.tagsJson),
+    // 値が変わらない保存では行を書かない
+    db
+      .prepare(
+        `INSERT INTO page_excerpts (page_id, excerpt) VALUES (?1, ?2)
+         ON CONFLICT (page_id) DO UPDATE SET excerpt = excluded.excerpt
+         WHERE excerpt <> excluded.excerpt`,
+      )
+      .bind(pageId, values.excerpt),
     db
       .prepare("DELETE FROM pages_fts WHERE rowid = (SELECT seq FROM pages WHERE id = ?1)")
       .bind(pageId),
@@ -106,6 +132,7 @@ export function clearDerivedStatements(db: D1Database, pageId: string): D1Prepar
     db.prepare("DELETE FROM links WHERE source_page_id = ?1").bind(pageId),
     db.prepare("UPDATE links SET target_page_id = NULL WHERE target_page_id = ?1").bind(pageId),
     db.prepare("DELETE FROM tags WHERE page_id = ?1").bind(pageId),
+    db.prepare("DELETE FROM page_excerpts WHERE page_id = ?1").bind(pageId),
     db
       .prepare("DELETE FROM pages_fts WHERE rowid = (SELECT seq FROM pages WHERE id = ?1)")
       .bind(pageId),

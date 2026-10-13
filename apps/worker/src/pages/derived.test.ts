@@ -135,6 +135,8 @@ describe("POST /api/admin/derived/rebuild", () => {
 
     await env.DB.batch([
       env.DB.prepare("DELETE FROM pages_fts"),
+      env.DB.prepare("DELETE FROM page_excerpts WHERE page_id = ?1").bind(a.id),
+      env.DB.prepare("UPDATE page_excerpts SET excerpt = 'wrong' WHERE page_id = ?1").bind(b.id),
       env.DB.prepare("DELETE FROM tags WHERE page_id = ?1").bind(a.id),
       env.DB.prepare("UPDATE tags SET tag = 'wrong' WHERE page_id = ?1").bind(b.id),
       env.DB.prepare("UPDATE links SET target_page_id = NULL"),
@@ -145,10 +147,12 @@ describe("POST /api/admin/derived/rebuild", () => {
       env.DB.prepare("INSERT INTO tags (page_id, tag_key, tag) VALUES (?1, 'g', 'g')").bind(
         gone.id,
       ),
+      env.DB.prepare("INSERT INTO page_excerpts (page_id, excerpt) VALUES (?1, 'g')").bind(gone.id),
     ]);
     expect(await snapshotDerived()).not.toEqual({
       links: expected.links,
       tags: expected.tags,
+      excerpts: expected.excerpts,
       fts: expected.fts,
     });
 
