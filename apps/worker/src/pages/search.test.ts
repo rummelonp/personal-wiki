@@ -57,6 +57,25 @@ describe("GET /api/search", () => {
     expect(titles(await search(client, "ｱｲｳ"))).toEqual([]);
   });
 
+  it("NFKC で 2 文字と 3 文字をまたぐ語は、畳んだ後の文字数で経路を選ぶ", async () => {
+    const client = await buildClient();
+    // ｶﾞｷ は 3 コードポイント（ｶ ﾞ ｷ）だが NFKC で ガキ の 2 文字になり LIKE へ回る。
+    // ㍿ は 1 文字だが NFKC で 株式会社 の 4 文字になり FTS に回る
+    await client.create("kana", "ガキの使い");
+    await client.create("corp", "株式会社の設立");
+    expect(titles(await search(client, "ｶﾞｷ"))).toEqual(["kana"]);
+    expect(titles(await search(client, "㍿"))).toEqual(["corp"]);
+  });
+
+  it("バックスラッシュを含む本文を、バックスラッシュで引ける", async () => {
+    const client = await buildClient();
+    await client.create("path", "C:\\dir\\file を開く");
+    await client.create("other", "dir と file");
+    expect(titles(await search(client, "\\"))).toEqual(["path"]);
+    expect(titles(await search(client, "r\\"))).toEqual(["path"]);
+    expect(titles(await search(client, "C:\\dir"))).toEqual(["path"]);
+  });
+
   it("title にだけ一致しても返し、抜粋は本文の先頭になる", async () => {
     const client = await buildClient();
     await client.create("ユニークな題名", "本文は別の話です");
@@ -127,6 +146,11 @@ describe("GET /api/search", () => {
     for (const q of ["", "   ", "　"]) {
       const res = await client.request(`/api/search?q=${encodeURIComponent(q)}`);
       expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid_field", field: "q" });
+    }
+    for (const q of ["abc\u0000", "\u0000", "\u0000x", "a\tb", "a\nb\u007f"]) {
+      const res = await client.request(`/api/search?q=${encodeURIComponent(q)}`);
+      expect(res.status, JSON.stringify(q)).toBe(400);
       expect(await res.json()).toMatchObject({ error: "invalid_field", field: "q" });
     }
     const missing = await client.request("/api/search");

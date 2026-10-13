@@ -220,6 +220,12 @@ function requireIfMatch(
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; response: Response };
 
+const queryMessages = {
+  empty: "q が空か、空白だけになっている",
+  too_long: "q が長すぎる",
+  control_char: "q に制御文字を含められない",
+};
+
 /** `limit` クエリを読む。無ければ既定値。整数で 1 以上 max 以下でなければ 400。 */
 function readLimit(c: PagesContext, fallback: number, max: number): Parsed<number> {
   const raw = c.req.query("limit");
@@ -306,7 +312,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!query.ok) {
           return errorResponse(c, 400, "invalid_field", {
             field: "q",
-            message: query.reason === "empty" ? "q が空か、空白だけになっている" : "q が長すぎる",
+            message: queryMessages[query.reason],
           });
         }
         const limit = readLimit(c, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);

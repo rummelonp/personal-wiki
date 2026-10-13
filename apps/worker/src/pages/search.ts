@@ -14,6 +14,7 @@ export interface PageSummary {
 }
 
 export interface SearchHit extends PageSummary {
+  /** NFKC 後の plainText から作るので、元の本文の表記（全角英数や半角カナ）と異なりうる */
   excerpt: string;
 }
 
@@ -81,6 +82,8 @@ function pageOf(rows: SummaryRow[], limit: number): PageList {
 
 /**
  * 削除されていないページを更新日時の降順で返す。visibility では絞らず draft も返すので、token の読み取り用。
+ * keyset のページングなので、走査中に更新されたページは先頭へ移り、後続のページでは返らない。
+ * 差分の同期には使えず、先頭から取り直す。
  * pages に updated_at の索引は無く、全ページを走査して並べ替える。ページ数が数千を超えて
  * 読み取り行数が気になったら (updated_at, id) の部分索引を足す。保存ごとに書き込みが 1〜2 行増える。
  */
@@ -131,12 +134,20 @@ export async function listBacklinks(
   return pageOf(results, limit);
 }
 
-export type SearchQuery = { ok: true; query: string } | { ok: false; reason: "empty" | "too_long" };
+export type SearchQuery =
+  | { ok: true; query: string }
+  | { ok: false; reason: "empty" | "too_long" | "control_char" };
 
-/** 検索語を pages_fts と同じ NFKC にそろえ、前後の空白を除く。 */
+// NUL は FTS5 の phrase が途中で切れて構文エラー（500）になり、LIKE では pattern が切れて全件に一致する。
+// 本文に残らない制御文字で探す用途も無いので、タブと改行を含めて C0 と DEL をまとめて拒む
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字を検出するのが目的
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** 検索語を pages_fts と同じ NFKC にそろえ、前後の空白を除く。途中の制御文字は拒む。 */
 export function prepareSearchQuery(raw: string): SearchQuery {
   const query = foldForSearch(raw).trim();
   if (query === "") return { ok: false, reason: "empty" };
+  if (CONTROL_CHARS.test(query)) return { ok: false, reason: "control_char" };
   if ([...query].length > SEARCH_MAX_QUERY_CHARS) return { ok: false, reason: "too_long" };
   return { ok: true, query };
 }
