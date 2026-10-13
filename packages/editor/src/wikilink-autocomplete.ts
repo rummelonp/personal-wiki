@@ -2,6 +2,7 @@ import {
   acceptCompletion,
   autocompletion,
   type Completion,
+  type CompletionContext,
   type CompletionResult,
   type CompletionSource,
   closeCompletion,
@@ -18,11 +19,36 @@ import {
   type TransactionSpec,
 } from "@codemirror/state";
 import { type Command, type EditorView, keymap, ViewPlugin } from "@codemirror/view";
+import { extractLinkTargets, type LinkTargets } from "@personal-wiki/markdown";
 import { compositionSettled, compositionSettledNotifier, isComposing } from "./ime";
 import type { PageCandidate, PageIndex } from "./page-index";
 
+/**
+ * `[[Title#` と `[[Title#^` の候補になる、page の見出しと block id の取得元。
+ *
+ * `PageIndex.search` と違って非同期にする。見出しと block id は page の本文から取り出すので、
+ * 本文を持っていなければ round trip が要る。`#` は意図して打つ区切りで、`[[` の 1 文字目のように
+ * 打鍵の度に待たされることがない。取得済みの内容を覚えておくのは呼び出し側の役目
+ * （`createPageEmbedCache` と同じ分担）。`validFor` で、同じ `[[Title#` の中の打鍵は取り直さない。
+ */
+export interface LinkTargetSource {
+  /**
+   * title の page の見出しと block id。page が無い・読めない場合は null を返す。
+   * `extractLinkTargets`（`@personal-wiki/markdown`）に本文を渡せば得られる。
+   * 候補が要らなくなると（カーソルが link の外へ出る、選択が動くなど）`signal` が中断される。
+   * 続けて打った文字では中断されず、結果は打鍵の分だけ絞り込まれて使われる。
+   * reject は候補なしとして扱う。
+   */
+  load(title: string, signal: AbortSignal): Promise<LinkTargets | null>;
+}
+
 export interface WikiLinkAutocompleteOptions {
   readonly index: PageIndex;
+  /**
+   * `[[Title#` と `[[Title#^` の候補の取得元。渡さないと、他の page の見出しと block id は出ない。
+   * 今の page の `[[#` と `[[#^` は、editor の本文から求めるので渡さなくても出る。
+   */
+  readonly linkTargets?: LinkTargetSource;
   /**
    * 候補解決（`PageIndex.search` から `CompletionResult` を返すまで）の所要時間を ms で受け取る。
    * 計測用。
@@ -41,8 +67,33 @@ export interface WikiLinkAutocompleteOptions {
 const OPEN_LINK = /\[\[[^[\]|\n]*/;
 const OPEN_LINK_AT_END = new RegExp(`${OPEN_LINK.source}$`);
 
-/** `[[` の後ろを `title` にして `]]` で閉じ、caret を `]]` の後ろへ置く */
-function applyTitle(title: string) {
+/**
+ * `[[Title#見出し` の、`#` までと `#` の後ろ。target に `#` と `^` は含まれない
+ * （`splitWikiLinkContent` が最初の `#` か `^` で target を切る）。`#^` の後ろは block id の query、
+ * それ以外は見出しの query。見出しの途中の `^`（`A^b`）は query の一部として許す。
+ * 見出しを `A#B` と重ねる書き方（`extractHeadingSection`）は、候補を出す対象にしない。
+ */
+const LINK_SECTION = /\[\[([^[\]|#^\n]*)#(\^?)([^[\]|#\n]*)/;
+
+/** 見出しの query が続く間、同じ候補を使い続けてよい入力 */
+const HEADING_QUERY = /^[^[\]|#\n]*$/;
+const BLOCK_QUERY = /^[^[\]|#^\n]*$/;
+
+/**
+ * 見出しと block id の候補の、本文での並び。絞り込みの点数が同じ候補（query が空のときは全部）の
+ * 順を、autocomplete の既定（label の文字順）でなく本文の順にするために `compareCompletions` が読む。
+ */
+const documentOrder = new WeakMap<Completion, number>();
+
+function inDocumentOrder(completions: Completion[]): Completion[] {
+  completions.forEach((completion, index) => {
+    documentOrder.set(completion, index);
+  });
+  return completions;
+}
+
+/** `[[` や `#` の後ろを `text` にして `]]` で閉じ、caret を `]]` の後ろへ置く */
+function applyText(text: string) {
   return (view: EditorView, completion: Completion, from: number, to: number): void => {
     // create-editor.ts は readOnly なら wikiLinkAutocomplete 自体を積まないが、tooltip の
     // mousedown（`applyCompletion`）はキーボード経路の `acceptCompletion` と違い readOnly を
@@ -51,8 +102,8 @@ function applyTitle(title: string) {
     const { doc } = view.state;
     const closed = doc.sliceString(to, Math.min(doc.length, to + 2)) === "]]";
     view.dispatch({
-      changes: { from, to, insert: closed ? title : `${title}]]` },
-      selection: { anchor: from + title.length + 2 },
+      changes: { from, to, insert: closed ? text : `${text}]]` },
+      selection: { anchor: from + text.length + 2 },
       annotations: pickedCompletion.of(completion),
       userEvent: "input.complete",
     });
@@ -60,7 +111,7 @@ function applyTitle(title: string) {
 }
 
 function candidateOption(candidate: PageCandidate): Completion {
-  return { label: candidate.title, type: "text", apply: applyTitle(candidate.title) };
+  return { label: candidate.title, type: "text", apply: applyText(candidate.title) };
 }
 
 /**
@@ -75,18 +126,80 @@ function createOptions(query: string): Completion[] {
   const title = query.trim();
   if (title === "" || /[#^]/.test(title)) return [];
   return [
-    { label: title, displayLabel: `「${title}」を作成`, type: "text", apply: applyTitle(title) },
+    { label: title, displayLabel: `「${title}」を作成`, type: "text", apply: applyText(title) },
   ];
 }
 
+/**
+ * `[[Title#` と `[[Title#^` の候補。Title が空なら今の page（editor の本文）、あれば `linkTargets` から
+ * 取る。絞り込みは autocomplete の fuzzy に任せる（page の title と違い、順位付けの規則を
+ * 持たない）。page が無い・候補が 0 件のときは null にして、候補 UI を開かない。
+ */
+async function sectionCompletion(
+  options: WikiLinkAutocompleteOptions,
+  context: CompletionContext,
+  match: { from: number; text: string },
+): Promise<CompletionResult | null> {
+  const parts = LINK_SECTION.exec(match.text);
+  if (!parts) return null;
+  const title = (parts[1] ?? "").trim();
+  const block = parts[2] === "^";
+  const rest = parts[3] ?? "";
+  // query の先頭の空白は、置き換える範囲に含めない
+  const lead = /^\s*/.exec(rest)?.[0].length ?? 0;
+  const from = match.from + parts[0].length - rest.length + lead;
+
+  let targets: LinkTargets | null;
+  if (title === "") {
+    targets = extractLinkTargets(context.state.doc.toString());
+  } else if (options.linkTargets) {
+    const controller = new AbortController();
+    context.addEventListener("abort", () => controller.abort());
+    try {
+      targets = await options.linkTargets.load(title, controller.signal);
+    } catch {
+      // 取得の失敗は候補なしとして扱う。補完のために入力を妨げる通知は出さない
+      return null;
+    }
+    // IME 不変条件 4。待っている間に composition が始まっていれば、結果を受け取らせない
+    if (context.aborted || (context.view && isComposing(context.view))) return null;
+  } else {
+    return null;
+  }
+  if (!targets) return null;
+
+  const completions: Completion[] = block
+    ? targets.blocks.map((target) => ({
+        label: target.id,
+        detail: target.preview,
+        type: "text",
+        apply: applyText(target.id),
+      }))
+    : targets.headings.map((heading) => ({
+        label: heading,
+        type: "text",
+        apply: applyText(heading),
+      }));
+  if (completions.length === 0) return null;
+
+  return {
+    from,
+    to: context.pos,
+    options: inDocumentOrder(completions),
+    validFor: block ? BLOCK_QUERY : HEADING_QUERY,
+  };
+}
+
 export function wikiLinkCompletionSource(options: WikiLinkAutocompleteOptions): CompletionSource {
-  return (context): CompletionResult | null => {
+  return (context): CompletionResult | null | Promise<CompletionResult | null> => {
     // IME 不変条件 4。composition の入力では `closeOnComposition` が source を起動させない。
     // ここに来るのは、compose の userEvent を伴わない入力と、composition の開始前に予約された
     // query（`typingDelay` や `startCompletion` の遅延）が最初の compose の入力より先に走った
     // 場合だけである。null を返すと autocomplete が後始末の transaction を dispatch するが、
     // 読みに対して候補 UI を開くよりはよい。
     if (context.view && isComposing(context.view)) return null;
+    const section = context.matchBefore(LINK_SECTION);
+    if (section) return sectionCompletion(options, context, section);
     const match = context.matchBefore(OPEN_LINK);
     if (!match) return null;
 
@@ -203,6 +316,7 @@ export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Exte
     restartAfterComposition,
     autocompletion({
       override: [wikiLinkCompletionSource(options)],
+      compareCompletions: (a, b) => (documentOrder.get(a) ?? 0) - (documentOrder.get(b) ?? 0),
       defaultKeymap: false,
       activateOnTypingDelay: options.typingDelay ?? 0,
       icons: false,

@@ -44,7 +44,7 @@ import {
   type WikiLinkResolver,
   wikiLinks,
 } from "./wikilink";
-import { wikiLinkAutocomplete } from "./wikilink-autocomplete";
+import { type LinkTargetSource, wikiLinkAutocomplete } from "./wikilink-autocomplete";
 
 // Frontmatter の wrap は最初にかかる必要がある（packages/markdown の frontmatter.ts）。
 // markdown() の `extensions` に渡すと、lang-markdown が同じ configure で足す fenced code 用の
@@ -65,6 +65,11 @@ export interface CreateEditorOptions {
   readonly revealPolicy?: RevealPolicy;
   /** 渡したときだけ `[[` の autocomplete を有効にする */
   readonly pageIndex?: PageIndex;
+  /**
+   * `[[Title#` と `[[Title#^` で候補にする、他の page の見出しと block id の取得元。
+   * `pageIndex` と一緒に渡したときだけ働く。今の page の `[[#` と `[[#^` は渡さなくても出る。
+   */
+  readonly linkTargets?: LinkTargetSource;
   readonly onWikiLinkClick?: WikiLinkClickHandler;
   /**
    * 渡したときだけ WikiLink を `<a href>` にする。素のクリックは `onWikiLinkClick` の
@@ -177,6 +182,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     extensions.push(
       wikiLinkAutocomplete({
         index: options.pageIndex,
+        ...(options.linkTargets ? { linkTargets: options.linkTargets } : {}),
         ...(options.onCompletionLatency ? { onLatency: options.onCompletionLatency } : {}),
       }),
     );

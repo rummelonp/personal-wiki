@@ -73,6 +73,7 @@ export {
   wikiLinks,
 } from "./wikilink";
 export {
+  type LinkTargetSource,
   type WikiLinkAutocompleteOptions,
   wikiLinkAutocomplete,
   wikiLinkCompletionSource,
