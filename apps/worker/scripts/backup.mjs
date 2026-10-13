@@ -62,7 +62,7 @@ const text = (name) => /** @type {Column} */ ({ name, kind: "text" });
 /**
  * ダンプする表の列と、読む順序の主キー。列は migrations/*.sql の定義の順で、テストが突き合わせる。
  * long は 1 文に収まらないことがある列（本文は最大 64 KiB で、hex にすると 128 KiB になる）。
- * pages と revisions は正本、api_tokens は --with-tokens でだけ出す。
+ * pages、revisions、attachments は正本、api_tokens は --with-tokens でだけ出す。
  * @type {Record<string, TableSpec>}
  */
 export const TABLES = {
@@ -95,6 +95,17 @@ export const TABLES = {
     key: ["page_id", "version"],
     long: "body",
   },
+  // 添付の台帳。中身（画像）は R2 にあり、このバックアップには入らない
+  attachments: {
+    columns: [
+      text("name"),
+      text("content_type"),
+      int("size"),
+      int("created_at"),
+      text("created_by"),
+    ],
+    key: ["name"],
+  },
   // token_hash を含み、ダンプの流出がそのまま token の流出になる。既定で出さないのは、復元後に
   // 発行し直せば済むため。ただし失効済みの名前は再利用できず、revisions.actor（token:<名前>）の
   // 指す先でもあるので、発行し直す名前は以前と変えること
@@ -112,7 +123,14 @@ export const TABLES = {
   },
 };
 
-export const DATA_TABLES = ["pages", "revisions"];
+// この順に読む。attachments の行は消さず、本文に埋め込む前に作られるので、pages より後に読めば
+// dump したページが参照する添付の行はすべて入る
+export const DATA_TABLES = ["pages", "revisions", "attachments"];
+/**
+ * manifest に必ずある表。DATA_TABLES より狭いのは、表を足す前に取ったバックアップ（attachments の無いもの）も
+ * load できるようにするため。
+ */
+const REQUIRED_TABLES = ["pages", "revisions"];
 export const TOKEN_TABLES = ["api_tokens"];
 
 /**
@@ -125,6 +143,7 @@ export const EXCLUDED_TABLES = {
   links: "derived",
   tags: "derived",
   page_excerpts: "derived",
+  attachment_refs: "derived",
   // FTS5 の仮想テーブルは D1 の export もできない。shadow table（pages_fts_*）は仮想テーブルが作る
   pages_fts: "derived",
   // 保存の batch が版の衝突を検出するための表。常に空
@@ -386,7 +405,7 @@ export function parseManifest(value) {
   }
   const names = Object.keys(v.tables);
   const valid =
-    DATA_TABLES.every((t) => names.includes(t)) &&
+    REQUIRED_TABLES.every((t) => names.includes(t)) &&
     names.every((t) => {
       const entry = v.tables[t];
       return (

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import {
+  attachmentRefsOf,
   buildClient,
   linksFrom,
   type PageJson,
@@ -10,6 +11,9 @@ import {
   tagsOf,
 } from "../test/pages";
 import { REBUILD_MAX_LIMIT } from "./store";
+
+const IMAGE_A = "AAAAAAAAAAAAAAAAAAAAAA.png";
+const IMAGE_B = "BBBBBBBBBBBBBBBBBBBBBB.jpg";
 
 describe("links と tags", () => {
   it("作成で本文から入り、更新で差分だけ書き換わる", async () => {
@@ -35,6 +39,62 @@ describe("links と tags", () => {
       { key: "one", tag: "ONE" },
       { key: "three", tag: "three" },
     ]);
+  });
+});
+
+describe("attachment_refs", () => {
+  it("本文の添付の embed から入り、更新で差分だけ書き換わる", async () => {
+    const { create, update } = await buildClient();
+    const page = await create(
+      "p",
+      [
+        `![[${IMAGE_A}]] ![[${IMAGE_A}|300]] [[${IMAGE_B}]]`,
+        "```",
+        `![[${IMAGE_B}]]`,
+        "```",
+        `\`![[${IMAGE_B}]]\``,
+      ].join("\n"),
+    );
+    // embed でないリンクとコードの中の embed は数えない
+    expect(await attachmentRefsOf(page.id)).toEqual([IMAGE_A]);
+
+    const res = await update(page, "p", `![[${IMAGE_B}]]`);
+    expect(res.status).toBe(200);
+    expect(await attachmentRefsOf(page.id)).toEqual([IMAGE_B]);
+  });
+
+  it("この wiki の添付の名前の形に合わないものは入らない", async () => {
+    const { create } = await buildClient();
+    const names = [
+      "sub/AAAAAAAAAAAAAAAAAAAAAA.png",
+      "AAAAAAAAAAAAAAAAAAAAAA.PNG",
+      "AAAAAAAAAAAAAAAAAAAAAA.svg",
+      "photo.png",
+      // web の貼り付けが、アップロードが終わるまで本文に置くプレースホルダー
+      "uploading-123-0.png",
+      "uploading.1760000000000-0.png",
+      "uploading.17600000000-0.png",
+    ];
+    const page = await create("p", names.map((name) => `![[${name}]]`).join("\n"));
+    expect(await attachmentRefsOf(page.id)).toEqual([]);
+  });
+
+  it("削除で消え、前の版の本文を保存し直すと戻る", async () => {
+    const { create, update, request } = await buildClient();
+    const page = await create("p", `![[${IMAGE_A}]]`);
+    expect((await update(page, "p", "参照を外した")).status).toBe(200);
+    expect(await attachmentRefsOf(page.id)).toEqual([]);
+    // revision の復元は前の版の title と本文で保存し直すこと（専用のルートはまだ無い）
+    const restored = await update({ id: page.id, version: 2 }, "p", `![[${IMAGE_A}]]`);
+    expect(restored.status).toBe(200);
+    expect(await attachmentRefsOf(page.id)).toEqual([IMAGE_A]);
+
+    const res = await request(`/api/pages/${page.id}`, {
+      method: "DELETE",
+      headers: { "If-Match": '"3"' },
+    });
+    expect(res.status).toBe(204);
+    expect(await attachmentRefsOf(page.id)).toEqual([]);
   });
 });
 
@@ -125,11 +185,11 @@ async function rebuildAll(request: Awaited<ReturnType<typeof buildClient>>["requ
 describe("POST /api/admin/derived/rebuild", () => {
   it("壊した派生データを、保存で書いたときと同じ行に戻す", async () => {
     const { create, update, request } = await buildClient();
-    const a = await create("A", "[[B]] [[C]] #x #Y 本文その一");
+    const a = await create("A", `[[B]] [[C]] #x #Y 本文その一 ![[${IMAGE_A}]] ![[${IMAGE_B}]]`);
     const b = await create("B", "[[A]] #y 本文その二");
     await create("C", "#z 本文その三");
     await update(b, "B", "[[A]] [[D]] #Y #w 本文その二の改");
-    const gone = await create("Gone", "[[A]] #g 消える");
+    const gone = await create("Gone", `[[A]] #g 消える ![[${IMAGE_A}]]`);
     await request(`/api/pages/${gone.id}`, { method: "DELETE", headers: { "If-Match": '"1"' } });
     const expected = await snapshotDb();
 
@@ -148,10 +208,23 @@ describe("POST /api/admin/derived/rebuild", () => {
         gone.id,
       ),
       env.DB.prepare("INSERT INTO page_excerpts (page_id, excerpt) VALUES (?1, 'g')").bind(gone.id),
+      env.DB.prepare("DELETE FROM attachment_refs WHERE page_id = ?1 AND name = ?2").bind(
+        a.id,
+        IMAGE_A,
+      ),
+      env.DB.prepare("INSERT INTO attachment_refs (page_id, name) VALUES (?1, ?2)").bind(
+        b.id,
+        IMAGE_B,
+      ),
+      env.DB.prepare("INSERT INTO attachment_refs (page_id, name) VALUES (?1, ?2)").bind(
+        gone.id,
+        IMAGE_A,
+      ),
     ]);
     expect(await snapshotDerived()).not.toEqual({
       links: expected.links,
       tags: expected.tags,
+      attachmentRefs: expected.attachmentRefs,
       excerpts: expected.excerpts,
       fts: expected.fts,
     });

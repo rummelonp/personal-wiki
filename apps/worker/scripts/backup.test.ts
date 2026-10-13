@@ -172,10 +172,12 @@ describe("parseArgs", () => {
 });
 
 describe("ダンプする表", () => {
-  it("既定は pages と revisions で、api_tokens は --with-tokens でだけ足す", () => {
-    expect(tablesToDump(false)).toEqual(["pages", "revisions"]);
-    expect(tablesToDump(true)).toEqual(["pages", "revisions", "api_tokens"]);
+  it("既定は pages、revisions、attachments で、api_tokens は --with-tokens でだけ足す", () => {
+    expect(tablesToDump(false)).toEqual(["pages", "revisions", "attachments"]);
+    expect(tablesToDump(true)).toEqual(["pages", "revisions", "attachments", "api_tokens"]);
     expect(DATA_TABLES).not.toContain("pages_fts");
+    expect(DATA_TABLES).not.toContain("attachment_refs");
+    expect(EXCLUDED_TABLES.attachment_refs).toBe("derived");
     expect(TOKEN_TABLES).toEqual(["api_tokens"]);
   });
 
@@ -307,12 +309,16 @@ describe("backup と load の往復", () => {
     source.exec(
       `INSERT INTO api_tokens (name, token_hash, scopes, created_at) VALUES (${lit("t1")}, ${lit("deadbeef")}, ${lit("read write")}, 1)`,
     );
+    source.exec(
+      `INSERT INTO attachments (name, content_type, size, created_at, created_by) VALUES (${lit("AAAAAAAAAAAAAAAAAAAAAA.png")}, ${lit("image/png")}, 12, 1, ${lit("owner")})`,
+    );
     const out = tmp();
     const { io, out: log } = ioFor(source);
     const result = backup({ command: "backup", remote: false, out, withTokens: true }, io);
     expect(result.tables).toMatchObject({
       pages: { rows: 3 },
       revisions: { rows: 4 },
+      attachments: { rows: 1 },
       api_tokens: { rows: 1 },
     });
     expect(result.skippedRevisions).toBe(0);
@@ -325,7 +331,7 @@ describe("backup と load の往復", () => {
     const dest = migratedDb();
     const loaded = load({ command: "load", remote: false, dir: result.dir }, ioFor(dest).io);
     expect(loaded.tables).toEqual(result.tables);
-    for (const table of ["pages", "revisions", "api_tokens"]) {
+    for (const table of ["pages", "revisions", "attachments", "api_tokens"]) {
       expect(dump(dest, table)).toBe(dump(source, table));
     }
     // hex の突き合わせに加えて、文字列としても同じか
@@ -345,7 +351,7 @@ describe("backup と load の往復", () => {
     );
     const { io } = ioFor(source);
     const result = backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
-    expect(Object.keys(result.tables)).toEqual(["pages", "revisions"]);
+    expect(Object.keys(result.tables)).toEqual(["pages", "revisions", "attachments"]);
     expect(readFileSync(join(result.dir, "data.sql"), "utf8")).not.toContain("api_tokens");
   });
 
@@ -561,7 +567,14 @@ describe("parseManifest", () => {
   };
 
   it("許可した表だけの manifest を通す", () => {
+    // attachments の表を足す前に取ったバックアップも load できる
     expect(parseManifest(valid).tables.pages?.rows).toBe(1);
+    expect(
+      parseManifest({
+        ...valid,
+        tables: { ...valid.tables, attachments: { rows: 0, sha256: sha } },
+      }),
+    ).toBeTruthy();
     expect(
       parseManifest({
         ...valid,

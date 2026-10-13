@@ -64,6 +64,7 @@ export async function snapshotDb() {
     revisions: await all("SELECT * FROM revisions ORDER BY page_id, version"),
     links: await all("SELECT * FROM links ORDER BY source_page_id, target_title_key"),
     tags: await all("SELECT * FROM tags ORDER BY page_id, tag_key"),
+    attachmentRefs: await all("SELECT * FROM attachment_refs ORDER BY page_id, name"),
     excerpts: await all("SELECT * FROM page_excerpts ORDER BY page_id"),
     fts: await all("SELECT rowid, title, body FROM pages_fts ORDER BY rowid"),
     guard: await all("SELECT * FROM save_guard"),
@@ -72,8 +73,8 @@ export async function snapshotDb() {
 
 /** 派生データだけ（作り直しの前後の比較用）。 */
 export async function snapshotDerived() {
-  const { links, tags, excerpts, fts } = await snapshotDb();
-  return { links, tags, excerpts, fts };
+  const { links, tags, attachmentRefs, excerpts, fts } = await snapshotDb();
+  return { links, tags, attachmentRefs, excerpts, fts };
 }
 
 export async function linksFrom(pageId: string) {
@@ -103,4 +104,13 @@ export async function searchFts(query: string): Promise<string[]> {
     .bind(`"${query.replaceAll('"', '""')}"`)
     .all<{ id: string }>();
   return results.map((r) => r.id);
+}
+
+export async function attachmentRefsOf(pageId: string): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT name FROM attachment_refs WHERE page_id = ?1 ORDER BY name",
+  )
+    .bind(pageId)
+    .all<{ name: string }>();
+  return results.map((r) => r.name);
 }

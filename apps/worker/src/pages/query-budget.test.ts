@@ -8,11 +8,11 @@ import { APPEND_MAX_ATTEMPTS } from "./store";
 
 /*
  * 書き込みの経路ごとに、1 invocation のクエリ数が最も多くなる場合を数える。D1 Free の上限は 50 で、
- * batch の文も 1 文ずつ数える。派生データの文が 1 回の保存あたり 2 文増えても上限に届かないことを確かめる
- * （SLACK_PER_WRITE）。
+ * batch の文も 1 文ずつ数える。派生データの文を足す余裕は添付の参照（attachment_refs の 2 文）で使い、
+ * append の最悪は 47 になった。保存の batch にさらに文を足すと append が上限を超えるので、そのときは
+ * APPEND_MAX_ATTEMPTS を下げる。
  */
 const D1_QUERY_LIMIT = 50;
-const SLACK_PER_WRITE = 2;
 
 /**
  * prepare の回数を数える D1。conflictWith を渡すと、各 batch の直前にそのページの版を進め、
@@ -71,8 +71,8 @@ async function requestWith(
   );
 }
 
-function expectWithinBudget(counter: { queries: number }, writes: number) {
-  expect(counter.queries + SLACK_PER_WRITE * writes).toBeLessThan(D1_QUERY_LIMIT);
+function expectWithinBudget(counter: { queries: number }) {
+  expect(counter.queries).toBeLessThan(D1_QUERY_LIMIT);
 }
 
 describe("1 invocation のクエリ数", () => {
@@ -86,9 +86,9 @@ describe("1 invocation のクエリ数", () => {
     });
     expect(res.status).toBe(409);
     expect(counter.batches).toBe(APPEND_MAX_ATTEMPTS);
-    // 認証 2、試行ごとに読み 1 と batch 12
-    expect(counter.queries).toBe(2 + APPEND_MAX_ATTEMPTS * 13);
-    expectWithinBudget(counter, APPEND_MAX_ATTEMPTS);
+    // 認証 2、試行ごとに読み 1 と batch 14
+    expect(counter.queries).toBe(2 + APPEND_MAX_ATTEMPTS * 15);
+    expectWithinBudget(counter);
   });
 
   it("title を変える更新は、版の競合で読み分けるところまで収まる", async () => {
@@ -102,9 +102,9 @@ describe("1 invocation のクエリ数", () => {
       headers: { "If-Match": `"${page.version}"` },
     });
     expect(res.status).toBe(409);
-    // 認証 2、batch 13、版の読み分け 1
-    expect(counter.queries).toBe(16);
-    expectWithinBudget(counter, 1);
+    // 認証 2、batch 15、版の読み分け 1
+    expect(counter.queries).toBe(18);
+    expectWithinBudget(counter);
   });
 
   it("link の書き換えの step は、版の競合で数え直すところまで収まる", async () => {
@@ -121,8 +121,8 @@ describe("1 invocation のクエリ数", () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json<LinkRewriteStepResult>()).processed?.rewritten).toBe(30);
-    // 認証 2、選ぶ 1、ページ 1、派生データ 1、batch 14、残り 1
-    expect(success.counter.queries).toBe(20);
+    // 認証 2、選ぶ 1、ページ 1、派生データ 1、batch 16、残り 1
+    expect(success.counter.queries).toBe(22);
 
     await client.update({ id: target.id, version: 2 }, "Newer", "");
     const racing = instrumentedDb(() => s.id);
@@ -132,7 +132,7 @@ describe("1 invocation のクエリ数", () => {
     });
     expect((await conflicted.json<LinkRewriteStepResult>()).conflict).toBe(true);
     // 上に加えて、試行回数を数え直す 1
-    expect(racing.counter.queries).toBe(21);
-    expectWithinBudget(racing.counter, 1);
+    expect(racing.counter.queries).toBe(23);
+    expectWithinBudget(racing.counter);
   });
 });

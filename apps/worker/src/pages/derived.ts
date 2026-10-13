@@ -1,3 +1,4 @@
+import { isAttachmentName } from "@personal-wiki/domain";
 import { extractDerived } from "@personal-wiki/markdown";
 
 /** 派生テーブルに入れる値。可変長の links と tags は JSON 1 個にまとめ、D1 の bind 100 個の上限を避ける。 */
@@ -6,6 +7,8 @@ export interface DerivedValues {
   linksJson: string;
   /** `{ key, tag }` の配列の JSON */
   tagsJson: string;
+  /** attachment_refs.name の配列の JSON。添付の名前の形に合うものだけ */
+  attachmentsJson: string;
   ftsTitle: string;
   ftsBody: string;
   /** 一覧に出す本文の先頭。NFKC にはかけず、書かれた表記のまま持つ */
@@ -40,6 +43,8 @@ export function deriveValues(title: string, body: string): DerivedValues {
   return {
     linksJson: JSON.stringify(derived.links.map((link) => link.targetTitleKey)),
     tagsJson: JSON.stringify(derived.tags.map(({ tagKey, tag }) => ({ key: tagKey, tag }))),
+    // `sub/x.png` のような相対パスや貼り付け中のプレースホルダーは、この wiki の添付を指さないので数えない
+    attachmentsJson: JSON.stringify(derived.attachments.filter(isAttachmentName)),
     ftsTitle: foldForSearch(title),
     ftsBody: foldForSearch(derived.plainText),
     excerpt: excerptOf(derived.plainText),
@@ -47,12 +52,12 @@ export function deriveValues(title: string, body: string): DerivedValues {
 }
 
 /**
- * ページ 1 件の派生データ（links、tags、page_excerpts、pages_fts）を、そのページの body から作った値に合わせる文。
+ * ページ 1 件の派生データ（links、tags、attachment_refs、page_excerpts、pages_fts）を、そのページの body から作った値に合わせる文。
  * 作成・更新・作り直しで同じ文を使い、どの経路で書いても同じ行になるようにする。
  *
  * - pages の行がすでにあり、id と seq が変わらないことを前提にする。pages の title や version には依存しない
  *   ので、更新の batch では pages の UPDATE より前に置ける（版の照合は先頭の guard が済ませる）。
- * - links と tags は差分で書く。消して入れ直すより書き込み行数が大幅に少ない。upsert は値が変わった
+ * - links、tags、attachment_refs は差分で書く。消して入れ直すより書き込み行数が大幅に少ない。upsert は値が変わった
  *   行だけを書き換え、tag の表記や target_page_id の食い違いも作り直しで直る。
  * - このページを target とする他のページの links を、新しい title_key で付け直す。title が変わらない
  *   保存でも毎回流す。変わったかを知るには pages を読む文が別に要り、変わらなければ索引を引くだけで
@@ -107,6 +112,17 @@ export function derivedStatements(
          ON CONFLICT (page_id, tag_key) DO UPDATE SET tag = excluded.tag WHERE tag <> excluded.tag`,
       )
       .bind(pageId, values.tagsJson),
+    db
+      .prepare(
+        `DELETE FROM attachment_refs
+         WHERE page_id = ?1 AND name NOT IN (SELECT value FROM json_each(?2))`,
+      )
+      .bind(pageId, values.attachmentsJson),
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO attachment_refs (page_id, name) SELECT ?1, value FROM json_each(?2)",
+      )
+      .bind(pageId, values.attachmentsJson),
     // 値が変わらない保存では行を書かない
     db
       .prepare(
@@ -132,6 +148,7 @@ export function clearDerivedStatements(db: D1Database, pageId: string): D1Prepar
     db.prepare("DELETE FROM links WHERE source_page_id = ?1").bind(pageId),
     db.prepare("UPDATE links SET target_page_id = NULL WHERE target_page_id = ?1").bind(pageId),
     db.prepare("DELETE FROM tags WHERE page_id = ?1").bind(pageId),
+    db.prepare("DELETE FROM attachment_refs WHERE page_id = ?1").bind(pageId),
     db.prepare("DELETE FROM page_excerpts WHERE page_id = ?1").bind(pageId),
     db
       .prepare("DELETE FROM pages_fts WHERE rowid = (SELECT seq FROM pages WHERE id = ?1)")

@@ -54,7 +54,7 @@ pnpm deploy:remote
 WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
 ```
 
-`derived:rebuild` は links、tags、一覧の抜粋、検索の索引を本文から作り直す。
+`derived:rebuild` は links、tags、添付の参照、一覧の抜粋、検索の索引を本文から作り直す。
 1 回の呼び出しで 1 ページずつ進めるので、全ページ分を回して終わる。
 migration の前から在るページは、これを回すまで一覧に抜粋が出ない。
 Worker を前の版に戻して再デプロイしたあとも実行する。前の版は新しい派生データ（抜粋など）を書かないので、戻している間に保存したページの分が古いまま残る。
@@ -71,13 +71,13 @@ Time Travel は Free で 7 日までしか遡れないので、それより古�
 `--out <dir>` で変えるときは追跡される場所に置かない。相対パスの起点はコマンドを実行したディレクトリ（pnpm なら `apps/worker`）で、`-` で始まる値は受け付けない。
 `data.sql` は draft の本文を含むので、扱いに気を付ける。
 
-- ダンプするのは `pages` と `revisions` だけ。links、tags、抜粋、検索の索引は本文から作り直せるので出さない。
+- ダンプするのは `pages`、`revisions`、`attachments` だけ。links、tags、添付の参照、抜粋、検索の索引は本文から作り直せるので出さない。
 - 待っているリンクの書き換え（`link_rewrites`）も出さない。復元すると、その分は本文に旧 title のリンクとして残るので、`pnpm backup --remote` の前に `pnpm link-rewrites --remote` を回しておくとよい。
 - `api_tokens` は token の hash を含むので、既定では出さない。復元後に token を発行し直す。失効済みの名前は再利用できず、`revisions.actor` の `token:<名前>` が指す先でもあるので、前と違う名前を使う。hash ごと戻したいときだけ `--with-tokens` を付け、ダンプを秘密として扱う（この場合は `api-token issue` を省ける）。
 - `wrangler d1 export` は使わない。export の形式は、本文にもとからある 2 文字の `\n` を、改行を逃がした `\n` と区別せず、復元後に本物の改行へ変える。代わりに `SELECT` で読み、文字列の列を `hex()` で受けて `CAST(X'…' AS TEXT)` の INSERT にする。NUL を含むどんな本文も変わらない。1 文は D1 の上限（100 KB）に収まるよう、本文を分けて `UPDATE` で連結する。
 - 読む間も保存は続く。pages を先に読み、revisions はその pages の版までのものだけを書く。読んだあとに作られたページと保存された版は、そのバックアップに入らない（件数は終了時に表示する）。ページ同士の時点は揃わない。読む間に削除や改名で title を手放したページがあり、後で読んだページがその title を取ると、生きたページの title が dump の中で重なる。これを見つけたら "pages changed while reading" で失敗し、出力は残さないので、そのまま再実行する。書き込みの多い時間帯は避けるとよい。
 - `manifest.json` に、読んだ時点の migration の一覧と、表ごとの行数と全列の SHA-256 を書く。
-- R2 は対象外。
+- R2 は対象外。`attachments` の表（添付の名前と種類）は入るが、画像の中身は入らない。
 
 復元は、空の新しい D1 に対して行う。`load` は次を行う。
 
