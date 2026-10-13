@@ -51,7 +51,7 @@ async function seed() {
     "If-Match": `"${gone.version}"`,
   });
   if (removed.status !== 204) throw new Error(`delete failed: ${removed.status}`);
-  return { app, clock, call, asOwner, open, draft, gone };
+  return { app, clock, call, asOwner, create, open, draft, gone };
 }
 
 const resolvePath = (titles: readonly string[]) =>
@@ -143,7 +143,7 @@ describe("GET /api/pages/resolve", () => {
     }
   });
 
-  it("title_key にできない title は 400 にせず null で返す", async () => {
+  it("title_key にできない title は 400 にせず null で返し、他の title は解決する", async () => {
     const { asOwner, open } = await seed();
     const res = await asOwner(resolvePath(["", "   ", "Open Note"]));
     expect(res.status).toBe(200);
@@ -183,13 +183,38 @@ describe("GET /api/pages/resolve", () => {
     });
   });
 
-  it("title は UTF-8 で MAX_TITLE_BYTES まで。超えたら 400 title_too_long", async () => {
-    const { call } = await seed();
-    const fits = "あ".repeat(Math.floor(MAX_TITLE_BYTES / 3));
-    expect((await call(resolvePath([fits]))).status).toBe(200);
-    const over = await call(resolvePath(["Open Note", `${fits}ab`]));
-    expect(over.status).toBe(400);
-    expect(await over.json()).toEqual({ error: "title_too_long", max: MAX_TITLE_BYTES });
+  it("UTF-8 で MAX_TITLE_BYTES ちょうどの title は解決し、1 バイトでも超えた title は 400 にせず null", async () => {
+    const { asOwner, create, open } = await seed();
+    // 多バイト文字の title と、UTF-16 の長さだけで上限を超える ASCII の title の両方を確かめる
+    const wide = await create(`${"あ".repeat(Math.floor(MAX_TITLE_BYTES / 3))}a`, "public");
+    const ascii = await create("a".repeat(MAX_TITLE_BYTES), "public");
+    for (const page of [wide, ascii]) {
+      expect(new TextEncoder().encode(page.title).length).toBe(MAX_TITLE_BYTES);
+    }
+    // 末尾の空白は正規化で消えるので、上限で切らなければ同じページに解決する入力になる
+    const titles = [wide.title, ascii.title, `${wide.title} `, `${ascii.title} `, "Open Note"];
+    const res = await asOwner(resolvePath(titles));
+    expect(res.status).toBe(200);
+    const { results } = await res.json<{ results: Resolved[] }>();
+    expect(results.map((r) => r.page?.id ?? null)).toEqual([
+      wide.id,
+      ascii.id,
+      null,
+      null,
+      open.id,
+    ]);
+  });
+
+  it("URL で意味を持つ記号を含む title も、encodeURIComponent で組んだクエリで解決する", async () => {
+    const { asOwner, create } = await seed();
+    const pages = [];
+    for (const title of ["A&B", "C#1", "1+1", "100%", "a=b?"])
+      pages.push(await create(title, "draft"));
+    const res = await asOwner(resolvePath(pages.map((page) => page.title)));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      results: pages.map(({ id, title }) => ({ title, page: { id, title, visibility: "draft" } })),
+    });
   });
 
   it("検証できないセッション cookie は 401 にする", async () => {

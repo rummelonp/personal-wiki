@@ -129,16 +129,25 @@ export interface ResolvedPage {
 
 /**
  * 複数の title を 1 回のクエリで引き、入力と同じ順・同じ件数で返す。重複や、正規化で同じになる
- * title も入力ごとに答える。title_key にできない title、削除済み、readable の外にあるページは null。
- * readable が public なら draft は null（無いページと区別できないようにする）。
- * links の target_page_id からは引かない。draft にも解決していて、readable で絞れないため。
+ * title も入力ごとに答える。MAX_TITLE_BYTES を超える title、title_key にできない title、削除済み、
+ * readable の外にあるページは null。readable が public なら draft は null（無いページと区別できない
+ * ようにする）。
+ * pages を直接引き、links の target_page_id は使わない。保存前の本文のリンクも解決するので、
+ * links に行があるとは限らない。
  */
 export async function resolvePagesByTitle(
   db: D1Database,
   titles: readonly string[],
   readable: ReadableVisibility,
 ): Promise<(ResolvedPage | null)[]> {
+  const encoder = new TextEncoder();
   const keys = titles.map((title) => {
+    // 保存できる title の上限を超える入力は解決しない。空白を詰めれば一致する入力もありうるが、
+    // 正規化（NFKC）の前に除いて長い入力に CPU を使わせない方を採る。UTF-16 の長さは UTF-8 の
+    // バイト数以下なので、先にそれで弾けば長い入力の変換も省ける
+    if (title.length > MAX_TITLE_BYTES || encoder.encode(title).length > MAX_TITLE_BYTES) {
+      return null;
+    }
     const key = normalizeTitleKey(title);
     return key.ok ? key.value : null;
   });

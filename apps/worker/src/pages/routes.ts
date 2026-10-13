@@ -36,7 +36,6 @@ import {
   deletePage,
   findPageByTitle,
   MAX_BODY_BYTES,
-  MAX_TITLE_BYTES,
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,
@@ -53,10 +52,10 @@ export interface PagesRoutesOptions {
 type PagesContext = Context<AppEnv>;
 
 /**
- * `/api/pages/resolve` が 1 回に受け付ける title の数。読み取りは件数に関係なく 1 クエリだが、
- * title は GET のクエリで受けるので URL の長さで決める。日本語 10 文字の title は percent-encoding で
- * 約 100 バイトになり、50 件で 5KB ほどと、edge の URL の上限（16KB）に余裕を残す。
- * これを超える数のリンクを持つページでは、クライアントが分けて呼ぶ。
+ * `/api/pages/resolve` が 1 回に受け付ける title の数。D1 へのクエリは件数に関係なく 1 回で、
+ * この上限は 1 回の正規化と応答の大きさを抑える。URL に収まることは保証しない（title は 1 件で
+ * percent-encoding 後に数 KB になりうる）。クライアントは件数とエンコード後の URL の長さの両方で
+ * 分けて呼ぶ。
  */
 export const RESOLVE_MAX_TITLES = 50;
 
@@ -290,10 +289,6 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
             field: "title",
             max: RESOLVE_MAX_TITLES,
           });
-        }
-        const encoder = new TextEncoder();
-        if (titles.some((title) => encoder.encode(title).length > MAX_TITLE_BYTES)) {
-          return errorResponse(c, 400, "title_too_long", { max: MAX_TITLE_BYTES });
         }
         const pages = await resolvePagesByTitle(
           c.env.DB,
