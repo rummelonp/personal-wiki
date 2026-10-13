@@ -5,6 +5,7 @@ import { ownerCookie, ownerEnv } from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
+import { safeReturnUrl } from "./routes";
 
 const ORIGIN = "http://localhost";
 const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
@@ -251,6 +252,10 @@ describe("認可と同意画面", () => {
     const location = new URL(res.headers.get("Location") ?? "", ORIGIN);
     expect(location.pathname).toBe("/_auth/login");
     expect(location.searchParams.get("return")).toBe(path);
+    // ログイン後の戻り先の検証が、redirect_uri などの URL を含む認可の要求を落とさない
+    expect(safeReturnUrl(location.searchParams.get("return") ?? undefined, ORIGIN)).toBe(
+      `${ORIGIN}${path}`,
+    );
   });
 
   it("owner には client 名、送り先、要求された scope をエスケープして見せ、フレームと保存を禁じる", async () => {
