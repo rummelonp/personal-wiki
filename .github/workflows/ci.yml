@@ -29,6 +29,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      # packages/editor のテストはブラウザの中で動かす
-      - run: pnpm --filter @personal-wiki/editor exec playwright install --with-deps chromium
+      # packages/editor のテストは headless の Chromium の中で動かす。headless では
+      # headless shell しか使わないので、それだけを入れる
+      - id: playwright
+        run: echo "version=$(pnpm --filter @personal-wiki/editor exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # cache が当たってもブラウザが使う OS のライブラリは入れ直す必要があるので、毎回実行する。
+      # ブラウザ本体は入っていればダウンロードを飛ばす
+      - run: pnpm --filter @personal-wiki/editor exec playwright install --with-deps --only-shell chromium
       - run: pnpm test
