@@ -292,11 +292,12 @@ describe("同じパスに付けた宣言", () => {
 
   it("all() の宣言でハンドラを守る", async () => {
     const token = await insertToken({ name: "agent", scopes: "read" });
-    const app = createApp().all("/mcp", requireToken("read"), (c) => c.text("ok"));
+    // createApp が実際の /mcp を登録するので、別の path で確かめる
+    const app = createApp().all("/api/test/all", requireToken("read"), (c) => c.text("ok"));
     expect(
-      (await app.request("/mcp", { method: "POST", headers: bearer(token) }, env)).status,
+      (await app.request("/api/test/all", { method: "POST", headers: bearer(token) }, env)).status,
     ).toBe(200);
-    expect((await app.request("/mcp", { method: "POST" }, env)).status).toBe(401);
+    expect((await app.request("/api/test/all", { method: "POST" }, env)).status).toBe(401);
   });
 
   it("SPA の catch-all は匿名で通り、先に登録した API の宣言はそのまま効く", async () => {

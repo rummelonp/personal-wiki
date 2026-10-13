@@ -13,9 +13,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
     "@personal-wiki/domain": "workspace:*",
     "@personal-wiki/markdown": "workspace:*",
-    "hono": "^4.13.13"
+    "agents": "0.28.0",
+    "hono": "^4.13.13",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.0",

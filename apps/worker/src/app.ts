@@ -6,6 +6,7 @@ import {
   resolvePrincipal,
 } from "./auth/middleware";
 import type { AppEnv } from "./env";
+import { registerMcpRoutes } from "./mcp/server";
 import type { WriteMetric } from "./pages/operations";
 import { registerAdminRoutes, registerPageRoutes } from "./pages/routes";
 
@@ -35,5 +36,6 @@ export function createApp({ now = Date.now, recordWrite = logWriteMetric }: AppO
     .get("/api/healthz", allowAnonymous(), (c) => c.json({ status: "ok" }));
   registerPageRoutes(app, { now, recordWrite });
   registerAdminRoutes(app, { recordWrite });
+  registerMcpRoutes(app, { now, recordWrite });
   return app;
 }
