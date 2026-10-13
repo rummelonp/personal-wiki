@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { Bindings } from "../env";
-import { ownerCookie, ownerEnv } from "../test/owner";
+import { fakeJwks, generateSigningKey, ownerCookie, ownerEnv, signAccessJwt } from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
@@ -128,8 +128,15 @@ interface TokenResponse {
 }
 
 /** 登録、同意、コードの交換までを通し、発行されたトークンを返す。 */
-async function connect(request: Request, access: "read" | "write") {
-  const client = await register(request);
+async function connect(
+  request: Request,
+  access: "read" | "write",
+  {
+    client: existing,
+    tokenParams = {},
+  }: { client?: RegisteredClient; tokenParams?: Record<string, string> } = {},
+) {
+  const client = existing ?? (await register(request));
   const { verifier, challenge } = await pkcePair();
   const path = authorizePath(client.client_id, challenge);
   const consent = await openConsent(request, path);
@@ -143,6 +150,7 @@ async function connect(request: Request, access: "read" | "write") {
     redirect_uri: CALLBACK,
     client_id: client.client_id,
     code_verifier: verifier,
+    ...tokenParams,
   });
   expect(res.status, await res.clone().text()).toBe(200);
   return { client, tokens: await res.json<TokenResponse>() };
@@ -487,6 +495,30 @@ describe("認可と同意画面", () => {
   });
 });
 
+describe("ログインを経由した認可", () => {
+  it("owner のセッションが無い認可の要求は、Access のログインを経て同意画面に戻る", async () => {
+    const key = await generateSigningKey("key-1");
+    const app = createApp({ now: () => T0, accessFetch: fakeJwks([key]).fetch });
+    const bindings = ownerEnv();
+    const request: Request = (path, init = {}) => app.request(path, init, bindings);
+    const client = await register(request);
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+
+    const toLogin = await request(path);
+    expect(toLogin.status).toBe(302);
+    const login = await request(toLogin.headers.get("Location") ?? "", {
+      headers: { "Cf-Access-Jwt-Assertion": await signAccessJwt(key, T0) },
+    });
+    expect(login.status).toBe(302);
+    expect(login.headers.get("Location")).toBe(`${ORIGIN}${path}`);
+    const session = login.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+
+    const consent = await request(path, { headers: { Cookie: session } });
+    expect(consent.status).toBe(200);
+    expect(await consent.text()).toContain('name="handle"');
+  });
+});
+
 describe("トークンの交換", () => {
   it("S256 の code_verifier で code をトークンに交換し、更新トークンで新しいトークンを得る", async () => {
     const { request } = setup();
@@ -502,6 +534,87 @@ describe("トークンの交換", () => {
     const next = await refreshed.json<TokenResponse>();
     expect(next.access_token).not.toBe(tokens.access_token);
     expect((await postMcp(request, next.access_token, "tools/list")).status).toBe(200);
+  });
+
+  it("resource に /mcp の URL を付けた交換と更新を受け付ける", async () => {
+    const { request } = setup();
+    const resource = `${ORIGIN}/mcp`;
+    const { client, tokens } = await connect(request, "read", { tokenParams: { resource } });
+    expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(200);
+    const refreshed = await postToken(request, {
+      grant_type: "refresh_token",
+      refresh_token: tokens.refresh_token,
+      client_id: client.client_id,
+      resource,
+    });
+    expect(refreshed.status, await refreshed.clone().text()).toBe(200);
+    const next = await refreshed.json<TokenResponse>();
+    expect((await postMcp(request, next.access_token, "tools/list")).status).toBe(200);
+  });
+
+  it("/mcp と一致しない resource は invalid_target にする", async () => {
+    const { request } = setup();
+    const client = await register(request);
+    const { verifier, challenge } = await pkcePair();
+    const path = authorizePath(client.client_id, challenge);
+    const approved = await submitConsent(request, path, await openConsent(request, path));
+    const code = new URL(approved.headers.get("Location") ?? "").searchParams.get("code") ?? "";
+    const res = await postToken(request, {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: CALLBACK,
+      client_id: client.client_id,
+      code_verifier: verifier,
+      resource: `${ORIGIN}/mcp/`,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "invalid_target" });
+
+    const connected = await connect(request, "read");
+    const refreshed = await postToken(request, {
+      grant_type: "refresh_token",
+      refresh_token: connected.tokens.refresh_token,
+      client_id: connected.client.client_id,
+      resource: `${ORIGIN}/mcp/`,
+    });
+    expect(refreshed.status).toBe(400);
+    expect(await refreshed.json()).toMatchObject({ error: "invalid_target" });
+  });
+
+  it("read の grant は、write を求めて更新しても read のまま", async () => {
+    const { request } = setup();
+    const { client, tokens } = await connect(request, "read");
+    const refreshed = await postToken(request, {
+      grant_type: "refresh_token",
+      refresh_token: tokens.refresh_token,
+      client_id: client.client_id,
+      scope: "read write",
+    });
+    expect(refreshed.status, await refreshed.clone().text()).toBe(200);
+    const next = await refreshed.json<TokenResponse>();
+    expect(next.scope).toBe("read");
+    const denied = await callTool(request, next.access_token, "create_page", {
+      title: "x",
+      body: "",
+    });
+    expect(denied).toEqual({
+      isError: true,
+      json: { error: "forbidden", message: "この token には write の scope が無い" },
+    });
+  });
+
+  it("同じ client を許可し直すと、以前のトークンは使えなくなる", async () => {
+    const { request } = setup();
+    const first = await connect(request, "write");
+    const second = await connect(request, "read", { client: first.client });
+    expect((await postMcp(request, first.tokens.access_token, "tools/list")).status).toBe(401);
+    const refreshed = await postToken(request, {
+      grant_type: "refresh_token",
+      refresh_token: first.tokens.refresh_token,
+      client_id: first.client.client_id,
+    });
+    expect(refreshed.status).toBe(400);
+    expect((await postMcp(request, second.tokens.access_token, "tools/list")).status).toBe(200);
   });
 
   it("code_verifier が合わなければ交換できない", async () => {
@@ -585,6 +698,26 @@ describe("OAuth のトークンでの /mcp", () => {
     const headers = { Authorization: `Bearer ${tokens.access_token}` };
     expect((await request("/api/pages/recent", { headers })).status).toBe(401);
     expect((await request("/api/me", { headers })).status).toBe(401);
+  });
+
+  describe("期限", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("期限切れのアクセストークンは、resource_metadata 付きの challenge で 401 にする", async () => {
+      const { request } = setup();
+      const { tokens } = await connect(request, "read");
+      expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(200);
+      // ライブラリはトークンの期限を Date.now で判定する
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.now() + (3600 + 1) * 1000);
+      const res = await postMcp(request, tokens.access_token, "tools/list");
+      expect(res.status).toBe(401);
+      expect(res.headers.get("WWW-Authenticate")).toBe(
+        `Bearer realm="OAuth", resource_metadata="${RESOURCE_METADATA_URL}"`,
+      );
+    });
   });
 
   it("壊れた形や未発行のトークンは 401", async () => {
