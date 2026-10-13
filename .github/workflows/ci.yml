@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # PR ブランチで二重に走らないよう、push は既定ブランチだけにする
   push:
+    branches: [main, master]
   pull_request:
 
 permissions:
