@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { createScheduledHandler } from "../scheduled";
+import { ownerCookie, ownerEnv } from "../test/owner";
 import { buildClient, T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import type { LinkRewriteStepResult } from "./link-rewrites";
@@ -139,6 +140,45 @@ describe("1 invocation のクエリ数", () => {
     expect((await conflicted.json<LinkRewriteStepResult>()).conflict).toBe(true);
     // 上に加えて、試行回数を数え直す 1
     expect(racing.counter.queries).toBe(23);
+    expectWithinBudget(racing.counter);
+  });
+
+  it("owner の cookie で呼ぶ step は、認証にクエリを使わず token より 2 少ない", async () => {
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const links = Array.from({ length: 30 }, (_, i) => `[[Old]] [[L${i}]] #t${i}`).join("\n");
+    const s = await client.create("S", links);
+    await client.update(target, "New", "");
+
+    const call = async (db: D1Database) =>
+      createApp({ now: () => T0 + 1000, recordWrite: () => {} }).request(
+        "/api/link-rewrites/step",
+        {
+          method: "POST",
+          headers: {
+            Cookie: await ownerCookie(T0 + 1000),
+            Origin: "http://localhost",
+            "Sec-Fetch-Site": "same-origin",
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        },
+        ownerEnv({ DB: db }),
+      );
+
+    const success = instrumentedDb();
+    const res = await call(success.db);
+    expect(res.status).toBe(200);
+    expect((await res.json<LinkRewriteStepResult>()).processed?.rewritten).toBe(30);
+    // 選ぶ 1、ページ 1、派生データ 1、batch 16、残り 1（cookie は署名の検証だけで D1 を読まない）
+    expect(success.counter.queries).toBe(20);
+
+    await client.update({ id: target.id, version: 2 }, "Newer", "");
+    const racing = instrumentedDb(() => s.id);
+    const conflicted = await call(racing.db);
+    expect((await conflicted.json<LinkRewriteStepResult>()).conflict).toBe(true);
+    // 上に加えて、試行回数を数え直す 1
+    expect(racing.counter.queries).toBe(21);
     expectWithinBudget(racing.counter);
   });
 
