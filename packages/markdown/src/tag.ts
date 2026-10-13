@@ -16,7 +16,7 @@ const TAG_BODY = new RegExp(TAG_BODY_CHARS, "uy");
  * `frontmatterTagName` が本文の `#tag` と同じ文字集合で判定するために、同じ定義から組み立てる。
  */
 const WHOLE_TAG_BODY = new RegExp(`^${TAG_BODY_CHARS}$`, "u");
-const HAS_LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
+const HAS_LETTER = /\p{L}/u;
 /**
  * `#` の直前に置ける空白。全角空白などの Unicode の空白を含む（JavaScript の `\s`）。
  * Obsidian のヘルプは `#` の直前の条件を述べていないが、日本語の文は全角空白で区切って書くことがある。
@@ -32,9 +32,14 @@ function startsTagBoundary(cx: InlineContext, pos: number): boolean {
   return pos - 2 >= cx.offset && OPENING_DELIMITERS.has(cx.slice(pos - 2, pos));
 }
 
-/** `#_`、`#-` のように記号だけで、文字も数字も含まない本体は tag にしない。 */
+/**
+ * 文字（`\p{L}`）を 1 つ以上含む本体だけを tag にする。
+ * Obsidian のヘルプは「数字以外の文字を 1 つ以上含む」ことを求め、`#1984` を tag にしない。
+ * `#123` のような issue 参照を tags に入れないために、`/` や `-` を数字以外とは数えず、
+ * `#2026/10` のような数字と記号だけの本体も tag にしない。`#_`、`#-` のような記号だけの語も同じ規則で落ちる。
+ */
 function isTagBody(body: string): boolean {
-  return WHOLE_TAG_BODY.test(body) && HAS_LETTER_OR_NUMBER.test(body);
+  return WHOLE_TAG_BODY.test(body) && HAS_LETTER.test(body);
 }
 
 export const tagNodes = {
@@ -87,8 +92,7 @@ const tagParser = parser.configure([Frontmatter, WikiLink, Tag]);
  *
  * 判定の規約は「本文に `#値` と書いたときに tag になるか」で、本文と frontmatter で同じ tag に
  * なることを保証する。`a, b` のような空白や `,` を含む値、`~` のような記号だけの値は
- * ここで落ちる。Obsidian は `#1984` のような数字だけの tag を認めないが、こちらは本文側の
- * 既存の抽出に合わせて認める。
+ * ここで落ちる。`1984` のような数字だけの値も、Obsidian に合わせて tag にしない。
  *
  * 値の `#` は、本文の書き方に引きずられた `tags: [#仕事]` を受けるために 1 つだけ剥がす。
  * Obsidian の properties は `#` を付けずに書く。

@@ -74,8 +74,15 @@ describe("extractTags の境界", () => {
     }
   });
 
-  it("記号を含んでも文字か数字があれば tag にする", () => {
+  it("記号を含んでも文字があれば tag にする", () => {
     expect(extractTags("#-a #_b")).toEqual(["-a", "_b"]);
+  });
+
+  it("数字だけの本体は tag にしない（issue 参照を拾わない）", () => {
+    for (const text of ["#1984", "#123 を参照", "x #２０２６", "#2026/10", "#1-2", "#1_2"]) {
+      expect(extractTags(text)).toEqual([]);
+    }
+    expect(extractTags("#y1984 #2026/q4")).toEqual(["y1984", "2026/q4"]);
   });
 
   it("`/` が先頭、末尾、連続にある形は tag にしない", () => {
@@ -93,11 +100,14 @@ describe("extractTags の境界", () => {
 });
 
 describe("frontmatterTagName", () => {
-  it.each(["仕事", "foo/bar", "a-b_c", "1984"])("tag として読める値を返す: %s", (value) => {
-    expect(frontmatterTagName(value)).toBe(value);
-    // 本文に `#値` と書いたときと同じ tag になる、が判定の規約
-    expect(extractTags(`#${value}`)).toEqual([value]);
-  });
+  it.each(["仕事", "foo/bar", "a-b_c", "y1984", "2026/q4"])(
+    "tag として読める値を返す: %s",
+    (value) => {
+      expect(frontmatterTagName(value)).toBe(value);
+      // 本文に `#値` と書いたときと同じ tag になる、が判定の規約
+      expect(extractTags(`#${value}`)).toEqual([value]);
+    },
+  );
 
   it("前後の空白と、先頭の `#` を 1 つだけ落とす", () => {
     expect(frontmatterTagName("  仕事  ")).toBe("仕事");
@@ -105,10 +115,24 @@ describe("frontmatterTagName", () => {
     expect(frontmatterTagName("##仕事")).toBe(null);
   });
 
-  it.each(["", "~", "a, b", "a b", "#", "a#b", "[[a]]", "-", "_", "/", "a/", "/a"])(
-    "tag として読めない値は null: %s",
-    (value) => {
-      expect(frontmatterTagName(value)).toBe(null);
-    },
-  );
+  it.each([
+    "",
+    "~",
+    "a, b",
+    "a b",
+    "#",
+    "a#b",
+    "[[a]]",
+    "-",
+    "_",
+    "/",
+    "a/",
+    "/a",
+    "1984",
+    "２０２６",
+    "2026/10",
+    "1-2",
+  ])("tag として読めない値は null: %s", (value) => {
+    expect(frontmatterTagName(value)).toBe(null);
+  });
 });
