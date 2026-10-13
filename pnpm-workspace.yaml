@@ -8,5 +8,3 @@ allowBuilds:
   # wrangler と @cloudflare/vitest-plugin が使う。postinstall でプラットフォーム別のバイナリを確かめる
   esbuild: true
   workerd: true
-  # agents の依存（mimetext 経由）。postinstall は寄付の案内を出すだけで、動作に要らない
-  core-js-pure: false

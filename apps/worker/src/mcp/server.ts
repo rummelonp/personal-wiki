@@ -1,5 +1,12 @@
-import { type AuthInfo, McpServer } from "@modelcontextprotocol/server";
-import { createMcpHandler } from "agents/mcp/server";
+import {
+  type AuthInfo,
+  createMcpHandler,
+  INVALID_REQUEST,
+  isJsonContentType,
+  McpServer,
+  originValidationResponse,
+  PARSE_ERROR,
+} from "@modelcontextprotocol/server";
 import type { Hono } from "hono";
 import { requireToken } from "../auth/middleware";
 import type { AppEnv } from "../env";
@@ -46,25 +53,50 @@ export interface McpRoutesOptions {
   recordWrite: (metric: WriteMetric) => void;
 }
 
+function jsonRpcError(status: 400, code: number, message: string): Response {
+  return Response.json({ jsonrpc: "2.0", id: null, error: { code, message } }, { status });
+}
+
+/** 許可する Origin のホスト名。空なので、Origin を付けた要求はすべて 403 になる */
+const ALLOWED_ORIGIN_HOSTNAMES: string[] = [];
+
 /**
  * `/mcp` に stateless な Streamable HTTP の MCP サーバーを置く。リクエストごとに McpServer を作り、
  * 認可で決まった principal を tool に閉じ込める。
  *
  * 宣言は 1 つの ALL の登録に requireToken("read") を付け、write の tool は tool の中で scope を見る
- * （tool.ts の defineTool）。CORS は付けない。宛先はブラウザ以外のクライアントで、preflight は
- * Authorization を持たず requireToken を通らない。
+ * （tool.ts の defineTool）。SDK の handler は Origin も CORS も扱わないので、ここで決める。
+ * - Origin の付いた要求は 403 にする。/mcp を使う正当なブラウザのクライアントは無く、ブラウザ経由の
+ *   要求（DNS rebinding を含む）だけが Origin を付ける。
+ * - CORS のヘッダーは付けない。preflight は Authorization を持たず requireToken を通らない。
+ * - JSON-RPC の batch（本文が配列）は 400 にする。2025-06-18 以降のプロトコルは batch を廃止しており、
+ *   1 回の呼び出しで D1 のクエリ数と CPU 時間の上限を超えやすい。
+ * GET と DELETE（セッションの操作）は SDK の stateless の経路が 405 で返す。
  */
 export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRoutesOptions) {
   const handler = createMcpHandler(({ authInfo }) => createWikiMcpServer(contextOf(authInfo)), {
-    route: "/mcp",
-    corsOptions: false,
     onerror: (error) => {
       console.error(JSON.stringify({ event: "mcp.error", error: error.message }));
     },
   });
   return app.all("/mcp", requireToken("read"), async (c) => {
+    const rejected = originValidationResponse(c.req.raw, ALLOWED_ORIGIN_HOSTNAMES);
+    if (rejected !== undefined) return rejected;
     if (Number(c.req.header("Content-Length")) > MAX_REQUEST_BYTES) {
       return c.json({ error: "body_too_large", max: MAX_BODY_BYTES }, 413);
+    }
+    // batch を見分けるために本文を読むので、解析した値を SDK に渡して読み直させない。
+    // Content-Type が JSON でない POST は読まずに渡し、SDK の 415 に任せる
+    let parsedBody: unknown;
+    if (c.req.method === "POST" && isJsonContentType(c.req.header("Content-Type"))) {
+      try {
+        parsedBody = await c.req.json();
+      } catch {
+        return jsonRpcError(400, PARSE_ERROR, "Parse error: the request body is not valid JSON");
+      }
+      if (Array.isArray(parsedBody)) {
+        return jsonRpcError(400, INVALID_REQUEST, "JSON-RPC の batch は受け付けない");
+      }
     }
     const principal = c.get("principal");
     const context: WikiToolContext = {
@@ -82,6 +114,7 @@ export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRo
         scopes: principal.kind === "token" ? [...principal.scopes] : [],
         extra: { [CONTEXT_KEY]: context },
       },
+      ...(parsedBody === undefined ? {} : { parsedBody }),
     });
   });
 }

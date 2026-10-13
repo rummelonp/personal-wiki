@@ -38,8 +38,7 @@ async function mcpClient(options: Parameters<typeof buildClient>[0] = {}) {
   const post = (body: unknown, headers: Record<string, string> = {}) =>
     client.request("/mcp", {
       method: "POST",
-      // Agents SDK の handler は localhost 宛てのリクエストで Host を検査する
-      headers: { Accept: "application/json, text/event-stream", Host: "localhost", ...headers },
+      headers: { Accept: "application/json, text/event-stream", ...headers },
       json: body,
     });
   async function rpc(method: string, params?: unknown, headers?: Record<string, string>) {
@@ -86,7 +85,6 @@ describe("/mcp の認可", () => {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json, text/event-stream",
-          Host: "localhost",
         },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
       },
@@ -130,6 +128,85 @@ describe("/mcp の認可", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("Cookie だけの要求は匿名として 401", async () => {
+    await mcpClient();
+    const res = await createApp().request(
+      "/mcp",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          Cookie: "session=anything",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      },
+      env,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("Origin の付いた要求は token があっても 403 で、tool を実行しない", async () => {
+    const { post, metrics } = await mcpClient();
+    const before = await snapshotDb();
+    for (const origin of ["https://evil.example", ORIGIN, "null"]) {
+      const res = await post(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "create_page", arguments: { title: "Via Browser", body: "" } },
+        },
+        { Origin: origin },
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    }
+    expect(await snapshotDb()).toEqual(before);
+    expect(metrics).toEqual([]);
+  });
+
+  it("GET と DELETE は stateless なので 405", async () => {
+    const { request } = await mcpClient();
+    for (const method of ["GET", "DELETE"]) {
+      const res = await request("/mcp", {
+        method,
+        headers: { Accept: "application/json, text/event-stream" },
+      });
+      expect(res.status).toBe(405);
+    }
+  });
+
+  it("JSON-RPC の batch は 400 で、どの要求も実行しない", async () => {
+    const { post, metrics } = await mcpClient();
+    const before = await snapshotDb();
+    const call = (id: number) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "create_page", arguments: { title: `Batch ${id}`, body: "" } },
+    });
+    const res = await post([call(1), call(2)]);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ jsonrpc: "2.0", id: null, error: { code: -32600 } });
+    expect(await snapshotDb()).toEqual(before);
+    expect(metrics).toEqual([]);
+  });
+
+  it("JSON として読めない本文は 400", async () => {
+    const { request } = await mcpClient();
+    const res = await request("/mcp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: "{",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: -32700 } });
   });
 
   it("Content-Length が上限を超えるリクエストは解析せずに 413", async () => {
@@ -218,6 +295,51 @@ describe("tools/list", () => {
     }
     const listed = await rpc("tools/list", undefined, { "MCP-Protocol-Version": "2025-06-18" });
     expect(listed.result?.tools).toHaveLength(7);
+  });
+});
+
+describe("2026-07-28 版のプロトコル", () => {
+  const MODERN = "2026-07-28";
+  const envelope = {
+    "io.modelcontextprotocol/protocolVersion": MODERN,
+    "io.modelcontextprotocol/clientCapabilities": {},
+    "io.modelcontextprotocol/clientInfo": { name: "test", version: "0" },
+  };
+  const modernHeaders = (method: string, name?: string): Record<string, string> => ({
+    "MCP-Protocol-Version": MODERN,
+    "Mcp-Method": method,
+    ...(name === undefined ? {} : { "Mcp-Name": name }),
+  });
+
+  it("server/discover に instructions を返す", async () => {
+    const { rpc } = await mcpClient();
+    const discovered = await rpc(
+      "server/discover",
+      { _meta: envelope },
+      modernHeaders("server/discover"),
+    );
+    expect(discovered.result).toMatchObject({
+      supportedVersions: [MODERN],
+      instructions: expect.stringContaining("draft"),
+    });
+  });
+
+  it("tools/call で tool を呼び、principal と D1 が tool に届く", async () => {
+    const { rpc, metrics } = await mcpClient();
+    const { result } = await rpc(
+      "tools/call",
+      { _meta: envelope, name: "create_page", arguments: { title: "Modern", body: "本文" } },
+      modernHeaders("tools/call", "create_page"),
+    );
+    // resultType は 2026-07-28 版の経路だけが付ける
+    expect(result).toMatchObject({ resultType: "complete" });
+    expect(result?.isError).toBeUndefined();
+    const content = result?.content as { text: string }[];
+    expect(JSON.parse(content[0]?.text ?? "")).toMatchObject({
+      title: "Modern",
+      visibility: "draft",
+    });
+    expect(metrics).toHaveLength(1);
   });
 });
 
