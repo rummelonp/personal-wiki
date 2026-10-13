@@ -5,6 +5,18 @@ import type { AppEnv } from "../env";
 import { isPageId } from "./id";
 import { actorOf } from "./revisions";
 import {
+  type Cursor,
+  LIST_DEFAULT_LIMIT,
+  LIST_MAX_LIMIT,
+  listBacklinks,
+  listRecentPages,
+  parseCursor,
+  prepareSearchQuery,
+  SEARCH_DEFAULT_LIMIT,
+  SEARCH_MAX_LIMIT,
+  searchPages,
+} from "./search";
+import {
   type AppendError,
   appendToPage,
   createPage,
@@ -206,6 +218,39 @@ function requireIfMatch(
   return { ok: true, version: ifMatch.version };
 }
 
+type Parsed<T> = { ok: true; value: T } | { ok: false; response: Response };
+
+/** `limit` クエリを読む。無ければ既定値。整数で 1 以上 max 以下でなければ 400。 */
+function readLimit(c: PagesContext, fallback: number, max: number): Parsed<number> {
+  const raw = c.req.query("limit");
+  if (raw === undefined) return { ok: true, value: fallback };
+  const limit = /^[0-9]{1,6}$/.test(raw) ? Number(raw) : 0;
+  if (limit < 1 || limit > max) {
+    return { ok: false, response: errorResponse(c, 400, "invalid_field", { field: "limit", max }) };
+  }
+  return { ok: true, value: limit };
+}
+
+/** `cursor` クエリを読む。無ければ null。応答の nextCursor 以外の値は 400。 */
+function readCursor(c: PagesContext): Parsed<Cursor | null> {
+  const raw = c.req.query("cursor");
+  if (raw === undefined) return { ok: true, value: null };
+  const cursor = parseCursor(raw);
+  if (cursor === null) {
+    return { ok: false, response: errorResponse(c, 400, "invalid_field", { field: "cursor" }) };
+  }
+  return { ok: true, value: cursor };
+}
+
+/** 一覧 API の limit と cursor を読む。 */
+function readPaging(c: PagesContext): Parsed<{ limit: number; cursor: Cursor | null }> {
+  const limit = readLimit(c, LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
+  if (!limit.ok) return limit;
+  const cursor = readCursor(c);
+  if (!cursor.ok) return cursor;
+  return { ok: true, value: { limit: limit.value, cursor: cursor.value } };
+}
+
 /**
  * `/api/pages` のルートを app に登録する。token principal だけを受け付ける（owner と anonymous の
  * 経路は別の Work Item）。ページの id は形式が違えば D1 を引かずに 404 にする。
@@ -247,11 +292,41 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
+      // `/api/pages/:id` より前に登録する。後ろだと :id のハンドラが "recent" を id として先に 404 にする
+      .get("/api/pages/recent", requireToken("read"), async (c) => {
+        const paging = readPaging(c);
+        if (!paging.ok) return paging.response;
+        const { pages, nextCursor } = await listRecentPages(c.env.DB, paging.value);
+        return c.json({ pages, nextCursor });
+      })
+      .get("/api/search", requireToken("read"), async (c) => {
+        const raw = c.req.query("q");
+        if (raw === undefined) return errorResponse(c, 400, "missing_field", { field: "q" });
+        const query = prepareSearchQuery(raw);
+        if (!query.ok) {
+          return errorResponse(c, 400, "invalid_field", {
+            field: "q",
+            message: query.reason === "empty" ? "q が空か、空白だけになっている" : "q が長すぎる",
+          });
+        }
+        const limit = readLimit(c, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);
+        if (!limit.ok) return limit.response;
+        return c.json({ results: await searchPages(c.env.DB, query.query, limit.value) });
+      })
       .get("/api/pages/:id", requireToken("read"), async (c) => {
         const id = c.req.param("id");
         const page = isPageId(id) ? await findPageById(c.env.DB, id) : null;
         if (page === null) return c.notFound();
         return pageResponse(c, page);
+      })
+      .get("/api/pages/:id/backlinks", requireToken("read"), async (c) => {
+        const id = c.req.param("id");
+        if (!isPageId(id)) return c.notFound();
+        const paging = readPaging(c);
+        if (!paging.ok) return paging.response;
+        const list = await listBacklinks(c.env.DB, id, paging.value);
+        if (list === null) return c.notFound();
+        return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })
       .put("/api/pages/:id", requireToken("write"), async (c) => {
         const id = c.req.param("id");

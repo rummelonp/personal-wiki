@@ -10,14 +10,21 @@ export interface DerivedValues {
   ftsBody: string;
 }
 
+/**
+ * pages_fts に入れる文字列と検索語に掛ける正規化。trigram は全角英数や半角カナを畳まないので、
+ * 保存側と検索側で必ず同じ関数を通す。
+ */
+export function foldForSearch(text: string): string {
+  return text.normalize("NFKC");
+}
+
 export function deriveValues(title: string, body: string): DerivedValues {
   const derived = extractDerived(body);
   return {
     linksJson: JSON.stringify(derived.links.map((link) => link.targetTitleKey)),
     tagsJson: JSON.stringify(derived.tags.map(({ tagKey, tag }) => ({ key: tagKey, tag }))),
-    // trigram は全角英数や半角カナを畳まないので、検索語と同じく NFKC にそろえて入れる
-    ftsTitle: title.normalize("NFKC"),
-    ftsBody: derived.plainText.normalize("NFKC"),
+    ftsTitle: foldForSearch(title),
+    ftsBody: foldForSearch(derived.plainText),
   };
 }
 
