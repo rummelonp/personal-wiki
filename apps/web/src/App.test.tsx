@@ -59,8 +59,10 @@ const titleUrl = (title: string) => `/${encodeURIComponent(title)}`;
 const ok = <T,>(value: T): ApiResult<T> => ({ ok: true, value });
 const notFound = { ok: false, reason: "not_found" } as const;
 
-beforeAll(() => {
+beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // App は PageView を lazy で読む。開発サーバーの初回の変換が waitFor の待ち時間を超えないよう先に読む
+  await import("./PageView");
 });
 
 const startUrl = location.href;
@@ -133,7 +135,7 @@ describe("App の匿名の画面", () => {
     await renderAt(titleUrl(PUBLIC.title));
     await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("公開の題"));
     expect(main()?.querySelector(".title-input")).toBeNull();
-    expect(main()?.querySelector(".cm-editor")).not.toBeNull();
+    await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
     expect(header()?.querySelectorAll("button")).toHaveLength(0);
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
