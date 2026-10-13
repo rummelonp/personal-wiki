@@ -416,10 +416,14 @@ describe("GET /api/pages/titles", () => {
     expect(rest.nextCursor).toBeNull();
   });
 
-  it("/api/pages/:id と重ならず、token が無ければ匿名として 200、read の token で 200", async () => {
+  it("token が無ければ匿名として、read の token でも一覧を返し、書き込みは受けない", async () => {
     const reader = await buildClient({ scopes: "read", name: "reader" });
-    expect((await withoutToken("/api/pages/titles")).status).toBe(200);
-    expect((await reader.request("/api/pages/titles")).status).toBe(200);
+    const anonymous = await withoutToken("/api/pages/titles");
+    expect(anonymous.status).toBe(200);
+    expect(await anonymous.json()).toHaveProperty("pages");
+    const read = await reader.request("/api/pages/titles");
+    expect(read.status).toBe(200);
+    expect(await read.json()).toHaveProperty("pages");
     const writer = await buildClient();
     expect((await writer.request("/api/pages/titles", { method: "PUT" })).status).toBe(404);
     expect((await writer.request("/api/pages/titles", { method: "DELETE" })).status).toBe(404);

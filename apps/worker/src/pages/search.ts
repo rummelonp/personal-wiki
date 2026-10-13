@@ -65,7 +65,7 @@ export const LIST_DEFAULT_LIMIT = 20;
 export const LIST_MAX_LIMIT = 100;
 /**
  * title の一覧の 1 回の上限。1 件は id（22 文字）と title、visibility、updatedAt だけで、title は
- * 平均で数十バイト、上限の MAX_TITLE_BYTES（1024）でも 500 件の応答は 600KB 弱に収まる。
+ * 平均で数十バイト、上限の MAX_TITLE_BYTES（1024）でも 500 件の応答は 1MB 程度（JSON のエスケープで最大 2 倍になる分を含む）に収まる。
  * Worker の CPU（Workers Free は 1 リクエスト 10ms）を使うのは 500 件の JSON 化くらいで、
  * 抜粋とタグを引く LIST_MAX_LIMIT の一覧のように件数を絞る理由が無い。
  * 並べ替えは D1 が行い、読む行数は limit に関係なく全ページになる。
