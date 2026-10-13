@@ -205,6 +205,7 @@ describe("rows_written の記録", () => {
     expect(replaced.status).toBe(200);
 
     expect(metrics.map((m) => m.op)).toEqual(["create", "update", "update"]);
+    for (const m of metrics) expect(m).toMatchObject({ actor: "token:agent", pageId: page.id });
     for (const m of metrics) expect(m.rowsWritten).toBeGreaterThan(0);
     const [create, update, replace] = metrics.map((m) => m.rowsWritten);
     console.log(`rows_written: create=${create} body-only=${update} replace-all=${replace}`);

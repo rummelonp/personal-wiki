@@ -36,7 +36,9 @@ describe("POST /api/pages", () => {
     expect(await revisionsOf(page.id)).toEqual([
       { version: 1, title: "First  Page", body: "本文", actor: "token:agent" },
     ]);
-    expect(metrics).toEqual([{ op: "create", rowsWritten: expect.any(Number) }]);
+    expect(metrics).toEqual([
+      { op: "create", actor: "token:agent", pageId: page.id, rowsWritten: expect.any(Number) },
+    ]);
   });
 
   it("visibility を送ると 400 で、何も書かない", async () => {
@@ -332,7 +334,13 @@ describe("POST /api/pages/:id/append", () => {
       json: { text: "- 次" },
     });
     expect((await second.json<PageJson>()).body).toBe("一行目\n- 追記\n- 次");
-    expect(metrics.at(-1)).toEqual({ op: "append", rowsWritten: expect.any(Number), attempts: 1 });
+    expect(metrics.at(-1)).toEqual({
+      op: "append",
+      actor: "token:agent",
+      pageId: page.id,
+      rowsWritten: expect.any(Number),
+      attempts: 1,
+    });
   });
 
   it("並行する追記は読み直して全部残る", async () => {
@@ -375,12 +383,19 @@ describe("DELETE /api/pages/:id", () => {
       headers: { "If-Match": '"1"' },
     });
     expect(res.status).toBe(204);
-    expect(metrics.at(-1)).toEqual({ op: "delete", rowsWritten: expect.any(Number) });
+    expect(metrics.at(-1)).toEqual({
+      op: "delete",
+      actor: "token:agent",
+      pageId: page.id,
+      rowsWritten: expect.any(Number),
+    });
     expect((await request(`/api/pages/${page.id}`)).status).toBe(404);
-    const row = await env.DB.prepare("SELECT deleted_at, version FROM pages WHERE id = ?1")
+    const row = await env.DB.prepare(
+      "SELECT deleted_at, deleted_by, version FROM pages WHERE id = ?1",
+    )
       .bind(page.id)
       .first();
-    expect(row).toEqual({ deleted_at: T0, version: 1 });
+    expect(row).toEqual({ deleted_at: T0, deleted_by: "token:agent", version: 1 });
     const again = await create("gone");
     expect(again.id).not.toBe(page.id);
   });

@@ -18,6 +18,8 @@ CREATE TABLE pages (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER,
+  -- 削除した actor。形式は revisions.actor と同じ
+  deleted_by TEXT CHECK ((deleted_at IS NULL) = (deleted_by IS NULL)),
   -- @personal-wiki/domain の normalizeTitleKey の結果。SQLite の関数では同じ畳み方を再現できない
   title_key TEXT NOT NULL,
   -- 大きい TEXT は行の後ろに置く。SQLite は列を先頭から順に読むので、前にあると後ろの小さい列を

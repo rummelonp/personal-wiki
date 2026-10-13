@@ -20,12 +20,21 @@ import {
   type WriteError,
 } from "./store";
 
-/** 書き込み 1 回分の計測値。D1 の書き込み行数（無料枠 10 万行/日）を保存 1 回あたりで集計するために出す。 */
+/**
+ * 書き込み 1 回分の計測値。D1 の書き込み行数（無料枠 10 万行/日）を保存 1 回あたりで集計し、
+ * どの actor がどのページに書いたかを後から追えるようにする。本文は含めない。
+ */
 export interface WriteMetric {
   op: "create" | "update" | "append" | "delete" | "rebuild";
+  /** revisions.actor と同じ形式 */
+  actor: string;
+  /** 書いたページ。作り直しは 1 回で複数ページを扱いうるので付けない */
+  pageId?: string;
   rowsWritten: number;
   /** 追記で版の競合により読み直した場合の試行回数 */
   attempts?: number;
+  /** 作り直しで失敗したページの id */
+  failed?: string[];
 }
 
 export interface PagesRoutesOptions {
@@ -213,14 +222,20 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
           "body",
         ]);
         if (!parsed.ok) return parsed.response;
+        const actor = actorOf(c.get("principal"));
         const result = await createPage(c.env.DB, {
           title: parsed.value.title as string,
           body: parsed.value.body as string,
-          actor: actorOf(c.get("principal")),
+          actor,
           now: now(),
         });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({ op: "create", rowsWritten: result.rowsWritten });
+        recordWrite({
+          op: "create",
+          actor,
+          pageId: result.page.id,
+          rowsWritten: result.rowsWritten,
+        });
         c.header("Location", `/api/pages/${result.page.id}`);
         return pageResponse(c, result.page, 201);
       })
@@ -248,16 +263,17 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
           "body",
         ]);
         if (!parsed.ok) return parsed.response;
+        const actor = actorOf(c.get("principal"));
         const result = await updatePage(c.env.DB, {
           id,
           expectedVersion: ifMatch.version,
           title: parsed.value.title as string,
           body: parsed.value.body as string,
-          actor: actorOf(c.get("principal")),
+          actor,
           now: now(),
         });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({ op: "update", rowsWritten: result.rowsWritten });
+        recordWrite({ op: "update", actor, pageId: id, rowsWritten: result.rowsWritten });
         return pageResponse(c, result.page);
       })
       .post("/api/pages/:id/append", requireToken("write"), async (c) => {
@@ -267,14 +283,16 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!parsed.ok) return parsed.response;
         const text = parsed.value.text as string;
         if (text === "") return errorResponse(c, 400, "invalid_field", { field: "text" });
-        const result = await appendToPage(c.env.DB, {
-          id,
-          text,
-          actor: actorOf(c.get("principal")),
-          now: now(),
-        });
+        const actor = actorOf(c.get("principal"));
+        const result = await appendToPage(c.env.DB, { id, text, actor, now: now() });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({ op: "append", rowsWritten: result.rowsWritten, attempts: result.attempts });
+        recordWrite({
+          op: "append",
+          actor,
+          pageId: id,
+          rowsWritten: result.rowsWritten,
+          attempts: result.attempts,
+        });
         return pageResponse(c, result.page);
       })
       .delete("/api/pages/:id", requireToken("write"), async (c) => {
@@ -282,13 +300,15 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!isPageId(id)) return c.notFound();
         const ifMatch = requireIfMatch(c);
         if (!ifMatch.ok) return ifMatch.response;
+        const actor = actorOf(c.get("principal"));
         const result = await deletePage(c.env.DB, {
           id,
           expectedVersion: ifMatch.version,
+          actor,
           now: now(),
         });
         if (!result.ok) return writeErrorResponse(c, result);
-        recordWrite({ op: "delete", rowsWritten: result.rowsWritten });
+        recordWrite({ op: "delete", actor, pageId: id, rowsWritten: result.rowsWritten });
         return c.body(null, 204);
       })
   );
@@ -316,7 +336,12 @@ export function registerAdminRoutes(
       return errorResponse(c, 400, "invalid_field", { field: "limit", max: REBUILD_MAX_LIMIT });
     }
     const result = await rebuildDerived(c.env.DB, { after, limit });
-    recordWrite({ op: "rebuild", rowsWritten: result.rowsWritten });
+    recordWrite({
+      op: "rebuild",
+      actor: actorOf(c.get("principal")),
+      rowsWritten: result.rowsWritten,
+      failed: result.failed,
+    });
     return c.json(result);
   });
 }

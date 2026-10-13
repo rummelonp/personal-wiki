@@ -319,6 +319,7 @@ export function appendText(body: string, text: string): string {
 export interface DeletePageInput {
   id: string;
   expectedVersion: number;
+  actor: string;
   now: number;
 }
 
@@ -336,11 +337,11 @@ export async function deletePage(
     ...clearDerivedStatements(db, id),
     db
       .prepare(
-        `UPDATE pages SET deleted_at = ?3, updated_at = ?3
+        `UPDATE pages SET deleted_at = ?3, deleted_by = ?4, updated_at = ?3
          WHERE id = ?1 AND version = ?2 AND deleted_at IS NULL
          RETURNING ${PAGE_COLUMNS}`,
       )
-      .bind(id, expectedVersion, input.now),
+      .bind(id, expectedVersion, input.now, input.actor),
   ];
   let results: D1Result[];
   try {
