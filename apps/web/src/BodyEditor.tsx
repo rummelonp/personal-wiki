@@ -1,14 +1,13 @@
-import { closeCompletion } from "@codemirror/autocomplete";
-import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
-import { EditorView, type ViewUpdate } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import {
   createEditor,
-  isCompositionUnsettled,
+  dispatchWhenSettled,
   isDocReplacement,
   type LinkTargetSource,
   type PageIndex,
   replaceDoc,
-  wikiLinkAutocomplete,
+  setReadOnly,
 } from "@personal-wiki/editor";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 
@@ -35,85 +34,13 @@ export interface BodyEditorProps {
   ref?: Ref<BodyEditorHandle>;
 }
 
-/**
- * changeFilter は、`state.readOnly` を見ずに doc を書く extension が後から増えても入力を通さない
- * ための裏付け。replaceDoc（データ側からの差し替え）だけは通す。
- */
-function modeExtensions(readOnly: boolean): Extension {
-  if (!readOnly) return [];
-  return [EditorState.readOnly.of(true), EditorState.changeFilter.of((tr) => isDocReplacement(tr))];
-}
-
-/**
- * 補完は readOnly の Compartment に入れず、ずっと積んでおく。補完の ViewPlugin は destroy で
- * debounce の timer を止めないので、入力直後や取得の途中に extension ごと外すと、残った timer が
- * 外れた StateField を読んで例外を投げる。
- *
- * そのため読み取り専用でも補完は生きている。打鍵では開かないが、明示の起動（Ctrl-Space など）と
- * 変換の確定後の再開では候補が開き、`[[Title#` なら linkTargets の取得も走る。開いていた候補は
- * 切り替え時に閉じ、候補の適用は wikiLinkAutocomplete 自身と changeFilter が拒むので、doc は
- * 変わらない。読み取り専用で候補自体を出さないには、補完の source 側で readOnly を見る必要がある。
- */
-function completionExtensions(
-  pageIndex: PageIndex | undefined,
-  linkTargets: LinkTargetSource | undefined,
-): Extension {
-  if (pageIndex === undefined) return [];
-  return wikiLinkAutocomplete({
-    index: pageIndex,
-    ...(linkTargets === undefined ? {} : { linkTargets }),
-  });
-}
-
-/**
- * IME の変換中（確定文字列を読み込むまでを含む）は、エディタの外から dispatch しない
- * （packages/editor の ime.ts の IME 不変条件 1）。変換中に来た操作は種類ごとに最後の 1 つだけを
- * 覚えておき、落ち着いた後の最初の update から次の task で 1 回だけ実行する。
- * replaceDoc は自分で同じ保留をするので、ここに通すのはそれ以外の dispatch（readOnly の積み替え、
- * jumpTo の selection）だけ。
- */
-class SettledDispatcher {
-  private readonly pending = new Map<string, () => void>();
-  private timer: ReturnType<typeof setTimeout> | undefined;
-  private destroyed = false;
-
-  constructor(private readonly view: EditorView) {}
-
-  run(key: string, action: () => void): void {
-    if (isCompositionUnsettled(this.view)) {
-      this.pending.set(key, action);
-      return;
-    }
-    this.pending.delete(key);
-    action();
-  }
-
-  update(update: ViewUpdate): void {
-    if (this.pending.size === 0 || isCompositionUnsettled(update.view)) return;
-    // update の最中は dispatch できない
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), 0);
-  }
-
-  destroy(): void {
-    this.destroyed = true;
-    clearTimeout(this.timer);
-    this.pending.clear();
-  }
-
-  private flush(): void {
-    if (this.destroyed || isCompositionUnsettled(this.view)) return;
-    const actions = [...this.pending.values()];
-    this.pending.clear();
-    for (const action of actions) action();
-  }
-}
+const jumpKey = Symbol("jumpTo");
 
 /**
  * 本文の編集部品。packages/editor の Live Preview を React に載せる。
  *
  * EditorView は mount で 1 回だけ作り、再描画では作り直さない（作り直すと変換中の未確定文字が
- * 消える）。props の変化は、本文なら replaceDoc、readOnly なら Compartment の積み替えで届ける。
+ * 消える）。props の変化は、本文なら replaceDoc、readOnly なら setReadOnly で届ける。
  *
  * onChange は変換中の未確定文字を含む入力でも呼ぶ。textarea と同じく、保存と退避が常に画面の
  * 文字を写すようにするためで、変換中にタブが隠れても未確定文字まで退避に残る。
@@ -129,8 +56,6 @@ export function BodyEditor({
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const dispatcher = useRef<SettledDispatcher | null>(null);
-  const mode = useRef(new Compartment());
 
   // EditorView の listener は作ったときに 1 度だけ結ぶので、最新の props は ref から読む
   const latest = useRef({ value, onChange, onBlur, readOnly, pageIndex, linkTargets });
@@ -143,9 +68,11 @@ export function BodyEditor({
     let created: EditorView | null = null;
     const editor = createEditor(parent, {
       doc: initial.value,
+      readOnly: initial.readOnly,
+      // 補完は readOnly の間も積まれたままで、readOnly の間は候補を出さない（createEditor が担う）
+      ...(initial.pageIndex === undefined ? {} : { pageIndex: initial.pageIndex }),
+      ...(initial.linkTargets === undefined ? {} : { linkTargets: initial.linkTargets }),
       extensions: [
-        mode.current.of(modeExtensions(initial.readOnly)),
-        completionExtensions(initial.pageIndex, initial.linkTargets),
         EditorView.contentAttributes.of({ "aria-label": "本文" }),
         EditorView.domEventHandlers({
           blur: () => {
@@ -155,7 +82,6 @@ export function BodyEditor({
         }),
       ],
       onUpdate: (update) => {
-        dispatcher.current?.update(update);
         if (!update.docChanged) return;
         const doc = update.state.doc.toString();
         if (update.transactions.some((tr) => tr.docChanged && !isDocReplacement(tr))) {
@@ -174,10 +100,7 @@ export function BodyEditor({
     });
     created = editor;
     view.current = editor;
-    dispatcher.current = new SettledDispatcher(editor);
     return () => {
-      dispatcher.current?.destroy();
-      dispatcher.current = null;
       view.current = null;
       editor.destroy();
     };
@@ -186,15 +109,11 @@ export function BodyEditor({
   // useLayoutEffect にするのは、持ち主の状態が変わってから次の入力が届く前に、エディタへ反映するため
   useLayoutEffect(() => {
     const editor = view.current;
-    const settled = dispatcher.current;
-    if (editor === null || settled === null) return;
-    settled.run("mode", () => {
-      editor.dispatch({ effects: mode.current.reconfigure(modeExtensions(readOnly)) });
-      if (readOnly) closeCompletion(editor);
-      // 変換中に持ち主が読み取り専用になると、その後に確定した文字は持ち主に受け取られない。
-      // 積み替えと一緒に持ち主の本文へ戻す
-      replaceDoc(editor, latest.current.value);
-    });
+    if (editor === null) return;
+    setReadOnly(editor, readOnly);
+    // 変換中に持ち主が読み取り専用になると、切り替わるまでに確定した文字は持ち主に受け取られない。
+    // 切り替えと同じく落ち着いてから、持ち主の本文へ戻す
+    replaceDoc(editor, latest.current.value);
   }, [readOnly]);
 
   // doc と同じ value でも replaceDoc に渡す。変換中は保留した差し替えを最後の value で上書きさせ、
@@ -209,9 +128,8 @@ export function BodyEditor({
   useImperativeHandle(ref, () => ({
     jumpTo(offset) {
       const editor = view.current;
-      const settled = dispatcher.current;
-      if (editor === null || settled === null) return;
-      settled.run("jump", () => {
+      if (editor === null) return;
+      dispatchWhenSettled(editor, jumpKey, () => {
         const at = Math.min(offset, editor.state.doc.length);
         editor.dispatch({ selection: EditorSelection.cursor(at), scrollIntoView: true });
         editor.focus();

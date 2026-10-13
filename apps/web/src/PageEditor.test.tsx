@@ -158,6 +158,34 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.state.readOnly).toBe(false);
   });
 
+  it("サーバーの版を取り込んだ後の undo で、取り込む前の手元の編集を新しい本文から取り消さない", async () => {
+    // 別のタブで同じ編集に続けて書き足した版。手元の編集が新しい本文にも残る
+    const server: Page = { ...PAGE, body: "本文の手元の変更と別のタブの追記", version: 2 };
+    vi.mocked(updatePage).mockResolvedValue({
+      ok: false,
+      reason: "version_conflict",
+      currentVersion: 2,
+    });
+    vi.mocked(getPage).mockResolvedValue(ok(server));
+    const { view, button } = renderPage();
+    const v = view();
+    v.focus();
+    typeAtEnd(v, "の手元の変更");
+    act(() => v.contentDOM.blur());
+    await flushAsync();
+    act(() => button("サーバーの版を取り込む").click());
+    await flushAsync();
+    expect(v.state.doc.toString()).toBe(server.body);
+
+    act(() => {
+      v.contentDOM.dispatchEvent(
+        new InputEvent("beforeinput", { inputType: "historyUndo", cancelable: true }),
+      );
+    });
+    await flushAsync();
+    expect(v.state.doc.toString()).toBe(server.body);
+  });
+
   it("退避が未決の間は読み取り専用にし、復元すると退避の本文に差し替える", async () => {
     localStorage.setItem(
       BACKUP_KEY,
