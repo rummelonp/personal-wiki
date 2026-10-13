@@ -35,25 +35,27 @@ describe("parseMe", () => {
     expect(parseMe({ kind: "anonymous" })).toEqual({ kind: "anonymous", features: off });
   });
 
-  it("features.attachments は true のときだけ true にし、項目が無ければ false にする", () => {
+  it("features の各項目は true のときだけ true にし、項目が無ければ false にする", () => {
     const on = { attachments: true, linkRewrites: true };
-    expect(parseMe({ kind: "owner", features: { attachments: true } })).toEqual({
-      kind: "owner",
-      features: on,
-    });
-    expect(parseMe({ kind: "anonymous", features: { attachments: true } })).toEqual({
+    expect(parseMe({ kind: "owner", features: on })).toEqual({ kind: "owner", features: on });
+    expect(parseMe({ kind: "anonymous", features: on })).toEqual({
       kind: "anonymous",
       features: on,
     });
-    for (const features of [{ attachments: false }, {}, { attachments: "true" }]) {
-      expect(parseMe({ kind: "owner", features })).toEqual({
-        kind: "owner",
-        features: { attachments: false, linkRewrites: true },
-      });
+    expect(parseMe({ kind: "owner", features: { attachments: true } })).toEqual({
+      kind: "owner",
+      features: { attachments: true, linkRewrites: false },
+    });
+    for (const features of [
+      { attachments: false, linkRewrites: false },
+      {},
+      { attachments: "true", linkRewrites: "true" },
+    ]) {
+      expect(parseMe({ kind: "owner", features })).toEqual({ kind: "owner", features: off });
     }
   });
 
-  it("features が無い（step の無い前の版の）Worker では、リンクの書き換えも使えないものとする", () => {
+  it("features が無い Worker では、どの機能も使えないものとする", () => {
     for (const features of [undefined, null, "yes", 1]) {
       expect(parseMe({ kind: "owner", features })).toEqual({ kind: "owner", features: off });
     }

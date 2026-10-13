@@ -262,24 +262,33 @@ describe("GET /api/me", () => {
     const { request } = await setup();
     const token = await insertToken({ name: "laptop", scopes: "read" });
     const owner = await request("/api/me", { headers: { Cookie: await ownerCookie(T0) } });
-    expect(await owner.json()).toEqual({ kind: "owner", features: { attachments: true } });
+    expect(await owner.json()).toEqual({
+      kind: "owner",
+      features: { attachments: true, linkRewrites: true },
+    });
     expect(owner.headers.get("Cache-Control")).toBe("private, no-store");
     const viaToken = await request("/api/me", { headers: { Authorization: `Bearer ${token}` } });
     expect(await viaToken.json()).toEqual({
       kind: "token",
       name: "laptop",
       scopes: ["read"],
-      features: { attachments: true },
+      features: { attachments: true, linkRewrites: true },
     });
     const anonymous = await request("/api/me");
-    expect(await anonymous.json()).toEqual({ kind: "anonymous", features: { attachments: true } });
+    expect(await anonymous.json()).toEqual({
+      kind: "anonymous",
+      features: { attachments: true, linkRewrites: true },
+    });
     expect(anonymous.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("R2 の binding が無ければ features.attachments は false", async () => {
     const { request } = await setup();
     const res = await request("/api/me", {}, ownerEnvWithoutBucket());
-    expect(await res.json()).toEqual({ kind: "anonymous", features: { attachments: false } });
+    expect(await res.json()).toEqual({
+      kind: "anonymous",
+      features: { attachments: false, linkRewrites: true },
+    });
   });
 });
 
@@ -435,7 +444,7 @@ describe("セッション cookie と Bearer の併用", () => {
       kind: "token",
       name: "agent",
       scopes: ["read"],
-      features: { attachments: true },
+      features: { attachments: true, linkRewrites: true },
     });
   });
 });

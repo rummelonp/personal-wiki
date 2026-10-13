@@ -18,15 +18,16 @@ export type Me = (
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 /**
- * 項目が無いときは false にする。Worker を前の版に戻すと features を返さなくなるので、
+ * 項目が無いときは false にする。Worker を前の版に戻すと項目を返さなくなるので、
  * 無いことを「使える」と読まない。
- * linkRewrites は features があることで判断する。Worker は step を足したあとに features を
- * 返し始めたので、features を返す Worker には step がある。
  */
 function parseFeatures(value: unknown): Features {
   if (typeof value !== "object" || value === null) return NO_FEATURES;
   const features = value as Record<string, unknown>;
-  return { attachments: features.attachments === true, linkRewrites: true };
+  return {
+    attachments: features.attachments === true,
+    linkRewrites: features.linkRewrites === true,
+  };
 }
 
 /** 形の合わない応答は anonymous として扱う（ログイン中と誤って表示しない）。 */

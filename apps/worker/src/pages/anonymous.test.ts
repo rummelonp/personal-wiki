@@ -369,7 +369,10 @@ describe("検証できないセッション cookie", () => {
     const { call, anonymous, open } = await seed();
     const me = await call("/api/me", { headers: { Cookie: garbage } });
     expect(me.status).toBe(200);
-    expect(await me.json()).toEqual({ kind: "anonymous", features: { attachments: true } });
+    expect(await me.json()).toEqual({
+      kind: "anonymous",
+      features: { attachments: true, linkRewrites: true },
+    });
     expectCookieCleared(me);
     // ブラウザは Max-Age=0 の cookie を捨てるので、以降の要求は cookie を持たない
     for (const path of readPaths(open)) {

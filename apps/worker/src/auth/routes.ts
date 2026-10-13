@@ -107,8 +107,10 @@ export function registerAuthRoutes(app: Hono<AppEnv>, { now, accessVerifier }: A
       // 続けて呼ぶページの読み取りが 401 にならないようにする
       clearStaleSession(c);
       const principal = c.get("principal");
-      // 画面が、使えない機能（R2 の無い構成での画像の貼り付け）の導線を出さずに済むよう返す
-      const features = { attachments: c.env.BUCKET !== undefined };
+      // 画面が、使えない機能（R2 の無い構成での画像の貼り付け）の導線を出さずに済むよう返す。
+      // linkRewrites は step（POST /api/link-rewrites/step）がある版で常に true。画面は、項目が無い
+      // 前の版の Worker では step を呼ばない
+      const features = { attachments: c.env.BUCKET !== undefined, linkRewrites: true };
       switch (principal.kind) {
         case "owner":
           return c.json({ kind: "owner", features });
