@@ -25,8 +25,10 @@ export interface WikiLinkSources {
 export interface WikiLinks extends WikiLinkSources {
   /** クリックの遷移先を title から引く。 */
   lookup(target: string, signal?: AbortSignal): Promise<TitleLookup>;
-  /** 保存や画面への復帰など、link 先の状態が変わりうるときに呼ぶ。 */
+  /** 画面への復帰など、ほかの page が変わりうるときに呼ぶ。存在の印も embed の本文も取り直す。 */
   refresh(): void;
+  /** 自分の title の変更など、title の解決だけが変わりうるときに呼ぶ。embed の本文は取り直さない。 */
+  refreshTitles(): void;
   /** 進行中の取得を止める。その後に使ってもよい。 */
   dispose(): void;
 }
@@ -99,6 +101,7 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
       titles.refresh();
       embeds?.refresh();
     },
+    refreshTitles: () => titles.refresh(),
     dispose() {
       titles.dispose();
       embeds?.dispose();

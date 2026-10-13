@@ -527,6 +527,23 @@ describe("ページ embed", () => {
     );
     expect(embedOf(view())?.textContent).toContain("埋め込まれた本文");
   });
+
+  it("展開した embed の本文の中の link にも、存在しない印が付く", async () => {
+    const links = fakeLinks();
+    links.embeds.set("別", { kind: "resolved", title: "別", text: "[[無い]]" });
+    controlled("![[別]]", { links: links.sources });
+    await vi.waitFor(() => expect(container?.querySelector(".cm-embed-page-body")).not.toBeNull());
+
+    links.missing.add("無い");
+    links.changed();
+    await vi.waitFor(() =>
+      expect(
+        [...(container?.querySelectorAll(".cm-embed-page-body .cm-wikilink-unresolved") ?? [])].map(
+          (e) => e.textContent,
+        ),
+      ).toEqual(["無い"]),
+    );
+  });
 });
 
 describe("wikilink のクリック", () => {

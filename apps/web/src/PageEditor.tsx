@@ -1,3 +1,4 @@
+import { foldTitle } from "@personal-wiki/domain/title";
 import type { WikiLinkClick } from "@personal-wiki/editor";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
@@ -111,16 +112,19 @@ export function PageEditor({ page }: { page: Page }) {
   const [links] = useState(() => createWikiLinks({ pageId: page.id }));
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
+  /** 作成の応答を待っている title。null なら作成中ではない */
+  const creating = useRef<string | null>(null);
 
   useEffect(() => {
     void titleIndex.refresh();
   }, []);
 
-  // 保存で title や link 先の解決が変わりうる。保存は版が進むことで分かる
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 版が進んだことを合図に取り直す
+  // 自分の title が変わると、その title への link の存在が変わる。ほかの page は保存では変わらない
+  // ので、embed の本文は取り直さない（autosave のたびに全部取り直すことになる）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 保存された title が変わったことを合図に取り直す
   useEffect(() => {
-    links.refresh();
-  }, [links, state.base.version]);
+    links.refreshTitles();
+  }, [links, state.base.title]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -135,7 +139,10 @@ export function PageEditor({ page }: { page: Page }) {
   }, [links]);
 
   async function handleWikiLinkClick(link: WikiLinkClick) {
+    // 作成中の title をもう一度押されても、作成の表示と応答を取り替えない
+    if (creating.current !== null && foldTitle(creating.current) === foldTitle(link.target)) return;
     linkClick.current?.abort();
+    creating.current = null;
     const controller = new AbortController();
     linkClick.current = controller;
     setLinkNotice(null);
@@ -147,27 +154,40 @@ export function PageEditor({ page }: { page: Page }) {
     } else setLinkNotice({ kind: "error" });
   }
 
-  // 作ったページを開くので、未保存の変更はこのページを離れるときの leave が送る
+  // 作ったページを開くので、未保存の変更はこのページを離れるときの leave が送る。
+  // 応答を待つ間に別の link を押す、閉じる、ページを離れるとクリックの controller が中断される。
+  // その場合は作成の応答が来ても遷移しない（作成の要求自体は止めず、ページはできる）
   async function createLinkedPage(title: string) {
+    if (creating.current !== null) return;
+    linkClick.current?.abort();
+    const controller = new AbortController();
+    linkClick.current = controller;
+    creating.current = title;
     setLinkNotice({ kind: "missing", title, busy: true, error: null });
-    const res = await createPage({ title, body: "" });
-    if (res.ok) {
-      navigate(pageHref(res.value.id));
-      return;
-    }
-    if (res.reason === "title_conflict") {
-      // 別のところで同じ title のページができていた
-      const existing = await links.lookup(title);
-      if (existing.kind === "found") {
-        navigate(pageHref(existing.page.id));
+    try {
+      const res = await createPage({ title, body: "" });
+      if (controller.signal.aborted) return;
+      if (res.ok) {
+        navigate(pageHref(res.value.id));
         return;
       }
+      if (res.reason === "title_conflict") {
+        // 別のところで同じ title のページができていた
+        const existing = await links.lookup(title, controller.signal);
+        if (controller.signal.aborted) return;
+        if (existing.kind === "found") {
+          navigate(pageHref(existing.page.id));
+          return;
+        }
+      }
+      const message =
+        res.reason === "unauthorized"
+          ? "ログインの期限が切れました。ログインし直してください"
+          : failureMessage(res, "作成できなかった");
+      setLinkNotice({ kind: "missing", title, busy: false, error: message });
+    } finally {
+      if (linkClick.current === controller) creating.current = null;
     }
-    const message =
-      res.reason === "unauthorized"
-        ? "ログインの期限が切れました。ログインし直してください"
-        : failureMessage(res, "作成できなかった");
-    setLinkNotice({ kind: "missing", title, busy: false, error: message });
   }
 
   async function handleDelete() {

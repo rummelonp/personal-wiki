@@ -115,6 +115,28 @@ describe("ページ embed", () => {
   });
 });
 
+describe("refreshTitles", () => {
+  it("title の確認だけを取り直し、embed の本文は取り直さない", async () => {
+    const { links, find, resolve } = setup([pageOf("B", "別", "本文")]);
+    links.resolvePageEmbed("別");
+    links.resolveWikiLink("別");
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+
+    links.refreshTitles();
+    links.resolveWikiLink("別");
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    expect(resolve).toHaveBeenCalledTimes(2);
+    expect(find).toHaveBeenCalledTimes(1);
+
+    links.refresh();
+    links.resolvePageEmbed("別");
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    expect(find).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("存在の印と遷移", () => {
   it("存在しないと分かった link を、組み直しの通知とともに未解決にする", async () => {
     const { links, listener } = setup([pageOf("B", "有る", "")]);

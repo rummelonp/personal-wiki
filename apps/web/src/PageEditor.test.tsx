@@ -395,14 +395,159 @@ describe("PageEditor の wikilink", () => {
     }
   });
 
-  it("保存して版が進んだら、存在の確認を取り直す", async () => {
-    const { view } = renderPage({ ...PAGE, body: "[[無い]]" });
+  it("本文だけの保存では、存在の確認も embed の本文も取り直さない", async () => {
+    vi.mocked(findPageByTitle).mockResolvedValue(
+      ok({ ...PAGE, id: "BBBBBBBBBBBBBBBBBBBBBB", title: "別", body: "埋め込まれた本文" }),
+    );
+    const { view } = renderPage({ ...PAGE, body: "[[無い]]\n![[別]]" });
+    await vi.waitFor(() => expect(container?.querySelector(".cm-embed-page")).not.toBeNull());
     await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(1));
+    expect(findPageByTitle).toHaveBeenCalledTimes(1);
+
+    // autosave は 2 秒ごとに走るので、保存のたびに取り直すと無駄が大きい
+    view().focus();
+    typeAtEnd(view(), "\n追記");
+    act(() => view().contentDOM.blur());
+    await vi.waitFor(() => expect(updatePage).toHaveBeenCalledTimes(1));
+    // 取り直すなら debounce の後に要求が出る
+    await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
+    expect(resolvePages).toHaveBeenCalledTimes(1);
+    expect(findPageByTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it("title を変えて保存したら、存在の確認だけを取り直す", async () => {
+    vi.mocked(findPageByTitle).mockResolvedValue(
+      ok({ ...PAGE, id: "BBBBBBBBBBBBBBBBBBBBBB", title: "別", body: "埋め込まれた本文" }),
+    );
+    renderPage({ ...PAGE, body: "[[無い]]\n![[別]]" });
+    await vi.waitFor(() => expect(container?.querySelector(".cm-embed-page")).not.toBeNull());
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(1));
+
+    const input = container?.querySelector<HTMLInputElement>("input.title-input");
+    if (!input) throw new Error("title の入力が無い");
+    act(() => input.focus());
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        input,
+        "新しい題",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => input.blur());
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(2));
+    expect(findPageByTitle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PageEditor の「作成して開く」", () => {
+  const missingAll = () =>
+    vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
+  const clickLink = (text: string) => {
+    const link = [...(container?.querySelectorAll(".cm-wikilink") ?? [])].find(
+      (e) => e.textContent === text,
+    );
+    if (!link) throw new Error(`${text} の link が無い`);
+    act(() => {
+      link.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+  };
+  const pending = () => {
+    let resolve: (value: ApiResult<Page>) => void = () => {};
+    const promise = new Promise<ApiResult<Page>>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+  const created = (title: string): ApiResult<Page> =>
+    ok({ ...PAGE, id: "CCCCCCCCCCCCCCCCCCCCCC", title, body: "" });
+  const startPath = new URL(startUrl).pathname;
+
+  async function openCreating(body: string, title: string) {
+    missingAll();
+    const rendered = renderPage({ ...PAGE, body });
+    clickLink(title);
+    await vi.waitFor(() => expect(container?.textContent).toContain("まだありません"));
+    return rendered;
+  }
+
+  it("作成中に同じ link をもう一度押しても、作成の表示を消さず 2 回目の作成もしない", async () => {
+    const create = pending();
+    vi.mocked(createPage).mockReturnValue(create.promise);
+    const { button } = await openCreating("[[無い]]", "無い");
+    act(() => button("作成して開く").click());
+    await flushAsync();
+    expect(button("作成して開く").disabled).toBe(true);
+
+    clickLink("無い");
+    await flushAsync();
+    expect(button("作成して開く").disabled).toBe(true);
+    expect(createPage).toHaveBeenCalledTimes(1);
+
+    await act(async () => create.resolve(created("無い")));
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/CCCCCCCCCCCCCCCCCCCCCC"));
+  });
+
+  it("作成中に別の link を押したら、作成の応答が来ても遷移しない", async () => {
+    const create = pending();
+    vi.mocked(createPage).mockReturnValue(create.promise);
+    const { button } = await openCreating("[[無い]] [[他]]", "無い");
+    act(() => button("作成して開く").click());
     await flushAsync();
 
-    view().focus();
-    typeAtEnd(view(), " ");
-    act(() => view().contentDOM.blur());
-    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(2));
+    clickLink("他");
+    await vi.waitFor(() =>
+      expect(container?.textContent).toContain("「他」のページはまだありません"),
+    );
+    await act(async () => create.resolve(created("無い")));
+    await flushAsync();
+    expect(location.pathname).toBe(startPath);
+    expect(container?.textContent).toContain("「他」のページはまだありません");
+  });
+
+  it("作成中にページを離れたら、作成の応答が来ても遷移しない", async () => {
+    const create = pending();
+    vi.mocked(createPage).mockReturnValue(create.promise);
+    const { button } = await openCreating("[[無い]]", "無い");
+    act(() => button("作成して開く").click());
+    await flushAsync();
+
+    act(() => root?.unmount());
+    root = null;
+    await act(async () => create.resolve(created("無い")));
+    await flushAsync();
+    expect(location.pathname).toBe(startPath);
+  });
+
+  it("title の衝突の後の再確認中に別の link を押したら、見つかっても遷移しない", async () => {
+    const create = pending();
+    vi.mocked(createPage).mockReturnValue(create.promise);
+    const { button } = await openCreating("[[無い]] [[他]]", "無い");
+    act(() => button("作成して開く").click());
+    await flushAsync();
+    clickLink("他");
+    await vi.waitFor(() =>
+      expect(container?.textContent).toContain("「他」のページはまだありません"),
+    );
+
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => ({
+          id: "DDDDDDDDDDDDDDDDDDDDDD",
+          title,
+          visibility: "draft" as const,
+        })),
+      ),
+    );
+    await act(async () =>
+      create.resolve({
+        ok: false,
+        reason: "title_conflict",
+        message: "同じ title のページがすでにある",
+      }),
+    );
+    await flushAsync();
+    expect(location.pathname).toBe(startPath);
   });
 });
