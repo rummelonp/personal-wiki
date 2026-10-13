@@ -555,7 +555,10 @@ function readMigrations(target, io) {
  *   - 読んだ後に作られたページ: pages に無いので、その revisions は書かない
  *   - 読んだ後に保存されたページ: revisions のうち pages.version より新しい版は書かない
  * revisions は追記だけで更新も削除もないので、書いた分は pages の版と整合する。
- * ページ同士の時点は揃わない（先に読んだページは古く、後に読んだページは新しい）。
+ * ページ同士の時点は揃わず、先に読んだページは古く、後に読んだページは新しい。
+ * そのため、先に読んだページが削除や改名で title を手放し、後に読んだページがその title を取ると、
+ * 生きたページの title_key が dump の中で重なる。load は部分一意索引で失敗するので、
+ * 重なりを見つけた時点で backup を失敗させる（片方を落として直すと、どちらが正しいか決められない）。
  * @param {Extract<ParsedArgs, { command: "backup" }>} args
  * @param {Io} io
  * @returns {BackupResult}
@@ -577,6 +580,8 @@ export function backup(args, io) {
 
     /** @type {Map<string, number>} */
     const versions = new Map();
+    /** @type {Set<string>} 生きたページの title_key（hex のまま比べる） */
+    const aliveTitleKeys = new Set();
     /** @type {BackupResult["tables"]} */
     const tables = {};
     let skippedRevisions = 0;
@@ -586,11 +591,21 @@ export function backup(args, io) {
         (c) => c.name === (table === "pages" ? "id" : "page_id"),
       );
       const versionIndex = spec.columns.findIndex((c) => c.name === "version");
+      const deletedAtIndex = spec.columns.findIndex((c) => c.name === "deleted_at");
+      const titleKeyIndex = spec.columns.findIndex((c) => c.name === "title_key");
       tables[table] = digestOf(readBatches(table, target, io), (batch) => {
         let kept = batch;
         if (table === "pages") {
           for (const row of batch) {
             versions.set(hexToText(String(row[idIndex])), Number(row[versionIndex]));
+            if (row[deletedAtIndex] !== null) continue;
+            const titleKey = String(row[titleKeyIndex]);
+            if (aliveTitleKeys.has(titleKey)) {
+              throw new Error(
+                `pages changed while reading: two live pages share the title_key "${hexToText(titleKey)}". Run the backup again.`,
+              );
+            }
+            aliveTitleKeys.add(titleKey);
           }
         } else if (table === "revisions") {
           kept = batch.filter((row) => {

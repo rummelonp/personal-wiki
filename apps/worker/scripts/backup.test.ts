@@ -400,6 +400,33 @@ describe("backup と load の往復", () => {
     expect(out.stderr).toBe("");
   });
 
+  it("pages の batch の間に title を手放したページがあり、後のページがそれを取ると、失敗して出力を残さない", () => {
+    const source = migratedDb();
+    const body = "x".repeat(60_000);
+    const ids: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const id = `p${String(i).padStart(21, "0")}`;
+      ids.push(id);
+      seedPage(source, { id, title: `t${i}`, body });
+    }
+    let pagesReads = 0;
+    const { io } = ioFor(source, {}, (sql) => {
+      if (!sql.includes('FROM "pages"')) return;
+      pagesReads++;
+      // 先頭のページは読み終えているので、削除して title_key を空け、まだ読んでいない最後のページに移す
+      if (pagesReads === 2) {
+        source.exec(`UPDATE pages SET deleted_at = 3, deleted_by = 'owner' WHERE id = '${ids[0]}'`);
+        source.exec(`UPDATE pages SET title_key = '${ids[0]}' WHERE id = '${ids[29]}'`);
+      }
+    });
+    const out = tmp();
+    expect(() => backup({ command: "backup", remote: false, out, withTokens: false }, io)).toThrow(
+      "pages changed while reading",
+    );
+    expect(pagesReads).toBeGreaterThan(1);
+    expect(readdirSync(out)).toEqual([]);
+  });
+
   it("remote で pages が 0 件なら失敗し、local では警告にとどめる", () => {
     const empty = migratedDb();
     const remote = ioFor(empty, { resolveRemote: () => "/c.json" });
