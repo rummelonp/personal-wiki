@@ -7,15 +7,21 @@ import type { WriteMetric } from "../pages/operations";
 import { MAX_REQUEST_BYTES } from "../pages/routes";
 import { MAX_BODY_BYTES } from "../pages/store";
 import { PAGE_TOOLS } from "./page-tools";
+import { SEARCH_TOOLS } from "./search-tools";
 import type { WikiTool, WikiToolContext } from "./tool";
 
 /** tools/list に出る順。tool を足すときはここに並べる。 */
-const TOOLS: readonly WikiTool[] = [...PAGE_TOOLS];
+const TOOLS: readonly WikiTool[] = [...SEARCH_TOOLS, ...PAGE_TOOLS];
 
+/** 接続中ずっとクライアントの文脈に載るので、tool をまたぐ規則だけを短く書く。tool 固有の規則は description に書く */
 const INSTRUCTIONS = [
-  "一人用の Markdown wiki。",
-  "作るページは常に draft で、公開はオーナーがブラウザで行う。draft でも URL を知っていれば誰でも読めるので、秘密を書かない。",
-  "更新は read_page で version を取ってから update_page で行う。メモやログの書き足しは append_to_page を使う。",
+  "オーナー一人の Markdown wiki。",
+  "- 作業の始めに主題の語で search し、関連するノートを read_page で読む。",
+  "- 新しく作る前に search で同じ主題を探し、あれば作らずに追記か更新する。",
+  "- メモや調べた結果は append_to_page で末尾に足す。update_page での本文全体の書き換えは構成を直すときだけ。",
+  "- 作るノートは draft。draft も URL を知っていれば誰でも読めるので、パスワード、API キー、トークン、個人情報などの秘密を書かない。",
+  "- 公開範囲は tool から変えられない。公開はオーナーがブラウザで行うので、頼まれたらオーナーに伝える。frontmatter に書いても反映されない。",
+  "- 本文の `[[title]]` は別ノートへのリンク。参照元は list_backlinks、最近の動きは list_recent で見る。",
 ].join("\n");
 
 export function createWikiMcpServer(ctx: WikiToolContext): McpServer {

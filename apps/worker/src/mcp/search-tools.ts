@@ -1,0 +1,126 @@
+import { z } from "zod";
+import { isPageId } from "../pages/id";
+import {
+  type Cursor,
+  LIST_DEFAULT_LIMIT,
+  LIST_MAX_LIMIT,
+  listBacklinks,
+  listRecentPages,
+  type PageList,
+  type PageSummary,
+  parseCursor,
+  prepareSearchQuery,
+  SEARCH_DEFAULT_LIMIT,
+  SEARCH_MAX_LIMIT,
+  SEARCH_QUERY_MESSAGES,
+  searchPages,
+} from "../pages/search";
+import { pageUrls } from "../pages/urls";
+import { pageIdSchema } from "./page-tools";
+import { defineTool, toolError, toolResult } from "./tool";
+
+const READ_ONLY = { readOnlyHint: true, openWorldHint: false } as const;
+
+/** limit の範囲は REST の limit クエリと同じ。範囲外は schema の検証で弾く */
+const limitSchema = (fallback: number, max: number) =>
+  z.number().int().min(1).max(max).optional().describe(`返す件数。既定 ${fallback}、上限 ${max}`);
+
+const cursorSchema = z
+  .string()
+  .optional()
+  .describe("続きを取るときに、前の結果の nextCursor をそのまま渡す");
+
+type CursorInput = { ok: true; cursor: Cursor | null } | { ok: false };
+
+function readCursor(raw: string | undefined): CursorInput {
+  if (raw === undefined) return { ok: true, cursor: null };
+  const cursor = parseCursor(raw);
+  return cursor === null ? { ok: false } : { ok: true, cursor };
+}
+
+const invalidCursor = () => toolError({ error: "invalid_field", field: "cursor" });
+
+function withUrls<T extends PageSummary>(page: T, origin: string) {
+  return { ...page, ...pageUrls(origin, page) };
+}
+
+function listResult({ pages, nextCursor }: PageList, origin: string) {
+  return toolResult({ pages: pages.map((page) => withUrls(page, origin)), nextCursor });
+}
+
+export const searchTool = defineTool({
+  name: "search",
+  scope: "read",
+  title: "ページを探す",
+  description: [
+    "title と本文の部分一致でページを探し、id、title、本文の抜粋を返す。draft も含む。",
+    "3 文字以上は全文検索で関連度の順、2 文字以下は部分一致で更新が新しい順。短い語で見つからなければ語を足す。",
+    "全角半角と、英字の大文字小文字は区別しない。",
+  ].join("\n"),
+  inputSchema: z.strictObject({
+    query: z.string().describe("探す語。全体を 1 つの語句として照合する"),
+    limit: limitSchema(SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT),
+  }),
+  annotations: READ_ONLY,
+  async run({ query, limit }, ctx) {
+    const prepared = prepareSearchQuery(query);
+    if (!prepared.ok) {
+      return toolError({
+        error: "invalid_field",
+        field: "query",
+        message: SEARCH_QUERY_MESSAGES[prepared.reason],
+      });
+    }
+    const results = await searchPages(ctx.db, prepared.query, limit ?? SEARCH_DEFAULT_LIMIT);
+    return toolResult({ results: results.map((hit) => withUrls(hit, ctx.origin)) });
+  },
+});
+
+export const listRecentTool = defineTool({
+  name: "list_recent",
+  scope: "read",
+  title: "最近の更新",
+  description:
+    "ページを更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
+  inputSchema: z.strictObject({
+    limit: limitSchema(LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT),
+    cursor: cursorSchema,
+  }),
+  annotations: READ_ONLY,
+  async run({ limit, cursor }, ctx) {
+    const paging = readCursor(cursor);
+    if (!paging.ok) return invalidCursor();
+    const list = await listRecentPages(ctx.db, {
+      limit: limit ?? LIST_DEFAULT_LIMIT,
+      cursor: paging.cursor,
+    });
+    return listResult(list, ctx.origin);
+  },
+});
+
+export const listBacklinksTool = defineTool({
+  name: "list_backlinks",
+  scope: "read",
+  title: "参照元",
+  description:
+    "本文の `[[title]]` で id のページへリンクしているページを、更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
+  inputSchema: z.strictObject({
+    id: pageIdSchema,
+    limit: limitSchema(LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT),
+    cursor: cursorSchema,
+  }),
+  annotations: READ_ONLY,
+  async run({ id, limit, cursor }, ctx) {
+    if (!isPageId(id)) return toolError({ error: "not_found" });
+    const paging = readCursor(cursor);
+    if (!paging.ok) return invalidCursor();
+    const list = await listBacklinks(ctx.db, id, {
+      limit: limit ?? LIST_DEFAULT_LIMIT,
+      cursor: paging.cursor,
+    });
+    if (list === null) return toolError({ error: "not_found" });
+    return listResult(list, ctx.origin);
+  },
+});
+
+export const SEARCH_TOOLS = [searchTool, listRecentTool, listBacklinksTool];

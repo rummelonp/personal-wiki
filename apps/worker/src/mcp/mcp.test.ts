@@ -143,7 +143,7 @@ describe("/mcp の認可", () => {
 });
 
 describe("tools/list", () => {
-  it("4 つの tool を、知らないキーを拒む入力の schema で返す", async () => {
+  it("7 つの tool を、知らないキーを拒む入力の schema で返す", async () => {
     const { rpc } = await mcpClient({ scopes: "read" });
     const { result } = await rpc("tools/list");
     const tools = result?.tools as {
@@ -157,6 +157,9 @@ describe("tools/list", () => {
       annotations: { readOnlyHint?: boolean };
     }[];
     expect(tools.map((t) => t.name)).toEqual([
+      "search",
+      "list_recent",
+      "list_backlinks",
       "read_page",
       "create_page",
       "update_page",
@@ -171,10 +174,24 @@ describe("tools/list", () => {
     expect(byName.create_page?.inputSchema.required).toEqual(["title", "body"]);
     expect(byName.update_page?.inputSchema.required).toEqual(["id", "version", "title", "body"]);
     expect(byName.append_to_page?.inputSchema.required).toEqual(["id", "text"]);
-    expect(byName.read_page?.annotations.readOnlyHint).toBe(true);
+    expect(byName.search?.inputSchema.required).toEqual(["query"]);
+    expect(byName.search?.inputSchema.properties.limit).toMatchObject({
+      type: "integer",
+      minimum: 1,
+      maximum: 50,
+    });
+    expect(byName.list_recent?.inputSchema.required ?? []).toEqual([]);
+    expect(byName.list_recent?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
+    expect(byName.list_backlinks?.inputSchema.required).toEqual(["id"]);
+    for (const name of ["search", "list_recent", "list_backlinks", "read_page"]) {
+      expect(byName[name]?.annotations.readOnlyHint).toBe(true);
+    }
     expect(byName.create_page?.annotations.readOnlyHint).toBe(false);
+    expect(byName.search?.description).toContain("2 文字以下は部分一致");
     expect(byName.create_page?.description).toContain("draft");
-    expect(byName.update_page?.description).toContain("read_page");
+    expect(byName.update_page?.description).toContain("read_page で取った version が必須");
+    expect(byName.update_page?.description).toContain("上書きで押し切らない");
+    expect(byName.append_to_page?.description).toContain("そのまま送り直してよい");
   });
 
   it("2025 年版のプロトコルの initialize と、ヘッダー付きの tools/list に応える", async () => {
@@ -187,10 +204,20 @@ describe("tools/list", () => {
     expect(init.result).toMatchObject({
       protocolVersion: "2025-06-18",
       serverInfo: { name: "personal-wiki" },
-      instructions: expect.stringContaining("draft"),
     });
+    const instructions = init.result?.instructions as string;
+    for (const rule of [
+      "search",
+      "draft",
+      "秘密",
+      "オーナーがブラウザ",
+      "frontmatter",
+      "[[title]]",
+    ]) {
+      expect(instructions).toContain(rule);
+    }
     const listed = await rpc("tools/list", undefined, { "MCP-Protocol-Version": "2025-06-18" });
-    expect(listed.result?.tools).toHaveLength(4);
+    expect(listed.result?.tools).toHaveLength(7);
   });
 });
 
@@ -373,5 +400,105 @@ describe("ページの tool", () => {
       isError: true,
     });
     expect(await snapshotDb()).toEqual(before);
+  });
+});
+
+describe("検索と一覧の tool", () => {
+  it("read の token で search を使え、抜粋と URL を返す", async () => {
+    const writer = await mcpClient({ name: "writer" });
+    const { json: a } = await writer.call("create_page", {
+      title: "Alpha",
+      body: "検索の対象の本文",
+    });
+    await writer.call("create_page", { title: "Beta", body: "無関係" });
+    await setVisibility(a.id as string, "public");
+    const reader = await mcpClient({ scopes: "read" });
+
+    const long = await reader.call("search", { query: "対象の本文" });
+    expect(long).toEqual({
+      isError: false,
+      json: {
+        results: [
+          {
+            id: a.id,
+            title: "Alpha",
+            visibility: "public",
+            updatedAt: T0,
+            excerpt: "検索の対象の本文",
+            url: `${ORIGIN}/p/${a.id}`,
+            titleUrl: `${ORIGIN}/Alpha`,
+          },
+        ],
+      },
+    });
+    const short = await reader.call("search", { query: "ＢＥ" });
+    expect((short.json.results as { title: string }[]).map((r) => r.title)).toEqual(["Beta"]);
+  });
+
+  it("search の検索語と limit は REST と同じ規則で検証する", async () => {
+    const { call } = await mcpClient({ scopes: "read" });
+    for (const query of ["  ", "a\tb", "x".repeat(201)]) {
+      const result = await call("search", { query });
+      expect(result).toMatchObject({
+        isError: true,
+        json: { error: "invalid_field", field: "query" },
+      });
+      expect(result.json.message).toEqual(expect.any(String));
+    }
+    for (const limit of [0, 51, 1.5]) {
+      const result = await call("search", { query: "abc", limit });
+      expect(result.isError).toBe(true);
+      expect(result.json.text).toContain("Input validation error");
+    }
+    expect((await call("search", { query: "abc", limit: 50 })).isError).toBe(false);
+  });
+
+  it("list_recent は更新の新しい順に返し、cursor で続きを取る", async () => {
+    const { call, clock } = await mcpClient();
+    const ids: string[] = [];
+    for (const title of ["One", "Two", "Three"]) {
+      clock.now += 1000;
+      ids.push((await call("create_page", { title, body: "" })).json.id as string);
+    }
+    const first = await call("list_recent", { limit: 2 });
+    expect(first.isError).toBe(false);
+    const firstPages = first.json.pages as { id: string; url: string; titleUrl: null }[];
+    expect(firstPages.map((p) => p.id)).toEqual([ids[2], ids[1]]);
+    expect(firstPages[0]).toMatchObject({ url: `${ORIGIN}/p/${ids[2]}`, titleUrl: null });
+    expect(first.json.nextCursor).toEqual(expect.any(String));
+
+    const rest = await call("list_recent", { limit: 2, cursor: first.json.nextCursor });
+    expect((rest.json.pages as { id: string }[]).map((p) => p.id)).toEqual([ids[0]]);
+    expect(rest.json.nextCursor).toBeNull();
+
+    expect(await call("list_recent", { cursor: "nope" })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "cursor" },
+    });
+    expect((await call("list_recent", { limit: 101 })).isError).toBe(true);
+  });
+
+  it("list_backlinks はリンク元を返し、無いページと形式の違う id は not_found", async () => {
+    const { call } = await mcpClient({ name: "writer" });
+    const { json: target } = await call("create_page", { title: "Target", body: "" });
+    const { json: source } = await call("create_page", { title: "Source", body: "[[Target]]" });
+    await call("create_page", { title: "Other", body: "" });
+
+    const reader = await mcpClient({ name: "reader", scopes: "read" });
+    const listed = await reader.call("list_backlinks", { id: target.id });
+    expect(listed.isError).toBe(false);
+    expect((listed.json.pages as { id: string }[]).map((p) => p.id)).toEqual([source.id]);
+    expect(listed.json.nextCursor).toBeNull();
+
+    for (const id of ["not-a-page-id", "A".repeat(22)]) {
+      expect(await reader.call("list_backlinks", { id })).toEqual({
+        isError: true,
+        json: { error: "not_found" },
+      });
+    }
+    expect(await reader.call("list_backlinks", { id: target.id, cursor: "x" })).toMatchObject({
+      isError: true,
+      json: { field: "cursor" },
+    });
   });
 });

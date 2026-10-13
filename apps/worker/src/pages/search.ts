@@ -138,6 +138,14 @@ export type SearchQuery =
   | { ok: true; query: string }
   | { ok: false; reason: "empty" | "too_long" | "control_char" };
 
+/** REST と MCP が検索語の誤りに返す説明 */
+export const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["reason"], string> =
+  {
+    empty: "検索語が空か、空白だけになっている",
+    too_long: `検索語が長すぎる（上限 ${SEARCH_MAX_QUERY_CHARS} 文字）`,
+    control_char: "検索語に制御文字を含められない",
+  };
+
 // NUL は FTS5 の phrase が途中で切れて構文エラー（500）になり、LIKE では pattern が切れて全件に一致する。
 // 本文に残らない制御文字で探す用途も無いので、タブと改行を含めて C0 と DEL をまとめて拒む
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字を検出するのが目的
