@@ -521,3 +521,79 @@ describe("GET /api/attachments/:name", () => {
     expect((await call(`/api/attachments/${name}`)).status).toBe(401);
   });
 });
+
+describe("保存の途中の失敗", () => {
+  /** attachments への INSERT だけを失敗させる D1 */
+  function failingInsertDb(): D1Database {
+    return new Proxy(env.DB, {
+      get(target, property) {
+        if (property === "prepare") {
+          return (sql: string) => {
+            if (!sql.startsWith("INSERT INTO attachments")) return target.prepare(sql);
+            return {
+              bind: () => ({
+                run: () => Promise.reject(new Error("D1_ERROR: simulated failure")),
+              }),
+            } as unknown as D1PreparedStatement;
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  it("D1 の INSERT が失敗したら 500 になり、R2 に残ったオブジェクトはどちらの GET でも読めない", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const s = await setup();
+    const res = await s.upload(
+      PNG,
+      "image/png",
+      s.bearer(s.writeToken),
+      ownerEnv({ DB: failingInsertDb() }),
+    );
+    expect(res.status).toBe(500);
+    const objects = (await bucketOf(env).list({ prefix: "attachments/" })).objects;
+    expect(objects).toHaveLength(1);
+    const name = (objects[0]?.key ?? "").slice("attachments/".length);
+    expect(isAttachmentName(name)).toBe(true);
+
+    let page = await s.create("Orphan", `![[${name}]]`);
+    page = await s.setVisibility(page, "public");
+    await expectNotFound(await s.call(s.served(page, name)), "anonymous");
+    await expectNotFoundOwner(
+      await s.call(`/api/attachments/${name}`, { headers: s.bearer(s.readToken) }),
+    );
+    await expectNotFoundOwner(await s.call(s.served(page, name), { headers: s.ownerHeaders }));
+  });
+});
+
+describe("D1 の行の content_type", () => {
+  it("受けない種類か、名前の拡張子と食い違う種類なら、配信せずに 404 にしてログに出す", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const s = await setup();
+    const name = await s.uploaded();
+    let page = await s.create("Page", `![[${name}]]`);
+    page = await s.setVisibility(page, "public");
+    for (const contentType of ["text/html", "image/svg+xml", "image/jpeg", "IMAGE/PNG"]) {
+      await env.DB.prepare("UPDATE attachments SET content_type = ?2 WHERE name = ?1")
+        .bind(name, contentType)
+        .run();
+      await expectNotFound(await s.call(s.served(page, name)), contentType);
+      await expectNotFound(
+        await s.call(s.served(page, name), { headers: { "If-None-Match": `"${name}"` } }),
+        `${contentType} If-None-Match`,
+      );
+      await expectNotFoundOwner(
+        await s.call(`/api/attachments/${name}`, { headers: s.bearer(s.readToken) }),
+      );
+      expect(errors).toHaveBeenCalledWith(
+        JSON.stringify({ event: "attachments.unexpected_content_type", name, contentType }),
+      );
+    }
+    await env.DB.prepare("UPDATE attachments SET content_type = 'image/png' WHERE name = ?1")
+      .bind(name)
+      .run();
+    expect((await s.call(s.served(page, name))).status).toBe(200);
+  });
+});

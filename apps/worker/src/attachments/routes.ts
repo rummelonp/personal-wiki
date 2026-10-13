@@ -2,6 +2,7 @@ import {
   ATTACHMENT_CONTENT_TYPES,
   ATTACHMENT_MAX_BYTES,
   attachmentExtensionForType,
+  attachmentTypeForName,
   isAttachmentName,
   matchesAttachmentMagic,
 } from "@personal-wiki/domain";
@@ -12,6 +13,7 @@ import type { AppEnv } from "../env";
 import { generatePageId, isPageId } from "../pages/id";
 import { actorOf } from "../pages/revisions";
 import { ATTACHMENT_UPLOAD_PATH, uploadContentTypeOf } from "./content-type";
+import { readBounded } from "./read-bounded";
 
 export interface AttachmentRoutesOptions {
   now: () => number;
@@ -31,37 +33,6 @@ const objectKey = (name: string) => `attachments/${name}`;
  * としても読める polyglot は防げない。sandbox でスクリプトも同一オリジンの扱いも与えない。
  */
 const ATTACHMENT_CSP = "default-src 'none'; sandbox";
-
-/**
- * 本文を上限まで読む。上限を超えたら読むのをやめて null を返す。Content-Length は申告にすぎないので、
- * arrayBuffer() で全体を受けずに実際の長さで打ち切る（偽った長さで大きな本文をメモリに載せさせない）。
- */
-async function readBounded(
-  body: ReadableStream<Uint8Array> | null,
-  max: number,
-): Promise<Uint8Array | null> {
-  if (body === null) return new Uint8Array(0);
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
 
 function tooLarge(c: AttachmentContext): Response {
   return c.json({ error: "attachment_too_large", max: ATTACHMENT_MAX_BYTES }, 413);
@@ -88,6 +59,18 @@ async function attachmentResponse(
   row: AttachmentRow,
   { anonymous }: { anonymous: boolean },
 ): Promise<Response> {
+  // 行は保存の検査を通った値のはずだが、手で直した行や復元した行も来うる。受けない種類や、名前の拡張子と
+  // 食い違う種類のまま返すと、ブラウザが画像以外として扱いうるので配信しない
+  if (row.content_type !== attachmentTypeForName(name)) {
+    console.error(
+      JSON.stringify({
+        event: "attachments.unexpected_content_type",
+        name,
+        contentType: row.content_type,
+      }),
+    );
+    return c.notFound();
+  }
   const etag = `"${name}"`;
   const headers = new Headers({ ETag: etag });
   // 匿名の draft の画像を共有キャッシュに置かせず、毎回の再検証で参照を外したことをすぐ効かせる。
@@ -99,6 +82,8 @@ async function attachmentResponse(
   headers.set("Content-Type", row.content_type);
   headers.set("Content-Disposition", `inline; filename="${name}"`);
   headers.set("Content-Security-Policy", ATTACHMENT_CSP);
+  // HEAD は D1 の行だけで答え、R2 は読まない。R2 にオブジェクトが無い添付でも、GET の 404 と違って
+  // HEAD は 200 になる。保存は R2 に置いてから行を作るので、行だけがある状態は R2 側の欠落でしか起きない
   if (c.req.method === "HEAD") {
     headers.set("Content-Length", String(row.size));
     return new Response(null, { headers });
@@ -143,6 +128,7 @@ export function registerAttachmentRoutes(app: Hono<AppEnv>, { now }: AttachmentR
           return c.json({ error: "content_mismatch", contentType: type }, 415);
         }
         const name = `${generatePageId()}.${attachmentExtensionForType(type)}`;
+        // 名前は 128 bit の乱数なので、既存のオブジェクトを put で上書きすることは無いものとして扱う。
         // R2 に置いてから D1 に行を作る。D1 が失敗して残るのは行の無い R2 のオブジェクトだけで、
         // 配信は行を見て判断するのでどこからも読めない。逆の順だと、中身の無い行を本文から参照できてしまう
         await bucket.put(objectKey(name), bytes, { httpMetadata: { contentType: type } });
