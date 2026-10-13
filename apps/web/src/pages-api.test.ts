@@ -141,6 +141,14 @@ describe("一覧と検索", () => {
     expect(calls[0]?.path).toBe("/api/pages/recent?tag=%E6%97%A5%E8%A8%98+a");
   });
 
+  it("件数を指定するときは limit をクエリに載せる", async () => {
+    const { calls, fetchFn } = recorder(() => Response.json({ pages: [], nextCursor: null }));
+    await listRecent(`1.${ID}`, { limit: 100 }, fetchFn);
+    expect(calls[0]?.path).toBe(
+      `/api/pages/recent?cursor=${encodeURIComponent(`1.${ID}`)}&limit=100`,
+    );
+  });
+
   it("最近の更新は tags が必須で、excerpt は省略できる", async () => {
     const entry = { id: ID, title: "題", visibility: "draft", updatedAt: 1 };
     const respond = (pages: unknown[]) =>

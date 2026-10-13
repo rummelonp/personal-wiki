@@ -283,12 +283,13 @@ async function listResult<T extends PageSummary>(
 
 export async function listRecent(
   cursor: string | null,
-  options: { tag?: string } = {},
+  options: { tag?: string; limit?: number } = {},
   fetchFn: Fetch = fetch,
 ): Promise<ApiResult<PageList<ListedPage>>> {
   const params = new URLSearchParams();
   if (cursor !== null) params.set("cursor", cursor);
   if (options.tag !== undefined && options.tag !== "") params.set("tag", options.tag);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.size === 0 ? "" : `?${params}`;
   return listResult(await request(fetchFn, `/api/pages/recent${query}`), isListedPage);
 }

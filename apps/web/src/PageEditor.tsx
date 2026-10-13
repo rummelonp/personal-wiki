@@ -16,8 +16,17 @@ import {
 } from "./editor-session";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
+import { createLinkTargetSource, createTitleIndex } from "./link-sources";
 import { Outline } from "./Outline";
-import { deletePage, getPage, type Page, setVisibility, updatePage } from "./pages-api";
+import {
+  deletePage,
+  findPageByTitle,
+  getPage,
+  listRecent,
+  type Page,
+  setVisibility,
+  updatePage,
+} from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
 import { homeHref, navigate } from "./route";
 
@@ -27,6 +36,12 @@ const api: EditorApi = {
   setVisibility: (id, version, visibility) => setVisibility(id, version, visibility),
   deletePage: (id, version) => deletePage(id, version),
 };
+
+// ページを移っても同じ候補を使い、開くたびに取り直す
+const titleIndex = createTitleIndex((cursor) => listRecent(cursor, { limit: 100 }));
+
+const findWithSignal = (title: string, signal: AbortSignal) =>
+  findPageByTitle(title, (input, init) => fetch(input, { ...init, signal }));
 
 const STATUS_LABELS: Record<SaveStatus, string> = {
   saved: "保存済み",
@@ -83,6 +98,11 @@ export function PageEditor({ page }: { page: Page }) {
   const idle = state.busy === null;
   const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
+  const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
+
+  useEffect(() => {
+    void titleIndex.refresh();
+  }, []);
 
   async function handleDelete() {
     if (!window.confirm(`「${state.base.title}」を削除します。元に戻せません。よろしいですか？`))
@@ -251,6 +271,8 @@ export function PageEditor({ page }: { page: Page }) {
           ref={editor}
           value={state.draft.body}
           readOnly={readOnly}
+          pageIndex={titleIndex}
+          linkTargets={linkTargets}
           onChange={(body) => session.edit({ ...session.getState().draft, body })}
           onBlur={() => void session.flush()}
         />
