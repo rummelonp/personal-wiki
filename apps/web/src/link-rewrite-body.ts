@@ -71,3 +71,29 @@ export function rebaseOnLinkRewrite(base: string, server: string, draft: string)
   if (renames === null) return null;
   return rewriteStrictly(draft, renames);
 }
+
+/**
+ * 離脱で退避した内容（saved）が、離脱の保存（keepalive）で既にサーバーへ入り、その後 step がリンクを
+ * 書き換えて server になったのか。真なら退避は保存済みなので、復元を選ばせず消してよい。
+ * keepalive は応答を受け取れないので、保存が成立したかは手元で分からず、サーバーの内容から推す。
+ * 判断に迷うときは false を返す（退避を消すと、保存されていない編集を黙って失うため）。
+ *
+ * - server の本文が saved の本文へのリンクの書き換えだけで説明できなければ false。
+ * - title を変えて退避し、server がその title なら true。title と本文は 1 回の保存で入るので、
+ *   title が入っていれば本文も入っている。自ページの `[[旧 title]]` は改名の保存の後に step が書き換える。
+ * - title が同じなら、本文だけでは保存の成否が分からない。server の本文が保存前の本文（baseBody）から
+ *   書き換えだけで説明できるなら、保存されていなくても同じ見た目になるので false。
+ *   手元の編集がリンクの付け替えだけだった場合に、その編集を失わないため。
+ */
+export function savedBeforeLeaving(
+  saved: { title: string; body: string; baseTitle?: string; baseBody?: string },
+  server: { title: string; body: string },
+): boolean {
+  const { baseTitle, baseBody } = saved;
+  if (baseTitle === undefined || baseBody === undefined || server.title !== saved.title) {
+    return false;
+  }
+  if (saved.body !== server.body && renamesBetween(saved.body, server.body) === null) return false;
+  if (saved.title !== baseTitle) return true;
+  return server.body !== baseBody && renamesBetween(baseBody, server.body) === null;
+}

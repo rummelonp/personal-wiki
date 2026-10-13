@@ -417,8 +417,8 @@ describe("ログイン切れ", () => {
     const base = () => page({ body: "[[旧]] 本文" });
 
     /** タブを閉じて送り直しが成立しなかったことにする。退避だけが古い版のまま残る */
-    async function closedWithUnsaved(edit: Draft) {
-      const first = setup({ server: base() });
+    async function closedWithUnsaved(edit: Draft, from: Page = base()) {
+      const first = setup({ server: from });
       first.api.updatePage = async () => ({ ok: false, reason: "error", message: "通信の失敗" });
       first.session.edit(edit);
       await first.session.leave();
@@ -523,6 +523,73 @@ describe("ログイン切れ", () => {
       session.restoreBackup();
       expect(session.getState().conflict).toMatchObject({ title: "別題" });
       expect(session.getState().draft).toEqual({ title: "新題", body: "[[旧]] 本文 追記" });
+    });
+
+    describe("離脱の保存が成立したあとに step が書き換えた退避", () => {
+      const self = () => page({ body: "[[題]] 本文" });
+
+      it("title を変えて閉じ、自分への [[旧 title]] が書き換わっていれば、保存済みとして黙って消す", async () => {
+        const backup = await closedWithUnsaved({ title: "新題", body: "[[題]] 本文 追記" }, self());
+        const { session } = setup({
+          backup,
+          server: page({ title: "新題", body: "[[新題]] 本文 追記", version: 3 }),
+        });
+        expect(session.getState()).toMatchObject({ pendingBackup: null, conflict: null });
+        expect(backup.load(ID)).toBeNull();
+      });
+
+      it("title だけを変えて閉じた場合も、保存済みとして消す", async () => {
+        const backup = await closedWithUnsaved({ title: "新題", body: "[[題]] 本文" }, self());
+        const { session } = setup({
+          backup,
+          server: page({ title: "新題", body: "[[新題]] 本文", version: 3 }),
+        });
+        expect(session.getState().pendingBackup).toBeNull();
+        expect(backup.load(ID)).toBeNull();
+      });
+
+      it("title が保存されていても、本文に書き換え以外の差があれば未決のまま残す", async () => {
+        const backup = await closedWithUnsaved({ title: "新題", body: "[[題]] 本文 追記" }, self());
+        const { session } = setup({
+          backup,
+          server: page({ title: "新題", body: "[[新題]] 他の編集", version: 3 }),
+        });
+        expect(session.getState().pendingBackup).toMatchObject({ title: "新題" });
+        expect(backup.load(ID)).not.toBeNull();
+      });
+
+      it("title が保存前のままなら（保存が成立していない）、書き換えが入っていても残す", async () => {
+        const backup = await closedWithUnsaved({ title: "新題", body: "[[題]] 本文 追記" }, self());
+        const { session } = setup({
+          backup,
+          server: page({ body: "[[題]] 本文 追記", version: 3 }),
+        });
+        expect(session.getState().pendingBackup).toMatchObject({ title: "新題" });
+      });
+
+      it("title を変えずに本文を編集して閉じ、別ページの改名で書き換わっていれば、保存済みとして消す", async () => {
+        const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+        const { session } = setup({
+          backup,
+          server: page({ body: "[[新]] 本文 追記", version: 3 }),
+        });
+        expect(session.getState().pendingBackup).toBeNull();
+        expect(backup.load(ID)).toBeNull();
+      });
+
+      it("title を変えない閉じ方で保存されていなければ（書き換わった保存前の本文）、残す", async () => {
+        const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+        const { session } = setup({ backup, server: page({ body: "[[新]] 本文", version: 3 }) });
+        expect(session.getState().pendingBackup).toMatchObject({ body: "[[旧]] 本文 追記" });
+        expect(backup.load(ID)).not.toBeNull();
+      });
+
+      it("手元の編集がリンクの付け替えだけで、保存の成否を区別できないときは残す", async () => {
+        // サーバーの本文は、保存されていてもいなくても同じ見た目になる
+        const backup = await closedWithUnsaved({ title: "題", body: "[[別]] 本文" });
+        const { session } = setup({ backup, server: page({ body: "[[新]] 本文", version: 3 }) });
+        expect(session.getState().pendingBackup).toMatchObject({ body: "[[別]] 本文" });
+      });
     });
 
     it("base の欄が無い古い退避は、これまでどおり衝突にする", () => {

@@ -1,6 +1,6 @@
 import { singleLineTitle } from "@personal-wiki/domain/title";
 import type { Backup, BackupStore } from "./draft-backup";
-import { rebaseOnLinkRewrite } from "./link-rewrite-body";
+import { rebaseOnLinkRewrite, savedBeforeLeaving } from "./link-rewrite-body";
 import {
   type ApiFailure,
   type ApiResult,
@@ -156,7 +156,11 @@ export class EditorSession {
     this.stashMs = deps.stashMs ?? DEFAULT_STASH_MS;
     this.whenSettled = deps.whenSettled ?? (() => Promise.resolve());
     const saved = this.backup.load(page.id);
-    const differs = saved !== null && (saved.title !== page.title || saved.body !== page.body);
+    // 離脱の保存が成立し、その後に step が本文を書き換えた退避は、サーバーと同じ内容として消す
+    const differs =
+      saved !== null &&
+      (saved.title !== page.title || saved.body !== page.body) &&
+      !savedBeforeLeaving(saved, page);
     if (saved !== null && !differs) this.backup.remove(page.id);
     this.state = {
       base: page,
