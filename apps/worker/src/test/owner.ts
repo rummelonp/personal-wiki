@@ -22,6 +22,12 @@ export function ownerEnv(overrides: Partial<Bindings> = {}): Bindings {
   };
 }
 
+/** R2 の binding を外した ownerEnv（添付を使えない構成）。 */
+export function ownerEnvWithoutBucket(): Bindings {
+  const { BUCKET: _, ...rest } = ownerEnv();
+  return rest;
+}
+
 export function ownerConfig() {
   const config = readOwnerAuthConfig(ownerEnv());
   if (config === null) throw new Error("ownerEnv の設定が足りない");

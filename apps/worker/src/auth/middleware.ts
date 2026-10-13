@@ -3,7 +3,9 @@ import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
+import { ATTACHMENT_UPLOAD_PATH, uploadContentTypeOf } from "../attachments/content-type";
 import type { AppEnv } from "../env";
+import { mediaTypeOf } from "../media-type";
 import { findActiveApiToken, recordApiTokenUse } from "./api-tokens";
 import {
   authenticateOAuthAccessToken,
@@ -174,19 +176,33 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * 開いたブラウザに結び付いた 1 回限りの handle（oauth-routes.ts）で守る。
  * 接続の取り消し（POST /_auth/oauth/grants/revoke）も、script を持たないページのフォームから送るので
  * 受け付ける。こちらは同一オリジンの検査だけで守る（できるのは owner の接続を切ることだけ）。
+ *
+ * 添付のアップロード（POST /api/attachments）は本文が画像のバイト列なので、JSON の代わりに添付として
+ * 受ける image/* の 5 種（attachments/content-type.ts）を許す。どれも CORS で safelist されない type なので、
+ * 別のオリジンからは preflight が要り、フォームからも送れない。JSON に限ったのと同じ保護になる。
+ * 同一オリジンの検査は掛けたままにする。
  */
 const FORM_POST_PATHS: ReadonlySet<string> = new Set([
   OAUTH_AUTHORIZE_PATH,
   OAUTH_GRANTS_REVOKE_PATH,
 ]);
 
+/** JSON の代わりに、添付として受ける content type を許すパス。FORM_POST_PATHS と違い型は限る。 */
+const ATTACHMENT_POST_PATHS: ReadonlySet<string> = new Set([ATTACHMENT_UPLOAD_PATH]);
+
 export const rejectCrossSiteCookieWrites = defineBaseMiddleware(
   createMiddleware<AppEnv>(async (c, next) => {
     if (UNSAFE_METHODS.has(c.req.method) && sessionCookieOf(c) !== undefined) {
-      const acceptsForm = c.req.method === "POST" && FORM_POST_PATHS.has(c.req.path);
+      const isPost = c.req.method === "POST";
+      const contentType = c.req.header("Content-Type");
+      const acceptsForm = isPost && FORM_POST_PATHS.has(c.req.path);
+      const acceptsAttachment =
+        isPost &&
+        ATTACHMENT_POST_PATHS.has(c.req.path) &&
+        uploadContentTypeOf(contentType) !== null;
       if (
         !isSameOriginRequest(c) ||
-        !(acceptsForm || isJsonContentType(c.req.header("Content-Type")))
+        !(acceptsForm || acceptsAttachment || mediaTypeOf(contentType) === "application/json")
       ) {
         return c.json({ error: "csrf_rejected" }, 403);
       }
@@ -202,11 +218,6 @@ function isSameOriginRequest(c: Context<AppEnv>): boolean {
   if (fetchSite !== undefined && fetchSite !== "same-origin") return false;
   if (origin !== undefined && origin !== new URL(c.req.url).origin) return false;
   return true;
-}
-
-function isJsonContentType(header: string | undefined): boolean {
-  const mediaType = header?.split(";")[0]?.trim().toLowerCase();
-  return mediaType === "application/json";
 }
 
 const BEARER_PATTERN = /^Bearer +([^ ]+) *$/i;
@@ -395,7 +406,8 @@ const ANONYMOUS_READ_METHODS = new Set(["GET", "HEAD"]);
  *   （理由は resolvePrincipal）
  * - anonymous は GET と HEAD だけ。読み取りの宣言を変更系のルートに付け間違えても、匿名には開かない
  * - 応答の Cache-Control は resolvePrincipal が principal から決める。ハンドラは Cache-Control を
- *   付けない（付けると anonymous の no-store が外れる）
+ *   付けない（付けると anonymous の no-store が外れる）。例外は添付の配信で、名前ごとに中身が変わらず
+ *   ETag で再検証できるので、anonymous の 200 と 304 にだけ private, no-cache を付ける（attachments/routes.ts）
  */
 export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
   return definePolicy(

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { registerAttachmentRoutes } from "./attachments/routes";
 import { createAccessVerifier } from "./auth/access";
 import {
   allowAnonymous,
@@ -56,6 +57,7 @@ export function createApp({
   registerAuthRoutes(app, { now, accessVerifier });
   registerOAuthRoutes(app, { now });
   registerPageRoutes(app, { now, recordWrite });
+  registerAttachmentRoutes(app, { now });
   registerAdminRoutes(app, { recordWrite });
   registerMcpRoutes(app, { now, recordWrite });
   registerSpaRoutes(app);

@@ -107,13 +107,20 @@ export function registerAuthRoutes(app: Hono<AppEnv>, { now, accessVerifier }: A
       // 続けて呼ぶページの読み取りが 401 にならないようにする
       clearStaleSession(c);
       const principal = c.get("principal");
+      // 画面が、使えない機能（R2 の無い構成での画像の貼り付け）の導線を出さずに済むよう返す
+      const features = { attachments: c.env.BUCKET !== undefined };
       switch (principal.kind) {
         case "owner":
-          return c.json({ kind: "owner" });
+          return c.json({ kind: "owner", features });
         case "token":
-          return c.json({ kind: "token", name: principal.name, scopes: principal.scopes });
+          return c.json({
+            kind: "token",
+            name: principal.name,
+            scopes: principal.scopes,
+            features,
+          });
         case "anonymous":
-          return c.json({ kind: "anonymous" });
+          return c.json({ kind: "anonymous", features });
       }
     });
 }

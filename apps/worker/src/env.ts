@@ -3,7 +3,11 @@ import type { Principal } from "./auth/principal";
 /** wrangler.jsonc の binding と、デプロイ時に入る vars と secret に対応させる。 */
 export interface Bindings {
   DB: D1Database;
-  BUCKET: R2Bucket;
+  /**
+   * 添付の置き場。deploy.env に R2_BUCKET_NAME が無ければ binding ごと外れ、添付の保存は 503、
+   * 配信は 404 になる（attachments/routes.ts）。
+   */
+  BUCKET?: R2Bucket;
   /** apps/web のビルド出力 */
   ASSETS: Fetcher;
   /**

@@ -369,7 +369,7 @@ describe("検証できないセッション cookie", () => {
     const { call, anonymous, open } = await seed();
     const me = await call("/api/me", { headers: { Cookie: garbage } });
     expect(me.status).toBe(200);
-    expect(await me.json()).toEqual({ kind: "anonymous" });
+    expect(await me.json()).toEqual({ kind: "anonymous", features: { attachments: true } });
     expectCookieCleared(me);
     // ブラウザは Max-Age=0 の cookie を捨てるので、以降の要求は cookie を持たない
     for (const path of readPaths(open)) {
@@ -485,6 +485,13 @@ describe("匿名向けの応答の総当たり", () => {
         `/api/pages/${linker.id}/backlinks`,
         `/api/pages/${draft.id}/backlinks`,
         `/api/pages/${gone.id}/backlinks`,
+      ],
+      // 何も保存していないので、どれも 404。参照のある添付の配信は attachments/attachments.test.ts で確かめる
+      "GET /api/pages/:id/attachments/:name": [
+        `/api/pages/${open.id}/attachments/AAAAAAAAAAAAAAAAAAAAAA.png`,
+        `/api/pages/${draft.id}/attachments/AAAAAAAAAAAAAAAAAAAAAA.png`,
+        `/api/pages/${gone.id}/attachments/AAAAAAAAAAAAAAAAAAAAAA.png`,
+        `/api/pages/${open.id}/attachments/x.svg`,
       ],
       "GET /*": [
         "/",
