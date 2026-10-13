@@ -165,6 +165,43 @@ describe("存在の印と遷移", () => {
   });
 });
 
+describe("hrefFor", () => {
+  const plain = { target: "有る", heading: null, blockId: null };
+
+  async function resolved() {
+    const { links } = setup([{ ...pageOf("B", "有る", ""), visibility: "public" }]);
+    links.resolveWikiLink("有る");
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    return links;
+  }
+
+  it("解決先を取得するまでは null", () => {
+    const { links } = setup([]);
+    expect(links.hrefFor(plain)).toBeNull();
+  });
+
+  it("見出しと block の場所を fragment で付ける", async () => {
+    const links = await resolved();
+    const path = `/${encodeURIComponent("有る")}`;
+    expect(links.hrefFor(plain)).toBe(path);
+    expect(links.hrefFor({ ...plain, heading: "見出し A" })).toBe(
+      `${path}#${encodeURIComponent("見出し A")}`,
+    );
+    expect(links.hrefFor({ ...plain, heading: "^abc" })).toBe(`${path}#%5Eabc`);
+    expect(links.hrefFor({ ...plain, blockId: "abc" })).toBe(`${path}#%5Eabc`);
+    expect(links.hrefFor({ ...plain, heading: "B#C" })).toBe(`${path}#B%23C`);
+  });
+
+  it("target が空の link は、ページを問わず fragment だけの URL にする", () => {
+    const { links, resolve } = setup([]);
+    expect(links.hrefFor({ target: "", heading: "見出し", blockId: null })).toBe(
+      `#${encodeURIComponent("見出し")}`,
+    );
+    expect(links.hrefFor({ target: "", heading: "^abc", blockId: null })).toBe("#%5Eabc");
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});
+
 describe("subscribe と dispose", () => {
   it("解除した listener は呼ばない", async () => {
     const { links, listener } = setup([]);

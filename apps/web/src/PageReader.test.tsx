@@ -11,6 +11,7 @@ import {
   type Page,
   resolvePages,
 } from "./pages-api";
+import { navigate } from "./route";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -170,5 +171,161 @@ describe("PageReader", () => {
     expect(buttonTexts()).toEqual(["閉じる"]);
     expect(location.pathname).toBe(new URL(startUrl).pathname);
     expect(createPage).not.toHaveBeenCalled();
+  });
+});
+
+describe("見出しと block への移動", () => {
+  /** filler が長いと、先頭の link は移動後のスクロールで描かれなくなる。スクロールを見るテストだけ長くする */
+  const bodyOf = (filler: string) =>
+    [
+      "[[#節B]] [[#^blk]] [[有る#見出し]] [[有る^id]] [[#無い見出し]] [[公開の題#節A]]",
+      "",
+      filler,
+      "",
+      "# 節A",
+      "",
+      "本文",
+      "",
+      "## 節B",
+      "",
+      "段落 ^blk",
+      "",
+      filler,
+    ].join("\n");
+  const LONG = bodyOf(Array.from({ length: 60 }, (_, i) => `行 ${i}`).join("\n\n"));
+  const BODY = bodyOf("間");
+  const PAGE_WITH_HEADINGS: Page = { ...PAGE, body: BODY };
+  const at = (needle: string) => BODY.indexOf(needle);
+  const hashOf = (text: string) => `#${encodeURIComponent(text)}`;
+
+  const hrefOfLink = (text: string) =>
+    [...(container?.querySelectorAll("a[href]") ?? [])]
+      .find((a) => a.textContent === text)
+      ?.getAttribute("href");
+
+  beforeEach(() => {
+    // 前のテストのスクロールが残ると、先頭の行が描かれない
+    window.scrollTo(0, 0);
+    // 自分への link は、解決先が自分のページになる
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => {
+          if (title === "有る") {
+            return { id: "BBBBBBBBBBBBBBBBBBBBBB", title, visibility: "public" as const };
+          }
+          return title === PAGE.title
+            ? { id: PAGE.id, title, visibility: "public" as const }
+            : null;
+        }),
+      ),
+    );
+    vi.mocked(findPageByTitle).mockImplementation(async (title) =>
+      title === PAGE.title ? ok(PAGE_WITH_HEADINGS) : { ok: false, reason: "not_found" },
+    );
+  });
+
+  it("link の href に見出しと block の場所を fragment で付ける", async () => {
+    renderReader(PAGE_WITH_HEADINGS);
+    const path = `/${encodeURIComponent("有る")}`;
+    await vi.waitFor(() => expect(hrefOfLink("有る#見出し")).toBe(`${path}${hashOf("見出し")}`));
+    expect(hrefOfLink("有る^id")).toBe(`${path}#%5Eid`);
+    expect(hrefOfLink("#節B")).toBe(hashOf("節B"));
+    expect(hrefOfLink("#^blk")).toBe("#%5Eblk");
+    expect(hrefOfLink("公開の題#節A")).toBe(`/${encodeURIComponent("公開の題")}${hashOf("節A")}`);
+  });
+
+  it("hash が見出しを指すページを開くと、その見出しへカーソルを置いてスクロールする", async () => {
+    history.replaceState(null, "", `${location.pathname}${hashOf("節A")}`);
+    const { view } = renderReader({ ...PAGE, body: LONG });
+    expect(view().state.selection.main.head).toBe(LONG.indexOf("# 節A"));
+    await vi.waitFor(() => {
+      const top = view().coordsAtPos(LONG.indexOf("# 節A"))?.top ?? Number.NaN;
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(top).toBeLessThan(window.innerHeight / 2);
+    });
+  });
+
+  it("hash が block を指すページを開くと、その段落へ移る", () => {
+    history.replaceState(null, "", `${location.pathname}#%5Eblk`);
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
+  });
+
+  it("見つからない見出しと block は、先頭のまま何も出さない", () => {
+    history.replaceState(null, "", `${location.pathname}${hashOf("無い")}`);
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    expect(view().state.selection.main.head).toBe(0);
+    history.replaceState(null, "", `${location.pathname}#%5Enone`);
+    act(() => navigate(`${location.pathname}#%E3%81%82`));
+    expect(view().state.selection.main.head).toBe(0);
+    expect(container?.querySelector("[role=alert]")).toBeNull();
+  });
+
+  it("同じページの link は遷移もページの問い合わせもせず、その位置へ移る", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await flushAsync();
+    const pathname = location.pathname;
+    clickLink("#節B");
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
+    expect(location.pathname).toBe(pathname);
+    expect(location.hash).toBe(hashOf("節B"));
+    expect(findPageByTitle).not.toHaveBeenCalled();
+    clickLink("#^blk");
+    expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
+    expect(location.hash).toBe("#%5Eblk");
+  });
+
+  it("同じ hash の link を、スクロールで離れた後にもう一度押すと戻る", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await flushAsync();
+    clickLink("#節B");
+    act(() => view().dispatch({ selection: { anchor: BODY.length } }));
+    clickLink("#節B");
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
+  });
+
+  it("見つからない見出しへの同じページの link は、hash だけ変えて何も動かさない", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await flushAsync();
+    clickLink("#無い見出し");
+    expect(view().state.selection.main.head).toBe(0);
+    expect(container?.querySelector("[role=alert]")).toBeNull();
+  });
+
+  it("自分の title への link も、遷移せずにその見出しへ移る", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+    await flushAsync();
+    const pathname = location.pathname;
+    clickLink("公開の題#節A");
+    await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("# 節A")));
+    expect(location.pathname).toBe(pathname);
+  });
+
+  it("ほかのページの見出しへの link は、遷移先の URL に fragment を付ける", async () => {
+    renderReader(PAGE_WITH_HEADINGS);
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+    await flushAsync();
+    clickLink("有る#見出し");
+    await vi.waitFor(() =>
+      expect(`${location.pathname}${location.hash}`).toBe(
+        `/${encodeURIComponent("有る")}${hashOf("見出し")}`,
+      ),
+    );
+  });
+
+  it("戻る・進むで fragment 付きの URL に戻ると、位置を合わせる", async () => {
+    const { view } = renderReader(PAGE_WITH_HEADINGS);
+    await flushAsync();
+    clickLink("#節B");
+    clickLink("#^blk");
+    expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
+    const moved = (head: number) =>
+      vi.waitFor(() => expect(view().state.selection.main.head).toBe(head));
+    history.back();
+    await moved(at("## 節B"));
+    expect(location.hash).toBe(hashOf("節B"));
+    history.forward();
+    await moved(at("段落 ^blk"));
   });
 });

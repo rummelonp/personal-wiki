@@ -347,6 +347,69 @@ describe("jumpTo", () => {
   });
 });
 
+describe("jumpToFragment", () => {
+  const BODY = "# 先頭\n\n本文\n\n## 次の見出し\n\n段落 ^blk1\n\n### 入れ子\n\n終わり";
+
+  it("見出しの行頭にカーソルを置いてフォーカスする", () => {
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(BODY, { ref });
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "次の見出し" }));
+    expect(view().state.selection.main.head).toBe(BODY.indexOf("## 次の見出し"));
+    expect(view().hasFocus).toBe(true);
+  });
+
+  it("入れ子の見出しの path をたどる", () => {
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(BODY, { ref });
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "次の見出し#入れ子" }));
+    expect(view().state.selection.main.head).toBe(BODY.indexOf("### 入れ子"));
+  });
+
+  it("block の段落へ移り、一時的にハイライトする", () => {
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(BODY, { ref });
+    act(() => ref.current?.jumpToFragment({ kind: "block", id: "blk1" }));
+    expect(view().state.selection.main.head).toBe(BODY.indexOf("段落"));
+    expect(view().hasFocus).toBe(true);
+  });
+
+  it("見つからなければカーソルもフォーカスも動かさない", () => {
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(BODY, { ref });
+    act(() => {
+      ref.current?.jumpToFragment({ kind: "heading", heading: "無い" });
+      ref.current?.jumpToFragment({ kind: "block", id: "none" });
+    });
+    expect(view().state.selection.main.head).toBe(0);
+    expect(view().hasFocus).toBe(false);
+  });
+
+  it("見出しを画面の上端の近くへスクロールする", () => {
+    const filler = Array.from({ length: 80 }, (_, i) => `行 ${i}`).join("\n\n");
+    const body = `${filler}\n\n## 末尾の見出し\n\n${filler}`;
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(body, { ref });
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "末尾の見出し" }));
+    const v = view();
+    return vi.waitFor(() => {
+      const top = v.coordsAtPos(body.indexOf("## 末尾の見出し"))?.top ?? Number.NaN;
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(top).toBeLessThan(window.innerHeight / 2);
+    });
+  });
+
+  it("変換中は落ち着くまで待つ", async () => {
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(BODY, { ref });
+    const v = view();
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    ref.current?.jumpToFragment({ kind: "heading", heading: "次の見出し" });
+    expect(v.state.selection.main.head).toBe(0);
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(v.state.selection.main.head).toBe(BODY.indexOf("## 次の見出し")));
+  });
+});
+
 describe("[[ の補完", () => {
   const pageIndex = createMemoryPageIndex([{ id: "1", title: "Note" }], {
     normalize: (text) => text.toLowerCase(),
@@ -433,7 +496,7 @@ function fakeLinks() {
   const sources: WikiLinkSources = {
     resolveWikiLink: (target) => !missing.has(target),
     resolvePageEmbed: (target) => embeds.get(target) ?? { kind: "loading" },
-    hrefFor: (target) => hrefs.get(target) ?? null,
+    hrefFor: (link) => hrefs.get(link.target) ?? null,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -580,12 +643,14 @@ describe("wikilink のクリック", () => {
       target: "有る",
       label: "表示",
       blockId: null,
+      heading: null,
     });
     clickLink(view(), "Note^abc");
     expect(onWikiLinkClick).toHaveBeenLastCalledWith({
       target: "Note",
       label: null,
       blockId: "abc",
+      heading: null,
     });
   });
 
@@ -612,6 +677,11 @@ describe("wikilink のクリック", () => {
     title.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
     );
-    expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "別", label: null, blockId: null });
+    expect(onWikiLinkClick).toHaveBeenCalledWith({
+      target: "別",
+      label: null,
+      blockId: null,
+      heading: null,
+    });
   });
 });

@@ -58,6 +58,14 @@ function subscribe(listener: () => void): () => void {
 // snapshot は文字列にする。オブジェクトを返すと呼ぶたびに別の値になり、再描画が止まらなくなる。
 const currentLocation = () => `${window.location.pathname}${window.location.search}`;
 
+/**
+ * URL の hash（`#` 付き、無ければ空文字列）。hash だけが変わる遷移（`navigate`、戻る・進む）でも再描画する。
+ * `useRoute` は hash を見ないので、ページの中の位置はこちらで追う。
+ */
+export function useHash(): string {
+  return useSyncExternalStore(subscribe, () => window.location.hash);
+}
+
 export function useRoute(): Route {
   const location = useSyncExternalStore(subscribe, currentLocation);
   const index = location.indexOf("?");

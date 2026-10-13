@@ -9,15 +9,23 @@ import {
   type PageEmbedContent,
   type PageIndex,
   replaceDoc,
+  revealBlockId,
   setReadOnly,
   type WikiLinkClick,
 } from "@personal-wiki/editor";
+import { findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import type { PageFragment } from "./page-fragment";
 import type { WikiLinkSources } from "./wiki-links";
 
 export interface BodyEditorHandle {
   /** 本文の `offset` の位置にカーソルを置き、見える位置までスクロールする。 */
   jumpTo: (offset: number) => void;
+  /**
+   * URL の fragment が指す見出しか block へ、`jumpTo` と同じく移る。見つからなければ何もしない。
+   * block は対象の段落を一時的にハイライトする。
+   */
+  jumpToFragment: (fragment: PageFragment) => void;
 }
 
 export interface BodyEditorProps {
@@ -52,6 +60,19 @@ export interface BodyEditorProps {
 const NO_EMBED: PageEmbedContent = { kind: "unresolved" };
 
 const jumpKey = Symbol("jumpTo");
+
+/**
+ * カーソルを `offset` に置き、その行を画面の上端の近くまでスクロールする。見出しへの移動は
+ * 行頭が見えれば足りるわけではなく、その先を読み進めるので、最小限のスクロールにはしない。
+ */
+function moveTo(editor: EditorView, offset: number): void {
+  const at = Math.min(offset, editor.state.doc.length);
+  editor.dispatch({
+    selection: EditorSelection.cursor(at),
+    effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 16 }),
+  });
+  editor.focus();
+}
 
 /**
  * 本文の編集部品。packages/editor の Live Preview を React に載せる。
@@ -117,8 +138,7 @@ export function BodyEditor({
               latest.current.links?.resolveWikiLink(target) ?? true,
             resolvePageEmbed: (target: string) =>
               latest.current.links?.resolvePageEmbed(target) ?? NO_EMBED,
-            hrefForWikiLink: (link: WikiLinkClick) =>
-              latest.current.links?.hrefFor(link.target) ?? null,
+            hrefForWikiLink: (link: WikiLinkClick) => latest.current.links?.hrefFor(link) ?? null,
           }),
       ...(initial.onWikiLinkClick === undefined
         ? {}
@@ -189,10 +209,19 @@ export function BodyEditor({
     jumpTo(offset) {
       const editor = view.current;
       if (editor === null) return;
+      dispatchWhenSettled(editor, jumpKey, () => moveTo(editor, offset));
+    },
+    jumpToFragment(fragment) {
+      const editor = view.current;
+      if (editor === null) return;
+      // 位置は動かす時点の本文で求める。変換が落ち着くまでに本文が変わっていても、その本文の位置に移る
       dispatchWhenSettled(editor, jumpKey, () => {
-        const at = Math.min(offset, editor.state.doc.length);
-        editor.dispatch({ selection: EditorSelection.cursor(at), scrollIntoView: true });
-        editor.focus();
+        if (fragment.kind === "block") {
+          if (revealBlockId(editor, fragment.id)) editor.focus();
+          return;
+        }
+        const offset = findHeadingOffset(editor.state.doc.toString(), fragment.heading);
+        if (offset !== null) moveTo(editor, offset);
       });
     },
   }));

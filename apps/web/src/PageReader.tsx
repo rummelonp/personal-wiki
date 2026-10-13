@@ -7,9 +7,11 @@ import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
 import { Outline } from "./Outline";
+import { hashOfLink } from "./page-fragment";
 import type { Page } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
 import { navigate, pageHrefFor, tagHref } from "./route";
+import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
 interface PageReaderProps {
@@ -30,6 +32,7 @@ type LinkNotice = { kind: "missing"; title: string } | { kind: "error" };
  */
 export function PageReader({ page, onShown }: PageReaderProps) {
   const editor = useRef<BodyEditorHandle>(null);
+  const { goTo } = useFragmentJump(editor);
   const outline = useMemo(() => extractOutline(page.body), [page.body]);
   const tags = useMemo(() => extractDerived(page.body).tags.map(({ tag }) => tag), [page.body]);
   const [links] = useState(() => createWikiLinks({ pageId: page.id }));
@@ -54,13 +57,22 @@ export function PageReader({ page, onShown }: PageReaderProps) {
 
   async function handleWikiLinkClick(link: WikiLinkClick) {
     linkClick.current?.abort();
+    if (link.target === "") {
+      // 同じページの見出しと block。ページを調べず、位置だけ移る
+      setLinkNotice(null);
+      goTo(hashOfLink(link));
+      return;
+    }
     const controller = new AbortController();
     linkClick.current = controller;
     setLinkNotice(null);
     const found = await links.lookup(link.target, controller.signal);
     if (controller.signal.aborted) return;
-    if (found.kind === "found") navigate(pageHrefFor(found.page));
-    else if (found.kind === "missing") setLinkNotice({ kind: "missing", title: link.target });
+    if (found.kind === "found") {
+      const hash = hashOfLink(link);
+      if (found.page.id === page.id && hash !== "") goTo(hash);
+      else navigate(`${pageHrefFor(found.page)}${hash}`);
+    } else if (found.kind === "missing") setLinkNotice({ kind: "missing", title: link.target });
     else setLinkNotice({ kind: "error" });
   }
 

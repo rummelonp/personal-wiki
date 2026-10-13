@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -128,6 +129,12 @@ async function renderAt(path: string) {
   await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
 }
 
+const cursorOf = () => {
+  const editor = container?.querySelector<HTMLElement>(".cm-editor");
+  const view = editor ? EditorView.findFromDOM(editor) : null;
+  return view?.state.selection.main.head;
+};
+
 const main = () => container?.querySelector("main");
 const header = () => container?.querySelector("header");
 
@@ -176,6 +183,31 @@ describe("App の匿名の画面", () => {
     expect(main()?.querySelector("h1")?.textContent).toBe("公開の題");
     expect(getPage).toHaveBeenCalledTimes(1);
     expect(findPageByTitle).not.toHaveBeenCalled();
+  });
+
+  it("見出しの fragment 付きの URL を開くと、置き換えた URL にも fragment を残して見出しへ移る", async () => {
+    const page = { ...PUBLIC, body: "前文\n\n# 節A\n\n本文\n\n## 節B\n\n末尾" };
+    serve("anonymous", [page]);
+    await renderAt(`/p/${page.id}#${encodeURIComponent("節B")}`);
+    await vi.waitFor(() => expect(location.pathname).toBe(titleUrl(page.title)));
+    expect(location.hash).toBe(`#${encodeURIComponent("節B")}`);
+    expect(cursorOf()).toBe(page.body.indexOf("## 節B"));
+  });
+
+  it("別のページから fragment 付きで移ると、読み込んだ後にその見出しへ移る", async () => {
+    const other = {
+      ...PUBLIC,
+      id: "EEEEEEEEEEEEEEEEEEEEEE",
+      title: "別の題",
+      body: "# 節A\n\n## 節B",
+    };
+    serve("anonymous", [PUBLIC, other]);
+    await renderAt(titleUrl(PUBLIC.title));
+    await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("公開の題"));
+    act(() => navigate(`${titleUrl(other.title)}#${encodeURIComponent("節B")}`));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+    await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("別の題"));
+    expect(cursorOf()).toBe(other.body.indexOf("## 節B"));
   });
 
   it("/p/<id> で開いた draft は読み取り専用で読め、URL は /p/<id> のまま", async () => {
@@ -253,6 +285,15 @@ describe("App の owner の画面", () => {
     );
     expect(header()?.textContent).toContain("新規作成");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
+  });
+
+  it("見出しの fragment 付きの URL を開くと、編集の画面でも見出しにカーソルを置く", async () => {
+    const page = { ...DRAFT, body: "前文\n\n# 節A\n\n本文\n\n## 節B\n\n末尾" };
+    serve("owner", [page]);
+    await renderAt(`${titleUrl(page.title)}#${encodeURIComponent("節A")}`);
+    await vi.waitFor(() => expect(location.pathname).toBe(`/p/${page.id}`));
+    expect(location.hash).toBe(`#${encodeURIComponent("節A")}`);
+    expect(cursorOf()).toBe(page.body.indexOf("# 節A"));
   });
 
   it("/<title> で開いた draft は /p/<id> に置き換える", async () => {

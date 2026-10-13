@@ -3,8 +3,10 @@ import {
   createPageEmbedCache,
   type PageEmbedCache,
   type PageEmbedResolver,
+  type WikiLinkClick,
   type WikiLinkResolver,
 } from "@personal-wiki/editor";
+import { hashOfLink } from "./page-fragment";
 import {
   type ApiResult,
   type Fetch,
@@ -22,8 +24,10 @@ export interface WikiLinkSources {
   /**
    * wikilink の `<a href>` にする URL。解決先を取得済みのときだけ返し、未確認と存在しない link は null
    * （href の無い装飾）。匿名には draft も存在しない link と同じく null になる。
+   * 見出しや block を指す link には、その場所を fragment で付ける。target が空の link
+   * （同じ page の見出しと block）は fragment だけの URL になる。
    */
-  hrefFor(target: string): string | null;
+  hrefFor(link: Pick<WikiLinkClick, "target" | "heading" | "blockId">): string | null;
   /** 印や embed の内容が変わったときに呼ぶ listener を登録する。戻り値で解除する。 */
   subscribe(listener: () => void): () => void;
 }
@@ -96,9 +100,11 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
   return {
     resolveWikiLink: (target) => titles.isResolved(target),
     resolvePageEmbed: (target) => embedCache().resolve(target),
-    hrefFor(target) {
-      const page = titles.resolvedPage(target);
-      return page === null ? null : canonicalPagePath(page);
+    hrefFor(link) {
+      const hash = hashOfLink(link);
+      if (link.target === "") return hash === "" ? null : hash;
+      const page = titles.resolvedPage(link.target);
+      return page === null ? null : `${canonicalPagePath(page)}${hash}`;
     },
     subscribe(listener) {
       listeners.add(listener);

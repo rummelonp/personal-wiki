@@ -439,6 +439,112 @@ describe("PageEditor の wikilink", () => {
   });
 });
 
+describe("PageEditor の見出しと block への移動", () => {
+  const BODY = "前 [[#節B]] [[#^blk]] [[別#二]]\n\n# 節A\n\n本文\n\n## 節B\n\n段落 ^blk\n";
+  const at = (needle: string) => BODY.indexOf(needle);
+  const hashOf = (text: string) => `#${encodeURIComponent(text)}`;
+
+  const clickLink = (text: string) => {
+    const link = [...(container?.querySelectorAll(".cm-wikilink") ?? [])].find(
+      (e) => e.textContent === text,
+    );
+    if (!link) throw new Error(`${text} の link が無い`);
+    act(() => {
+      link.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+  };
+
+  beforeEach(() => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => ({
+          id: "BBBBBBBBBBBBBBBBBBBBBB",
+          title,
+          visibility: "draft" as const,
+        })),
+      ),
+    );
+  });
+
+  it("hash が見出しを指すページを開くと、その見出しにカーソルを置く", () => {
+    history.replaceState(null, "", `${location.pathname}${hashOf("節B")}`);
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
+    expect(view().hasFocus).toBe(true);
+  });
+
+  it("hash が block を指すページを開くと、その段落にカーソルを置く", () => {
+    history.replaceState(null, "", `${location.pathname}#%5Eblk`);
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
+  });
+
+  it("見つからない hash では、先頭のままにする", () => {
+    history.replaceState(null, "", `${location.pathname}${hashOf("無い")}`);
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    expect(view().state.selection.main.head).toBe(0);
+    expect(container?.querySelector("[role=alert]")).toBeNull();
+  });
+
+  it("移動した後に入力しても、カーソルを見出しへ戻さない", async () => {
+    history.replaceState(null, "", `${location.pathname}${hashOf("節B")}`);
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    view().focus();
+    typeAtEnd(view(), "追記");
+    await flushAsync();
+    expect(view().state.selection.main.head).toBe(BODY.length + 2);
+  });
+
+  it("同じページの link は遷移もページの問い合わせもせず、その位置へ移る", async () => {
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    await flushAsync();
+    const pathname = location.pathname;
+    clickLink("#節B");
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
+    expect(location.pathname).toBe(pathname);
+    expect(location.hash).toBe(hashOf("節B"));
+    clickLink("#^blk");
+    expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
+    expect(findPageByTitle).not.toHaveBeenCalled();
+    for (const [titles] of vi.mocked(resolvePages).mock.calls) expect(titles).not.toContain("");
+  });
+
+  it("ほかのページの見出しへの link は、遷移先の URL に fragment を付ける", async () => {
+    renderPage({ ...PAGE, body: BODY });
+    await flushAsync();
+    clickLink("別#二");
+    await vi.waitFor(() =>
+      expect(`${location.pathname}${location.hash}`).toBe(
+        `/p/BBBBBBBBBBBBBBBBBBBBBB${hashOf("二")}`,
+      ),
+    );
+  });
+
+  it("link の href にも fragment を付ける", async () => {
+    renderPage({ ...PAGE, body: BODY });
+    await vi.waitFor(() =>
+      expect(
+        [...(container?.querySelectorAll("a[href]") ?? [])]
+          .filter((a) => a.classList.contains("cm-wikilink"))
+          .map((a) => a.getAttribute("href")),
+      ).toEqual([hashOf("節B"), "#%5Eblk", `/p/BBBBBBBBBBBBBBBBBBBBBB${hashOf("二")}`]),
+    );
+  });
+
+  it("戻る・進むで fragment 付きの URL に戻ると、位置を合わせる", async () => {
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    await flushAsync();
+    clickLink("#節B");
+    clickLink("#^blk");
+    history.back();
+    await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("## 節B")));
+    history.forward();
+    await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("段落 ^blk")));
+  });
+});
+
 describe("PageEditor の「作成して開く」", () => {
   const missingAll = () =>
     vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));

@@ -20,6 +20,7 @@ import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
 import { Outline } from "./Outline";
+import { hashOfLink } from "./page-fragment";
 import {
   createPage,
   deletePage,
@@ -33,6 +34,7 @@ import {
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
 import { homeHref, navigate, pageHrefFor } from "./route";
+import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
 const api: EditorApi = {
@@ -114,6 +116,7 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
     onShown?.({ id: page.id, title: savedTitle, visibility: savedVisibility });
   }, [onShown, page.id, savedTitle, savedVisibility]);
   const editor = useRef<BodyEditorHandle>(null);
+  const { goTo } = useFragmentJump(editor);
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
@@ -150,6 +153,13 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
   }, [links]);
 
   async function handleWikiLinkClick(link: WikiLinkClick) {
+    if (link.target === "") {
+      // 同じページの見出しと block。ページを調べず、位置だけ移る
+      linkClick.current?.abort();
+      setLinkNotice(null);
+      goTo(hashOfLink(link));
+      return;
+    }
     // 作成中の title をもう一度押されても、作成の表示と応答を取り替えない
     if (creating.current !== null && foldTitle(creating.current) === foldTitle(link.target)) return;
     linkClick.current?.abort();
@@ -159,8 +169,11 @@ export function PageEditor({ page, onShown }: PageEditorProps) {
     setLinkNotice(null);
     const found = await links.lookup(link.target, controller.signal);
     if (controller.signal.aborted) return;
-    if (found.kind === "found") navigate(pageHrefFor(found.page));
-    else if (found.kind === "missing") {
+    if (found.kind === "found") {
+      const hash = hashOfLink(link);
+      if (found.page.id === page.id && hash !== "") goTo(hash);
+      else navigate(`${pageHrefFor(found.page)}${hash}`);
+    } else if (found.kind === "missing") {
       setLinkNotice({ kind: "missing", title: link.target, busy: false, error: null });
     } else setLinkNotice({ kind: "error" });
   }
