@@ -176,6 +176,73 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({ status: "done", rewritten: [{ id: "b" }] });
   });
 
+  it("走っている間に新しく積まれていない start（StrictMode の 2 回目の再開）では、step を余分に呼ばない", async () => {
+    let release: () => void = () => {};
+    const { runner, step, settled } = setup([]);
+    step.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(ok({ processed: processed("a"), remaining: 0 }));
+        }),
+    );
+    runner.start();
+    runner.start();
+    release();
+    await settled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(step).toHaveBeenCalledTimes(1);
+  });
+
+  it("結果を知らせた listener がその場で start しても、取りこぼさずに新しいループを走らせる", async () => {
+    const { runner, step, settled } = setup([
+      ok({ processed: processed("a"), remaining: 0 }),
+      ok({ processed: processed("b"), remaining: 0 }),
+    ]);
+    let restarted = false;
+    runner.subscribe(() => {
+      if (!restarted && runner.getState().status === "done") {
+        restarted = true;
+        runner.start(1);
+      }
+    });
+    runner.start(1);
+    await vi.waitFor(() => expect(step).toHaveBeenCalledTimes(2));
+    await settled();
+    expect(runner.getState()).toMatchObject({ status: "done", rewritten: [{ id: "b" }] });
+  });
+
+  it("止まったあとの再試行は、それまでの一覧を残して続ける", async () => {
+    const { runner, step, settled } = setup([
+      ok({ processed: processed("a"), failed: ["x"], remaining: 1 }),
+      ...Array.from(
+        { length: ERROR_WAITS_MS.length + 1 },
+        () => ({ ok: false, kind: "error" }) as const,
+      ),
+      ok({ processed: processed("b"), remaining: 0 }),
+    ]);
+    runner.start(2);
+    await vi.waitFor(() => expect(runner.getState().status).toBe("stopped"));
+    runner.retry();
+    expect(runner.getState()).toMatchObject({ status: "running", stopReason: null });
+    await settled();
+    expect(step).toHaveBeenCalledTimes(ERROR_WAITS_MS.length + 3);
+    expect(runner.getState()).toMatchObject({
+      status: "done",
+      rewritten: [{ id: "a" }, { id: "b" }],
+      failed: ["x"],
+    });
+  });
+
+  it("同じリンク元が何度失敗として返っても、failed には 1 回だけ入れる", async () => {
+    const { runner, settled } = setup([
+      ok({ failed: ["x"], remaining: 1 }),
+      ok({ failed: ["x", "y"], remaining: 0 }),
+    ]);
+    runner.start(2);
+    await settled();
+    expect(runner.getState().failed).toEqual(["x", "y"]);
+  });
+
   it("stop のあとは古いループの結果を書かない", async () => {
     let release: () => void = () => {};
     const { runner, step } = setup([]);

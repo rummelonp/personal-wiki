@@ -31,7 +31,9 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
       role={status === "stopped" ? "alert" : "status"}
     >
       {stopReason === "auth" && (
-        <p>ログインが切れたので、他のページのリンクの書き換えを止めました。</p>
+        <p>
+          書き込みを認められなかったので、他のページのリンクの書き換えを止めました。ログインが切れていれば、ログインし直してください。
+        </p>
       )}
       {stopReason === "error" && <p>他のページのリンクの書き換えを続けられませんでした。</p>}
       {rewritten.length > 0 && (
@@ -71,7 +73,7 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
           </a>
         )}
         {stopReason === "error" && (
-          <button type="button" className="button button-primary" onClick={() => runner.start()}>
+          <button type="button" className="button button-primary" onClick={() => runner.retry()}>
             再試行
           </button>
         )}

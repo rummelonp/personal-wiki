@@ -91,19 +91,43 @@ export class LinkRewriteRunner {
    */
   start(queued = 0): void {
     if (this.active) {
+      // 新しく積まれていなければ、走っているループが同じ残りを処理する（StrictMode で起動時の再開が
+      // 2 回来ても、step を余分に呼ばない）
+      if (queued === 0) return;
       this.rerun = true;
-      if (queued > 0 && this.state.status !== "running") {
+      if (this.state.status !== "running") {
         this.set({ ...this.state, status: "running", total: this.state.done + queued });
       }
       return;
     }
+    this.run({ ...IDLE, status: queued > 0 ? "running" : "idle", total: queued });
+  }
+
+  /** 止まった書き換えを手で再開する。それまでに書き換えたページと失敗したページの一覧は残す。 */
+  retry(): void {
+    if (this.active) return;
+    this.run({ ...this.state, status: "running", stopReason: null });
+  }
+
+  private run(initial: LinkRewriteState): void {
     const generation = ++this.generation;
     this.active = true;
     this.rerun = false;
-    this.set({ ...IDLE, status: queued > 0 ? "running" : "idle", total: queued });
-    void this.loop(generation).finally(() => {
-      if (generation === this.generation) this.active = false;
+    this.set(initial);
+    this.loop(generation).catch(() => {
+      if (generation === this.generation) {
+        this.finish({ ...this.state, status: "stopped", stopReason: "error" });
+      }
     });
+  }
+
+  /**
+   * ループを終える。active は結果を知らせる前に下ろす。listener（画面の更新）が同じ同期区間で
+   * start を呼んだとき、終わったループの rerun に入って取りこぼされないようにする。
+   */
+  private finish(state: LinkRewriteState): void {
+    this.active = false;
+    this.set(state);
   }
 
   /** ログアウトなどで書き換えを止め、結果も消す。 */
@@ -144,13 +168,13 @@ export class LinkRewriteRunner {
     let errors = 0;
     const current = () => generation === this.generation;
     const stopWith = (stopReason: "auth" | "error") =>
-      this.set({ ...this.state, status: "stopped", stopReason });
+      this.finish({ ...this.state, status: "stopped", stopReason });
     for (;;) {
       const result = await this.runStep();
       if (!current()) return;
       if (!result.ok) {
         // step の無い Worker（前の版に戻したときなど）では、書き換えの機能が無いものとして黙って止める
-        if (result.kind === "not_found") return this.set(IDLE);
+        if (result.kind === "not_found") return this.finish(IDLE);
         if (result.kind === "unauthorized" || result.kind === "forbidden") return stopWith("auth");
         const wait = ERROR_WAITS_MS[errors++];
         if (wait === undefined) return stopWith("error");
@@ -186,7 +210,8 @@ export class LinkRewriteRunner {
         done,
         total: done + remaining,
         rewritten,
-        failed: [...this.state.failed, ...failed],
+        // 同じリンク元が積み直されてまた失敗しても、一覧には 1 回だけ出す
+        failed: [...new Set([...this.state.failed, ...failed])],
       };
       if (remaining > 0) {
         this.set({ ...next, status: "running" });
@@ -198,7 +223,7 @@ export class LinkRewriteRunner {
         continue;
       }
       const shown = next.rewritten.length > 0 || next.failed.length > 0;
-      return this.set(shown ? { ...next, status: "done" } : IDLE);
+      return this.finish(shown ? { ...next, status: "done" } : IDLE);
     }
   }
 }
