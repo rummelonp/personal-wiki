@@ -272,6 +272,7 @@ describe("tools/list", () => {
     expect(byName.create_page?.description).toContain("draft");
     expect(byName.update_page?.description).toContain("read_page で取った version が必須");
     expect(byName.update_page?.description).toContain("上書きで押し切らない");
+    expect(byName.update_page?.description).toContain("`[[旧 title]]` はサーバーが");
     expect(byName.append_to_page?.description).toContain("そのまま送り直してよい");
     for (const name of ["create_page", "update_page", "append_to_page"]) {
       expect(byName[name]?.description).toContain("秘密を書かない");
@@ -297,6 +298,7 @@ describe("tools/list", () => {
       "オーナーがブラウザ",
       "frontmatter",
       "[[title]]",
+      "[[旧 title]]",
     ]) {
       expect(instructions).toContain(rule);
     }
@@ -496,6 +498,41 @@ describe("ページの tool", () => {
     });
     expect(await snapshotDb()).toEqual(before);
     expect(metrics).toHaveLength(2);
+  });
+
+  it("update_page で title を変えると、リンクの書き換えを積んだ件数を返す", async () => {
+    const { call, request } = await mcpClient();
+    const { json: target } = await call("create_page", { title: "Old", body: "" });
+    const { json: source } = await call("create_page", { title: "S", body: "[[Old]]" });
+    const renamed = await call("update_page", {
+      id: target.id,
+      version: 1,
+      title: "New",
+      body: "",
+    });
+    expect(renamed).toMatchObject({
+      isError: false,
+      json: { id: target.id, title: "New", version: 2, linkRewrites: { queued: 1 } },
+    });
+    const unchanged = await call("update_page", {
+      id: target.id,
+      version: 2,
+      title: "New",
+      body: "本文",
+    });
+    expect(unchanged.json).not.toHaveProperty("linkRewrites");
+
+    const res = await request("/api/link-rewrites/step", { method: "POST", json: {} });
+    expect(await res.json()).toMatchObject({ processed: { sourcePageId: source.id } });
+    expect((await call("read_page", { id: source.id })).json.body).toBe("[[New]]");
+
+    const unsafe = await call("update_page", {
+      id: target.id,
+      version: 3,
+      title: "New|x",
+      body: "本文",
+    });
+    expect(unsafe.json).toMatchObject({ linkRewrites: { queued: 0, skipped: "unsafe_title" } });
   });
 
   it("update_page と append_to_page は存在しないページに not_found を返す", async () => {

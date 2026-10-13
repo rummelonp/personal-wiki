@@ -6,6 +6,7 @@ import {
   createPageAs,
   describeWriteError,
   findPageByInputId,
+  linkRewritesField,
   updatePageAs,
 } from "../pages/operations";
 import {
@@ -119,6 +120,7 @@ export const updatePageTool = defineTool({
     "ページの title と body を丸ごと置き換える。構成を直すときだけ使い、メモや調べた結果は append_to_page で足す。",
     "read_page で取った version が必須。title を変えないときも読んだ title を渡す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して変更を載せ直し、current.version で保存し直す。上書きで押し切らない。",
+    "title を変えると、他のページの `[[旧 title]]` はサーバーが後から順に新しい title に書き換える。書き換えたページ（このページ自身を含む）は version が進むので、続けて書き換えるときは read_page で読み直す。linkRewrites.queued は書き換えを待つページの数。title に `[ ] | # ^` を含む、または `\\` で終わると書き換えず、linkRewrites.skipped が返る。",
     LIMITS,
     NO_SECRETS,
   ].join("\n"),
@@ -141,7 +143,9 @@ export const updatePageTool = defineTool({
   },
   async run({ id, version, title, body }, ctx) {
     const result = await updatePageAs(ctx, { id, expectedVersion: version, title, body });
-    if (result.ok) return toolResult(pageSummary(result.page, ctx.origin));
+    if (result.ok) {
+      return toolResult({ ...pageSummary(result.page, ctx.origin), ...linkRewritesField(result) });
+    }
     if (result.reason !== "version_conflict") return writeError(result);
     return versionConflict(ctx, id, result);
   },
