@@ -22,12 +22,18 @@ import type { Scope } from "./principal";
 
 /**
  * OAuth の認可サーバーのルートを登録する。OAuth を閉じた環境（isOAuthEnabled）ではどれも 404 にする。
- * - メタデータ 2 つ、トークン、client の登録は匿名に開く（クライアントは wiki の資格情報を持たない）。
- *   トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す
+ * - メタデータ 2 つ、トークン、client の登録は匿名に開き、応答はライブラリが作る（クライアントは wiki の
+ *   資格情報を持たない）。トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す。
+ *   登録は KV に書く前に oauth-registration.ts の検査を通す
  * - 認可（同意画面）は owner のセッションを要る。無ければ /_auth/login を経由して戻す。Access の対象は
  *   /_auth/login のままで、/_auth/oauth/* は Access を通さない
  */
-export function registerOAuthRoutes(app: Hono<AppEnv>) {
+export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => number }) {
+  const serveProtocol = (c: Context<AppEnv>): Response | Promise<Response> => {
+    if (!isOAuthEnabled(c.env)) return c.notFound();
+    const server = oauthServerFor(c.env, new URL(c.req.url).origin, now);
+    return server.fetch(c.req.raw, c.env, executionContextOf(c));
+  };
   return app
     .get(AUTHORIZATION_SERVER_METADATA_PATH, allowAnonymous(), serveProtocol)
     .get(PROTECTED_RESOURCE_METADATA_PATH, allowAnonymous(), (c) => {
@@ -47,12 +53,6 @@ export function registerOAuthRoutes(app: Hono<AppEnv>) {
     .post(OAUTH_AUTHORIZE_PATH, requireOwner(), decideConsent);
 }
 
-/** ライブラリが応答を作るエンドポイント（メタデータ、トークン、登録）。 */
-function serveProtocol(c: Context<AppEnv>): Response | Promise<Response> {
-  if (!isOAuthEnabled(c.env)) return c.notFound();
-  return oauthServerFor(new URL(c.req.url).origin).fetch(c.req.raw, c.env, executionContextOf(c));
-}
-
 // ライブラリはこれらのエンドポイントで ctx を使わない（API のハンドラを持つ構成でだけ渡す）。
 // app.request で呼ぶテストには ExecutionContext が無いので、そのときだけ空の実装を渡す。
 const NO_EXECUTION_CONTEXT = {
@@ -70,7 +70,7 @@ function executionContextOf(c: Context<AppEnv>): ExecutionContext {
 }
 
 function helpersOf(c: Context<AppEnv>) {
-  return oauthServerFor(new URL(c.req.url).origin).getOAuthApi(c.env);
+  return oauthServerFor(c.env, new URL(c.req.url).origin).getOAuthApi(c.env);
 }
 
 async function showConsent(c: Context<AppEnv>): Promise<Response> {

@@ -1,0 +1,98 @@
+import type {
+  ClientRegistrationCallbackOptions,
+  ClientRegistrationCallbackResult,
+} from "@cloudflare/workers-oauth-provider";
+import type { Bindings } from "../env";
+
+/*
+ * client の登録（DCR）は匿名で呼べ、通れば KV に 1 回書き込む。KV の無料枠（1 日に書き込み 1,000 回）を
+ * 使い切られると既存のコネクタのトークン更新まで止まるので、KV に書く前に次の順で断る。
+ * 安く判定できるものから先に見て、断った登録は 1 日の回数に数えない。
+ * 1. body の大きさと client_name の長さ
+ * 2. redirect URI が許可リストに無い
+ * 3. その日（UTC）の登録数が上限に達した
+ *
+ * Workers の Rate Limiting binding は使わない。数える窓が 10 秒か 60 秒で場所ごとに数えるので、
+ * 1 日の書き込みの上限を守れない。
+ */
+
+/** claude.ai のカスタムコネクタの戻り先。deploy.env の OAUTH_REDIRECT_URIS で足せる。 */
+export const DEFAULT_OAUTH_REDIRECT_URIS: readonly string[] = [
+  "https://claude.ai/api/mcp/auth_callback",
+];
+
+/** client の登録 1 回の JSON の上限（バイト）。claude.ai の登録は数百バイトに収まる。 */
+export const MAX_REGISTRATION_BODY_BYTES = 4096;
+/** 同意画面に出す名前なので、画面を埋めない長さに抑える */
+export const MAX_CLIENT_NAME_LENGTH = 100;
+/**
+ * 1 日（UTC）に受け付ける登録の数。接続し直すたびに 1 回登録されるので、owner が試行錯誤しても
+ * 足りる数にする。上限に達した日は新しい接続だけが止まり、接続済みのコネクタは動き続ける。
+ */
+export const MAX_REGISTRATIONS_PER_DAY = 20;
+
+export function allowedRedirectUris(env: Bindings): ReadonlySet<string> {
+  const extra = (env.OAUTH_REDIRECT_URIS ?? "")
+    .split(",")
+    .map((uri) => uri.trim())
+    .filter((uri) => uri !== "");
+  return new Set([...DEFAULT_OAUTH_REDIRECT_URIS, ...extra]);
+}
+
+function reject(description: string, status = 400): ClientRegistrationCallbackResult {
+  return { code: "invalid_client_metadata", description, status };
+}
+
+function utcDay(epochMs: number): string {
+  return new Date(epochMs).toISOString().slice(0, 10);
+}
+
+/** その日の登録数を 1 つ進める。上限に達していれば進めずに false を返す。 */
+async function countRegistration(db: D1Database, day: string): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `INSERT INTO oauth_client_registrations (day, count) VALUES (?1, 1)
+       ON CONFLICT (day) DO UPDATE SET count = count + 1 WHERE count < ?2
+       RETURNING count`,
+    )
+    .bind(day, MAX_REGISTRATIONS_PER_DAY)
+    .first<{ count: number }>();
+  return row !== null;
+}
+
+/**
+ * ライブラリの clientRegistrationCallback。clientMetadata はライブラリが検証した後の値ではなく
+ * 生の JSON なので、型を確かめてから読む。
+ */
+export function registrationGate(env: Bindings, now: () => number) {
+  return async ({
+    clientMetadata,
+    request,
+  }: ClientRegistrationCallbackOptions): Promise<ClientRegistrationCallbackResult | undefined> => {
+    const size = (await request.arrayBuffer()).byteLength;
+    if (size > MAX_REGISTRATION_BODY_BYTES) {
+      return reject(`登録の JSON は ${MAX_REGISTRATION_BODY_BYTES} バイトまでです`, 413);
+    }
+    const name = clientMetadata.client_name;
+    if (typeof name === "string" && name.length > MAX_CLIENT_NAME_LENGTH) {
+      return reject(`client_name は ${MAX_CLIENT_NAME_LENGTH} 文字までです`);
+    }
+    const allowed = allowedRedirectUris(env);
+    const uris = clientMetadata.redirect_uris;
+    if (
+      !Array.isArray(uris) ||
+      uris.length === 0 ||
+      !uris.every((uri) => typeof uri === "string" && allowed.has(uri))
+    ) {
+      return reject("この wiki が許可していない redirect_uri です");
+    }
+    if (!(await countRegistration(env.DB, utcDay(now())))) {
+      return {
+        code: "temporarily_unavailable",
+        description: "今日の client の登録数が上限に達しました。UTC の翌日に登録し直してください",
+        status: 429,
+      };
+    }
+    return undefined;
+  };
+}

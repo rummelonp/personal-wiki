@@ -17,11 +17,13 @@ const FORM = "application/x-www-form-urlencoded";
 function setup({
   oauthKv = true,
   overrides = {},
+  now = () => T0,
 }: {
   oauthKv?: boolean;
   overrides?: Partial<Bindings>;
+  now?: () => number;
 } = {}) {
-  const app = createApp({ now: () => T0 });
+  const app = createApp({ now });
   const bindings = ownerEnv(overrides);
   if (!oauthKv) delete bindings.OAUTH_KV;
   const request = (path: string, init: RequestInit = {}) => app.request(path, init, bindings);
@@ -238,14 +240,82 @@ describe("client の登録（DCR）", () => {
     expect(client.client_name).toBe("Claude");
   });
 
-  it("https でも loopback でもない redirect URI は登録できない", async () => {
-    const { request } = setup();
-    const res = await request("/_auth/oauth/register", {
+  function postRegistration(request: Request, body: string) {
+    return request("/_auth/oauth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ redirect_uris: ["http://evil.example/cb"], client_name: "x" }),
+      body,
     });
-    expect(res.status).toBe(400);
+  }
+
+  async function registeredClientCount() {
+    if (env.OAUTH_KV === undefined) throw new Error("テストの環境に OAUTH_KV が無い");
+    return (await env.OAUTH_KV.list({ prefix: "client:" })).keys.length;
+  }
+
+  it("許可リストに無い redirect URI は、KV に書く前に断る", async () => {
+    const { request } = setup();
+    for (const redirectUris of [
+      ["https://evil.example/cb"],
+      ["http://127.0.0.1:8765/callback"],
+      ["https://claude.ai/api/mcp/auth_callback/"],
+      [CALLBACK, "https://evil.example/cb"],
+      [],
+    ]) {
+      const res = await postRegistration(
+        request,
+        JSON.stringify({ redirect_uris: redirectUris, client_name: "x" }),
+      );
+      expect(res.status, JSON.stringify(redirectUris)).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid_client_metadata" });
+    }
+    expect(await registeredClientCount()).toBe(0);
+  });
+
+  it("OAUTH_REDIRECT_URIS で足した redirect URI は登録できる", async () => {
+    const { request } = setup({
+      overrides: {
+        OAUTH_REDIRECT_URIS: " https://other.example/cb , http://127.0.0.1:8765/callback",
+      },
+    });
+    await register(request, { redirect_uris: ["https://other.example/cb"] });
+    await register(request, { redirect_uris: ["http://127.0.0.1:8765/callback", CALLBACK] });
+    expect(await registeredClientCount()).toBe(2);
+  });
+
+  it("大きすぎる body と長すぎる client_name は断る", async () => {
+    const { request } = setup();
+    const large = await postRegistration(
+      request,
+      JSON.stringify({ redirect_uris: [CALLBACK], client_name: "x", padding: "a".repeat(4096) }),
+    );
+    expect(large.status).toBe(413);
+    const longName = await postRegistration(
+      request,
+      JSON.stringify({ redirect_uris: [CALLBACK], client_name: "あ".repeat(101) }),
+    );
+    expect(longName.status).toBe(400);
+    expect(await registeredClientCount()).toBe(0);
+    const client = await register(request, { client_name: "あ".repeat(100) });
+    expect(client.client_name).toBe("あ".repeat(100));
+  });
+
+  it("1 日（UTC）の登録数が上限に達したら 429 にし、断った登録は数えない", async () => {
+    let now = T0;
+    const { request } = setup({ now: () => now });
+    const rejected = await postRegistration(
+      request,
+      JSON.stringify({ redirect_uris: ["https://evil.example/cb"] }),
+    );
+    expect(rejected.status).toBe(400);
+    for (let i = 0; i < 20; i++) await register(request);
+    const over = await postRegistration(request, JSON.stringify({ redirect_uris: [CALLBACK] }));
+    expect(over.status).toBe(429);
+    expect(await over.json()).toMatchObject({ error: "temporarily_unavailable" });
+    expect(await registeredClientCount()).toBe(20);
+
+    now = T0 + 24 * 60 * 60 * 1000;
+    await register(request);
   });
 });
 

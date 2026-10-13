@@ -54,7 +54,7 @@ export function createApp({
     .use("*", enforceDeclaredPolicy)
     .get("/api/healthz", allowAnonymous(), (c) => c.json({ status: "ok" }));
   registerAuthRoutes(app, { now, accessVerifier });
-  registerOAuthRoutes(app);
+  registerOAuthRoutes(app, { now });
   registerPageRoutes(app, { now, recordWrite });
   registerAdminRoutes(app, { recordWrite });
   registerMcpRoutes(app, { now, recordWrite });

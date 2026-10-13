@@ -24,6 +24,7 @@ const OAUTH_KV_BINDING = "OAUTH_KV";
  *   d1DatabaseId: string;
  *   r2BucketName: string | undefined;
  *   oauthKvNamespaceId: string | undefined;
+ *   oauthRedirectUris: string | undefined;
  *   accountId: string | undefined;
  *   ownerAuth: OwnerAuthValues | undefined;
  * }} DeployValues
@@ -96,6 +97,7 @@ const KNOWN_KEYS = new Set([
   "D1_DATABASE_NAME",
   "R2_BUCKET_NAME",
   "OAUTH_KV_NAMESPACE_ID",
+  "OAUTH_REDIRECT_URIS",
   "CLOUDFLARE_ACCOUNT_ID",
   "ACCESS_TEAM_DOMAIN",
   "ACCESS_AUD",
@@ -111,6 +113,7 @@ const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
  * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
  * OAUTH_KV_NAMESPACE_ID が空なら oauthKvNamespaceId は undefined になり、OAuth を閉じた構成にして警告する。
+ * OAUTH_REDIRECT_URIS は、Worker が client の登録で完全一致で比べるので、正規化した形でなければ弾く。
  * owner のログインの 3 つの値は、すべて空なら ownerAuth を undefined にして警告する。一部だけなら
  * problems にする（ログインできないままデプロイしても気づきにくいため）。
  * @param {string} envText
@@ -150,6 +153,7 @@ export function readDeployValues(envText) {
       "OAUTH_KV_NAMESPACE_ID は wrangler kv namespace create が表示する 32 桁の 16 進の id にしてください",
     );
   }
+  const oauthRedirectUris = readOAuthRedirectUris(get("OAUTH_REDIRECT_URIS"), problems);
   const ownerAuth = readOwnerAuth(get, problems, warnings);
   if (oauthKvNamespaceId !== undefined && ownerAuth === undefined) {
     warnings.push(
@@ -166,11 +170,49 @@ export function readDeployValues(envText) {
       d1DatabaseName: get("D1_DATABASE_NAME") ?? "personal-wiki",
       r2BucketName: get("R2_BUCKET_NAME"),
       oauthKvNamespaceId,
+      oauthRedirectUris,
       accountId: get("CLOUDFLARE_ACCOUNT_ID"),
       ownerAuth,
     },
     warnings,
   };
+}
+
+/**
+ * https か、ループバックの http だけを許す（ライブラリが登録で受け付ける範囲に合わせる）。
+ * @param {string | undefined} value
+ * @param {string[]} problems
+ * @returns {string | undefined} カンマ区切りに並べ直した値
+ */
+function readOAuthRedirectUris(value, problems) {
+  if (value === undefined) return undefined;
+  const uris = value
+    .split(",")
+    .map((uri) => uri.trim())
+    .filter((uri) => uri !== "");
+  for (const uri of uris) {
+    if (!isRedirectUri(uri)) {
+      problems.push(
+        `OAUTH_REDIRECT_URIS の ${uri} は、https（またはループバックの http）の、正規化した URL にしてください`,
+      );
+    }
+  }
+  return uris.length === 0 ? undefined : uris.join(",");
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
+/** @param {string} uri */
+function isRedirectUri(uri) {
+  let url;
+  try {
+    url = new URL(uri);
+  } catch {
+    return false;
+  }
+  const secure =
+    url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname));
+  return secure && url.hash === "" && url.username === "" && url.href === uri;
 }
 
 const EMAIL_PATTERN = /^[^\s@,]+@[^\s@,]+$/;
@@ -222,6 +264,7 @@ function readOwnerAuth(get, problems, warnings) {
  * r2BucketName が無いときは、R2 の binding を設定から外す。
  * oauthKvNamespaceId が無いときは、OAuth の KV の binding を設定から外す（Worker は OAuth を閉じる）。
  * ownerAuth があれば vars に入れる。無ければ vars に入れず、Worker はログインを拒む。
+ * oauthRedirectUris があれば vars の OAUTH_REDIRECT_URIS に入れる。
  * @param {Record<string, any>} base
  * @param {DeployValues} values
  * @returns {Record<string, any>}
@@ -271,6 +314,9 @@ export function composeConfig(base, values) {
       ACCESS_AUD: values.ownerAuth.audience,
       OWNER_EMAILS: values.ownerAuth.ownerEmails,
     };
+  }
+  if (values.oauthRedirectUris !== undefined) {
+    config.vars = { ...config.vars, OAUTH_REDIRECT_URIS: values.oauthRedirectUris };
   }
   return config;
 }

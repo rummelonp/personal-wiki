@@ -45,6 +45,8 @@ export const HELP = `usage:
        コネクタの URL に https://<ホスト名>/mcp を入れて接続する。ブラウザで同意画面が開くので、
        クライアント名と送り先のホストを確かめ、read か read と write を選んで許可する
        （ログインしていなければ /_auth/login を経由してから同意画面に戻る）
+       client の登録は、redirect URI が claude.ai の戻り先か deploy.env の OAUTH_REDIRECT_URIS に
+       あるものだけを受け付け、1 日（UTC）に 20 件までにする。上限に達した日は新しい接続だけが止まる
 
 更新のとき（migration を含む版をデプロイするとき）は、次の順に実行する:
   pnpm db:migrate:remote

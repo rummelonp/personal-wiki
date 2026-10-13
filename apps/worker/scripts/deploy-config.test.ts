@@ -22,6 +22,7 @@ const VALUES = {
   d1DatabaseId: UUID,
   r2BucketName: "my-wiki-files",
   oauthKvNamespaceId: KV_ID,
+  oauthRedirectUris: undefined,
   accountId: undefined,
   ownerAuth: undefined,
 };
@@ -86,6 +87,7 @@ describe("readDeployValues", () => {
         d1DatabaseName: "personal-wiki",
         r2BucketName: undefined,
         oauthKvNamespaceId: undefined,
+        oauthRedirectUris: undefined,
         accountId: "acct",
         ownerAuth: undefined,
       },
@@ -146,6 +148,29 @@ describe("readDeployValues", () => {
     });
     for (const id of ["OAUTH_KV", UUID, `${KV_ID}0`]) {
       expect(readDeployValues(`${base}OAUTH_KV_NAMESPACE_ID=${id}\n`), id).toHaveProperty(
+        "problems",
+      );
+    }
+  });
+
+  it("OAUTH_REDIRECT_URIS は空白を除いて並べ直し、https かループバックの http の正規化した URL だけを許す", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(
+      readDeployValues(
+        `${base}OAUTH_REDIRECT_URIS= https://a.example/cb , http://127.0.0.1:8765/callback ,\n`,
+      ),
+    ).toMatchObject({
+      values: { oauthRedirectUris: "https://a.example/cb,http://127.0.0.1:8765/callback" },
+    });
+    for (const uri of [
+      "http://a.example/cb",
+      "https://A.example/cb",
+      "https://a.example",
+      "https://a.example/x/../cb",
+      "https://user@a.example/cb",
+      "a.example/cb",
+    ]) {
+      expect(readDeployValues(`${base}OAUTH_REDIRECT_URIS=${uri}\n`), uri).toHaveProperty(
         "problems",
       );
     }
@@ -240,6 +265,11 @@ describe("composeConfig", () => {
       ACCESS_AUD: AUD,
       OWNER_EMAILS: "a@example.com",
     });
+  });
+
+  it("oauthRedirectUris は指定されたときだけ vars の OAUTH_REDIRECT_URIS に入れる", () => {
+    const config = composeConfig(BASE, { ...VALUES, oauthRedirectUris: "https://a.example/cb" });
+    expect(config.vars).toEqual({ OAUTH_REDIRECT_URIS: "https://a.example/cb" });
   });
 
   it("account_id は指定されたときだけ入れる", () => {

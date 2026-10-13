@@ -1,5 +1,6 @@
 import { OAuthAuthorizationServer } from "@cloudflare/workers-oauth-provider";
 import type { Bindings } from "../env";
+import { registrationGate } from "./oauth-registration";
 import { readOwnerAuthConfig } from "./owner-config";
 import type { Principal, Scope } from "./principal";
 
@@ -62,29 +63,30 @@ export function mcpResourceOf(origin: string): string {
   return `${origin}${MCP_PATH}`;
 }
 
-// issuer とリソースの URL はオリジンから決まる。Worker は custom domain の 1 つのホストでしか
-// 動かないので、オリジンごとに作って使い回す（テストの http://localhost も同じ扱いにする）。
-const servers = new Map<string, OAuthAuthorizationServer<Bindings>>();
-
-export function oauthServerFor(origin: string): OAuthAuthorizationServer<Bindings> {
-  let server = servers.get(origin);
-  if (server === undefined) {
-    server = new OAuthAuthorizationServer<Bindings>({
-      issuer: origin,
-      resources: [mcpResourceOf(origin)],
-      defaultResource: mcpResourceOf(origin),
-      authorizeEndpoint: `${origin}${OAUTH_AUTHORIZE_PATH}`,
-      tokenEndpoint: `${origin}${OAUTH_TOKEN_PATH}`,
-      clientRegistrationEndpoint: `${origin}${OAUTH_REGISTER_PATH}`,
-      scopesSupported: [...OAUTH_SCOPES],
-      accessTokenTTL: ACCESS_TOKEN_TTL_SECONDS,
-      refreshTokenTTL: REFRESH_TOKEN_TTL_SECONDS,
-      refreshTokenIdleTTL: REFRESH_TOKEN_IDLE_TTL_SECONDS,
-      clientRegistrationTTL: CLIENT_REGISTRATION_TTL_SECONDS,
-    });
-    servers.set(origin, server);
-  }
-  return server;
+/**
+ * issuer とリソースの URL はリクエストのオリジンから決める（テストの http://localhost も同じ扱いにする）。
+ * 登録の検査（oauth-registration.ts）が env と時計を閉じ込めるので、使い回さずにリクエストごとに作る。
+ * コンストラクタは設定を持つだけで、KV にも触らない。now は登録数を数える日付にだけ使う。
+ */
+export function oauthServerFor(
+  env: Bindings,
+  origin: string,
+  now: () => number = Date.now,
+): OAuthAuthorizationServer<Bindings> {
+  return new OAuthAuthorizationServer<Bindings>({
+    issuer: origin,
+    resources: [mcpResourceOf(origin)],
+    defaultResource: mcpResourceOf(origin),
+    authorizeEndpoint: `${origin}${OAUTH_AUTHORIZE_PATH}`,
+    tokenEndpoint: `${origin}${OAUTH_TOKEN_PATH}`,
+    clientRegistrationEndpoint: `${origin}${OAUTH_REGISTER_PATH}`,
+    scopesSupported: [...OAUTH_SCOPES],
+    accessTokenTTL: ACCESS_TOKEN_TTL_SECONDS,
+    refreshTokenTTL: REFRESH_TOKEN_TTL_SECONDS,
+    refreshTokenIdleTTL: REFRESH_TOKEN_IDLE_TTL_SECONDS,
+    clientRegistrationTTL: CLIENT_REGISTRATION_TTL_SECONDS,
+    clientRegistrationCallback: registrationGate(env, now),
+  });
 }
 
 /** ライブラリのアクセストークンは `{userId}:{grantId}:{secret}` の形をとる。 */
@@ -108,7 +110,7 @@ export async function authenticateOAuthAccessToken(
   token: string,
 ): Promise<Principal | null> {
   if (!isOAuthEnabled(env) || url.pathname !== MCP_PATH) return null;
-  const validated = await oauthServerFor(url.origin).validateToken(
+  const validated = await oauthServerFor(env, url.origin).validateToken(
     mcpResourceOf(url.origin),
     token,
     env,
