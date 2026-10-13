@@ -4,6 +4,7 @@
 --
 -- R2 に put してから attachments に INSERT する（attachments/routes.ts）。INSERT が失敗して残るのは
 -- 行の無い R2 のオブジェクトだけで、配信は行を見て判断するのでどこからも読めない。
+-- 行を消す処理（purge）を足すときは、scripts/backup.mjs の DATA_TABLES にある、読む順の前提を見直す。
 CREATE TABLE attachments (
   -- 本文の ![[name]] に書く名前。乱数 22 文字と拡張子（@personal-wiki/domain の isAttachmentName）
   name TEXT NOT NULL PRIMARY KEY,

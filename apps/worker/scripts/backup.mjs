@@ -124,14 +124,31 @@ export const TABLES = {
 };
 
 // この順に読む。attachments の行は消さず、本文に埋め込む前に作られるので、pages より後に読めば
-// dump したページが参照する添付の行はすべて入る
+// dump したページが参照する添付の行はすべて入る。attachments の行を消す処理（purge）を足すときは、
+// この前提が崩れるので読む順を見直す
 export const DATA_TABLES = ["pages", "revisions", "attachments"];
-/**
- * manifest に必ずある表。DATA_TABLES より狭いのは、表を足す前に取ったバックアップ（attachments の無いもの）も
- * load できるようにするため。
- */
-const REQUIRED_TABLES = ["pages", "revisions"];
 export const TOKEN_TABLES = ["api_tokens"];
+
+/**
+ * 後の migration で足した表と、それを作る migration。読む D1 や manifest の migration の一覧に無ければ、
+ * その表は無いものとして扱う（migration を当てる前の D1 もバックアップでき、表を足す前のバックアップも
+ * load できるように）。ここに無い表は、最初からある表として扱う。
+ * @type {Record<string, string>}
+ */
+export const TABLE_MIGRATIONS = { attachments: "0006_attachments.sql" };
+
+/**
+ * 適用済みの migration が migrations である D1 から、ダンプする表。
+ * @param {boolean} withTokens
+ * @param {string[]} migrations
+ */
+export function tablesToDump(withTokens, migrations) {
+  const tables = [...DATA_TABLES, ...(withTokens ? TOKEN_TABLES : [])];
+  return tables.filter((t) => {
+    const since = TABLE_MIGRATIONS[t];
+    return since === undefined || migrations.includes(since);
+  });
+}
 
 /**
  * ダンプしない表と、その理由。migrations/*.sql の表が TABLES かここに入っていることをテストが検査する
@@ -199,11 +216,6 @@ export function parseArgs(argv) {
   }
   if (positional.length > 0) throw new Error(`unexpected argument: ${positional.join(" ")}`);
   return { command: "backup", remote, out: out ?? DEFAULT_OUT_DIR, withTokens };
-}
-
-/** @param {boolean} withTokens */
-export function tablesToDump(withTokens) {
-  return withTokens ? [...DATA_TABLES, ...TOKEN_TABLES] : DATA_TABLES;
 }
 
 /** @typedef {{ remote: false } | { remote: true; configPath: string }} Target */
@@ -386,6 +398,8 @@ export function backupDirName(date, remote) {
 
 /**
  * manifest は手元のファイルだが、load が SQL に埋め込む表名の出どころなので、TABLES にある表名だけを通す。
+ * 表の過不足は manifest の migration の一覧と照らす。その時点で在った正本の表が欠けていれば、
+ * 復元で黙って失うので拒む。
  * @param {unknown} value
  * @returns {Manifest}
  */
@@ -404,12 +418,13 @@ export function parseManifest(value) {
     throw new Error(`${MANIFEST_FILE} is not a backup manifest`);
   }
   const names = Object.keys(v.tables);
+  const allowed = tablesToDump(true, v.migrations);
   const valid =
-    REQUIRED_TABLES.every((t) => names.includes(t)) &&
+    tablesToDump(false, v.migrations).every((t) => names.includes(t)) &&
     names.every((t) => {
       const entry = v.tables[t];
       return (
-        Object.hasOwn(TABLES, t) &&
+        allowed.includes(t) &&
         Number.isInteger(entry?.rows) &&
         entry.rows >= 0 &&
         typeof entry.sha256 === "string" &&
@@ -609,7 +624,7 @@ export function backup(args, io) {
     /** @type {BackupResult["tables"]} */
     const tables = {};
     let skippedRevisions = 0;
-    for (const table of tablesToDump(args.withTokens)) {
+    for (const table of tablesToDump(args.withTokens, migrations)) {
       const spec = /** @type {TableSpec} */ (TABLES[table]);
       const idIndex = spec.columns.findIndex(
         (c) => c.name === (table === "pages" ? "id" : "page_id"),
@@ -714,10 +729,12 @@ export function load(args, io) {
       `migrations differ: the backup was taken at [${manifest.migrations.join(", ")}] but the target D1 has [${applied.join(", ")}]. Apply the same migrations (db:migrate:remote) to the new D1 first`,
     );
   }
+  // バックアップに無い表（表を足す前のバックアップの attachments など）も、復元先で空であることを確かめる
+  const guarded = [...new Set([...names, ...tablesToDump(false, applied)])];
   const before = Object.fromEntries(
-    query(countSql(names), target, io).map((r) => [String(r.t), Number(r.n)]),
+    query(countSql(guarded), target, io).map((r) => [String(r.t), Number(r.n)]),
   );
-  const filled = names.filter((t) => (before[t] ?? 0) > 0);
+  const filled = guarded.filter((t) => (before[t] ?? 0) > 0);
   if (filled.length > 0) {
     throw new Error(`target D1 is not empty (${filled.join(", ")}); load only into a new D1`);
   }

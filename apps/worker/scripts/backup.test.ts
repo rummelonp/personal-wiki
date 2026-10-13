@@ -21,6 +21,7 @@ import {
   STATEMENT_LIMIT,
   sanitizeStderr,
   selectSql,
+  TABLE_MIGRATIONS,
   TABLES,
   TOKEN_TABLES,
   tablesToDump,
@@ -28,6 +29,8 @@ import {
 
 const MIGRATIONS_DIR = new URL("../migrations/", import.meta.url);
 const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR).sort();
+/** attachments の表を足す前の migration */
+const BEFORE_ATTACHMENTS = MIGRATION_FILES.filter((f) => f < "0006_attachments.sql");
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -173,12 +176,30 @@ describe("parseArgs", () => {
 
 describe("ダンプする表", () => {
   it("既定は pages、revisions、attachments で、api_tokens は --with-tokens でだけ足す", () => {
-    expect(tablesToDump(false)).toEqual(["pages", "revisions", "attachments"]);
-    expect(tablesToDump(true)).toEqual(["pages", "revisions", "attachments", "api_tokens"]);
+    expect(tablesToDump(false, MIGRATION_FILES)).toEqual(["pages", "revisions", "attachments"]);
+    expect(tablesToDump(true, MIGRATION_FILES)).toEqual([
+      "pages",
+      "revisions",
+      "attachments",
+      "api_tokens",
+    ]);
     expect(DATA_TABLES).not.toContain("pages_fts");
     expect(DATA_TABLES).not.toContain("attachment_refs");
     expect(EXCLUDED_TABLES.attachment_refs).toBe("derived");
     expect(TOKEN_TABLES).toEqual(["api_tokens"]);
+  });
+
+  it("表を作る migration が一覧に無ければ、その表をダンプしない", () => {
+    expect(tablesToDump(false, BEFORE_ATTACHMENTS)).toEqual(["pages", "revisions"]);
+    expect(tablesToDump(true, BEFORE_ATTACHMENTS)).toEqual(["pages", "revisions", "api_tokens"]);
+    for (const [table, migration] of Object.entries(TABLE_MIGRATIONS)) {
+      expect(MIGRATION_FILES, table).toContain(migration);
+      const before = MIGRATION_FILES.slice(0, MIGRATION_FILES.indexOf(migration));
+      const tables = migratedDb(before)
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?")
+        .all(table);
+      expect(tables, table).toEqual([]);
+    }
   });
 
   it("migration を適用した DB の表は、ダンプするか除外するかのどちらかに分類されている", () => {
@@ -445,6 +466,48 @@ describe("backup と load の往復", () => {
   });
 });
 
+describe("attachments の表を足す前の D1", () => {
+  const args = (dir: string) => ({ command: "load", remote: false, dir }) as const;
+
+  function backedUpBeforeAttachments() {
+    const source = migratedDb(BEFORE_ATTACHMENTS);
+    seedNasty(source);
+    const result = backup(
+      { command: "backup", remote: false, out: tmp(), withTokens: false },
+      ioFor(source).io,
+    );
+    return { source, result };
+  }
+
+  it("バックアップでき、manifest に attachments を載せない", () => {
+    const { result } = backedUpBeforeAttachments();
+    expect(Object.keys(result.tables)).toEqual(["pages", "revisions"]);
+    const manifest = JSON.parse(readFileSync(join(result.dir, "manifest.json"), "utf8"));
+    expect(Object.keys(manifest.tables)).toEqual(["pages", "revisions"]);
+    expect(manifest.migrations).toEqual(BEFORE_ATTACHMENTS);
+  });
+
+  it("そのバックアップを、同じ時点の D1 にも、attachments を足した D1 にも load できる", () => {
+    const { source, result } = backedUpBeforeAttachments();
+    for (const dest of [migratedDb(BEFORE_ATTACHMENTS), migratedDb()]) {
+      load(args(result.dir), ioFor(dest).io);
+      for (const table of ["pages", "revisions"]) {
+        expect(dump(dest, table), table).toBe(dump(source, table));
+      }
+    }
+  });
+
+  it("復元先の attachments に行があれば、manifest に無い表でも拒否する", () => {
+    const { result } = backedUpBeforeAttachments();
+    const dest = migratedDb();
+    dest.exec(
+      `INSERT INTO attachments (name, content_type, size, created_at, created_by) VALUES (${lit("AAAAAAAAAAAAAAAAAAAAAA.png")}, ${lit("image/png")}, 1, 1, ${lit("owner")})`,
+    );
+    expect(() => load(args(result.dir), ioFor(dest).io)).toThrow("not empty (attachments)");
+    expect(dest.prepare("SELECT count(*) AS n FROM pages").get()).toEqual({ n: 0 });
+  });
+});
+
 describe("load の検証", () => {
   function backedUp() {
     const source = migratedDb();
@@ -565,16 +628,16 @@ describe("parseManifest", () => {
     migrations: ["0001_a.sql"],
     tables: { pages: { rows: 1, sha256: sha }, revisions: { rows: 2, sha256: sha } },
   };
+  const withAttachments = {
+    ...valid,
+    migrations: ["0001_a.sql", "0006_attachments.sql"],
+    tables: { ...valid.tables, attachments: { rows: 0, sha256: sha } },
+  };
 
   it("許可した表だけの manifest を通す", () => {
     // attachments の表を足す前に取ったバックアップも load できる
     expect(parseManifest(valid).tables.pages?.rows).toBe(1);
-    expect(
-      parseManifest({
-        ...valid,
-        tables: { ...valid.tables, attachments: { rows: 0, sha256: sha } },
-      }),
-    ).toBeTruthy();
+    expect(parseManifest(withAttachments)).toBeTruthy();
     expect(
       parseManifest({
         ...valid,
@@ -595,6 +658,9 @@ describe("parseManifest", () => {
     expect(bad({ tables: { ...valid.tables, pages: { rows: 1, sha256: "zz" } } })).toThrow(
       "unexpected tables",
     );
+    // migration の一覧と表が食い違うもの
+    expect(bad({ migrations: withAttachments.migrations })).toThrow("unexpected tables");
+    expect(bad({ tables: withAttachments.tables })).toThrow("unexpected tables");
     expect(bad({ file: "../x.sql" })).toThrow("not a backup manifest");
     expect(bad({ migrations: "x" })).toThrow("not a backup manifest");
     expect(() => parseManifest(null)).toThrow("not a backup manifest");
