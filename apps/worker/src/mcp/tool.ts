@@ -71,11 +71,15 @@ function memoizeJsonSchema(schema: StandardSchemaWithJSON): StandardSchemaWithJS
   };
 }
 
+const SDK_JSON_SCHEMA_TARGET = "draft-2020-12";
+
 export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition<S>): WikiTool {
   const { name, scope, title, description, inputSchema, annotations, run } = definition;
   // 型引数 S のままでは SDK の overload を解決できないので、StandardSchemaWithJSON に包み、
   // 検証済みの args は S の出力型に戻す
   const schema = memoizeJsonSchema(inputSchema);
+  // SDK が tools/list と登録で使う target を先に変換しておく。キーが外れても、初回の登録で変換するだけで結果は変わらない
+  schema["~standard"].jsonSchema.input({ target: SDK_JSON_SCHEMA_TARGET });
   return {
     name,
     register(server, ctx) {
