@@ -7,7 +7,7 @@ import { ObsidianTaskList, parseTaskMarker, taskListNodes, toggledTaskStatus } f
 import { extractWikiLinks, WikiLink, wikiLinkNodes } from "./wikilink";
 
 const taskParser = parser.configure([Frontmatter, WikiLink, Tag, BlockId, ObsidianTaskList]);
-// Editor（create-editor.ts）の base は GFM 入りなので、GFM の TaskList を置き換えられることも見る
+// Editor の base は GFM 入りなので、GFM の TaskList を置き換えられることも見る
 const gfmTaskParser = parser.configure([GFM, WikiLink, Tag, ObsidianTaskList]);
 
 /** TaskMarker の source を出現順に返す */

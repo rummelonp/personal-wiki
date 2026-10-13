@@ -5,7 +5,7 @@ import { Highlight, highlightNodes } from "./highlight";
 import { extractTags, Tag, tagNodes } from "./tag";
 import { extractWikiLinks, WikiLink, wikiLinkNodes } from "./wikilink";
 
-// Editor（create-editor.ts）と同じく、WikiLink・Tag・GFM の Strikethrough と一緒に載せる
+// Editor の parser と同じく、WikiLink・Tag・GFM の Strikethrough と一緒に載せる
 const highlightParser = parser.configure([Frontmatter, WikiLink, Tag, Strikethrough, Highlight]);
 
 /** ハイライトされる範囲の中身（`==` を除いたテキスト）を出現順に返す */

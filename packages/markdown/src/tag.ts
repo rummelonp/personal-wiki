@@ -6,8 +6,9 @@ import { WikiLink } from "./wikilink";
 const HASH = 35;
 const SLASH = 47;
 /**
- * タグ本体。`/` は文字の間に 1 つだけ置ける区切りで、`#/`、`#tag/`、`#a//b` は tag にしない。
- * 日本語（漢字・かな・カナ）と `#foo/bar` のようなネストを許す。
+ * タグ本体の文字集合。日本語（漢字・かな・カナ）と `#foo/bar` のようなネストを許す。
+ * `/` は文字の間にだけ置ける。先頭と連続の `/` はここで弾き、末尾の `/` は `parse` で弾く
+ * （正規表現が `tag` まで取ってしまうので、直後の文字を見る必要がある）。
  */
 const TAG_BODY_CHARS = String.raw`[\p{L}\p{N}_-]+(?:/[\p{L}\p{N}_-]+)*`;
 const TAG_BODY = new RegExp(TAG_BODY_CHARS, "uy");
@@ -16,28 +17,39 @@ const TAG_BODY = new RegExp(TAG_BODY_CHARS, "uy");
  * `frontmatterTagName` が本文の `#tag` と同じ文字集合で判定するために、同じ定義から組み立てる。
  */
 const WHOLE_TAG_BODY = new RegExp(`^${TAG_BODY_CHARS}$`, "u");
-const HAS_LETTER = /\p{L}/u;
+/**
+ * Obsidian のヘルプは tag に「数字以外の文字を 1 つ以上含む」ことを求め、`#1984` を tag にしない。
+ * `#123` のような issue 参照を tags に入れないために、`/` や `-` を数字以外とは数えず、文字を 1 つ以上含む
+ * 本体だけを tag にする。`#2026/10` のような数字と記号だけの本体や、`#_`、`#-` のような記号だけの語も落ちる。
+ * `\p{Nl}` はローマ数字 `Ⅻ` のように、数値でも文字として書かれるものを tag にするために入れる。
+ */
+const HAS_LETTER = /[\p{L}\p{Nl}]/u;
 /**
  * `#` の直前に置ける空白。全角空白などの Unicode の空白を含む（JavaScript の `\s`）。
  * Obsidian のヘルプは `#` の直前の条件を述べていないが、日本語の文は全角空白で区切って書くことがある。
  * 全角空白は目に見える区切りで、URL や識別子の途中には現れないので、tag を取りこぼす側に倒す理由がない。
  */
 const TAG_PRECEDER = /\s/u;
-/** ハイライトとコメントの開き。Obsidian はこの中の tag も数えるので、直後の `#` は tag にする。 */
-const OPENING_DELIMITERS = new Set(["==", "%%"]);
+/**
+ * `#` の直前に置ける開きの区切り記号。強調・取り消し・ハイライト・コメントの開きと開き括弧で、
+ * Obsidian はこれらの中の tag も数える。
+ * 区切り記号の直前が語の途中なら開きではなく閉じや語の一部なので（`==a==#b`、`?t=YWJj==#s`、`a_#b`）、
+ * 区切り記号自体の直前も同じ判定にかける。長い記号を先に試す。
+ */
+const OPENING_DELIMITERS = ["**", "__", "~~", "==", "%%", "*", "_", "(", "[", "（", "「", "『"];
 
-function startsTagBoundary(cx: InlineContext, pos: number): boolean {
+/** `pos` が tag の始まりになれる位置か。行頭、空白の直後、または境界に置かれた開きの区切り記号の直後。 */
+function isTagBoundary(cx: InlineContext, pos: number): boolean {
   if (pos <= cx.offset) return true;
-  if (TAG_PRECEDER.test(String.fromCharCode(cx.char(pos - 1)))) return true;
-  return pos - 2 >= cx.offset && OPENING_DELIMITERS.has(cx.slice(pos - 2, pos));
+  if (TAG_PRECEDER.test(cx.slice(pos - 1, pos))) return true;
+  return OPENING_DELIMITERS.some(
+    (delimiter) =>
+      pos - delimiter.length >= cx.offset &&
+      cx.slice(pos - delimiter.length, pos) === delimiter &&
+      isTagBoundary(cx, pos - delimiter.length),
+  );
 }
 
-/**
- * 文字（`\p{L}`）を 1 つ以上含む本体だけを tag にする。
- * Obsidian のヘルプは「数字以外の文字を 1 つ以上含む」ことを求め、`#1984` を tag にしない。
- * `#123` のような issue 参照を tags に入れないために、`/` や `-` を数字以外とは数えず、
- * `#2026/10` のような数字と記号だけの本体も tag にしない。`#_`、`#-` のような記号だけの語も同じ規則で落ちる。
- */
 function isTagBody(body: string): boolean {
   return WHOLE_TAG_BODY.test(body) && HAS_LETTER.test(body);
 }
@@ -66,11 +78,11 @@ export const Tag: MarkdownConfig = {
       name: tagNodes.tag,
       parse(cx, next, pos) {
         if (next !== HASH) return -1;
-        // 裸の URL の `#section` や `foo#bar` を拾わないよう、行頭か空白の直後だけを tag にする。
-        if (!startsTagBoundary(cx, pos)) return -1;
+        // 裸の URL の `#section` や `foo#bar` を拾わない。
+        if (!isTagBoundary(cx, pos)) return -1;
         TAG_BODY.lastIndex = 0;
         const match = TAG_BODY.exec(cx.slice(pos + 1, cx.end));
-        if (!match || !isTagBody(match[0])) return -1;
+        if (!match || !HAS_LETTER.test(match[0])) return -1;
         // `#tag/` のように `/` が残る形は、Obsidian の挙動を確かめられないので tag にしない。
         if (cx.char(pos + 1 + match[0].length) === SLASH) return -1;
 

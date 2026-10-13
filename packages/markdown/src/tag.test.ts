@@ -54,9 +54,58 @@ describe("extractTags の境界", () => {
     ["foo#bar"],
     ["[リンク](https://example.com/#top)"],
     ["<https://example.com/#top>"],
-    ["a #ok と https://example.com/a#b"],
-  ])("# の直前が空白でなければ tag にしない: %s", (text) => {
-    expect(extractTags(text).filter((name) => name !== "ok")).toEqual([]);
+    ["https://example.com/?t=YWJjZA==#section"],
+    ["==a==#b"],
+    ["a==#b"],
+    ["x===#a"],
+    ["100%%#x"],
+    ["[[a]]#tag"],
+    ["<b>#t</b>"],
+    ["a_#b"],
+    ["**a**#b"],
+    ["2*#x"],
+  ])("# の直前が境界でなければ tag にしない: %s", (text) => {
+    expect(extractTags(text)).toEqual([]);
+  });
+
+  it("tag の途中の `#` は区切りにしない", () => {
+    expect(extractTags("#tag#other")).toEqual(["tag"]);
+    expect(extractTags("a #ok と https://example.com/a#b")).toEqual(["ok"]);
+  });
+
+  it.each([
+    ["**#tag**"],
+    ["*#tag*"],
+    ["__#tag**"],
+    ["_#tag*"],
+    ["~~#tag~~"],
+    ["(#tag)"],
+    ["[#tag](https://x)"],
+    ["（#tag）"],
+    ["「#tag」"],
+    ["『#tag』"],
+    ["前 %%#tag%% 後"],
+    ["==#tag=="],
+    ["x ***#tag***"],
+    ["((#tag))"],
+    ["**(#tag)**"],
+    ["前\n**==#tag==**"],
+  ])("開きの区切り記号の直後は tag にする: %s", (text) => {
+    expect(extractTags(text)).toEqual(["tag"]);
+  });
+
+  it("`_` は tag の文字なので、閉じの `_` は tag に含まれる", () => {
+    expect(extractTags("_#tag_ __#tag__")).toEqual(["tag_", "tag__"]);
+  });
+
+  it("開きの区切り記号の直前が語の途中なら tag にしない", () => {
+    expect(extractTags("a(#t)")).toEqual([]);
+    expect(extractTags("a**#t**")).toEqual([]);
+    expect(extractTags("x **a**(#t)")).toEqual([]);
+  });
+
+  it("`Ⅻ` のような文字として書かれる数値は tag にする", () => {
+    expect(extractTags("#Ⅻ")).toEqual(["Ⅻ"]);
   });
 
   it("行頭、空白、タブ、改行、全角空白の直後は tag にする", () => {
