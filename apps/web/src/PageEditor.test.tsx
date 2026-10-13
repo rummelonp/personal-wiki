@@ -2,6 +2,8 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { linkRewrites } from "./link-rewrites";
+import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites-api";
 import { PageEditor } from "./PageEditor";
 import {
   type ApiResult,
@@ -16,6 +18,8 @@ import {
 } from "./pages-api";
 import { navigate } from "./route";
 import { recordImageSrcs } from "./test-image-srcs";
+
+vi.mock("./link-rewrites-api", () => ({ stepLinkRewrites: vi.fn() }));
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -73,6 +77,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  linkRewrites.stop();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -139,9 +144,16 @@ describe("PageEditor と本文のエディタ", () => {
     typeAtEnd(v, "へんかんちゅう", "input.type.compose");
     await flushAsync();
 
-    act(() => {
-      window.dispatchEvent(new Event("pagehide"));
-    });
+    // pagehide は使わない。vitest の orchestrator が iframe の pagehide を見張っていて、
+    // 5 秒後までテストが続いていると遷移したとみなし、ファイル全体を失敗にする
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    try {
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+    }
     const saved = JSON.parse(localStorage.getItem(BACKUP_KEY) ?? "null");
     expect(saved).toMatchObject({ body: "本文へんかんちゅう", baseVersion: 1 });
     v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
@@ -962,12 +974,14 @@ describe("title の確定", () => {
     );
   });
 
-  it("確定前に本文の自動保存が走っても、打っている途中の title は送らない", async () => {
+  it("確定前に本文の保存が走っても、打っている途中の title は送らない", async () => {
     const { view } = renderPage();
+    view().focus();
     typeAtEnd(view(), "を書き足す");
-    // 本文の自動保存の待ちの間に title を打つ（focus は動かさない）
+    // 本文にフォーカスを置いたまま title を打ち、本文の blur で保存させる
     typeTitle("打ちかけ");
-    await vi.waitFor(() => expect(updatePage).toHaveBeenCalled(), { timeout: 4000 });
+    act(() => view().contentDOM.blur());
+    await flushAsync();
     expect(updatePage).toHaveBeenCalledWith(
       ID,
       1,
@@ -975,5 +989,112 @@ describe("title の確定", () => {
       expect.anything(),
     );
     expect(titleInput().value).toBe("打ちかけ");
+  });
+});
+
+describe("リンクの書き換えの取り込み", () => {
+  const step = (value: Partial<LinkRewriteStepResult>): LinkRewriteStepResult => ({
+    processed: null,
+    conflict: false,
+    failed: [],
+    remaining: 0,
+    ...value,
+  });
+  const processedSelf = {
+    sourcePageId: ID,
+    title: "題",
+    visibility: "draft" as const,
+    version: 2,
+    rewritten: 1,
+  };
+  const linked: Page = { ...PAGE, body: "[[他]] 本文" };
+  const rewritten: Page = { ...linked, body: "[[新他]] 本文", version: 2 };
+
+  /** step が呼ばれるまでは linked を、呼ばれた後は書き換えた版を返す（フォーカスでの確認でも読まれる） */
+  function serveRewriteOnStep(value: LinkRewriteStepResult, after: Page) {
+    let current = linked;
+    vi.mocked(getPage).mockImplementation(async () => ok(current));
+    vi.mocked(stepLinkRewrites).mockImplementationOnce(async () => {
+      current = after;
+      return { ok: true, value };
+    });
+  }
+
+  it("title を変えた保存が積んだ書き換えを進め、開いているページの書き換えを取り込んで次の保存の版にする", async () => {
+    vi.mocked(updatePage).mockImplementationOnce(async (_id, version, input) =>
+      ok({ ...linked, ...input, version: version + 1, linkRewrites: { queued: 1 } }),
+    );
+    serveRewriteOnStep(step({ processed: { ...processedSelf, title: "新", version: 3 } }), {
+      ...rewritten,
+      title: "新",
+      version: 3,
+    });
+    const { view } = renderPage(linked);
+    act(() => titleInput().focus());
+    typeTitle("新");
+    act(() => titleInput().blur());
+    await vi.waitFor(() => expect(view().state.doc.toString()).toBe("[[新他]] 本文"));
+    expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
+
+    view().focus();
+    typeAtEnd(view(), "!");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenLastCalledWith(
+      ID,
+      3,
+      { title: "新", body: "[[新他]] 本文!" },
+      expect.anything(),
+    );
+  });
+
+  it("変換中は差し替えず、変換が終わってから、打った文字に書き換えを重ねて取り込む", async () => {
+    serveRewriteOnStep(step({ processed: processedSelf }), rewritten);
+    const { view } = renderPage(linked);
+    const v = view();
+    v.focus();
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    typeAtEnd(v, "かな", "input.type.compose");
+    act(() => linkRewrites.start());
+    await vi.waitFor(() => expect(stepLinkRewrites).toHaveBeenCalled());
+    await flushAsync();
+    expect(v.state.doc.toString()).toBe("[[他]] 本文かな");
+    // 取り込みを待っている間に変換する。変換前の本文で重ねると、確定した文字が消える
+    const end = v.state.doc.length;
+    v.dispatch({
+      changes: { from: end - 2, to: end, insert: "仮名" },
+      selection: { anchor: end },
+      userEvent: "input.type.compose",
+    });
+    await flushAsync();
+
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("[[新他]] 本文仮名"));
+    act(() => v.contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenLastCalledWith(
+      ID,
+      2,
+      { title: "題", body: "[[新他]] 本文仮名" },
+      expect.anything(),
+    );
+  });
+
+  it("新しい title がリンクに書けないと Worker が知らせたら、その旨を出す", async () => {
+    vi.mocked(updatePage).mockImplementationOnce(async (_id, version, input) =>
+      ok({
+        ...PAGE,
+        ...input,
+        version: version + 1,
+        linkRewrites: { queued: 0, skipped: "unsafe_title" },
+      }),
+    );
+    renderPage();
+    act(() => titleInput().focus());
+    typeTitle("新#");
+    act(() => titleInput().blur());
+    await flushAsync();
+    expect(container?.textContent).toContain("この title はリンクに書けないので");
+    expect(stepLinkRewrites).not.toHaveBeenCalled();
   });
 });

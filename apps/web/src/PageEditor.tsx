@@ -24,6 +24,7 @@ import {
 } from "./editor-session";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
+import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
 import { Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
@@ -33,6 +34,7 @@ import {
   failureMessage,
   findPageByTitle,
   getPage,
+  type LinkRewritesQueued,
   listPageTitles,
   type Page,
   setVisibility,
@@ -43,12 +45,21 @@ import { homeHref, navigate, pageHrefFor } from "./route";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
-const api: EditorApi = {
-  getPage: (id) => getPage(id),
-  updatePage: (id, version, input, options) => updatePage(id, version, input, options),
-  setVisibility: (id, version, visibility) => setVisibility(id, version, visibility),
-  deletePage: (id, version) => deletePage(id, version),
-};
+/** 保存の応答のリンクの書き換えの数は、セッションに渡さず onLinkRewrites に渡す。 */
+function editorApi(onLinkRewrites: (queued: LinkRewritesQueued) => void): EditorApi {
+  return {
+    getPage: (id) => getPage(id),
+    updatePage: async (id, version, input, options) => {
+      const res = await updatePage(id, version, input, options);
+      if (!res.ok) return res;
+      const { linkRewrites: queued, ...page } = res.value;
+      if (queued !== undefined) onLinkRewrites(queued);
+      return { ok: true, value: page };
+    },
+    setVisibility: (id, version, visibility) => setVisibility(id, version, visibility),
+    deletePage: (id, version) => deletePage(id, version),
+  };
+}
 
 // ページを移っても同じ候補を使い、開くたびに取り直す
 const titleIndex = createTitleIndex((cursor) => listPageTitles(cursor));
@@ -91,17 +102,28 @@ type LinkNotice =
   | { kind: "missing"; title: string; busy: boolean; error: string | null }
   | { kind: "error" };
 
-function useEditorSession(page: Page, whenSettled: () => Promise<void>): EditorSession {
+function useEditorSession(
+  page: Page,
+  whenSettled: () => Promise<void>,
+  onLinkRewrites: (queued: LinkRewritesQueued) => void,
+): EditorSession {
   const [session] = useState(
-    () => new EditorSession(page, { api, backup: createLocalBackupStore(), whenSettled }),
+    () =>
+      new EditorSession(page, {
+        api: editorApi(onLinkRewrites),
+        backup: createLocalBackupStore(),
+        whenSettled,
+      }),
   );
 
   useEffect(() => {
     const unbind = bindLifecycle(session, document, window);
     const unregister = registerEditor(session);
+    const leaveRewrites = linkRewrites.register(session);
     return () => {
       unbind();
       unregister();
+      leaveRewrites();
       // アプリ内の遷移でも、未保存の変更をここで送る
       void session.leave();
     };
@@ -124,7 +146,15 @@ interface PageEditorProps {
 
 export function PageEditor({ page, attachments = false, onShown }: PageEditorProps) {
   const editor = useRef<BodyEditorHandle>(null);
-  const session = useEditorSession(page, () => editor.current?.whenSettled() ?? Promise.resolve());
+  const [unsafeTitle, setUnsafeTitle] = useState(false);
+  const session = useEditorSession(
+    page,
+    () => editor.current?.whenSettled() ?? Promise.resolve(),
+    (queued) => {
+      setUnsafeTitle(queued.skipped === "unsafe_title");
+      if (queued.queued > 0) linkRewrites.start(queued.queued);
+    },
+  );
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const { title: savedTitle, visibility: savedVisibility } = state.base;
 
@@ -424,6 +454,17 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
                 </button>
               )}
               <button type="button" className="button" onClick={() => setLinkNotice(null)}>
+                閉じる
+              </button>
+            </div>
+          </section>
+        )}
+
+        {unsafeTitle && (
+          <section className="message message-warn" role="alert">
+            <p>この title はリンクに書けないので、他のページのリンクは自動では書き換わらない。</p>
+            <div className="actions">
+              <button type="button" className="button" onClick={() => setUnsafeTitle(false)}>
                 閉じる
               </button>
             </div>

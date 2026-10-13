@@ -316,22 +316,45 @@ export interface UpdateOptions {
   keepalive?: boolean;
 }
 
+/**
+ * title を変えた保存で、Worker が他のページのリンクの書き換えを積んだ数。
+ * skipped は、新しい title がリンクに書けないので積まなかったこと。
+ */
+export interface LinkRewritesQueued {
+  queued: number;
+  skipped?: "unsafe_title";
+}
+
+export type UpdatedPage = Page & { linkRewrites?: LinkRewritesQueued };
+
+function parseLinkRewrites(value: unknown): LinkRewritesQueued | undefined {
+  const v = recordOf(value);
+  if (typeof v.queued !== "number") return undefined;
+  return v.skipped === "unsafe_title"
+    ? { queued: v.queued, skipped: "unsafe_title" }
+    : { queued: v.queued };
+}
+
 export async function updatePage(
   id: string,
   version: number,
   input: { title: string; body: string },
   options: UpdateOptions = {},
   fetchFn: Fetch = fetch,
-): Promise<ApiResult<Page>> {
+): Promise<ApiResult<UpdatedPage>> {
   const payload = JSON.stringify(input);
   const keepalive =
     options.keepalive === true && new TextEncoder().encode(payload).length <= KEEPALIVE_MAX_BYTES;
-  return pageResult(
+  const res = await pageResult(
     await request(fetchFn, `/api/pages/${encodeURIComponent(id)}`, {
       ...jsonInit("PUT", input, { headers: ifMatch(version) }),
       keepalive,
     }),
   );
+  if (!res.ok) return res;
+  const { linkRewrites, ...page } = res.value as UpdatedPage;
+  const parsed = parseLinkRewrites(linkRewrites);
+  return { ok: true, value: parsed === undefined ? page : { ...page, linkRewrites: parsed } };
 }
 
 export async function setVisibility(

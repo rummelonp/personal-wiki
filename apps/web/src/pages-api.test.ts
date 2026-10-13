@@ -55,6 +55,24 @@ describe("変更系の要求", () => {
     expect(calls[0]?.init.keepalive).toBe(false);
   });
 
+  it("PUT の応答のリンクの書き換えの数を、形を確かめて返す", async () => {
+    const queued = await updatePage(ID, 3, { title: "新", body: "" }, {}, async () =>
+      Response.json({ ...PAGE, linkRewrites: { queued: 2 } }),
+    );
+    expect(queued).toEqual({ ok: true, value: { ...PAGE, linkRewrites: { queued: 2 } } });
+    const skipped = await updatePage(ID, 3, { title: "新#", body: "" }, {}, async () =>
+      Response.json({ ...PAGE, linkRewrites: { queued: 0, skipped: "unsafe_title" } }),
+    );
+    expect(skipped.ok && skipped.value.linkRewrites).toEqual({
+      queued: 0,
+      skipped: "unsafe_title",
+    });
+    const malformed = await updatePage(ID, 3, { title: "新", body: "" }, {}, async () =>
+      Response.json({ ...PAGE, linkRewrites: { queued: "2" } }),
+    );
+    expect(malformed).toEqual({ ok: true, value: PAGE });
+  });
+
   it("keepalive は本文が 60 KB 以下のときだけ付ける", async () => {
     const { calls, fetchFn } = recorder(() => Response.json(PAGE));
     await updatePage(ID, 3, { title: "t", body: "a" }, { keepalive: true }, fetchFn);
