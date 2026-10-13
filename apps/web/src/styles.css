@@ -254,26 +254,6 @@ a {
   opacity: 0.5;
 }
 
-@media (max-width: 40rem) {
-  .rail-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .rail {
-    border-top: var(--border-width) solid var(--color-border);
-    border-left: 0;
-  }
-
-  .title-input,
-  .note-title {
-    font-size: var(--font-size-title-narrow);
-  }
-
-  .header {
-    padding-inline: var(--space-4);
-  }
-}
-
 /* 部品 */
 
 .button {
@@ -666,4 +646,25 @@ a {
 
 .field .text-input {
   width: 100%;
+}
+
+/* 狭い画面。同じ詳細度の基本の規則を上書きするので、ファイルの最後に置く */
+@media (max-width: 40rem) {
+  .rail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    border-top: var(--border-width) solid var(--color-border);
+    border-left: 0;
+  }
+
+  .title-input,
+  .note-title {
+    font-size: var(--font-size-title-narrow);
+  }
+
+  .header {
+    padding-inline: var(--space-4);
+  }
 }
