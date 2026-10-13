@@ -1,3 +1,7 @@
 packages:
   - apps/*
   - packages/*
+
+# lefthook の postinstall が git フックを登録する (CI では何もしない)
+allowBuilds:
+  lefthook: true
