@@ -919,3 +919,69 @@ describe("自分のタブの外で走ったリンクの書き換え", () => {
     expect(server.page).toMatchObject({ body: "[[旧]] 本文 追記", visibility: "public" });
   });
 });
+
+describe("離脱のあと", () => {
+  const base = () => page({ body: "[[旧]] 本文" });
+  const rewritten = (server: { page: Page }, body: string) => {
+    server.page = { ...server.page, body, version: server.page.version + 1 };
+  };
+
+  /** 離脱の保存が 2 回続けて 409 になり、重ね直した内容が未保存のまま残る状態にする */
+  async function leaveWithRepeatedConflict() {
+    const ctx = setup({ server: base() });
+    const { session, server, api } = ctx;
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    rewritten(server, "[[新]] 本文");
+    const real = api.getPage;
+    api.getPage = async (id) => {
+      const res = await real(id);
+      if (server.page.version === 2) rewritten(server, "[[新2]] 本文");
+      return res;
+    };
+    await session.leave();
+    return ctx;
+  }
+
+  it("離脱の保存がまた 409 になっても、自動保存のタイマーは立てず、重ね直した内容を退避に残す", async () => {
+    const { session, api, backup, server } = await leaveWithRepeatedConflict();
+    expect(api.calls).toEqual(["put@1", "get", "put@2", "get"]);
+    expect(session.getState()).toMatchObject({
+      conflict: null,
+      base: { version: 3 },
+      draft: { body: "[[新2]] 本文 追記" },
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.calls).toEqual(["put@1", "get", "put@2", "get"]);
+    expect(server.page.body).toBe("[[新2]] 本文");
+    expect(backup.load(ID)).toMatchObject({ body: "[[新2]] 本文 追記", baseVersion: 3 });
+  });
+
+  it("離脱のあとに届いた取り込みも、重ねるだけで自動保存のタイマーは立てない", async () => {
+    const { session, server, api, backup } = setup({ server: base() });
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    api.updatePage = async () => ({ ok: false, reason: "error", message: "通信の失敗" });
+    await session.leave();
+    rewritten(server, "[[新]] 本文");
+    await session.linkRewritten({ sourcePageId: ID, version: 2 });
+    expect(session.getState().draft.body).toBe("[[新]] 本文 追記");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.calls).toEqual(["get"]);
+    expect(backup.load(ID)).toMatchObject({ body: "[[新]] 本文 追記", baseVersion: 2 });
+  });
+
+  it("画面が戻ったら（フォーカス復帰）、止めていた自動保存を再開する", async () => {
+    const { session, server, api } = await leaveWithRepeatedConflict();
+    api.calls.length = 0;
+    await session.checkFreshness();
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(api.calls).toEqual(["get", "put@3"]);
+    expect(server.page.body).toBe("[[新2]] 本文 追記");
+  });
+
+  it("画面が戻って入力すれば、自動保存が働く", async () => {
+    const { session, server } = await leaveWithRepeatedConflict();
+    session.edit({ title: "題", body: "[[新2]] 本文 追記 続き" });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(server.page.body).toBe("[[新2]] 本文 追記 続き");
+  });
+});

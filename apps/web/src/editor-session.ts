@@ -135,6 +135,13 @@ export class EditorSession {
   private stashTimer: ReturnType<typeof setTimeout> | null = null;
   private tail: Promise<unknown> = Promise.resolve();
   private lastCheckAt = Number.NEGATIVE_INFINITY;
+  /**
+   * leave() の後、画面が戻る（編集、フォーカス復帰）までの間 true。この間は自動保存のタイマーを立てず、
+   * 手元の内容を退避に写すだけにする。画面が無いセッションのタイマーが、離脱の保存の後から
+   * keepalive でない保存を 1 本出さないため。leave() は unmount のほか、タブが hidden になったときや
+   * pagehide でも呼ばれ、同じセッションが戻ってくるので、leave() で止めきらず戻ったら再開する。
+   */
+  private left = false;
 
   constructor(page: Page, deps: EditorDeps) {
     this.api = deps.api;
@@ -224,9 +231,25 @@ export class EditorSession {
   edit(draft: Draft): void {
     // 画面側でも読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
     if (isReadOnly(this.state)) return;
-    const { authLost } = this.state;
+    this.left = false;
     this.set({ draft, ...NO_ERROR });
-    if (authLost) {
+    this.rearm();
+  }
+
+  /**
+   * 手元の内容に合わせて、保存か退避のタイマーを掛け直す。入力のほか、base を進めたあと
+   * （保存中の入力、取り込み、送り直しの打ち切り）にも呼ぶ。
+   */
+  private rearm(): void {
+    if (isReadOnly(this.state)) return;
+    if (this.left) {
+      // 離脱の退避は古い base のままなので、重ね直した内容と新しい base で書き直す
+      this.clearTimer();
+      this.clearStashTimer();
+      this.stashIfDirty();
+      return;
+    }
+    if (this.state.authLost) {
       // 保存はできないので、入力のたびに localStorage へ書かず、止まってからまとめて書く。
       // 離脱（leave）では待たずに書く
       this.clearStashTimer();
@@ -298,7 +321,7 @@ export class EditorSession {
       this.set({ base: res.value, busy: null });
       if (isDirty(this.state)) {
         // 保存中にさらに入力があった
-        this.edit(this.state.draft);
+        this.rearm();
       } else {
         this.removeBackup(base.id);
       }
@@ -319,7 +342,7 @@ export class EditorSession {
   /** base を進めたあと。未保存の変更が残っていれば新しい版に対して自動保存し、無ければ退避を消す。 */
   private resumeOnNewBase(): void {
     if (isDirty(this.state)) {
-      this.edit(this.state.draft);
+      this.rearm();
     } else {
       this.clearTimer();
       this.removeBackup(this.state.base.id);
@@ -431,6 +454,11 @@ export class EditorSession {
 
   /** フォーカス復帰で呼ぶ。手元に未保存の変更が無ければ最新を読み直し、あれば衝突にする。 */
   checkFreshness(): Promise<void> {
+    if (this.left) {
+      // 画面が戻った。離脱の間に止めていた自動保存を再開する
+      this.left = false;
+      if (isDirty(this.state)) this.rearm();
+    }
     return this.enqueue(async () => {
       if (!this.canWrite()) return;
       const at = this.now();
@@ -587,7 +615,7 @@ export class EditorSession {
         return;
       }
       this.set({ base: server });
-      if (isDirty(this.state)) this.edit(this.state.draft);
+      if (isDirty(this.state)) this.rearm();
     });
   }
 
@@ -614,6 +642,7 @@ export class EditorSession {
   /** ページを離れるとき。打っていた title を確定し、未保存の内容を退避してから保存を試みる。 */
   leave(): Promise<void> {
     this.applyPendingTitle();
+    this.left = true;
     this.clearTimer();
     this.clearStashTimer();
     if (!this.state.gone) this.stashIfDirty();
