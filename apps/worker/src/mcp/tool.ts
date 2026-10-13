@@ -34,13 +34,51 @@ export interface WikiTool {
   register: (server: McpServer, ctx: WikiToolContext) => void;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+type JsonSchemaOptions = Parameters<StandardSchemaWithJSON["~standard"]["jsonSchema"]["input"]>[0];
+
+/**
+ * SDK は tool を登録するたびに inputSchema を JSON Schema に変換する。zod の変換は重く、
+ * リクエストごとに全 tool 分を繰り返すと CPU 時間を食うので、変換結果を初回だけ作って使い回す。
+ * 共有する結果は凍結する。SDK が書き換えたら、別のリクエストに漏れる前に例外で気づける。
+ */
+function memoizeJsonSchema(schema: StandardSchemaWithJSON): StandardSchemaWithJSON {
+  const std = schema["~standard"];
+  const cache = new Map<string, Record<string, unknown>>();
+  const convert = (io: "input" | "output") => (options: JsonSchemaOptions) => {
+    const key = `${io}:${JSON.stringify(options)}`;
+    let json = cache.get(key);
+    if (json === undefined) {
+      json = deepFreeze(std.jsonSchema[io](options));
+      cache.set(key, json);
+    }
+    return json;
+  };
+  return {
+    "~standard": {
+      version: std.version,
+      vendor: std.vendor,
+      validate: (value) => std.validate(value),
+      jsonSchema: { input: convert("input"), output: convert("output") },
+    },
+  };
+}
+
 export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition<S>): WikiTool {
   const { name, scope, title, description, inputSchema, annotations, run } = definition;
+  // 型引数 S のままでは SDK の overload を解決できないので、StandardSchemaWithJSON に包み、
+  // 検証済みの args は S の出力型に戻す
+  const schema = memoizeJsonSchema(inputSchema);
   return {
     name,
     register(server, ctx) {
-      // 型引数 S のままでは SDK の overload を解決できないので、検証済みの args を S の出力型に戻す
-      const schema: StandardSchemaWithJSON = inputSchema;
       server.registerTool(
         name,
         { title, description, inputSchema: schema, annotations },

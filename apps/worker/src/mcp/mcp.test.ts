@@ -1,8 +1,9 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
-import { MAX_REQUEST_BYTES } from "../pages/operations";
+import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
+import { insertToken } from "../test/tokens";
 
 const ORIGIN = "http://localhost";
 
@@ -676,5 +677,81 @@ describe("検索と一覧の tool", () => {
       isError: true,
       json: { field: "cursor" },
     });
+  });
+});
+
+describe("リクエストをまたいだ状態", () => {
+  // 1 つの app（= 1 つの handler）に別の principal の要求を交互に流し、値が混ざらないことを確かめる
+  async function sharedApp() {
+    const metrics: WriteMetric[] = [];
+    const app = createApp({ now: () => T0, recordWrite: (m) => metrics.push(m) });
+    const tokens = {
+      alice: await insertToken({ name: "alice", scopes: "read write" }),
+      bob: await insertToken({ name: "bob", scopes: "read" }),
+    };
+    let nextId = 1;
+    async function rpc(who: keyof typeof tokens, method: string, params?: unknown) {
+      const id = nextId++;
+      const res = await app.request(
+        "/mcp",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${tokens[who]}`,
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) }),
+        },
+        env,
+      );
+      expect(res.status).toBe(200);
+      return readRpc(res);
+    }
+    const create = async (who: keyof typeof tokens, title: string) => {
+      const { result } = await rpc(who, "tools/call", {
+        name: "create_page",
+        arguments: { title, body: "" },
+      });
+      return result as { isError?: boolean; content: { text: string }[] };
+    };
+    return { rpc, create, metrics };
+  }
+
+  it("write と read の principal を交互に流しても、scope と actor が混ざらない", async () => {
+    const { create, metrics } = await sharedApp();
+    for (let i = 0; i < 4; i++) {
+      const a = await create("alice", `A${i}`);
+      expect(a.isError).toBeUndefined();
+      const b = await create("bob", `B${i}`);
+      expect(b.isError).toBe(true);
+      expect(JSON.parse(b.content[0]?.text ?? "")).toMatchObject({ error: "forbidden" });
+    }
+    expect(metrics).toHaveLength(4);
+    expect(metrics.every((m) => m.actor === "token:alice")).toBe(true);
+  });
+
+  it("同時に流した要求でも、principal ごとの結果が入れ替わらない", async () => {
+    const { create, metrics } = await sharedApp();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => create(i % 2 === 0 ? "alice" : "bob", `P${i}`)),
+    );
+    results.forEach((r, i) => {
+      expect(r.isError === true).toBe(i % 2 === 1);
+    });
+    expect(metrics).toHaveLength(3);
+    expect(metrics.every((m) => m.actor === "token:alice")).toBe(true);
+  });
+
+  it("tools/call のあとの tools/list は 7 つの tool を返し、知らない tool は isError か JSON-RPC のエラー", async () => {
+    const { rpc, create } = await sharedApp();
+    await create("alice", "First");
+    const listed = await rpc("bob", "tools/list");
+    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(7);
+
+    const unknown = await rpc("alice", "tools/call", { name: "no_such_tool", arguments: {} });
+    expect(unknown.error !== undefined || unknown.result?.isError === true).toBe(true);
+    // 知らない tool の呼び出しのあとも、通常の tool が使える
+    expect((await create("alice", "Second")).isError).toBeUndefined();
   });
 });
