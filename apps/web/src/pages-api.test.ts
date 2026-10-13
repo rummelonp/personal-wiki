@@ -6,8 +6,12 @@ import {
   listBacklinks,
   listRecent,
   listTags,
+  RESOLVE_MAX_TITLES,
+  RESOLVE_MAX_URL_LENGTH,
+  resolvePages,
   searchPages,
   setVisibility,
+  splitResolveBatches,
   updatePage,
 } from "./pages-api";
 
@@ -205,5 +209,87 @@ describe("一覧と検索", () => {
     const { calls, fetchFn } = recorder(() => Response.json({ results: [] }));
     await searchPages("a&b 検索", fetchFn);
     expect(calls[0]?.path).toBe(`/api/search?q=${encodeURIComponent("a&b 検索")}&limit=50`);
+  });
+});
+
+describe("resolvePages", () => {
+  const found = { id: ID, title: "Note", visibility: "draft" };
+
+  it("title を encode して repeated query で渡し、同じ順で page か null を返す", async () => {
+    const { calls, fetchFn } = recorder(() =>
+      Response.json({
+        results: [
+          { title: "a&b #1", page: found },
+          { title: "無い", page: null },
+        ],
+      }),
+    );
+    const res = await resolvePages(["a&b #1", "無い"], fetchFn);
+    expect(res).toEqual({ ok: true, value: [found, null] });
+    expect(calls[0]?.path).toBe(
+      `/api/pages/resolve?title=${encodeURIComponent("a&b #1")}&title=${encodeURIComponent("無い")}`,
+    );
+    expect(calls[0]?.init).toMatchObject({ credentials: "same-origin", cache: "no-store" });
+  });
+
+  it("404、5xx、通信の失敗、形の違いは、存在しない（null）ではなく失敗にする", async () => {
+    // Worker を前の版に戻すと resolve が /api/pages/:id に落ちて 404 になる
+    for (const status of [404, 500, 503]) {
+      const { fetchFn } = recorder(() => new Response("{}", { status }));
+      expect((await resolvePages(["a"], fetchFn)).ok).toBe(false);
+    }
+    const offline = async () => {
+      throw new TypeError("offline");
+    };
+    expect(await resolvePages(["a"], offline)).toMatchObject({ ok: false, reason: "error" });
+    for (const body of [
+      {},
+      { results: [] },
+      { results: [{ title: "a", page: { id: 1 } }] },
+      {
+        results: [
+          { title: "a", page: found },
+          { title: "b", page: null },
+        ],
+      },
+    ]) {
+      const { fetchFn } = recorder(() => Response.json(body));
+      expect((await resolvePages(["a"], fetchFn)).ok).toBe(false);
+    }
+  });
+});
+
+describe("splitResolveBatches", () => {
+  const urlLength = (titles: string[]) =>
+    `/api/pages/resolve?${titles.map((t) => `title=${encodeURIComponent(t)}`).join("&")}`.length;
+
+  it("Worker の上限の件数で分け、添字の順を保つ", () => {
+    const titles = Array.from({ length: RESOLVE_MAX_TITLES * 2 + 1 }, (_, i) => `t${i}`);
+    const batches = splitResolveBatches(titles);
+    expect(batches.map((b) => b.length)).toEqual([RESOLVE_MAX_TITLES, RESOLVE_MAX_TITLES, 1]);
+    expect(batches.flat()).toEqual(titles.map((_, i) => i));
+  });
+
+  it("encode 後の URL が上限を超えないように分ける", () => {
+    // 日本語は 1 文字が 9 文字に encode される
+    const titles = Array.from({ length: 20 }, (_, i) => `${"あ".repeat(80 + i)}${i}`);
+    const batches = splitResolveBatches(titles);
+    expect(batches.length).toBeGreaterThan(1);
+    for (const batch of batches) {
+      expect(batch.length).toBeLessThanOrEqual(RESOLVE_MAX_TITLES);
+      expect(urlLength(batch.map((i) => titles[i] as string))).toBeLessThanOrEqual(
+        RESOLVE_MAX_URL_LENGTH,
+      );
+    }
+    expect(batches.flat()).toEqual(titles.map((_, i) => i));
+  });
+
+  it("1 件だけで上限を超える title は問い合わせない", () => {
+    const titles = ["a", "あ".repeat(1_000), "b"];
+    expect(splitResolveBatches(titles)).toEqual([[0, 2]]);
+  });
+
+  it("title が無ければ空", () => {
+    expect(splitResolveBatches([])).toEqual([]);
   });
 });

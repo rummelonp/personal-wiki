@@ -155,6 +155,15 @@ function isSearchHit(value: unknown): value is SearchHit {
   return isSummary(value) && isTags(v.tags) && typeof v.excerpt === "string";
 }
 
+function isResolvedPage(value: unknown): value is ResolvedPage {
+  const v = recordOf(value);
+  return (
+    typeof v.id === "string" &&
+    typeof v.title === "string" &&
+    (v.visibility === "public" || v.visibility === "draft")
+  );
+}
+
 const BAD_SHAPE: ApiFailure = {
   ok: false,
   reason: "error",
@@ -205,6 +214,94 @@ export async function findPageByTitle(
   return pageResult(
     await request(fetchFn, `/api/pages/by-title?title=${encodeURIComponent(title)}`),
   );
+}
+
+/** `GET /api/pages/resolve` が title ごとに返す、解決できた page。 */
+export interface ResolvedPage {
+  id: string;
+  title: string;
+  visibility: Visibility;
+}
+
+/** Worker の `RESOLVE_MAX_TITLES`（apps/worker/src/pages/routes.ts）。超えると 400 になる。 */
+export const RESOLVE_MAX_TITLES = 50;
+
+/**
+ * resolve の URL の長さ（パスとクエリ）の上限。
+ * Cloudflare は 16 KB まで受けるが、手前に別の proxy があると 8 KB で切るものが多い
+ * （nginx と Apache の既定は約 8 KB）ので、その下に収める。保存できる title は 1024 バイトまでで、
+ * 日本語の 1 件は percent-encoding 後に 3 KB 強になるため、1 件がこの上限を超えることはない。
+ */
+export const RESOLVE_MAX_URL_LENGTH = 7_000;
+
+const RESOLVE_PATH = "/api/pages/resolve";
+
+const encodedParam = (title: string) => `title=${encodeURIComponent(title)}`;
+
+/** パスと `?` の分。 */
+const RESOLVE_BASE_LENGTH = RESOLVE_PATH.length + 1;
+
+/**
+ * resolve に渡せる title か。encode 後の 1 件が URL の上限を超える title は、保存できる長さを
+ * 超えているので存在しえない。問い合わせずに捨てる。
+ */
+export function canResolveTitle(title: string): boolean {
+  return RESOLVE_BASE_LENGTH + encodedParam(title).length <= RESOLVE_MAX_URL_LENGTH;
+}
+
+/**
+ * `titles` を、1 回の resolve に収まるまとまりに分ける。件数と encode 後の URL の長さの両方で区切り、
+ * 順序は保つ。返すのは `titles` の添字で、`canResolveTitle` を満たさない title は含めない。
+ */
+export function splitResolveBatches(titles: readonly string[]): number[][] {
+  const batches: number[][] = [];
+  let current: number[] = [];
+  let length = RESOLVE_BASE_LENGTH;
+  titles.forEach((title, index) => {
+    if (!canResolveTitle(title)) return;
+    // 2 件目以降は区切りの `&` が 1 文字増える
+    const cost = encodedParam(title).length + (current.length === 0 ? 0 : 1);
+    if (
+      current.length > 0 &&
+      (current.length >= RESOLVE_MAX_TITLES || length + cost > RESOLVE_MAX_URL_LENGTH)
+    ) {
+      batches.push(current);
+      current = [];
+      length = RESOLVE_BASE_LENGTH;
+      length += encodedParam(title).length;
+    } else {
+      length += cost;
+    }
+    current.push(index);
+  });
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+/**
+ * title の page を 1 回の要求で引く。件数と URL の長さは呼び出し側が `splitResolveBatches` で
+ * 収める。返す配列は `titles` と同じ順・同じ件数で、解決できない title は null。
+ * 失敗（404、5xx、通信の失敗、形の違い）は ApiFailure で返す。「全部存在しない」とは区別する。
+ * Worker を前の版に戻すと resolve が `/api/pages/:id` に落ちて 404 になる。
+ */
+export async function resolvePages(
+  titles: readonly string[],
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<(ResolvedPage | null)[]>> {
+  const res = await request(fetchFn, `${RESOLVE_PATH}?${titles.map(encodedParam).join("&")}`);
+  if (isFailure(res)) return res;
+  if (!res.ok) return failureOf(res);
+  const results = recordOf(await readJson(res)).results;
+  if (!Array.isArray(results) || results.length !== titles.length) return BAD_SHAPE;
+  const pages: (ResolvedPage | null)[] = [];
+  for (const result of results) {
+    const page = recordOf(result).page;
+    if (page === null) pages.push(null);
+    else if (isResolvedPage(page)) {
+      pages.push({ id: page.id, title: page.title, visibility: page.visibility });
+    } else return BAD_SHAPE;
+  }
+  return { ok: true, value: pages };
 }
 
 export async function createPage(
