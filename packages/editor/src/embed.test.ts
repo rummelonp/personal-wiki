@@ -895,6 +895,59 @@ describe("page embed", () => {
     expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "Other", label: null, blockId: null });
   });
 
+  describe("wikilinks inside the embedded body", () => {
+    const unresolvedIn = (v: EditorView) =>
+      [...(bodyOf(v, "Note")?.querySelectorAll(".cm-wikilink-unresolved") ?? [])].map(
+        (e) => e.textContent,
+      );
+
+    it("marks a link that becomes unresolved after invalidateDecorations on the outer view", () => {
+      const content = resolved("Note", "[[あり]] と [[なし]]");
+      const missing = new Set<string>();
+      const v = mount("![[Note]]", {
+        resolvePageEmbed: () => content,
+        resolveWikiLink: (target) => !missing.has(target),
+      });
+      expect(unresolvedIn(v)).toEqual([]);
+
+      missing.add("なし");
+      invalidateDecorations(v);
+      expect(unresolvedIn(v)).toEqual(["なし"]);
+    });
+
+    it("stops invalidating a nested view that was destroyed with its widget", () => {
+      let content = resolved("Note", "[[なし]]");
+      const resolveWikiLink = vi.fn(() => true);
+      const v = mount("![[Note]]", { resolvePageEmbed: () => content, resolveWikiLink });
+      content = UNRESOLVED;
+      invalidateDecorations(v);
+      expect(embedOf(v, "Note")?.getAttribute("data-embed-state")).toBe("unresolved");
+
+      resolveWikiLink.mockClear();
+      invalidateDecorations(v);
+      expect(resolveWikiLink).not.toHaveBeenCalled();
+    });
+
+    it("holds the nested view's rebuild while that view is composing", () => {
+      const content = resolved("Note", "[[なし]]");
+      let missing = false;
+      const v = mount("![[Note]]", {
+        resolvePageEmbed: () => content,
+        resolveWikiLink: () => !missing,
+      });
+      const nested = bodyOf(v, "Note");
+      if (!nested) throw new Error("本文の view が無い");
+      nested.dispatchEvent(new CompositionEvent("compositionstart"));
+
+      missing = true;
+      invalidateDecorations(v);
+      expect(unresolvedIn(v)).toEqual([]);
+
+      nested.dispatchEvent(new CompositionEvent("compositionend"));
+      return vi.waitFor(() => expect(unresolvedIn(v)).toEqual(["なし"]));
+    });
+  });
+
   it("leaves block embeds to the WikiLink decoration", () => {
     const resolve = vi.fn(() => resolved("Note", "本文"));
     const v = mount("![[Note^abc]] ![[Note#^abc]]", { resolvePageEmbed: resolve });

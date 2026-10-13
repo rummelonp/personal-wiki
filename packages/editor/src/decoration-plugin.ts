@@ -24,6 +24,25 @@ const invalidated = StateEffect.define<null>();
 /** view ごとの invalidate の累計。各 plugin は前回組んだ時点の値と比べ、増えていれば組み直す */
 const invalidations = new WeakMap<EditorView, number>();
 
+/** view ごとの、その view の widget が持つ入れ子の view の invalidate */
+const nestedInvalidators = new WeakMap<EditorView, Set<() => void>>();
+
+/**
+ * `view` の widget が持つ入れ子の view を、`invalidateDecorations(view)` と一緒に組み直させる。
+ * 入れ子の view を破棄するときに、戻り値で解除する。
+ */
+export function registerNestedInvalidator(view: EditorView, invalidate: () => void): () => void {
+  let set = nestedInvalidators.get(view);
+  if (!set) {
+    set = new Set();
+    nestedInvalidators.set(view, set);
+  }
+  set.add(invalidate);
+  return () => {
+    set.delete(invalidate);
+  };
+}
+
 /**
  * decoration の builder が、CodeMirror の state/transaction を経由しない外部データ
  * （React ref 経由で非同期に更新される page title 一覧など）に依存する場合に、
@@ -34,6 +53,9 @@ const invalidations = new WeakMap<EditorView, number>();
  * 知らせる `compositionSettled` の update で 1 回だけ組み直す。その間に何度呼ばれても 1 回になる。
  */
 export function invalidateDecorations(view: EditorView): void {
+  // 入れ子の view（ページ embed の本文）は widget の中にあり、外側の組み直しでは widget が使い回される
+  // ので、自分では気づけない。外側が変換中でも、入れ子の view は自分の変換の状態で保留を判断する
+  for (const invalidateNested of [...(nestedInvalidators.get(view) ?? [])]) invalidateNested();
   invalidations.set(view, (invalidations.get(view) ?? 0) + 1);
   if (isCompositionUnsettled(view)) {
     reportImeEvent(view, "decoration-invalidation-held");

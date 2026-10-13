@@ -19,7 +19,11 @@ import {
   type WikiLinkParts,
   wikiLinkNodes,
 } from "@personal-wiki/markdown";
-import { type BuiltDecorations, decorationPlugin } from "./decoration-plugin";
+import {
+  type BuiltDecorations,
+  decorationPlugin,
+  registerNestedInvalidator,
+} from "./decoration-plugin";
 import { ALLOWED_SCHEMES, schemeOf } from "./external-link";
 import { isCompositionUnsettled } from "./ime";
 import { linkSyntaxParts } from "./link-syntax";
@@ -65,6 +69,11 @@ export type PageEmbedResolver = (target: string) => PageEmbedContent;
 
 export interface RenderedPageBody {
   destroy(): void;
+  /**
+   * 外側の editor で `invalidateDecorations` が呼ばれたときに呼ぶ。本文の view が、外側と同じ
+   * 外部データ（wikilink の存在など）に依存する装飾を組み直すために使う。
+   */
+  invalidate?(): void;
 }
 
 /**
@@ -359,10 +368,16 @@ class PageEmbedWidget extends WidgetType {
         body.className = "cm-embed-page-body";
         // 本文の高さが変わっても外側の editor には transaction にならない（widget の内側の
         // DOM 変化は読まれない）。行の高さの測り直しだけを頼む。画像の読み込み完了と同じ扱い。
-        renderedBodies.set(
-          wrapper,
-          this.page.render(body, content.text, () => view.requestMeasure()),
-        );
+        const rendered = this.page.render(body, content.text, () => view.requestMeasure());
+        const unregister = rendered.invalidate
+          ? registerNestedInvalidator(view, rendered.invalidate.bind(rendered))
+          : () => {};
+        renderedBodies.set(wrapper, {
+          destroy: () => {
+            unregister();
+            rendered.destroy();
+          },
+        });
         wrapper.append(titleRow, body);
         break;
       }

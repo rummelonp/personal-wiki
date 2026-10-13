@@ -23,6 +23,7 @@ import {
 import { attachmentUpload, type UploadAttachment } from "./attachment-upload";
 import { blockIdAssignment, blockIdHighlight } from "./block-id";
 import { imeDebug } from "./debug-ime";
+import { invalidateDecorations } from "./decoration-plugin";
 import {
   type AttachmentUrlResolver,
   embeds,
@@ -238,8 +239,8 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
   if (!resolvePageEmbed) return undefined;
   return {
     resolve: resolvePageEmbed,
-    render: (parent, text, onResize) =>
-      createEditor(parent, {
+    render: (parent, text, onResize) => {
+      const nested = createEditor(parent, {
         doc: text,
         readOnly: true,
         readOnlyFocusable: false,
@@ -253,7 +254,9 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
         extensions: EditorView.updateListener.of((update) => {
           if (update.geometryChanged) onResize();
         }),
-      }),
+      });
+      return { destroy: () => nested.destroy(), invalidate: () => invalidateDecorations(nested) };
+    },
     ...(onWikiLinkClick
       ? { open: (target: string) => onWikiLinkClick({ target, label: null, blockId: null }) }
       : {}),
