@@ -168,7 +168,7 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * でも受け付けるルートを守るため）。Bearer の要求は rejectAmbiguousCredentials で cookie を
  * 持てないので、この検査を受けない。
  *
- * OAuth の同意画面（POST /oauth/authorize）だけはフォームの送信を受け付ける。承認の応答はクライアントの
+ * OAuth の同意画面（POST /_auth/oauth/authorize）だけはフォームの送信を受け付ける。承認の応答はクライアントの
  * redirect URI への遷移なので fetch では送れない。同一オリジンの検査は掛けたままにし、加えて同意画面を
  * 開いたブラウザに結び付いた 1 回限りの handle（oauth-routes.ts）で守る。
  */

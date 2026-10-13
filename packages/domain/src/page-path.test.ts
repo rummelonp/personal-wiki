@@ -17,6 +17,8 @@ describe("titlePath", () => {
     expect(titlePath("api-docs")).toBe("/api-docs");
     expect(titlePath("...")).toBe("/...");
     expect(titlePath("Index2")).toBe("/Index2");
+    // OAuth のエンドポイントは /_auth/oauth/* に置くので、oauth は title に使える
+    expect(titlePath("OAuth")).toBe("/OAuth");
   });
 
   it("予約語と重なる title は、大文字小文字と全角半角、`/` の後ろを問わず null", () => {
@@ -28,8 +30,6 @@ describe("titlePath", () => {
       "_auth",
       ".well-known",
       ".well-known/x",
-      "oauth",
-      "OAuth/token",
       "p",
       "P",
       "p/x",

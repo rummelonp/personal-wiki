@@ -25,7 +25,7 @@ import type { Scope } from "./principal";
  * - メタデータ 2 つ、トークン、client の登録は匿名に開く（クライアントは wiki の資格情報を持たない）。
  *   トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す
  * - 認可（同意画面）は owner のセッションを要る。無ければ /_auth/login を経由して戻す。Access の対象は
- *   /_auth/login のままで、/oauth/* は Access を通さない
+ *   /_auth/login のままで、/_auth/oauth/* は Access を通さない
  */
 export function registerOAuthRoutes(app: Hono<AppEnv>) {
   return app

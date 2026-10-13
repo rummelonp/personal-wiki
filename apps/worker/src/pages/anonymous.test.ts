@@ -498,11 +498,11 @@ describe("匿名向けの応答の総当たり", () => {
       "GET /.well-known/oauth-protected-resource/mcp": [
         "/.well-known/oauth-protected-resource/mcp",
       ],
-      "POST /oauth/token": ["/oauth/token"],
-      "POST /oauth/register": ["/oauth/register"],
-      "GET /oauth/authorize": [
-        "/oauth/authorize",
-        `/oauth/authorize?response_type=code&client_id=${draft.id}&state=${draft.id}`,
+      "POST /_auth/oauth/token": ["/_auth/oauth/token"],
+      "POST /_auth/oauth/register": ["/_auth/oauth/register"],
+      "GET /_auth/oauth/authorize": [
+        "/_auth/oauth/authorize",
+        `/_auth/oauth/authorize?response_type=code&client_id=${draft.id}&state=${draft.id}`,
       ],
     };
   }

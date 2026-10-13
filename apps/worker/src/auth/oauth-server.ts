@@ -15,9 +15,9 @@ import type { Principal, Scope } from "./principal";
  */
 
 export const MCP_PATH = "/mcp";
-export const OAUTH_AUTHORIZE_PATH = "/oauth/authorize";
-export const OAUTH_TOKEN_PATH = "/oauth/token";
-export const OAUTH_REGISTER_PATH = "/oauth/register";
+export const OAUTH_AUTHORIZE_PATH = "/_auth/oauth/authorize";
+export const OAUTH_TOKEN_PATH = "/_auth/oauth/token";
+export const OAUTH_REGISTER_PATH = "/_auth/oauth/register";
 export const AUTHORIZATION_SERVER_METADATA_PATH = "/.well-known/oauth-authorization-server";
 /** RFC 9728 の、リソースのパスを well-known の後ろに挿し込んだ URL */
 export const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource/mcp";

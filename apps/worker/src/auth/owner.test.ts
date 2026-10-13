@@ -180,6 +180,10 @@ describe("safeReturnUrl（open redirect の拒否）", () => {
       ["/%5F%61uth/x", `${origin}/`],
       ["/%E0%A4%A", `${origin}/`],
       [`/${"a".repeat(2048)}`, `${origin}/`],
+      // OAuth の同意画面だけは /_auth/ 以下でも戻す。それ以外の /_auth/oauth/* には戻さない
+      ["/_auth/oauth/authorize?client_id=x", `${origin}/_auth/oauth/authorize?client_id=x`],
+      ["/_auth/oauth/token", `${origin}/`],
+      ["/_auth/oauth/authorize/x", `${origin}/`],
     ];
     for (const [raw, expected] of cases) {
       expect(safeReturnUrl(raw, origin), String(raw)).toBe(expected);

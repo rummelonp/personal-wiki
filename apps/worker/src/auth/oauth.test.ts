@@ -36,7 +36,7 @@ interface RegisteredClient {
 }
 
 async function register(request: Request, metadata: Record<string, unknown> = {}) {
-  const res = await request("/oauth/register", {
+  const res = await request("/_auth/oauth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -64,7 +64,7 @@ function authorizePath(clientId: string, challenge: string, extra: Record<string
     resource: `${ORIGIN}/mcp`,
     ...extra,
   });
-  return `/oauth/authorize?${params}`;
+  return `/_auth/oauth/authorize?${params}`;
 }
 
 /** owner として同意画面を開き、フォームの handle と、同意画面を開いたブラウザの cookie を返す。 */
@@ -102,7 +102,7 @@ function submitConsent(
 }
 
 function postToken(request: Request, form: Record<string, string>, headers = {}) {
-  return request("/oauth/token", {
+  return request("/_auth/oauth/token", {
     method: "POST",
     headers: { "Content-Type": FORM, ...headers },
     body: new URLSearchParams(form).toString(),
@@ -179,16 +179,16 @@ async function callTool(request: Request, token: string, name: string, args: unk
 }
 
 describe("OAuth のメタデータ", () => {
-  it("認可サーバーのメタデータは /oauth/* のエンドポイントと S256 だけの PKCE を示す", async () => {
+  it("認可サーバーのメタデータは /_auth/oauth/* のエンドポイントと S256 だけの PKCE を示す", async () => {
     const { request } = setup();
     const res = await request("/.well-known/oauth-authorization-server");
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(await res.json()).toMatchObject({
       issuer: ORIGIN,
-      authorization_endpoint: `${ORIGIN}/oauth/authorize`,
-      token_endpoint: `${ORIGIN}/oauth/token`,
-      registration_endpoint: `${ORIGIN}/oauth/register`,
+      authorization_endpoint: `${ORIGIN}/_auth/oauth/authorize`,
+      token_endpoint: `${ORIGIN}/_auth/oauth/token`,
+      registration_endpoint: `${ORIGIN}/_auth/oauth/register`,
       scopes_supported: ["read", "write"],
       code_challenge_methods_supported: ["S256"],
       response_types_supported: ["code"],
@@ -233,7 +233,7 @@ describe("client の登録（DCR）", () => {
 
   it("https でも loopback でもない redirect URI は登録できない", async () => {
     const { request } = setup();
-    const res = await request("/oauth/register", {
+    const res = await request("/_auth/oauth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uris: ["http://evil.example/cb"], client_name: "x" }),
@@ -503,15 +503,15 @@ describe("OAUTH_KV が無い環境", () => {
     for (const [method, path] of [
       ["GET", "/.well-known/oauth-authorization-server"],
       ["GET", "/.well-known/oauth-protected-resource/mcp"],
-      ["POST", "/oauth/token"],
-      ["POST", "/oauth/register"],
-      ["GET", "/oauth/authorize?response_type=code"],
+      ["POST", "/_auth/oauth/token"],
+      ["POST", "/_auth/oauth/register"],
+      ["GET", "/_auth/oauth/authorize?response_type=code"],
     ] as const) {
       const res = await request(path, { method });
       expect(res.status, path).toBe(404);
       expect(await res.json()).toEqual({ error: "not_found" });
     }
-    const owner = await request("/oauth/authorize", {
+    const owner = await request("/_auth/oauth/authorize", {
       headers: { Cookie: await ownerCookie(T0) },
     });
     expect(owner.status).toBe(404);
