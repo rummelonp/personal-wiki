@@ -1,9 +1,12 @@
 import { env } from "cloudflare:workers";
+import { McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
+import { createWikiMcpServer } from "./server";
+import type { WikiToolContext } from "./tool";
 
 const ORIGIN = "http://localhost";
 
@@ -743,15 +746,50 @@ describe("リクエストをまたいだ状態", () => {
     expect(metrics.every((m) => m.actor === "token:alice")).toBe(true);
   });
 
-  it("tools/call のあとの tools/list は 7 つの tool を返し、知らない tool は isError か JSON-RPC のエラー", async () => {
+  it("tools/call のあとの tools/list は 7 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {
     const { rpc, create } = await sharedApp();
     await create("alice", "First");
     const listed = await rpc("bob", "tools/list");
     expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(7);
 
     const unknown = await rpc("alice", "tools/call", { name: "no_such_tool", arguments: {} });
-    expect(unknown.error !== undefined || unknown.result?.isError === true).toBe(true);
+    expect(unknown.error).toEqual({ code: -32602, message: "Tool no_such_tool not found" });
     // 知らない tool の呼び出しのあとも、通常の tool が使える
     expect((await create("alice", "Second")).isError).toBeUndefined();
+  });
+
+  it("name が文字列でない tools/call と params の無い tools/call は、従来どおりの JSON-RPC エラーになる", async () => {
+    const { rpc } = await sharedApp();
+    const noName = (await rpc("alice", "tools/call", { name: 1, arguments: {} })).error;
+    const noParams = (await rpc("alice", "tools/call")).error;
+    expect(noName).toEqual({
+      code: -32602,
+      message: expect.stringContaining("Invalid tools/call request"),
+    });
+    expect(noParams).toEqual({
+      code: -32602,
+      message: expect.stringContaining("Invalid tools/call request"),
+    });
+  });
+
+  it("createWikiMcpServer は、呼ばれる tool が TOOLS にあればその 1 件だけを登録し、無ければ全件を登録する", () => {
+    const registerTool = vi.spyOn(McpServer.prototype, "registerTool");
+    // 登録だけを見るので、tool の実行時に使う ctx は渡さない
+    const ctx = {} as WikiToolContext;
+    const registeredNames = () => registerTool.mock.calls.map(([name]) => name);
+    try {
+      createWikiMcpServer(ctx, "read_page");
+      expect(registeredNames()).toEqual(["read_page"]);
+
+      registerTool.mockClear();
+      createWikiMcpServer(ctx, "no_such");
+      expect(registeredNames()).toHaveLength(7);
+
+      registerTool.mockClear();
+      createWikiMcpServer(ctx);
+      expect(registeredNames()).toHaveLength(7);
+    } finally {
+      registerTool.mockRestore();
+    }
   });
 });
