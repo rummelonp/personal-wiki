@@ -8,6 +8,7 @@ import type { AppEnv } from "../env";
 import { generateTestToken, insertToken, lastUsedAt } from "../test/tokens";
 import { LAST_USED_UPDATE_INTERVAL_MS } from "./api-tokens";
 import { allowAnonymous, defineBaseMiddleware, requireToken } from "./middleware";
+import { SESSION_COOKIE_NAME } from "./session";
 
 const T0 = Date.UTC(2026, 9, 1);
 
@@ -118,11 +119,11 @@ describe("無効なトークン", () => {
 });
 
 describe("Cookie と Bearer の併用", () => {
-  it("有効なトークンでも Cookie と一緒なら 400", async () => {
+  it("有効なトークンでも自前のセッション cookie と一緒なら 400", async () => {
     const token = await insertToken({ name: "laptop", scopes: "read" });
     const res = await buildApp().request("/api/test/read", {
       ...bearer(token),
-      Cookie: "session=anything",
+      Cookie: `${SESSION_COOKIE_NAME}=anything`,
     });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "ambiguous_credentials" });
@@ -130,8 +131,19 @@ describe("Cookie と Bearer の併用", () => {
     expect(await lastUsedAt("laptop")).toBeNull();
   });
 
-  it("Cookie だけなら匿名として扱う", async () => {
-    const res = await buildApp().request("/api/healthz", { Cookie: "session=anything" });
+  it("第三者の cookie なら Bearer の妨げにしない", async () => {
+    const token = await insertToken({ name: "laptop", scopes: "read" });
+    const res = await buildApp().request("/api/test/read", {
+      ...bearer(token),
+      Cookie: "__cf_bm=anything; session=anything",
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("検証できない cookie だけなら匿名として扱う", async () => {
+    const res = await buildApp().request("/api/healthz", {
+      Cookie: `${SESSION_COOKIE_NAME}=anything`,
+    });
     expect(res.status).toBe(200);
   });
 });

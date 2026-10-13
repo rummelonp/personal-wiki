@@ -354,6 +354,42 @@ export async function deletePage(
   return { ok: true, rowsWritten: sumRowsWritten(results) };
 }
 
+export interface SetVisibilityInput {
+  id: string;
+  visibility: Visibility;
+  now: number;
+}
+
+/**
+ * visibility を変える。版の照合は求めない（本文を書き換えないので、他の保存と競合しても失うものが無い）。
+ *
+ * 変えたときは版を 1 つ進め、updated_at も更新する。visibility を変える前に読んだ版で本文を
+ * 書き換えようとした呼び出し元（draft のつもりの AI など）が、409 で読み直して公開範囲に気づけるように
+ * するため。revision は積まない（revision は title と本文の履歴で、どちらも変わっていない）。
+ * 版と revision の版が 1 対 1 でなくなるが、連続保存をまとめる設計（revisions.ts）でも同じく欠番が出る。
+ * すでに同じ visibility なら何も書かずに今のページを返す。
+ */
+export async function setVisibility(
+  db: D1Database,
+  input: SetVisibilityInput,
+): Promise<WriteSuccess | { ok: false; reason: "not_found" }> {
+  const result = await db
+    .prepare(
+      `UPDATE pages SET visibility = ?2, version = version + 1, updated_at = ?3
+       WHERE id = ?1 AND deleted_at IS NULL AND visibility != ?2
+       RETURNING ${PAGE_COLUMNS}`,
+    )
+    .bind(input.id, input.visibility, input.now)
+    .all<PageRow>();
+  const row = result.results[0];
+  if (row !== undefined) {
+    return { ok: true, page: toPage(row), rowsWritten: result.meta.rows_written ?? 0 };
+  }
+  const current = await findPageById(db, input.id);
+  if (current === null) return { ok: false, reason: "not_found" };
+  return { ok: true, page: current, rowsWritten: 0 };
+}
+
 /**
  * 1 回の呼び出しで作り直すページ数の上限。上限近い本文 1 ページの解析だけで CPU 10ms に届きうる
  * （MAX_BODY_BYTES の計測値）ので、1 ページずつにする。

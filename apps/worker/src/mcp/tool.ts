@@ -5,7 +5,7 @@ import type {
   ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import type * as z from "zod/v4";
-import { type Scope, tokenHasScope } from "../auth/principal";
+import { principalHasScope, type Scope } from "../auth/principal";
 import type { PageWriteContext } from "../pages/operations";
 
 /** tool がリクエストごとに受け取る値。principal は /mcp の認可で決まったもの。 */
@@ -92,7 +92,8 @@ export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition
         name,
         { title, description, inputSchema: schema, annotations },
         async (args) => {
-          if (!tokenHasScope(ctx.principal, scope)) {
+          // /mcp は token だけを通すが、owner が届いても tool を動かさない側に倒す
+          if (ctx.principal.kind !== "token" || !principalHasScope(ctx.principal, scope)) {
             return toolError({
               error: "forbidden",
               message: `この token には ${scope} の scope が無い`,

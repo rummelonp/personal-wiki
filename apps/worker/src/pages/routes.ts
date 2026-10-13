@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { requireToken } from "../auth/middleware";
+import { requireOwner, requireScope } from "../auth/middleware";
 import type { AppEnv } from "../env";
 import { isPageId } from "./id";
 import {
@@ -10,6 +10,7 @@ import {
   findPageByInputId,
   MAX_REQUEST_BYTES,
   type PageWriteContext,
+  setVisibilityAs,
   updatePageAs,
   type WriteMetric,
 } from "./operations";
@@ -35,6 +36,7 @@ import {
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,
+  type Visibility,
   type WriteError,
 } from "./store";
 
@@ -86,16 +88,8 @@ type FieldSpec = Record<string, "string" | "number" | "string_or_null">;
 
 type ParsedBody = { ok: true; value: Record<string, unknown> } | { ok: false; response: Response };
 
-/**
- * JSON の object を読み、spec に無いキーを拒む。
- * 黙って捨てると、AI が `content` などの誤ったキーで送ったり、visibility を変えたつもりになったりしても
- * 気づけないので 400 にする。visibility は owner だけが変えられる。
- */
-async function readJsonBody(
-  c: PagesContext,
-  spec: FieldSpec,
-  required: readonly string[],
-): Promise<ParsedBody> {
+/** 本文を JSON の object として読む。大きすぎる本文は解析せずに 413 にする。 */
+async function readJsonObject(c: PagesContext): Promise<ParsedBody> {
   const length = Number(c.req.header("Content-Length"));
   if (length > MAX_REQUEST_BYTES) {
     return {
@@ -112,7 +106,22 @@ async function readJsonBody(
   if (typeof json !== "object" || json === null || Array.isArray(json)) {
     return { ok: false, response: errorResponse(c, 400, "invalid_json") };
   }
-  const value = json as Record<string, unknown>;
+  return { ok: true, value: json as Record<string, unknown> };
+}
+
+/**
+ * JSON の object を読み、spec に無いキーを拒む。
+ * 黙って捨てると、AI が `content` などの誤ったキーで送ったり、visibility を変えたつもりになったりしても
+ * 気づけないので 400 にする。visibility は owner だけが専用のルートで変えられる。
+ */
+async function readJsonBody(
+  c: PagesContext,
+  spec: FieldSpec,
+  required: readonly string[],
+): Promise<ParsedBody> {
+  const parsed = await readJsonObject(c);
+  if (!parsed.ok) return parsed;
+  const value = parsed.value;
   for (const key of Object.keys(value)) {
     if (key === "visibility") {
       return {
@@ -143,6 +152,10 @@ async function readJsonBody(
     }
   }
   return { ok: true, value };
+}
+
+function isVisibility(value: unknown): value is Visibility {
+  return value === "public" || value === "draft";
 }
 
 type IfMatch = { kind: "missing" } | { kind: "invalid" } | { kind: "version"; version: number };
@@ -211,8 +224,8 @@ function readPaging(c: PagesContext): Parsed<{ limit: number; cursor: Cursor | n
 }
 
 /**
- * `/api/pages` のルートを app に登録する。token principal だけを受け付ける（owner と anonymous の
- * 経路は別の Work Item）。ページの id は形式が違えば D1 を引かずに 404 にする。
+ * `/api/pages` のルートを app に登録する。owner と token を受け付ける（anonymous の読み取りは
+ * 別の Work Item）。ページの id は形式が違えば D1 を引かずに 404 にする。
  *
  * 認可の宣言はハンドラと同じ method・path の登録に、ハンドラより前に付ける。子の app を route() で
  * 合成したり、prefix の use() で一括に掛けたりすると、宣言の検査がルートを見つけられない。
@@ -226,7 +239,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
   });
   return (
     app
-      .post("/api/pages", requireToken("write"), async (c) => {
+      .post("/api/pages", requireScope("write"), async (c) => {
         const parsed = await readJsonBody(c, { title: "string", body: "string" }, [
           "title",
           "body",
@@ -241,7 +254,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         return pageResponse(c, result.page, 201);
       })
       // title は `/` や `#` を含みうるので、パスに埋め込まずクエリで受け取る
-      .get("/api/pages/by-title", requireToken("read"), async (c) => {
+      .get("/api/pages/by-title", requireScope("read"), async (c) => {
         const title = c.req.query("title");
         if (title === undefined) return errorResponse(c, 400, "missing_field", { field: "title" });
         const page = await findPageByTitle(c.env.DB, title);
@@ -249,13 +262,13 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         return pageResponse(c, page);
       })
       // `/api/pages/:id` より前に登録する。後ろだと :id のハンドラが "recent" を id として先に 404 にする
-      .get("/api/pages/recent", requireToken("read"), async (c) => {
+      .get("/api/pages/recent", requireScope("read"), async (c) => {
         const paging = readPaging(c);
         if (!paging.ok) return paging.response;
         const { pages, nextCursor } = await listRecentPages(c.env.DB, paging.value);
         return c.json({ pages, nextCursor });
       })
-      .get("/api/search", requireToken("read"), async (c) => {
+      .get("/api/search", requireScope("read"), async (c) => {
         const raw = c.req.query("q");
         if (raw === undefined) return errorResponse(c, 400, "missing_field", { field: "q" });
         const query = prepareSearchQuery(raw);
@@ -269,12 +282,12 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!limit.ok) return limit.response;
         return c.json({ results: await searchPages(c.env.DB, query.query, limit.value) });
       })
-      .get("/api/pages/:id", requireToken("read"), async (c) => {
+      .get("/api/pages/:id", requireScope("read"), async (c) => {
         const page = await findPageByInputId(c.env.DB, c.req.param("id"));
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
-      .get("/api/pages/:id/backlinks", requireToken("read"), async (c) => {
+      .get("/api/pages/:id/backlinks", requireScope("read"), async (c) => {
         const id = c.req.param("id");
         if (!isPageId(id)) return c.notFound();
         const paging = readPaging(c);
@@ -283,7 +296,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (list === null) return c.notFound();
         return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })
-      .put("/api/pages/:id", requireToken("write"), async (c) => {
+      .put("/api/pages/:id", requireScope("write"), async (c) => {
         const id = c.req.param("id");
         if (!isPageId(id)) return c.notFound();
         const ifMatch = requireIfMatch(c);
@@ -302,7 +315,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!result.ok) return writeErrorResponse(c, result);
         return pageResponse(c, result.page);
       })
-      .post("/api/pages/:id/append", requireToken("write"), async (c) => {
+      .post("/api/pages/:id/append", requireScope("write"), async (c) => {
         const id = c.req.param("id");
         if (!isPageId(id)) return c.notFound();
         const parsed = await readJsonBody(c, { text: "string" }, ["text"]);
@@ -313,7 +326,30 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!result.ok) return writeErrorResponse(c, result);
         return pageResponse(c, result.page);
       })
-      .delete("/api/pages/:id", requireToken("write"), async (c) => {
+      // owner だけが呼べる。token と MCP からは scope に関係なく変えられないようにし、
+      // プロンプトインジェクションで draft が公開される経路を塞ぐ
+      .put("/api/pages/:id/visibility", requireOwner(), async (c) => {
+        const id = c.req.param("id");
+        if (!isPageId(id)) return c.notFound();
+        const parsed = await readJsonObject(c);
+        if (!parsed.ok) return parsed.response;
+        for (const key of Object.keys(parsed.value)) {
+          if (key !== "visibility") {
+            return errorResponse(c, 400, "unknown_field", { field: key });
+          }
+        }
+        const visibility = parsed.value.visibility;
+        if (visibility === undefined) {
+          return errorResponse(c, 400, "missing_field", { field: "visibility" });
+        }
+        if (!isVisibility(visibility)) {
+          return errorResponse(c, 400, "invalid_field", { field: "visibility" });
+        }
+        const result = await setVisibilityAs(writeContext(c), { id, visibility });
+        if (!result.ok) return writeErrorResponse(c, result);
+        return pageResponse(c, result.page);
+      })
+      .delete("/api/pages/:id", requireScope("write"), async (c) => {
         const id = c.req.param("id");
         if (!isPageId(id)) return c.notFound();
         const ifMatch = requireIfMatch(c);
@@ -333,7 +369,9 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
 }
 
 /**
- * 管理用のルート。派生データの作り直しは冪等で、ページの内容も版も変えないので write の scope で許す。
+ * 管理用のルート。派生データの作り直しは冪等で、ページの内容も版も変えないので write の scope で許す
+ * （owner も通る）。owner 専用にしないのは、作り直しを呼ぶのがスクリプトで、write の token は
+ * ページの保存で同じだけ書き込み枠を使えるため、owner に限っても守れるものが増えないから。
  *
  * 作り直しは CPU 10ms に収まるよう 1 ページずつ進む。全ページを作り直すには、応答の next を
  * 次のリクエストの after に渡し、next が null になるまで繰り返す:
@@ -345,7 +383,7 @@ export function registerAdminRoutes(
   app: Hono<AppEnv>,
   { recordWrite }: Pick<PagesRoutesOptions, "recordWrite">,
 ) {
-  return app.post("/api/admin/derived/rebuild", requireToken("write"), async (c) => {
+  return app.post("/api/admin/derived/rebuild", requireScope("write"), async (c) => {
     const parsed = await readJsonBody(c, { after: "string_or_null", limit: "number" }, []);
     if (!parsed.ok) return parsed.response;
     const after = (parsed.value.after as string | null | undefined) ?? null;

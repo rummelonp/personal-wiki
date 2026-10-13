@@ -4,17 +4,21 @@ import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
 import type { AppEnv } from "../env";
 import { findActiveApiToken, recordApiTokenUse } from "./api-tokens";
-import { type Principal, type Scope, tokenHasScope } from "./principal";
+import { readOwnerAuthConfig } from "./owner-config";
+import { type Principal, principalHasScope, type Scope } from "./principal";
+import { sessionCookieOf, verifySessionValue } from "./session";
 import { hashApiToken, isWellFormedApiToken } from "./token";
 
 /*
  * 認可の流れ（createApp が登録順を固定する）:
- *   1. rejectAmbiguousCredentials: Cookie と Authorization の併用を 400 にする
- *   2. resolvePrincipal: Authorization からリクエストの principal を決める
- *   3. enforceDeclaredPolicy: 宣言の無い登録がマッチしていれば、どのハンドラも呼ばずに 404 にする
- *   4. ルートごとの宣言（requireToken、allowAnonymous）: principal と scope を検査する
+ *   1. rejectAmbiguousCredentials: セッション cookie と Authorization の併用を 400 にする
+ *   2. rejectCrossSiteCookieWrites: セッション cookie 付きの変更系に CSRF の検査を掛ける
+ *   3. resolvePrincipal: Authorization かセッション cookie からリクエストの principal を決める
+ *   4. enforceDeclaredPolicy: 宣言の無い登録がマッチしていれば、どのハンドラも呼ばずに 404 にする
+ *   5. ルートごとの宣言（requireScope、requireToken、requireOwner、allowAnonymous）: principal と
+ *      scope を検査する
  *
- * 3 が保証すること: マッチした登録のうち、基盤の middleware と宣言を除くすべて（ハンドラや
+ * 4 が保証すること: マッチした登録のうち、基盤の middleware と宣言を除くすべて（ハンドラや
  * 宣言でない middleware）について、それより前に同じ path・同じ method の宣言が登録されている。
  * 1 つでも満たさなければリクエスト全体を拒否する。ALL の宣言（use、all）は ALL の登録しか守らない。
  * `.use(p, requireToken("read")).put(p, h)` を通すと、write を書き忘れた h が read で動くため。
@@ -98,17 +102,56 @@ function unauthorized(c: Context<AppEnv>): Response {
 }
 
 /**
- * どちらの権限で動いたかを曖昧にしないため、Cookie と Authorization の併用は中身を見ずに拒否する。
- * Cookie の名前を問わないのは、owner のセッション cookie を足す前から拒否を効かせておくため。
+ * どちらの権限で動いたかを曖昧にしないため、セッション cookie と Authorization の併用は中身を
+ * 見ずに拒否する。cookie の名前で絞るのは、zone の Bot 系の機能や Access が付ける cookie を
+ * cookie jar ごと送り返すクライアントの Bearer を止めないため。
  */
 export const rejectAmbiguousCredentials = defineBaseMiddleware(
   createMiddleware<AppEnv>(async (c, next) => {
-    if (c.req.header("Cookie") !== undefined && c.req.header("Authorization") !== undefined) {
+    if (sessionCookieOf(c) !== undefined && c.req.header("Authorization") !== undefined) {
       return c.json({ error: "ambiguous_credentials" }, 400);
     }
     await next();
   }),
 );
+
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * セッション cookie はブラウザが自動で付けるので、cookie 付きの変更系は同一オリジンのページから
+ * 送られたことを確かめる。SameSite=Lax だけでは、同じサイトの別のサブドメインからの要求を防げない。
+ * - Sec-Fetch-Site があれば same-origin、Origin があればリクエストのオリジンと一致すること。
+ *   どちらも無い要求は拒む（ブラウザは変更系の fetch にどちらかを必ず付ける）。
+ * - Content-Type は application/json に限る。フォームの送信（text/plain など）は preflight 無しに
+ *   別のオリジンから送れるため、それを受け付ける型を残さない。
+ * cookie の検証より前に置き、署名の有無に関係なく掛ける（ログアウトのように、期限切れの cookie
+ * でも受け付けるルートを守るため）。Bearer の要求は rejectAmbiguousCredentials で cookie を
+ * 持てないので、この検査を受けない。
+ */
+export const rejectCrossSiteCookieWrites = defineBaseMiddleware(
+  createMiddleware<AppEnv>(async (c, next) => {
+    if (UNSAFE_METHODS.has(c.req.method) && sessionCookieOf(c) !== undefined) {
+      if (!isSameOriginRequest(c) || !isJsonContentType(c.req.header("Content-Type"))) {
+        return c.json({ error: "csrf_rejected" }, 403);
+      }
+    }
+    await next();
+  }),
+);
+
+function isSameOriginRequest(c: Context<AppEnv>): boolean {
+  const fetchSite = c.req.header("Sec-Fetch-Site");
+  const origin = c.req.header("Origin");
+  if (fetchSite === undefined && origin === undefined) return false;
+  if (fetchSite !== undefined && fetchSite !== "same-origin") return false;
+  if (origin !== undefined && origin !== new URL(c.req.url).origin) return false;
+  return true;
+}
+
+function isJsonContentType(header: string | undefined): boolean {
+  const mediaType = header?.split(";")[0]?.trim().toLowerCase();
+  return mediaType === "application/json";
+}
 
 const BEARER_PATTERN = /^Bearer +([^ ]+) *$/i;
 
@@ -118,8 +161,10 @@ export interface ResolvePrincipalOptions {
 }
 
 /**
- * Authorization が無ければ anonymous。付いていれば有効な Bearer トークンでなければならず、
- * 公開ルートであっても無効なトークンは 401 にする（送った資格情報が黙って無視されないように）。
+ * Authorization が付いていれば有効な Bearer トークンでなければならず、公開ルートであっても
+ * 無効なトークンは 401 にする（送った資格情報が黙って無視されないように）。
+ * Authorization が無ければセッション cookie を見て、有効なら owner、無い・無効なら anonymous にする。
+ * cookie を 401 にしないのは、期限切れの cookie を持つブラウザが匿名で読めるページまで失わないため。
  *
  * キャッシュの制御もここで行う。匿名を受け付けるルートも principal で内容が変わりうるので、
  * principal が決まった後の応答には Vary を付け、匿名以外の応答は共有キャッシュに載せない
@@ -143,7 +188,7 @@ export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHa
 /** 資格情報が無効なら null。 */
 async function authenticate(c: Context<AppEnv>, now: () => number): Promise<Principal | null> {
   const authorization = c.req.header("Authorization");
-  if (authorization === undefined) return { kind: "anonymous" };
+  if (authorization === undefined) return authenticateSession(c, now);
 
   const token = BEARER_PATTERN.exec(authorization)?.[1];
   if (token === undefined || !isWellFormedApiToken(token)) return null;
@@ -155,6 +200,17 @@ async function authenticate(c: Context<AppEnv>, now: () => number): Promise<Prin
   // 応答の時点で記録が終わっている方がテストと運用で扱いやすい。
   await recordApiTokenUse(c.env.DB, found, now());
   return { kind: "token", name: found.name, scopes: found.scopes };
+}
+
+/** 設定が 1 つでも欠けていれば、cookie の中身に関係なく anonymous にする。 */
+async function authenticateSession(c: Context<AppEnv>, now: () => number): Promise<Principal> {
+  const value = sessionCookieOf(c);
+  if (value === undefined) return { kind: "anonymous" };
+  const config = readOwnerAuthConfig(c.env);
+  if (config === null) return { kind: "anonymous" };
+  return (await verifySessionValue(config, value, now()))
+    ? { kind: "owner" }
+    : { kind: "anonymous" };
 }
 
 /**
@@ -173,15 +229,39 @@ function currentPrincipal(c: Context<AppEnv>): Principal {
   return c.get("principal") ?? { kind: "anonymous" };
 }
 
-/** Bearer トークンだけを受け付け、`scope` を要求する。 */
+/** owner と、`scope` を持つ token を受け付ける。scope の判定は principalHasScope に任せる。 */
+export function requireScope(scope: Scope): MiddlewareHandler<AppEnv> {
+  return definePolicy(
+    createMiddleware<AppEnv>(async (c, next) => {
+      const principal = currentPrincipal(c);
+      if (principal.kind === "anonymous") return unauthorized(c);
+      if (!principalHasScope(principal, scope)) return c.json({ error: "forbidden" }, 403);
+      await next();
+    }),
+  );
+}
+
+/** Bearer トークンだけを受け付け、`scope` を要求する。owner のセッションでは入れない（/mcp 用）。 */
 export function requireToken(scope: Scope): MiddlewareHandler<AppEnv> {
   return definePolicy(
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") return unauthorized(c);
-      if (!tokenHasScope(principal, scope)) {
+      if (principal.kind !== "token" || !principalHasScope(principal, scope)) {
         return c.json({ error: "forbidden" }, 403);
       }
+      await next();
+    }),
+  );
+}
+
+/** owner だけを受け付ける。token は scope に関係なく 403 にする（visibility の変更など）。 */
+export function requireOwner(): MiddlewareHandler<AppEnv> {
+  return definePolicy(
+    createMiddleware<AppEnv>(async (c, next) => {
+      const principal = currentPrincipal(c);
+      if (principal.kind === "anonymous") return unauthorized(c);
+      if (principal.kind !== "owner") return c.json({ error: "forbidden" }, 403);
       await next();
     }),
   );

@@ -9,7 +9,9 @@ import {
   MAX_BODY_BYTES,
   MAX_TITLE_BYTES,
   type Page,
+  setVisibility,
   updatePage,
+  type Visibility,
   type WriteError,
   type WriteSuccess,
 } from "./store";
@@ -34,7 +36,7 @@ export const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
  * どの actor がどのページに書いたかを後から追えるようにする。本文は含めない。
  */
 export interface WriteMetric {
-  op: "create" | "update" | "append" | "delete" | "rebuild";
+  op: "create" | "update" | "append" | "delete" | "rebuild" | "visibility";
   /** revisions.actor と同じ形式 */
   actor: string;
   /** 書いたページ。作り直しは 1 回で複数ページを扱いうるので付けない */
@@ -103,6 +105,24 @@ export async function appendToPageAs(
       rowsWritten: result.rowsWritten,
       attempts: result.attempts,
     });
+  }
+  return result;
+}
+
+/**
+ * ルートの宣言（requireOwner）とは別にここでも owner に限る。token の経路（MCP の tool など）から
+ * 呼ばれても公開できないようにするため。
+ */
+export async function setVisibilityAs(
+  ctx: PageWriteContext,
+  input: { id: string; visibility: Visibility },
+): Promise<WriteSuccess | WriteError> {
+  if (ctx.principal.kind !== "owner") throw new Error("visibility を変えられるのは owner だけ");
+  if (!isPageId(input.id)) return { ok: false, reason: "not_found" };
+  const actor = actorOf(ctx.principal);
+  const result = await setVisibility(ctx.db, { ...input, now: ctx.now() });
+  if (result.ok && result.rowsWritten > 0) {
+    ctx.recordWrite({ op: "visibility", actor, pageId: input.id, rowsWritten: result.rowsWritten });
   }
   return result;
 }
