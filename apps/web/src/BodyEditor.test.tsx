@@ -5,12 +5,14 @@ import {
   isCompositionUnsettled,
   isDocReplacement,
   type LinkTargetSource,
+  type PageEmbedContent,
 } from "@personal-wiki/editor";
 import { act, createRef, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { BodyEditor, type BodyEditorHandle, type BodyEditorProps } from "./BodyEditor";
+import type { WikiLinkSources } from "./wiki-links";
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -39,9 +41,11 @@ function render(props: BodyEditorProps): {
   let current = props;
   act(() => mounted.render(<BodyEditor {...current} />));
   const view = () => {
-    const content = container?.querySelector<HTMLElement>(".cm-content");
-    if (!content) throw new Error("エディタが無い");
-    const found = EditorView.findFromDOM(content);
+    // `.cm-content` から探すと、展開した embed の中の view に当たることがある
+    // （findFromDOM は渡した要素の子孫の `.cm-content` を先に探す）
+    const editor = container?.querySelector<HTMLElement>(".cm-editor");
+    if (!editor) throw new Error("エディタが無い");
+    const found = EditorView.findFromDOM(editor);
     if (!found) throw new Error("EditorView が無い");
     return found;
   };
@@ -417,5 +421,161 @@ describe("[[ の補完", () => {
     rerender({ readOnly: true });
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(optionTexts()).toEqual([]);
+  });
+});
+
+/** 取得の結果を外から差し込める WikiLinkSources。 */
+function fakeLinks() {
+  const missing = new Set<string>();
+  const embeds = new Map<string, PageEmbedContent>();
+  const listeners = new Set<() => void>();
+  const sources: WikiLinkSources = {
+    resolveWikiLink: (target) => !missing.has(target),
+    resolvePageEmbed: (target) => embeds.get(target) ?? { kind: "loading" },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  return {
+    sources,
+    missing,
+    embeds,
+    listeners,
+    changed: () => {
+      for (const listener of [...listeners]) listener();
+    },
+  };
+}
+
+const unresolvedTargets = (v: EditorView) =>
+  [...v.dom.querySelectorAll(".cm-wikilink-unresolved")].map((e) => e.textContent);
+
+describe("wikilink の存在の印", () => {
+  it("存在しない link だけを未解決にし、取得の結果が届いたら組み直す", async () => {
+    const links = fakeLinks();
+    const { view } = controlled("[[有る]] と [[無い]]", { links: links.sources });
+    expect(unresolvedTargets(view())).toEqual([]);
+
+    links.missing.add("無い");
+    links.changed();
+    await vi.waitFor(() => expect(unresolvedTargets(view())).toEqual(["無い"]));
+  });
+
+  it("変換中に届いた結果は、落ち着くまで装飾に反映しない", async () => {
+    const links = fakeLinks();
+    const { view } = controlled("[[無い]]", { links: links.sources });
+    const v = view();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    typeAtEnd(v, "か", "input.type.compose");
+
+    links.missing.add("無い");
+    const before = v.state;
+    links.changed();
+    // dispatch していなければ state は同じオブジェクトのまま
+    expect(v.state).toBe(before);
+    expect(unresolvedTargets(v)).toEqual([]);
+
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(unresolvedTargets(v)).toEqual(["無い"]));
+  });
+
+  it("links を渡さなければ印を付けず、ページ embed は展開しない", () => {
+    const { view } = controlled("[[無い]] ![[別]]");
+    expect(unresolvedTargets(view())).toEqual([]);
+    expect(view().dom.querySelector(".cm-embed-page")).toBeNull();
+  });
+
+  it("アンマウントで購読を外す", () => {
+    const links = fakeLinks();
+    controlled("[[a]]", { links: links.sources });
+    expect(links.listeners.size).toBe(1);
+    act(() => root?.unmount());
+    expect(links.listeners.size).toBe(0);
+  });
+
+  it("StrictMode でも購読は 1 つだけ残る", () => {
+    const links = fakeLinks();
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    act(() =>
+      mounted.render(
+        <StrictMode>
+          <BodyEditor value="[[無い]]" links={links.sources} />
+        </StrictMode>,
+      ),
+    );
+    expect(links.listeners.size).toBe(1);
+  });
+});
+
+describe("ページ embed", () => {
+  const embedOf = (v: EditorView) => v.dom.querySelector<HTMLElement>(".cm-embed-page");
+
+  it("取得の結果に合わせて loading から本文の展開に変わる", async () => {
+    const links = fakeLinks();
+    const { view } = controlled("![[別]]", { links: links.sources });
+    expect(embedOf(view())?.getAttribute("data-embed-state")).toBe("loading");
+
+    links.embeds.set("別", { kind: "resolved", title: "別", text: "埋め込まれた本文" });
+    links.changed();
+    await vi.waitFor(() =>
+      expect(embedOf(view())?.getAttribute("data-embed-state")).toBe("resolved"),
+    );
+    expect(embedOf(view())?.textContent).toContain("埋め込まれた本文");
+  });
+});
+
+describe("wikilink のクリック", () => {
+  const clickLink = (v: EditorView, text: string) => {
+    const link = [...v.dom.querySelectorAll(".cm-wikilink")].find((e) => e.textContent === text);
+    if (!link) throw new Error(`${text} の link が無い`);
+    link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  };
+
+  it("素のクリックで onWikiLinkClick に target を渡す", () => {
+    const onWikiLinkClick = vi.fn();
+    const { view } = controlled("[[有る|表示]] [[Note^abc]]", { onWikiLinkClick });
+    clickLink(view(), "表示");
+    expect(onWikiLinkClick).toHaveBeenLastCalledWith({
+      target: "有る",
+      label: "表示",
+      blockId: null,
+    });
+    clickLink(view(), "Note^abc");
+    expect(onWikiLinkClick).toHaveBeenLastCalledWith({
+      target: "Note",
+      label: null,
+      blockId: "abc",
+    });
+  });
+
+  it("再描画で渡し直した関数を呼ぶ", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { view, rerender } = controlled("[[有る]]", { onWikiLinkClick: first });
+    rerender({ onWikiLinkClick: second });
+    clickLink(view(), "有る");
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("展開した embed の title のクリックも同じ関数に届く", async () => {
+    const links = fakeLinks();
+    links.embeds.set("別", { kind: "resolved", title: "別", text: "本文" });
+    const onWikiLinkClick = vi.fn();
+    const { view } = controlled("![[別]]", { links: links.sources, onWikiLinkClick });
+    const title = await vi.waitFor(() => {
+      const found = view().dom.querySelector<HTMLElement>(".cm-embed-page-title");
+      if (!found) throw new Error("title が無い");
+      return found;
+    });
+    title.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+    );
+    expect(onWikiLinkClick).toHaveBeenCalledWith({ target: "別", label: null, blockId: null });
   });
 });

@@ -1,3 +1,4 @@
+import type { WikiLinkClick } from "@personal-wiki/editor";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import { Backlinks } from "./Backlinks";
@@ -19,7 +20,9 @@ import { extractOutline } from "./heading-outline";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
 import { Outline } from "./Outline";
 import {
+  createPage,
   deletePage,
+  failureMessage,
   findPageByTitle,
   getPage,
   listRecent,
@@ -28,7 +31,8 @@ import {
   updatePage,
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { homeHref, navigate } from "./route";
+import { homeHref, navigate, pageHref } from "./route";
+import { createWikiLinks } from "./wiki-links";
 
 const api: EditorApi = {
   getPage: (id) => getPage(id),
@@ -70,6 +74,11 @@ function retryLabel(op: FailedOp): string {
   }
 }
 
+/** 本文のリンクをクリックしても開けなかったときの案内。 */
+type LinkNotice =
+  | { kind: "missing"; title: string; busy: boolean; error: string | null }
+  | { kind: "error" };
+
 function useEditorSession(page: Page): EditorSession {
   const [session] = useState(
     () => new EditorSession(page, { api, backup: createLocalBackupStore() }),
@@ -99,10 +108,67 @@ export function PageEditor({ page }: { page: Page }) {
   const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
   const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
+  const [links] = useState(() => createWikiLinks({ pageId: page.id }));
+  const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
+  const linkClick = useRef<AbortController | null>(null);
 
   useEffect(() => {
     void titleIndex.refresh();
   }, []);
+
+  // 保存で title や link 先の解決が変わりうる。保存は版が進むことで分かる
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 版が進んだことを合図に取り直す
+  useEffect(() => {
+    links.refresh();
+  }, [links, state.base.version]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") links.refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      linkClick.current?.abort();
+      links.dispose();
+    };
+  }, [links]);
+
+  async function handleWikiLinkClick(link: WikiLinkClick) {
+    linkClick.current?.abort();
+    const controller = new AbortController();
+    linkClick.current = controller;
+    setLinkNotice(null);
+    const found = await links.lookup(link.target, controller.signal);
+    if (controller.signal.aborted) return;
+    if (found.kind === "found") navigate(pageHref(found.page.id));
+    else if (found.kind === "missing") {
+      setLinkNotice({ kind: "missing", title: link.target, busy: false, error: null });
+    } else setLinkNotice({ kind: "error" });
+  }
+
+  // 作ったページを開くので、未保存の変更はこのページを離れるときの leave が送る
+  async function createLinkedPage(title: string) {
+    setLinkNotice({ kind: "missing", title, busy: true, error: null });
+    const res = await createPage({ title, body: "" });
+    if (res.ok) {
+      navigate(pageHref(res.value.id));
+      return;
+    }
+    if (res.reason === "title_conflict") {
+      // 別のところで同じ title のページができていた
+      const existing = await links.lookup(title);
+      if (existing.kind === "found") {
+        navigate(pageHref(existing.page.id));
+        return;
+      }
+    }
+    const message =
+      res.reason === "unauthorized"
+        ? "ログインの期限が切れました。ログインし直してください"
+        : failureMessage(res, "作成できなかった");
+    setLinkNotice({ kind: "missing", title, busy: false, error: message });
+  }
 
   async function handleDelete() {
     if (!window.confirm(`「${state.base.title}」を削除します。元に戻せません。よろしいですか？`))
@@ -257,6 +323,34 @@ export function PageEditor({ page }: { page: Page }) {
           />
         )}
 
+        {linkNotice !== null && (
+          <section className="message message-warn" role="alert">
+            {linkNotice.kind === "error" ? (
+              <p>リンク先を調べられませんでした。通信を確かめて、もう一度クリックしてください。</p>
+            ) : (
+              <>
+                <p>「{linkNotice.title}」のページはまだありません。</p>
+                {linkNotice.error !== null && <p>{linkNotice.error}</p>}
+              </>
+            )}
+            <div className="actions">
+              {linkNotice.kind === "missing" && (
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={linkNotice.busy}
+                  onClick={() => void createLinkedPage(linkNotice.title)}
+                >
+                  作成して開く
+                </button>
+              )}
+              <button type="button" className="button" onClick={() => setLinkNotice(null)}>
+                閉じる
+              </button>
+            </div>
+          </section>
+        )}
+
         <input
           className="title-input"
           aria-label="title"
@@ -273,6 +367,8 @@ export function PageEditor({ page }: { page: Page }) {
           readOnly={readOnly}
           pageIndex={titleIndex}
           linkTargets={linkTargets}
+          links={links}
+          onWikiLinkClick={(link) => void handleWikiLinkClick(link)}
           onChange={(body) => session.edit({ ...session.getState().draft, body })}
           onBlur={() => void session.flush()}
         />

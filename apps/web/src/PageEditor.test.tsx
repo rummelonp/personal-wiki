@@ -5,11 +5,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { PageEditor } from "./PageEditor";
 import {
   type ApiResult,
+  createPage,
   findPageByTitle,
   getPage,
   listBacklinks,
   listRecent,
   type Page,
+  resolvePages,
   updatePage,
 } from "./pages-api";
 
@@ -24,6 +26,8 @@ vi.mock("./pages-api", async (importOriginal) => {
     findPageByTitle: vi.fn(),
     listBacklinks: vi.fn(),
     listRecent: vi.fn(),
+    resolvePages: vi.fn(),
+    createPage: vi.fn(),
   };
 });
 
@@ -57,6 +61,10 @@ beforeEach(() => {
   vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+  // 既定では、どの link も存在することにして印を付けない
+  vi.mocked(resolvePages).mockImplementation(async (titles) =>
+    ok(titles.map((title) => ({ id: "B", title, visibility: "draft" as const }))),
+  );
 });
 
 afterEach(() => {
@@ -65,6 +73,7 @@ afterEach(() => {
   root = null;
   container = null;
   vi.clearAllMocks();
+  history.replaceState(null, "", "/");
 });
 
 function renderPage(page: Page = PAGE) {
@@ -74,8 +83,9 @@ function renderPage(page: Page = PAGE) {
   root = mounted;
   act(() => mounted.render(<PageEditor page={page} />));
   const view = () => {
-    const content = container?.querySelector<HTMLElement>(".cm-content");
-    const found = content ? EditorView.findFromDOM(content) : null;
+    // `.cm-content` から探すと、展開した embed の中の view に当たることがある
+    const editor = container?.querySelector<HTMLElement>(".cm-editor");
+    const found = editor ? EditorView.findFromDOM(editor) : null;
     if (!found) throw new Error("エディタが無い");
     return found;
   };
@@ -229,5 +239,131 @@ describe("PageEditor と本文のエディタ", () => {
         [...document.querySelectorAll(".cm-tooltip-autocomplete li")].map((li) => li.textContent),
       ).toContain("別のページ"),
     );
+  });
+});
+
+describe("PageEditor の wikilink", () => {
+  const clickLink = (text: string) => {
+    const link = [...(container?.querySelectorAll(".cm-wikilink") ?? [])].find(
+      (e) => e.textContent === text,
+    );
+    if (!link) throw new Error(`${text} の link が無い`);
+    act(() => {
+      link.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+  };
+
+  it("存在するページへの link は、クリックでそのページへ SPA 遷移する", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => ({
+          id: "BBBBBBBBBBBBBBBBBBBBBB",
+          title,
+          visibility: "draft" as const,
+        })),
+      ),
+    );
+    renderPage({ ...PAGE, body: "[[別]]" });
+    clickLink("別");
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/BBBBBBBBBBBBBBBBBBBBBB"));
+  });
+
+  it("存在しない title だけに未解決の印を付ける", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) =>
+          title === "有る" ? { id: "B", title, visibility: "draft" as const } : null,
+        ),
+      ),
+    );
+    renderPage({ ...PAGE, body: "[[有る]] [[無い]]" });
+    await vi.waitFor(() =>
+      expect(
+        [...document.querySelectorAll(".cm-wikilink-unresolved")].map((e) => e.textContent),
+      ).toEqual(["無い"]),
+    );
+    expect(resolvePages).toHaveBeenCalledTimes(1);
+  });
+
+  it("存在の確認が失敗しても、どの link にも印を付けない", async () => {
+    vi.mocked(resolvePages).mockResolvedValue({ ok: false, reason: "error", message: "500" });
+    renderPage({ ...PAGE, body: "[[無い]]" });
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+    await flushAsync();
+    expect(document.querySelectorAll(".cm-wikilink-unresolved")).toHaveLength(0);
+  });
+
+  it("無いページの link をクリックすると、作成の案内を出して遷移しない", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
+    const { button } = renderPage({ ...PAGE, body: "[[無い]]" });
+    clickLink("無い");
+    await vi.waitFor(() =>
+      expect(container?.textContent).toContain("「無い」のページはまだありません"),
+    );
+    expect(location.pathname).toBe("/");
+
+    vi.mocked(createPage).mockResolvedValue(
+      ok({ ...PAGE, id: "CCCCCCCCCCCCCCCCCCCCCC", title: "無い", body: "" }),
+    );
+    act(() => button("作成して開く").click());
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/CCCCCCCCCCCCCCCCCCCCCC"));
+    expect(createPage).toHaveBeenCalledWith({ title: "無い", body: "" });
+  });
+
+  it("作成が title の衝突で失敗したら、できていたページを開く", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
+    const { button } = renderPage({ ...PAGE, body: "[[無い]]" });
+    clickLink("無い");
+    await vi.waitFor(() => expect(container?.textContent).toContain("まだありません"));
+
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じ title のページがすでにある",
+    });
+    // 衝突の後の再確認は、キャッシュに頼らず取り直した結果を使う
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => ({
+          id: "DDDDDDDDDDDDDDDDDDDDDD",
+          title,
+          visibility: "draft" as const,
+        })),
+      ),
+    );
+    act(() => button("作成して開く").click());
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/DDDDDDDDDDDDDDDDDDDDDD"));
+  });
+
+  it("リンク先を調べられなかったときは、無いと言わずに再試行を促す", async () => {
+    vi.mocked(resolvePages).mockResolvedValue({ ok: false, reason: "error", message: "500" });
+    renderPage({ ...PAGE, body: "[[別]]" });
+    clickLink("別");
+    await vi.waitFor(() => expect(container?.textContent).toContain("調べられませんでした"));
+    expect(container?.textContent).not.toContain("まだありません");
+    expect(location.pathname).toBe("/");
+  });
+
+  it("![[ページ]] を取得した本文で展開する", async () => {
+    vi.mocked(findPageByTitle).mockResolvedValue(
+      ok({ ...PAGE, id: "BBBBBBBBBBBBBBBBBBBBBB", title: "別", body: "埋め込まれた本文" }),
+    );
+    renderPage({ ...PAGE, body: "![[別]]" });
+    await vi.waitFor(() =>
+      expect(container?.querySelector(".cm-embed-page")?.textContent).toContain("埋め込まれた本文"),
+    );
+  });
+
+  it("保存して版が進んだら、存在の確認を取り直す", async () => {
+    const { view } = renderPage({ ...PAGE, body: "[[無い]]" });
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(1));
+    await flushAsync();
+
+    view().focus();
+    typeAtEnd(view(), " ");
+    act(() => view().contentDOM.blur());
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(2));
   });
 });

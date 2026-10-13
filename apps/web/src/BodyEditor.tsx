@@ -3,13 +3,17 @@ import { EditorView } from "@codemirror/view";
 import {
   createEditor,
   dispatchWhenSettled,
+  invalidateDecorations,
   isDocReplacement,
   type LinkTargetSource,
+  type PageEmbedContent,
   type PageIndex,
   replaceDoc,
   setReadOnly,
+  type WikiLinkClick,
 } from "@personal-wiki/editor";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import type { WikiLinkSources } from "./wiki-links";
 
 export interface BodyEditorHandle {
   /** 本文の `offset` の位置にカーソルを置き、見える位置までスクロールする。 */
@@ -31,8 +35,21 @@ export interface BodyEditorProps {
   pageIndex?: PageIndex;
   /** `[[Title#` と `[[Title#^` の候補の取得元。pageIndex と一緒に渡したときだけ働く。 */
   linkTargets?: LinkTargetSource;
+  /**
+   * wikilink の存在の印と `![[ページ]]` の展開の取得元。渡すと印と embed が働く。
+   * 作った時点のものを使い続けるので、ページが変わるときは BodyEditor ごと作り直す。
+   */
+  links?: WikiLinkSources;
+  /**
+   * wikilink と、展開した embed の title のクリック。渡したときだけ素のクリックで呼ぶ（作った時点で
+   * 渡されているかを見る）。呼ぶ関数は最新のものを使う。
+   */
+  onWikiLinkClick?: (link: WikiLinkClick) => void;
   ref?: Ref<BodyEditorHandle>;
 }
+
+/** `links` が外れた後に残った embed の表示。取得元が無いので未解決として出す。 */
+const NO_EMBED: PageEmbedContent = { kind: "unresolved" };
 
 const jumpKey = Symbol("jumpTo");
 
@@ -52,14 +69,34 @@ export function BodyEditor({
   readOnly = false,
   pageIndex,
   linkTargets,
+  links,
+  onWikiLinkClick,
   ref,
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
 
   // EditorView の listener は作ったときに 1 度だけ結ぶので、最新の props は ref から読む
-  const latest = useRef({ value, onChange, onBlur, readOnly, pageIndex, linkTargets });
-  latest.current = { value, onChange, onBlur, readOnly, pageIndex, linkTargets };
+  const latest = useRef({
+    value,
+    onChange,
+    onBlur,
+    readOnly,
+    pageIndex,
+    linkTargets,
+    links,
+    onWikiLinkClick,
+  });
+  latest.current = {
+    value,
+    onChange,
+    onBlur,
+    readOnly,
+    pageIndex,
+    linkTargets,
+    links,
+    onWikiLinkClick,
+  };
 
   useEffect(() => {
     const parent = host.current;
@@ -72,6 +109,18 @@ export function BodyEditor({
       // 補完は readOnly の間も積まれたままで、readOnly の間は候補を出さない（createEditor が担う）
       ...(initial.pageIndex === undefined ? {} : { pageIndex: initial.pageIndex }),
       ...(initial.linkTargets === undefined ? {} : { linkTargets: initial.linkTargets }),
+      // resolvePageEmbed を渡すと `![[ページ]]` を展開する表示に変わるので、取得元があるときだけ渡す
+      ...(initial.links === undefined
+        ? {}
+        : {
+            resolveWikiLink: (target: string) =>
+              latest.current.links?.resolveWikiLink(target) ?? true,
+            resolvePageEmbed: (target: string) =>
+              latest.current.links?.resolvePageEmbed(target) ?? NO_EMBED,
+          }),
+      ...(initial.onWikiLinkClick === undefined
+        ? {}
+        : { onWikiLinkClick: (link: WikiLinkClick) => latest.current.onWikiLinkClick?.(link) }),
       extensions: [
         EditorView.contentAttributes.of({ "aria-label": "本文" }),
         EditorView.domEventHandlers({
@@ -105,6 +154,15 @@ export function BodyEditor({
       editor.destroy();
     };
   }, []);
+
+  // 取得が終わって印や embed の内容が変わったら、装飾を組み直させる。変換中は editor が保留する
+  useEffect(() => {
+    if (links === undefined) return;
+    return links.subscribe(() => {
+      const editor = view.current;
+      if (editor !== null) invalidateDecorations(editor);
+    });
+  }, [links]);
 
   // useLayoutEffect にするのは、持ち主の状態が変わってから次の入力が届く前に、エディタへ反映するため
   useLayoutEffect(() => {
