@@ -9,6 +9,8 @@ import {
   getPage,
   listBacklinks,
   listPageTitles,
+  listRecent,
+  listTags,
   type Page,
   resolvePages,
 } from "./pages-api";
@@ -109,6 +111,23 @@ const main = () => container?.querySelector("main");
 const header = () => container?.querySelector("header");
 
 describe("App の匿名の画面", () => {
+  it("トップで公開ページの一覧と検索とタグを出し、owner の操作を出さない", async () => {
+    serve("anonymous", [PUBLIC]);
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({ pages: [{ ...PUBLIC, tags: ["タグ"] }], nextCursor: null }),
+    );
+    vi.mocked(listTags).mockResolvedValue(ok([{ tag: "タグ", count: 1 }]));
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
+    );
+    expect(main()?.querySelector("input[type='search'], form input")).not.toBeNull();
+    expect(main()?.textContent).toContain("タグ");
+    expect(main()?.querySelectorAll("button")).toHaveLength(0);
+    expect(header()?.querySelectorAll("button")).toHaveLength(0);
+    expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
+  });
+
   it("/<title> で公開ページを読み取り専用で開き、ヘッダーにはログインだけを出す", async () => {
     serve("anonymous", [PUBLIC]);
     await renderAt(titleUrl(PUBLIC.title));
