@@ -1,0 +1,90 @@
+import { describe, expect, it } from "vitest";
+import { isErr, isOk } from "./result";
+import { foldTitle, normalizeTitleKey, wikiLinkUnsafeChars } from "./title";
+
+describe("wikiLinkUnsafeChars", () => {
+  it("returns nothing for a title a WikiLink can target", () => {
+    expect(wikiLinkUnsafeChars("会議メモ 2026-09-12 (定例)")).toEqual([]);
+  });
+
+  it("returns each unsafe character once, in order of appearance", () => {
+    expect(wikiLinkUnsafeChars("C# ^と [a|b] と C#")).toEqual(["#", "^", "[", "|", "]"]);
+  });
+
+  it("returns a trailing backslash, which a labelled link would read as part of \\|", () => {
+    expect(wikiLinkUnsafeChars("C\\")).toEqual(["\\"]);
+    expect(wikiLinkUnsafeChars("C# \\")).toEqual(["#", "\\"]);
+  });
+
+  it("allows a backslash that is not at the end", () => {
+    expect(wikiLinkUnsafeChars("a\\b")).toEqual([]);
+  });
+});
+
+describe("foldTitle", () => {
+  it("returns an empty string instead of failing for blank input", () => {
+    expect(foldTitle("   ")).toBe("");
+  });
+
+  it("applies the same folding as normalizeTitleKey", () => {
+    const result = normalizeTitleKey("  ＣｏｄｅＭｉｒｒｏｒ   Ｒｅｖｉｅｗ ");
+    expect(isOk(result) && result.value).toBe(foldTitle("  ＣｏｄｅＭｉｒｒｏｒ   Ｒｅｖｉｅｗ "));
+  });
+});
+
+describe("normalizeTitleKey", () => {
+  it("lowercases ASCII titles", () => {
+    const result = normalizeTitleKey("AbC");
+    expect(isOk(result) && result.value).toBe("abc");
+  });
+
+  it("trims leading and trailing whitespace", () => {
+    const result = normalizeTitleKey("  Hello  ");
+    expect(isOk(result) && result.value).toBe("hello");
+  });
+
+  it("collapses runs of internal whitespace into a single space", () => {
+    const result = normalizeTitleKey("Hello   World");
+    expect(isOk(result) && result.value).toBe("hello world");
+  });
+
+  it("folds fullwidth Latin letters to halfwidth via NFKC", () => {
+    // "Ａ" (U+FF21 FULLWIDTH LATIN CAPITAL LETTER A) -> NFKC -> "A" -> case fold -> "a"
+    const result = normalizeTitleKey("Ａ");
+    expect(isOk(result) && result.value).toBe("a");
+  });
+
+  it("folds halfwidth katakana to fullwidth via NFKC", () => {
+    // "ｱ" (U+FF71 HALFWIDTH KATAKANA LETTER A) -> NFKC -> "ア"
+    const result = normalizeTitleKey("ｱ");
+    expect(isOk(result) && result.value).toBe("ア");
+  });
+
+  it("treats titles differing only by fullwidth/halfwidth or case as identical keys", () => {
+    const a = normalizeTitleKey("Ｔest");
+    const b = normalizeTitleKey("test");
+    expect(isOk(a) && isOk(b) && a.value === b.value).toBe(true);
+  });
+
+  it("rejects a title that is empty after trimming", () => {
+    const result = normalizeTitleKey("   ");
+    expect(isErr(result) && result.error.kind).toBe("empty_title");
+  });
+
+  it("folds the German sharp s to 'ss' (Unicode default case fold, not toLowerCase)", () => {
+    const result = normalizeTitleKey("Straße");
+    expect(isOk(result) && result.value).toBe("strasse");
+  });
+
+  it("folds the capital sharp s to 'ss'", () => {
+    const result = normalizeTitleKey("ẞ");
+    expect(isOk(result) && result.value).toBe("ss");
+  });
+
+  it("folds both Greek sigma forms (Σ and final ς) to the same key", () => {
+    const upper = normalizeTitleKey("Σ");
+    const final = normalizeTitleKey("ς");
+    expect(isOk(upper) && upper.value).toBe("σ");
+    expect(isOk(final) && final.value).toBe("σ");
+  });
+});

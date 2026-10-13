@@ -1,0 +1,16 @@
+{
+  "name": "@personal-wiki/domain",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./title": "./src/title.ts",
+    "./result": "./src/result.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
