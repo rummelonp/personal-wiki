@@ -1,6 +1,10 @@
 import { type EditorView, type PluginValue, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { compositionSettledNotifier, isCompositionUnsettled } from "./ime";
 
+// 破棄した view では plugin を引けなくなる（引けないと extension が無い view と区別できない）ので、
+// 破棄済みの view をここで覚えておく。
+const destroyedViews = new WeakSet<EditorView>();
+
 class SettledDispatcher implements PluginValue {
   private readonly pending = new Map<unknown, () => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -26,6 +30,7 @@ class SettledDispatcher implements PluginValue {
   }
 
   destroy(): void {
+    destroyedViews.add(this.view);
     clearTimeout(this.timer);
     this.pending.clear();
   }
@@ -44,10 +49,7 @@ class SettledDispatcher implements PluginValue {
 
 const settledDispatcher = ViewPlugin.fromClass(SettledDispatcher);
 
-/**
- * `dispatchWhenSettled` が使う extension。`createEditor` と `createTitleEditor` の view には
- * 最初から入っている（`docReplacement` に含まれる）。
- */
+/** 公開名は `docReplacement`（replace-doc.ts）。 */
 export const settledDispatch = [settledDispatcher, compositionSettledNotifier];
 
 /**
@@ -56,15 +58,22 @@ export const settledDispatch = [settledDispatcher, compositionSettledNotifier];
  *
  * 変換中と確定文字列を読み込むまでの間に呼ばれた `action` は、`key` ごとに最後の 1 つだけを覚え、
  * 落ち着いた後の最初の update から次の task で 1 回だけ実行する。実行の順は、その `key` が
- * 最初に保留された順である。view を破棄すると、保留していた `action` は捨てる。
+ * 最初に保留された順である。view を破棄すると、保留していた `action` は捨て、破棄した後の呼び出しは
+ * 何もしない。
+ *
+ * update の最中（`EditorView.updateListener` や ViewPlugin の `update` の中）に呼ばない。
+ * 落ち着いていればその場で dispatch するので、CodeMirror が update 中の dispatch として拒む。
+ *
+ * view には `docReplacement` が要る。`createEditor` と `createTitleEditor` の view には最初から入っている。
  *
  * `key` は値の同一性で比べる。他の呼び出し元と衝突しないよう、モジュールごとの定数
  * （`Symbol` など）を渡す。
  */
 export function dispatchWhenSettled(view: EditorView, key: unknown, action: () => void): void {
+  if (destroyedViews.has(view)) return;
   const dispatcher = view.plugin(settledDispatcher);
   if (!dispatcher) {
-    throw new Error("dispatchWhenSettled には settledDispatch extension を入れた view が必要です");
+    throw new Error("dispatchWhenSettled には docReplacement extension を入れた view が必要です");
   }
   dispatcher.run(key, action);
 }

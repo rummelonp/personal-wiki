@@ -77,6 +77,24 @@ describe("dispatchWhenSettled", () => {
     expect(action).not.toHaveBeenCalled();
   });
 
+  it("does nothing once the view is destroyed", () => {
+    const looked = mount();
+    const before = vi.fn();
+    // 破棄の前に 1 度引いておく view と、破棄の前に 1 度も引かない view の両方を確かめる
+    dispatchWhenSettled(looked, "a", before);
+    expect(before).toHaveBeenCalledTimes(1);
+    looked.destroy();
+    host?.remove();
+    const fresh = mount();
+    fresh.destroy();
+    view = null;
+
+    const after = vi.fn();
+    expect(() => dispatchWhenSettled(looked, "a", after)).not.toThrow();
+    expect(() => dispatchWhenSettled(fresh, "a", after)).not.toThrow();
+    expect(after).not.toHaveBeenCalled();
+  });
+
   it("refuses a view without the extension", () => {
     host = document.createElement("div");
     document.body.append(host);
