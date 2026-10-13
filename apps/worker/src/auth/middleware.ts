@@ -195,10 +195,14 @@ export interface ResolvePrincipalOptions {
  * 無効なトークンは 401 にする（送った資格情報が黙って無視されないように）。
  * Authorization が無ければセッション cookie を見て、有効なら owner、無ければ anonymous にする。
  * 検証できない cookie は、ここでは 401 にせず staleSession 付きの anonymous にする。401 にするかは
- * ルートの宣言が決める。ページの読み取り（allowAnonymousRead）は 401 にして cookie を消し、
- * ログインが切れたことを画面に伝える。匿名で 200 を返すと、owner のつもりの画面が draft の欠けた
- * 一覧を黙って出す。SPA の配信や /api/me などの allowAnonymous() のルートは匿名として 200 を返す。
- * HTML まで 401 にすると、ブラウザが画面を開けず、ログインへ進む導線も出せない。
+ * ルートの宣言が決める。
+ * - ページの読み取り（allowAnonymousRead）は 401 にして、ログインが切れたことを画面に伝える。匿名で
+ *   200 を返すと、owner のつもりの画面が draft の欠けた一覧を黙って出す
+ * - SPA の配信や /api/me などの allowAnonymous() のルートは匿名として 200 を返す。HTML まで 401 に
+ *   すると、ブラウザが画面を開けず、ログインへ進む導線も出せない
+ * cookie を消すのは /api/me だけにする。読み取りの 401 で消すと、開いたままの owner の画面では次の
+ * 読み取りが匿名の 200 になり、401 を表示しない呼び出しがあると通知が 1 回も出ないまま匿名の内容に
+ * 入れ替わる。SPA は起動時に必ず /api/me を呼ぶので、再読み込みすれば匿名の表示に戻る。
  *
  * キャッシュの制御もここで行う。ルートの宣言ではなく principal を起点にするのは、宣言の種類や
  * 匿名に開くルートを増やしたときに付け忘れないようにするため（401 と 400 の早期返却は
@@ -257,7 +261,10 @@ async function authenticateSession(c: Context<AppEnv>, now: () => number): Promi
     : { kind: "anonymous", staleSession: true };
 }
 
-/** 検証できなかったセッション cookie をブラウザから消す。次の要求からは cookie の無い匿名になる。 */
+/**
+ * 検証できなかったセッション cookie をブラウザから消す。次の要求からは cookie の無い匿名になる。
+ * /api/me だけが呼ぶ（どこで消すかの理由は resolvePrincipal）。
+ */
 export function clearStaleSession(c: Context<AppEnv>): void {
   const principal = currentPrincipal(c);
   if (principal.kind === "anonymous" && principal.staleSession === true) {
@@ -327,8 +334,8 @@ const ANONYMOUS_READ_METHODS = new Set(["GET", "HEAD"]);
 /**
  * ページの読み取り。owner、read の scope を持つ token、anonymous を受け付ける。anonymous に何を
  * 見せるかはハンドラが readableVisibilityOf で決める。
- * - 検証できないセッション cookie は 401 にして消す（理由は resolvePrincipal）。cookie を消すので、
- *   次の要求は cookie の無い匿名として通る
+ * - 検証できないセッション cookie は 401 にする。cookie は消さないので、同じ cookie の間は 401 が続く
+ *   （理由は resolvePrincipal）
  * - anonymous は GET と HEAD だけ。読み取りの宣言を変更系のルートに付け間違えても、匿名には開かない
  * - 応答の Cache-Control は resolvePrincipal が principal から決める。ハンドラは Cache-Control を
  *   付けない（付けると anonymous の no-store が外れる）
@@ -339,11 +346,9 @@ export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") {
-        if (principal.staleSession === true) {
-          clearStaleSession(c);
+        if (principal.staleSession === true || !ANONYMOUS_READ_METHODS.has(c.req.method)) {
           return unauthorized(c);
         }
-        if (!ANONYMOUS_READ_METHODS.has(c.req.method)) return unauthorized(c);
       } else if (!principalHasScope(principal, "read")) {
         return c.json({ error: "forbidden" }, 403);
       }

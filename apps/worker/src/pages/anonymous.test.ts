@@ -303,38 +303,34 @@ describe("検証できないセッション cookie", () => {
 
   const garbage = `${SESSION_COOKIE_NAME}=garbage`;
 
-  it("ページの読み取りは 401 にして cookie を消し、cookie を外せば匿名で public だけを読める", async () => {
-    const { call, anonymous, open, clock } = await seed();
+  it("ページの読み取りは 401 にして cookie を消さず、同じ cookie で続けて読んでも 401 のまま", async () => {
+    const { call, open, clock } = await seed();
     const stale = {
       garbage,
       expired: await ownerCookie(clock.now - SESSION_TTL_SECONDS * 1000 - 1000),
       wrongSecret: await ownerCookie(clock.now, "x".repeat(44)),
     };
     for (const [variant, cookie] of Object.entries(stale)) {
-      for (const path of readPaths(open)) {
-        const res = await call(path, { headers: { Cookie: cookie } });
-        expect(res.status, `${variant} ${path}`).toBe(401);
-        expect(await res.json()).toEqual({ error: "unauthorized" });
-        expectCookieCleared(res);
-        expect(res.headers.get("Vary")).toBe("Authorization, Cookie");
+      for (const round of [1, 2]) {
+        for (const path of readPaths(open)) {
+          const label = `${variant} ${round} ${path}`;
+          const res = await call(path, { headers: { Cookie: cookie } });
+          expect(res.status, label).toBe(401);
+          expect(await res.json(), label).toEqual({ error: "unauthorized" });
+          expect(res.headers.get("Set-Cookie"), label).toBeNull();
+          expect(res.headers.get("Vary"), label).toBe("Authorization, Cookie");
+        }
       }
-    }
-    for (const path of readPaths(open)) {
-      const res = await anonymous(path);
-      expect(res.status, path).toBe(200);
-      const text = await res.text();
-      for (const word of DRAFT_ONLY_MARKERS) expect(text, `${path} に ${word}`).not.toContain(word);
-      expect(res.headers.get("Set-Cookie"), path).toBeNull();
     }
   });
 
-  it("OWNER_EMAILS から外れた owner の cookie も 401 にして消す", async () => {
+  it("OWNER_EMAILS から外れた owner の cookie も 401 にし、消さない", async () => {
     const { app, open, cookie } = await seed();
     const env = ownerEnv({ OWNER_EMAILS: "other@example.com" });
     for (const path of readPaths(open)) {
       const res = await app.request(path, { headers: { Cookie: cookie } }, env);
       expect(res.status, path).toBe(401);
-      expectCookieCleared(res);
+      expect(res.headers.get("Set-Cookie"), path).toBeNull();
     }
   });
 
@@ -345,15 +341,23 @@ describe("検証できないセッション cookie", () => {
       headers: { Cookie: garbage },
     });
     expect(res.status).toBe(401);
-    expectCookieCleared(res);
+    expect(res.headers.get("Set-Cookie")).toBeNull();
   });
 
-  it("/api/me は匿名として答え、cookie を消す", async () => {
-    const { call } = await seed();
-    const res = await call("/api/me", { headers: { Cookie: garbage } });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ kind: "anonymous" });
-    expectCookieCleared(res);
+  it("/api/me は匿名として答えて cookie を消し、その後は匿名として public だけを読める", async () => {
+    const { call, anonymous, open } = await seed();
+    const me = await call("/api/me", { headers: { Cookie: garbage } });
+    expect(me.status).toBe(200);
+    expect(await me.json()).toEqual({ kind: "anonymous" });
+    expectCookieCleared(me);
+    // ブラウザは Max-Age=0 の cookie を捨てるので、以降の要求は cookie を持たない
+    for (const path of readPaths(open)) {
+      const res = await anonymous(path);
+      expect(res.status, path).toBe(200);
+      const text = await res.text();
+      for (const word of DRAFT_ONLY_MARKERS) expect(text, `${path} に ${word}`).not.toContain(word);
+      expect(res.headers.get("Set-Cookie"), path).toBeNull();
+    }
   });
 
   it("ヘルスチェックは匿名として通し、cookie には触らない", async () => {
