@@ -13,6 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@personal-wiki/domain": "workspace:*",
+    "@personal-wiki/markdown": "workspace:*",
     "hono": "^4.13.13"
   },
   "devDependencies": {
