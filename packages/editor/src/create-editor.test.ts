@@ -95,11 +95,10 @@ describe("createEditor({ readOnly: true })", () => {
     expect(v.state.doc.toString()).toBe(doc);
   });
 
-  // pageIndex を渡していても readOnly なら wikiLinkAutocomplete 自体を
-  // 積まない（tooltip の mousedown は acceptCompletion と違い readOnly を見ないため、候補 UI を
-  // 出さないことで塞ぐ）。閉じた [[Foo]] の ]] 直前は OPEN_LINK にも一致するため、readOnly で
-  // 到達しうる（readOnly でも focus できるため）。
-  it("does not offer wikilink autocomplete when the view is read-only", () => {
+  // pageIndex を渡していても readOnly なら source が候補を出さない（tooltip の mousedown は
+  // acceptCompletion と違い readOnly を見ないため、候補 UI を出さないことで塞ぐ）。閉じた [[Foo]] の
+  // ]] 直前は OPEN_LINK にも一致するため、readOnly で到達しうる（readOnly でも focus できるため）。
+  it("does not offer wikilink autocomplete when the view is read-only", async () => {
     host = document.createElement("div");
     document.body.append(host);
     const doc = "[[Cod";
@@ -112,7 +111,10 @@ describe("createEditor({ readOnly: true })", () => {
     });
     view.dispatch({ selection: { anchor: doc.length } });
     startCompletion(view);
+    // 起動の直後は source の結果を待つ pending になるので、落ち着くまで待つ
+    await new Promise((resolve) => setTimeout(resolve, 200));
     expect(completionStatus(view.state)).toBeNull();
+    expect(host.querySelector(".cm-tooltip-autocomplete")).toBeNull();
     expect(view.state.doc.toString()).toBe(doc);
   });
 });

@@ -32,6 +32,7 @@ import { linkActivation } from "./link-activation";
 import { listKeymap } from "./list-keymap";
 import { livePreview } from "./live-preview";
 import type { PageIndex } from "./page-index";
+import { readOnlyCompartment } from "./read-only";
 import { docReplacement } from "./replace-doc";
 import { type RevealPolicy, revealPolicy } from "./reveal";
 import { tables } from "./table";
@@ -110,8 +111,7 @@ export interface CreateEditorOptions {
   /**
    * true でこの EditorView への入力を止める。書き込みを拒む本当の境界はサーバー側で、
    * ここでの制御は UX 上の裏付け（保存されない編集を作らせない）にすぎない。
-   * 動的な切り替え用の Compartment は用意していないので、権限が変わったら呼び出し側が
-   * EditorView を作り直す。
+   * 作った後に権限が変わったら `setReadOnly` で切り替える（作り直すと変換中の文字が消える）。
    *
    * `EditorView.editable` は既定で true のままにする（false にすると `contenteditable` が
    * 外れて focus できなくなり、閲覧者がカーソルを置けず Live Preview の reveal（`reveal.ts`）も
@@ -119,7 +119,8 @@ export interface CreateEditorOptions {
    *
    * `EditorState.readOnly` が拒むのは CodeMirror 自身の入力経路（コマンド、貼り付け、drop、
    * IME の確定）だけで、`EditorView.domEventHandlers` などで doc を直接書く自前の extension
-   * には関与しない。そうした extension は各自 `state.readOnly` を見て自分で拒む必要がある
+   * には関与しない。そうした extension の doc の変更は changeFilter（`read-only.ts`）が落とすが、
+   * アップロードのような変更の前の副作用は止まらないので、各自 `state.readOnly` を見て自分で拒む
    * （`attachment-upload.ts` の paste/drop、`block-id.ts` の `assignBlockId` はこれを見ている）。
    */
   readonly readOnly?: boolean;
@@ -175,10 +176,11 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     extensions.push(livePreview(), tables(), taskList(), frontmatterBlock());
   }
   if (options.revealPolicy) extensions.push(revealPolicy.of(options.revealPolicy));
-  // readOnly では候補 UI 自体を出さない。tooltip の mousedown（`applyTitle`）は
-  // `acceptCompletion` と違い readOnly を見ないので、extension を積まないことで塞ぐ
-  // （`applyTitle` 自身にも防御を置く）。
-  if (options.pageIndex && !options.readOnly) {
+  // readOnly でも積む。`setReadOnly` の切り替えのたびに積み外しすると、completionPlugin が
+  // destroy で debounce の timer を止めないため、残った timer が外れた StateField を読んで
+  // 例外を投げる（@codemirror/autocomplete 6.20 の dist/index.js、completionPlugin の accept）。
+  // readOnly の間は source が候補を出さない。
+  if (options.pageIndex) {
     extensions.push(
       wikiLinkAutocomplete({
         index: options.pageIndex,
@@ -189,11 +191,11 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
   }
   if (options.onUploadAttachment) extensions.push(attachmentUpload(options.onUploadAttachment));
   if (options.onImeEvent) extensions.push(imeDebug(options.onImeEvent, "body"));
-  if (options.readOnly) {
-    extensions.push(EditorState.readOnly.of(true));
-    // editable の facet 既定値はすでに true なので、focus を許すだけなら何も足さない。
-    // false にする（nested embed 用）ときだけ明示的に extension を積む。
-    if (options.readOnlyFocusable === false) extensions.push(EditorView.editable.of(false));
+  extensions.push(readOnlyCompartment(options.readOnly ?? false));
+  // editable の facet 既定値はすでに true なので、focus を許すだけなら何も足さない。
+  // false にする（nested embed 用）ときだけ明示的に extension を積む。
+  if (options.readOnly && options.readOnlyFocusable === false) {
+    extensions.push(EditorView.editable.of(false));
   }
   if (options.extensions) extensions.push(options.extensions);
   // updateListener は登録順に呼ばれるので、計測用は必ず最後に置く

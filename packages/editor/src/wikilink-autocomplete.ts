@@ -101,9 +101,9 @@ function inDocumentOrder(completions: Completion[]): Completion[] {
 /** `[[` や `#` の後ろを `text` にして `]]` で閉じ、caret を `]]` の後ろへ置く */
 function applyText(text: string) {
   return (view: EditorView, completion: Completion, from: number, to: number): void => {
-    // create-editor.ts は readOnly なら wikiLinkAutocomplete 自体を積まないが、tooltip の
-    // mousedown（`applyCompletion`）はキーボード経路の `acceptCompletion` と違い readOnly を
-    // 見ないので、extension の積み方に依存しない防御としてここでも見る。
+    // readOnly の間は source が候補を出さないが、候補を開いたまま readOnly に切り替わることがある。
+    // tooltip の mousedown（`applyCompletion`）はキーボード経路の `acceptCompletion` と違い
+    // readOnly を見ないので、ここで見る。
     if (view.state.readOnly) return;
     const { doc } = view.state;
     const closed = doc.sliceString(to, Math.min(doc.length, to + 2)) === "]]";
@@ -198,6 +198,9 @@ async function sectionCompletion(
 
 export function wikiLinkCompletionSource(options: WikiLinkAutocompleteOptions): CompletionSource {
   return (context): CompletionResult | null | Promise<CompletionResult | null> => {
+    // readOnly の view では候補を選んでも書けないので、明示の起動（Ctrl-Space）や変換後の再開でも
+    // 候補を出さず、linkTargets の取得（ホストの API 呼び出し）も走らせない
+    if (context.state.readOnly) return null;
     // IME 不変条件 4。composition の入力では `closeOnComposition` が source を起動させない。
     // ここに来るのは、compose の userEvent を伴わない入力と、composition の開始前に予約された
     // query（`typingDelay` や `startCompletion` の遅延）が最初の compose の入力より先に走った
@@ -306,7 +309,7 @@ const restartAfterComposition = ViewPlugin.define((view) => ({
     const settled = update.transactions.some((tr) =>
       tr.effects.some((effect) => effect.is(compositionSettled)),
     );
-    if (!settled) return;
+    if (!settled || update.state.readOnly) return;
     const { head } = update.state.selection.main;
     const line = update.state.doc.lineAt(head);
     if (!OPEN_LINK_AT_END.test(line.text.slice(0, head - line.from))) return;
