@@ -9,6 +9,7 @@
     "db:migrate:remote": "node scripts/deploy.mjs migrate",
     "deploy:remote": "node scripts/deploy.mjs deploy",
     "api-token": "node scripts/api-token.mjs",
+    "derived:rebuild": "node scripts/derived-rebuild.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run"
   },

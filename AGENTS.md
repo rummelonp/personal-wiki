@@ -33,10 +33,26 @@ pnpm deploy:remote      # deploy.env から設定を合成してデプロイ
 pnpm db:migrate:remote  # 本番の D1 に migration を適用
 pnpm api-token issue <name> --scopes read|read,write [--remote]
 pnpm api-token revoke <name> [--remote]
+WIKI_TOKEN=<write の token> pnpm derived:rebuild [--remote]  # 全ページの派生データを作り直す
 ```
 
 本番の hostname と D1 の ID は `apps/worker/deploy.env`（コミットしない。`deploy.env.example` を写して作る）に置く。
 トークンの平文は発行時に標準出力へ 1 度だけ出る。失効したトークンの名前は再利用できない。
+
+本番を更新するときは、次の順に実行する。
+migration が派生データの表を足すことがあり、デプロイが先だと保存と一覧が表の無いエラーで止まる。
+
+```sh
+pnpm db:migrate:remote
+pnpm deploy:remote
+WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
+```
+
+`derived:rebuild` は links、tags、一覧の抜粋、検索の索引を本文から作り直す。
+1 回の呼び出しで 1 ページずつ進めるので、全ページ分を回して終わる。
+migration の前から在るページは、これを回すまで一覧に抜粋が出ない。
+Worker を前の版に戻して再デプロイしたあとも実行する。前の版は新しい派生データ（抜粋など）を書かないので、戻している間に保存したページの分が古いまま残る。
+失敗したページがあると、その id を標準エラーに出して終了コード 1 になる。
 
 PR を出す前に `lint`、`typecheck`、`test` がすべて通ることを確認する。
 CI（`.github/workflows/ci.yml`）も同じ 3 つを実行する。

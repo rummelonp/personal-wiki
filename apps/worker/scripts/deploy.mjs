@@ -39,6 +39,15 @@ export const HELP = `usage:
        claude mcp add --transport http personal-wiki https://<ホスト名>/mcp \\
          --header "Authorization: Bearer <トークン>"
 
+更新のとき（migration を含む版をデプロイするとき）は、次の順に実行する:
+  pnpm db:migrate:remote
+  pnpm deploy:remote
+  WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
+  デプロイが migration より先だと、保存と一覧が表の無いエラーで止まる。
+  derived:rebuild は全ページの派生データ（links、tags、一覧の抜粋、検索の索引）を作り直す。
+  Worker を前の版に戻して再デプロイしたあとも実行する。前の版は新しい派生データ（抜粋など）を
+  書かないので、戻している間に保存したページの分が古いまま残る
+
 ここでの deploy は wrangler の自動プロビジョニングを無効にする（--x-provision=false）。
 D1 と R2 は手順 2 で作ったものだけを使う。
 
