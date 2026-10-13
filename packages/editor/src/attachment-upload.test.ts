@@ -1,4 +1,5 @@
-import type { EditorView } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { extractDerived, extractWikiLinks, isAttachmentTarget } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { attachmentUpload, type UploadAttachment } from "./attachment-upload";
@@ -167,6 +168,10 @@ describe("attachmentUpload", () => {
       expect(isAttachmentTarget(ref.target)).toBe(true);
       expect(ref.target).not.toMatch(SERVER_ATTACHMENT_NAME);
     }
+    // D1 の添付の参照になるのは、サーバーの名前の規則に合うものだけ
+    const { attachments } = extractDerived(body);
+    expect(attachments).toHaveLength(2);
+    expect(attachments.filter((name) => SERVER_ATTACHMENT_NAME.test(name))).toEqual([]);
   });
 
   it("renders the placeholder as an unresolved image when the resolver returns null", () => {
@@ -180,7 +185,43 @@ describe("attachmentUpload", () => {
     v.dispatch({ selection: { anchor: 0 } });
 
     const unresolved = v.contentDOM.querySelector(".cm-embed-image .cm-embed-unresolved");
-    expect(unresolved?.textContent).toMatch(/^uploading-.+\.png$/);
+    expect(unresolved?.textContent).toMatch(/^uploading\..+\.png$/);
+  });
+
+  // 保留した action の中で placeholder を探す（IME 不変条件 1 の保留の間に位置が動く）
+  it("finds the placeholder when the upload finishes, not when it was held", async () => {
+    let finish: (filename: string) => void = () => {};
+    const upload: UploadAttachment = () =>
+      new Promise((resolve) => {
+        finish = (filename) => resolve({ filename });
+      });
+    const v = mount(upload, "前");
+    v.dispatch({ selection: { anchor: 1 } });
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    finish("FINISHED.png");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(v.state.doc.toString()).toMatch(/^前!\[\[uploading\./);
+    v.dispatch({ changes: { from: 0, insert: "愛" } });
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("愛前![[FINISHED.png]]"));
+  });
+
+  it("replaces the placeholder in a view that has only this extension", async () => {
+    const upload = vi.fn(async (file: File) => ({ filename: file.name }));
+    host = document.createElement("div");
+    document.body.append(host);
+    view = new EditorView({
+      parent: host,
+      state: EditorState.create({ doc: "", extensions: attachmentUpload(upload) }),
+    });
+
+    dispatchPaste(view, dataTransferWithFiles([imageFile("solo.png")]));
+
+    await vi.waitFor(() => expect(view?.state.doc.toString()).toBe("![[solo.png]]"));
   });
 
   it("accepts every image/* file by default and lets the host narrow it", async () => {

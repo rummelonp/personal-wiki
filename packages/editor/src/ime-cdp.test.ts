@@ -245,7 +245,7 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
     const v = mount("前", { onUploadAttachment: uploads.upload });
     pasteImage(v, "a.png");
     const placeholder = v.state.doc.toString().slice(1);
-    expect(placeholder).toMatch(/^!\[\[uploading-.+\.png\]\]$/);
+    expect(placeholder).toMatch(/^!\[\[uploading\..+\.png\]\]$/);
     log = [];
 
     await compose("あ");
@@ -261,6 +261,23 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
     expectOnlyComposeTransactions(duringComposition());
   });
 
+  // 検索を保留の前に済ませると、変換中に placeholder の前へ入った文字の分だけ位置がずれる
+  it("finds the placeholder after the conversion settles, even when text was inserted before it", async () => {
+    const uploads = deferredUploads();
+    const v = mount("前", { onUploadAttachment: uploads.upload });
+    pasteImage(v, "a.png");
+    v.dispatch({ selection: { anchor: 0 } });
+    log = [];
+
+    await compose("あ");
+    uploads.complete(0, "FINISHED.png");
+    await nextTask();
+    await commit("愛情");
+    await settled(v);
+
+    await expect.poll(() => v.state.doc.toString()).toBe("愛情前![[FINISHED.png]]");
+  });
+
   it("replaces every placeholder when several uploads finish during one conversion", async () => {
     const uploads = deferredUploads();
     const v = mount("", { onUploadAttachment: uploads.upload });
@@ -273,7 +290,7 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
     uploads.complete(1, "SECOND.png");
     uploads.complete(0, "FIRST.png");
     await nextTask();
-    expect(v.state.doc.toString()).toMatch(/uploading-.+uploading-/);
+    expect(v.state.doc.toString()).toMatch(/uploading\..+uploading\./);
     await commit("愛");
     await settled(v);
 

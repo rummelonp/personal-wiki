@@ -1,5 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { docReplacement } from "./replace-doc";
 import { dispatchWhenSettled } from "./settled-dispatch";
 
 export interface UploadedAttachment {
@@ -16,7 +17,10 @@ export type UploadAttachment = (file: File) => Promise<UploadedAttachment>;
 export type AcceptAttachment = (file: File) => boolean;
 
 export interface AttachmentUploadOptions {
-  /** 既定は `image/*` の緩い事前フィルタ。受け付けない File を含むイベントは既定の貼り付け/drop に委ねる */
+  /**
+   * 既定は `image/*` の緩い事前フィルタ。受け付ける File を 1 つも含まないイベントは既定の貼り付け/drop に
+   * 委ねる。含むイベントでは、受け付けない File を捨てて残りをアップロードする。
+   */
   readonly accept?: AcceptAttachment;
 }
 
@@ -33,10 +37,11 @@ let uploadSeq = 0;
  * アップロード中を示す一時的な記法。
  * アップロード中も自動保存は走るので、拡張子の無い `![[Uploading:…]]` はページ embed として
  * links に偽の title を入れてしまう。画像の拡張子を付けると添付の embed に分類されて links には
- * 入らず、サーバーが振る名前（22 文字の base64url）より長いので添付の参照にもならない。
+ * 入らない。拡張子の前に `.` を入れるのは、サーバーが振る名前（base64url の 22 文字と拡張子）の
+ * 文字クラスに無い文字を含め、長さに頼らず添付の参照にもならないようにするため。
  */
 function placeholderText(token: string): string {
-  return `![[uploading-${token}.png]]`;
+  return `![[uploading.${token}.png]]`;
 }
 
 function insertPlaceholder(view: EditorView, pos: number, token: string): number {
@@ -97,24 +102,30 @@ export function attachmentUpload(
   options: AttachmentUploadOptions = {},
 ): Extension {
   const accept = options.accept ?? acceptImage;
-  return EditorView.domEventHandlers({
-    paste(event, view) {
-      // domEventHandlers は CodeMirror 自身の builtin handler（`readOnly` を見る）より先に
-      // 走るので、ここで見ないと読み取り専用でもアップロードが進んでしまう。
-      if (view.state.readOnly) return false;
-      const files = extractFiles(event.clipboardData, accept);
-      if (files.length === 0) return false;
-      uploadFiles(view, view.state.selection.main.head, files, upload);
-      return true;
-    },
-    drop(event, view) {
-      if (view.state.readOnly) return false;
-      const files = extractFiles(event.dataTransfer, accept);
-      if (files.length === 0) return false;
-      const pos =
-        view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head;
-      uploadFiles(view, pos, files, upload);
-      return true;
-    },
-  });
+  return [
+    // 完了時の置換に要る。createEditor の view は持っているが、単独で使っても投げないようにする。
+    // 同じ extension の重複は CodeMirror が 1 つにまとめる。
+    docReplacement,
+    EditorView.domEventHandlers({
+      paste(event, view) {
+        // domEventHandlers は CodeMirror 自身の builtin handler（`readOnly` を見る）より先に
+        // 走るので、ここで見ないと読み取り専用でもアップロードが進んでしまう。
+        if (view.state.readOnly) return false;
+        const files = extractFiles(event.clipboardData, accept);
+        if (files.length === 0) return false;
+        uploadFiles(view, view.state.selection.main.head, files, upload);
+        return true;
+      },
+      drop(event, view) {
+        if (view.state.readOnly) return false;
+        const files = extractFiles(event.dataTransfer, accept);
+        if (files.length === 0) return false;
+        const pos =
+          view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+          view.state.selection.main.head;
+        uploadFiles(view, pos, files, upload);
+        return true;
+      },
+    }),
+  ];
 }
