@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
+import { policyKindOf } from "../auth/middleware";
 import { SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../auth/session";
 import { ownerCookie, ownerEnv } from "../test/owner";
 import { type PageJson, T0 } from "../test/pages";
@@ -118,7 +119,7 @@ describe("匿名の読み取り", () => {
     expect(draftByTitle.status).toBe(404);
   });
 
-  it("draft の title、存在しない title、削除済みの title と id、存在しない id、形式の違う id は同じ 404", async () => {
+  it("draft の title、存在しない title、削除済み・存在しない・形式の違う id（本文と backlink）は同じ 404", async () => {
     const { anonymous, gone } = await seed();
     const responses = await Promise.all(
       [
@@ -128,6 +129,9 @@ describe("匿名の読み取り", () => {
         `/api/pages/${gone.id}`,
         "/api/pages/AAAAAAAAAAAAAAAAAAAAAA",
         "/api/pages/short",
+        `/api/pages/${gone.id}/backlinks`,
+        "/api/pages/AAAAAAAAAAAAAAAAAAAAAA/backlinks",
+        "/api/pages/short/backlinks",
       ].map(async (path) => {
         const res = await anonymous(path);
         return {
@@ -214,6 +218,38 @@ describe("匿名の読み取り", () => {
     expect(seen).toHaveLength(3);
     expect(seen).toContain(open.id);
     expect(seen).toContain(linker.id);
+  });
+
+  it("backlink を 1 件ずつたどっても、より新しい draft のリンク元が出ず、public のリンク元を取りこぼさない", async () => {
+    const { anonymous, open, linker, draft, clock, create } = await seed();
+    // public の Linker より新しい draft のリンク元を作る。絞り込みが LIMIT の後なら 1 ページ目が空になる
+    clock.now += 1000;
+    const fresh = await create("Newest Draft", "#shared [[Open Note]]");
+
+    const pages: Listed[][] = [];
+    let cursor: string | null = null;
+    do {
+      const query: string = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+      const res = await anonymous(`/api/pages/${open.id}/backlinks?limit=1${query}`);
+      const text = await res.text();
+      expect(text).not.toContain(draft.id);
+      expect(text).not.toContain(fresh.id);
+      const list = JSON.parse(text) as { pages: Listed[]; nextCursor: string | null };
+      pages.push(list.pages);
+      cursor = list.nextCursor;
+    } while (cursor !== null);
+    expect(pages[0]?.map((page) => page.id)).toEqual([linker.id]);
+    expect(pages.flat().map((page) => page.id)).toEqual([linker.id]);
+  });
+
+  it("検索の limit=1 でも、より関連の強い draft に押し出されず public を返す", async () => {
+    const { anonymous, asOwner, open, draft } = await seed();
+    const path = `/api/search?q=shared&limit=1`;
+    // owner には draft が先頭に出る（このテストが LIMIT の前の絞り込みを確かめられる前提）
+    const owner = await (await asOwner(path)).json<{ results: Listed[] }>();
+    expect(owner.results.map((hit) => hit.id)).toEqual([draft.id]);
+    const anon = await (await anonymous(path)).json<{ results: Listed[] }>();
+    expect(anon.results.map((hit) => hit.id)).toEqual([open.id]);
   });
 
   it("public を draft に戻すと、title、一覧、タグ、検索、backlink から消え、id では読める", async () => {
@@ -350,9 +386,10 @@ describe("検証できないセッション cookie", () => {
 
 describe("匿名向けの応答の総当たり", () => {
   /**
-   * 登録されている GET の `/api/*` のルートと、匿名で呼ぶ具体的なパス。ルートを足すとこの表との
-   * 突き合わせが落ちるので、足したルートも draft の id を返さないかをここで確かめることになる。
-   * draft を id で取る `/api/pages/:draftId` だけは、draft の id を含むのが正しいので除いて別に確かめる。
+   * 匿名を受け付ける宣言（allowAnonymousRead と allowAnonymous）を付けたルートと、匿名で呼ぶ具体的な
+   * パス。キーは `METHOD path`。そうしたルートを足すとこの表との突き合わせが落ちるので、足したルートも
+   * draft の id を返さないかをここで確かめることになる。draft を id で取る `/api/pages/:draftId` だけは、
+   * draft の id を含むのが正しいので除いて別に確かめる。
    */
   function anonymousRequests(pages: {
     draft: PageJson;
@@ -364,9 +401,11 @@ describe("匿名向けの応答の総当たり", () => {
     const title = (value: string) => `/api/pages/by-title?title=${encodeURIComponent(value)}`;
     const search = (q: string) => `/api/search?q=${encodeURIComponent(q)}`;
     return {
-      "/api/healthz": ["/api/healthz"],
-      "/api/me": ["/api/me"],
-      "/api/pages/by-title": [
+      "GET /api/healthz": ["/api/healthz"],
+      "GET /api/me": ["/api/me"],
+      "GET /_auth/login": ["/_auth/login", "/_auth/login?return=/Hidden%20Plan"],
+      "POST /_auth/logout": ["/_auth/logout"],
+      "GET /api/pages/by-title": [
         title("Open Note"),
         title("Linker"),
         title("Hidden Plan"),
@@ -374,7 +413,7 @@ describe("匿名向けの応答の総当たり", () => {
         title("Gone"),
         title("Missing Page"),
       ],
-      "/api/pages/recent": [
+      "GET /api/pages/recent": [
         "/api/pages/recent",
         "/api/pages/recent?limit=1",
         "/api/pages/recent?limit=100",
@@ -384,8 +423,8 @@ describe("匿名向けの応答の総当たり", () => {
         "/api/pages/recent?tag=draftonly",
         "/api/pages/recent?tag=pub",
       ],
-      "/api/tags": ["/api/tags"],
-      "/api/search": [
+      "GET /api/tags": ["/api/tags"],
+      "GET /api/search": [
         search("zebrafish"),
         search("秘蔵"),
         search("Hidden"),
@@ -397,42 +436,63 @@ describe("匿名向けの応答の総当たり", () => {
         search("下書"),
         search("の"),
       ],
-      "/api/pages/:id": [
+      "GET /api/pages/:id": [
         `/api/pages/${open.id}`,
         `/api/pages/${linker.id}`,
         `/api/pages/${gone.id}`,
         "/api/pages/AAAAAAAAAAAAAAAAAAAAAA",
       ],
-      "/api/pages/:id/backlinks": [
+      "GET /api/pages/:id/backlinks": [
         `/api/pages/${open.id}/backlinks`,
         `/api/pages/${linker.id}/backlinks`,
         `/api/pages/${draft.id}/backlinks`,
         `/api/pages/${gone.id}/backlinks`,
       ],
+      "GET /*": ["/", `/${encodeURIComponent("Hidden Plan")}`, `/p/${open.id}`],
     };
   }
 
-  it("登録されている GET の API をすべて表に載せている", async () => {
+  // SPA の配信が返す index.html。ASSETS の中身はビルドの成果物で、ページのデータを含まない
+  const assets = {
+    fetch: async (input: RequestInfo | URL) => {
+      const { pathname } = new URL(String(input instanceof Request ? input.url : input));
+      if (pathname !== "/") return new Response("not found", { status: 404 });
+      return new Response("<!doctype html><title>wiki</title>", {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    },
+  } as unknown as Fetcher;
+
+  it("匿名を受け付ける宣言を付けたルートをすべて表に載せている", async () => {
     const { app, ...pages } = await seed();
+    const anonymousPolicies = new Set(["allowAnonymousRead", "allowAnonymous"]);
     const registered = new Set(
       app.routes
-        .filter((route) => route.method === "GET" && route.path.startsWith("/api/"))
-        .map((route) => route.path),
+        .filter((route) => anonymousPolicies.has(policyKindOf(route.handler) ?? ""))
+        .map((route) => `${route.method} ${route.path}`),
     );
     expect([...registered].sort()).toEqual(Object.keys(anonymousRequests(pages)).sort());
   });
 
   it("どの応答の本文にも draft の id、draft だけの語、削除済みの id が現れない", async () => {
-    const { anonymous, ...pages } = await seed();
+    const { app, ...pages } = await seed();
     const forbidden = [pages.draft.id, pages.gone.id, ...DRAFT_ONLY_MARKERS];
-    const paths = Object.values(anonymousRequests(pages)).flat();
-    for (const path of paths) {
-      const res = await anonymous(path);
-      expect(res.status, path).toBeLessThan(500);
-      const text = await res.text();
-      for (const word of forbidden) expect(text, `${path} に ${word}`).not.toContain(word);
-      if (path.startsWith("/api/pages") || path.startsWith("/api/search") || path === "/api/tags") {
-        expect(res.headers.get("Cache-Control"), path).toBe("no-store");
+    for (const [route, paths] of Object.entries(anonymousRequests(pages))) {
+      const method = route.split(" ")[0] as string;
+      for (const path of paths) {
+        const label = `${method} ${path}`;
+        const res = await app.request(
+          path,
+          { method, headers: { Accept: "text/html" } },
+          { ...ownerEnv(), ASSETS: assets },
+        );
+        expect(res.status, label).toBeLessThan(500);
+        const text = await res.text();
+        for (const word of forbidden) expect(text, `${label} に ${word}`).not.toContain(word);
+        const html = res.headers.get("Content-Type")?.startsWith("text/html") === true;
+        expect(res.headers.get("Cache-Control"), label).toBe(html ? "no-cache" : "no-store");
+        if (path.startsWith("/api/"))
+          expect(res.headers.get("X-Robots-Tag"), label).toBe("noindex");
       }
     }
   });

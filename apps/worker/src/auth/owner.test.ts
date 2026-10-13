@@ -477,6 +477,7 @@ describe("owner のページ API", () => {
       ["PUT", `/api/pages/${id}`, { title: "x", body: "" }],
       ["POST", `/api/pages/${id}/append`, { text: "x" }],
       ["DELETE", `/api/pages/${id}`, undefined],
+      ["PUT", `/api/pages/${id}/visibility`, { visibility: "public" }],
       ["POST", "/api/admin/derived/rebuild", {}],
     ] as const) {
       const res = await request(path, {

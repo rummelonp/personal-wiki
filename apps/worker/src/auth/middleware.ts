@@ -40,12 +40,22 @@ import { hashApiToken, isWellFormedApiToken } from "./token";
  * それが効く。別の path や別の method の宣言、catch-all の allowAnonymous() には便乗できない。
  */
 
-const policies = new WeakSet<MiddlewareHandler>();
+export type PolicyKind =
+  | "requireScope"
+  | "requireToken"
+  | "requireOwner"
+  | "allowAnonymousRead"
+  | "allowAnonymous";
+
+const policies = new WeakMap<MiddlewareHandler, PolicyKind>();
 const baseMiddlewares = new WeakSet<MiddlewareHandler>();
 
 /** ルートが受け付ける principal を宣言する middleware として登録する。 */
-function definePolicy(handler: MiddlewareHandler<AppEnv>): MiddlewareHandler<AppEnv> {
-  policies.add(handler as MiddlewareHandler);
+function definePolicy(
+  kind: PolicyKind,
+  handler: MiddlewareHandler<AppEnv>,
+): MiddlewareHandler<AppEnv> {
+  policies.set(handler as MiddlewareHandler, kind);
   return handler;
 }
 
@@ -64,23 +74,36 @@ export function defineBaseMiddleware<T extends MiddlewareHandler>(handler: T): T
 // このキーに残す。辿らないと子 app の宣言を見落とし、そのルートがすべて 404 になる。
 const COMPOSED_HANDLER = "__COMPOSED_HANDLER";
 
-function isRegisteredIn(set: WeakSet<MiddlewareHandler>, handler: unknown): boolean {
+/** 合成で包まれた外側から元の関数までを順に返す。 */
+function* unwrapComposed(handler: unknown): Generator<MiddlewareHandler> {
   let current = handler;
   while (typeof current === "function") {
-    if (set.has(current as MiddlewareHandler)) return true;
+    yield current as MiddlewareHandler;
     current = (current as unknown as Record<string, unknown>)[COMPOSED_HANDLER];
   }
+}
+
+function isBaseMiddleware(handler: unknown): boolean {
+  for (const fn of unwrapComposed(handler)) if (baseMiddlewares.has(fn)) return true;
   return false;
+}
+
+/**
+ * `app.routes` の登録が宣言なら、その種類を返す。宣言でなければ undefined。
+ * 匿名に開くルートを漏れなく検査するテストが、登録の一覧から宣言の種類で絞り込むためにも使う。
+ */
+export function policyKindOf(handler: unknown): PolicyKind | undefined {
+  for (const fn of unwrapComposed(handler)) {
+    const kind = policies.get(fn);
+    if (kind !== undefined) return kind;
+  }
+  return undefined;
 }
 
 // 基盤として扱うのは wildcard の use() に置いた登録だけにする。個別ルートのハンドラを
 // defineBaseMiddleware で包んで宣言を逃れる書き方を通さないため。
 function isBaseRegistration(route: RouterRoute): boolean {
-  return (
-    route.method === "ALL" &&
-    route.path.endsWith("*") &&
-    isRegisteredIn(baseMiddlewares, route.handler)
-  );
+  return route.method === "ALL" && route.path.endsWith("*") && isBaseMiddleware(route.handler);
 }
 
 /** `routes` は Hono が返すマッチ順（登録順）のまま渡す。 */
@@ -88,7 +111,7 @@ function everyRouteDeclared(routes: readonly RouterRoute[]): boolean {
   const declared: RouterRoute[] = [];
   for (const route of routes) {
     if (isBaseRegistration(route)) continue;
-    if (isRegisteredIn(policies, route.handler)) {
+    if (policyKindOf(route.handler) !== undefined) {
       declared.push(route);
       continue;
     }
@@ -261,6 +284,7 @@ function currentPrincipal(c: Context<AppEnv>): Principal {
 /** owner と、`scope` を持つ token を受け付ける。scope の判定は principalHasScope に任せる。 */
 export function requireScope(scope: Scope): MiddlewareHandler<AppEnv> {
   return definePolicy(
+    "requireScope",
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") return unauthorized(c);
@@ -273,6 +297,7 @@ export function requireScope(scope: Scope): MiddlewareHandler<AppEnv> {
 /** Bearer トークンだけを受け付け、`scope` を要求する。owner のセッションでは入れない（/mcp 用）。 */
 export function requireToken(scope: Scope): MiddlewareHandler<AppEnv> {
   return definePolicy(
+    "requireToken",
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") return unauthorized(c);
@@ -287,6 +312,7 @@ export function requireToken(scope: Scope): MiddlewareHandler<AppEnv> {
 /** owner だけを受け付ける。token は scope に関係なく 403 にする（visibility の変更など）。 */
 export function requireOwner(): MiddlewareHandler<AppEnv> {
   return definePolicy(
+    "requireOwner",
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") return unauthorized(c);
@@ -309,6 +335,7 @@ const ANONYMOUS_READ_METHODS = new Set(["GET", "HEAD"]);
  */
 export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
   return definePolicy(
+    "allowAnonymousRead",
     createMiddleware<AppEnv>(async (c, next) => {
       const principal = currentPrincipal(c);
       if (principal.kind === "anonymous") {
@@ -327,5 +354,8 @@ export function allowAnonymousRead(): MiddlewareHandler<AppEnv> {
 
 /** 呼び出し元を問わないルート（ヘルスチェック、SPA の配信など）であることを宣言する。 */
 export function allowAnonymous(): MiddlewareHandler<AppEnv> {
-  return definePolicy(createMiddleware<AppEnv>(async (_c, next) => next()));
+  return definePolicy(
+    "allowAnonymous",
+    createMiddleware<AppEnv>(async (_c, next) => next()),
+  );
 }
