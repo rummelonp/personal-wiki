@@ -637,6 +637,16 @@ describe("title の確定", () => {
     expect(put).toHaveBeenCalledTimes(1);
   });
 
+  it("空白だけの title は確定せず、欄に残して未保存のままにする", async () => {
+    const { session, api } = setup();
+    const put = vi.spyOn(api, "updatePage");
+    session.editTitle("   ");
+    await session.commitTitle();
+    expect(put).not.toHaveBeenCalled();
+    expect(session.getState()).toMatchObject({ titleInput: "   ", draft: { title: "題" } });
+    expect(saveStatusOf(session.getState())).toBe("unsaved");
+  });
+
   it("自分への [[旧 title]] は、title と同じ保存で新しい title に書き換える", async () => {
     const { session, api } = setup({ server: page({ body: "[[題]] と [[別]]" }) });
     const put = vi.spyOn(api, "updatePage");

@@ -925,10 +925,16 @@ function typeTitle(text: string): void {
   });
 }
 
-function pressEnter(isComposing: boolean): void {
+function pressEnter(isComposing: boolean, keyCode = 13): void {
   act(() => {
     titleInput().dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", isComposing, bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        isComposing,
+        keyCode,
+        bubbles: true,
+        cancelable: true,
+      }),
     );
   });
 }
@@ -956,6 +962,19 @@ describe("title の確定", () => {
     );
     // 確定済みなので、その後の blur では送らない
     act(() => titleInput().blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+  });
+
+  it("Safari の変換を確定する Enter（isComposing が false で keyCode が 229）では保存しない", async () => {
+    renderPage();
+    act(() => titleInput().focus());
+    typeTitle("新しい題");
+    pressEnter(false, 229);
+    await flushAsync();
+    expect(updatePage).not.toHaveBeenCalled();
+
+    pressEnter(false);
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(1);
   });

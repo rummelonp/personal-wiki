@@ -498,8 +498,10 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           readOnly={readOnly}
           onChange={(event) => session.editTitle(event.target.value)}
           onKeyDown={(event) => {
-            // 変換中の Enter は IME の確定に使われる。確定の Enter で title を保存しない
-            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            // 変換を確定する Enter で title を保存しない。Safari はその Enter の keydown を
+            // compositionend の後に isComposing: false で送るので、keyCode 229（IME の処理中）でも見分ける
+            const { isComposing, keyCode } = event.nativeEvent;
+            if (event.key !== "Enter" || isComposing || keyCode === 229) return;
             event.preventDefault();
             void session.commitTitle();
           }}

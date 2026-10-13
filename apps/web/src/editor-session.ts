@@ -265,6 +265,8 @@ export class EditorSession {
     if (titleInput === null || isReadOnly(this.state)) return;
     // サーバーは前後の空白を落として保存する。手元も揃えないと、保存のたびに draft と base が食い違う
     const title = singleLineTitle(titleInput);
+    // 空の title は保存できない。打ったものは欄に残し、未保存として見せる
+    if (title === "") return;
     this.set({ titleInput: null });
     if (title === draft.title) return;
     this.edit({ title, body: rewriteOwnTitleLinks(draft.body, draft.title, title) });
