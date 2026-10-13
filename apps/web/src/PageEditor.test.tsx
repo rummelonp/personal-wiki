@@ -752,14 +752,51 @@ describe("添付の貼り付けと表示", () => {
     expect(container?.querySelector(".message-warn")).toBeNull();
   });
 
-  it("受けない種類の画像は上げず、通知も出さない", async () => {
+  const svg = () =>
+    new File(['<svg xmlns="http://www.w3.org/2000/svg"></svg>'], "a.svg", {
+      type: "image/svg+xml",
+    });
+
+  function drop(view: EditorView, file: File): void {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    act(() => {
+      view.contentDOM.dispatchEvent(
+        new DragEvent("drop", { bubbles: false, cancelable: true, dataTransfer }),
+      );
+    });
+  }
+
+  it("受けない種類の画像（svg）の貼り付けは、上げずに通知し、本文には何も入れない", async () => {
     const { view } = renderPage(PAGE, true);
     const v = view();
     v.focus();
-    paste(v, new File([new Uint8Array(3)], "a.svg", { type: "image/svg+xml" }));
+    paste(v, svg());
+    await vi.waitFor(() => expect(container?.textContent).toContain("添付できない形式"));
+    await flushAsync();
+    expect(container?.querySelector("[role=alert]")?.textContent).toContain("a.svg");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(v.state.doc.toString()).toBe("本文");
+  });
+
+  it("受けない種類の画像（svg）の drop も、上げずに通知し、中身の XML を本文に入れない", async () => {
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    drop(v, svg());
+    await vi.waitFor(() => expect(container?.textContent).toContain("添付できない形式"));
     await flushAsync();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(v.state.doc.toString()).toBe("本文");
+  });
+
+  it("画像でないファイルは扱わず、通知も出さない", async () => {
+    const { view } = renderPage(PAGE, true);
+    const v = view();
+    v.focus();
+    paste(v, new File(["memo"], "memo.txt", { type: "text/plain" }));
+    await flushAsync();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container?.querySelector("[role=alert]")).toBeNull();
   });
 
   it("上限を超える画像は送らずに通知し、placeholder を除く", async () => {
@@ -791,13 +828,16 @@ describe("添付の貼り付けと表示", () => {
     expect(container?.querySelector("a[href^='/_auth/login']")).toBeNull();
   });
 
-  it("401 ではログインし直すリンクを出す", async () => {
-    fetchMock.mockImplementation(async () => Response.json({}, { status: 401 }));
+  it.each([
+    [401, "ログインの期限が切れた"],
+    [403, "サーバーに拒否されました"],
+  ])("%i ではログインし直すリンクを出す", async (status, text) => {
+    fetchMock.mockImplementation(async () => Response.json({}, { status }));
     const { view } = renderPage(PAGE, true);
     const v = view();
     v.focus();
     paste(v, png());
-    await vi.waitFor(() => expect(container?.textContent).toContain("ログインの期限が切れた"));
+    await vi.waitFor(() => expect(container?.textContent).toContain(text));
     expect(container?.querySelector("a[href^='/_auth/login']")).not.toBeNull();
   });
 

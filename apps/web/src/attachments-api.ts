@@ -1,3 +1,4 @@
+import { isAttachmentName } from "@personal-wiki/domain/attachment";
 import type { Fetch } from "./pages-api";
 
 /** `POST /api/attachments` が 201 で返す、保存した添付。`name` を本文の `![[name]]` に書く。 */
@@ -9,6 +10,7 @@ export interface UploadedAttachmentInfo {
 
 export type UploadFailureKind =
   | "unauthorized"
+  | "forbidden"
   | "too_large"
   | "unsupported_type"
   | "unavailable"
@@ -32,7 +34,7 @@ async function readJson(res: Response): Promise<unknown> {
 
 /**
  * 添付を上げる。本文は File の生のバイト列で、種類は `Content-Type` に File の type を書く。
- * 失敗は kind で分ける。通信の失敗と、想定外の status や応答の形は `error` にまとめる。
+ * 失敗は kind で分ける。通信の失敗と、想定外の status や応答の形（411 を含む）は `error` にまとめる。
  */
 export async function uploadAttachment(file: File, fetchFn: Fetch = fetch): Promise<UploadResult> {
   let res: Response;
@@ -49,8 +51,10 @@ export async function uploadAttachment(file: File, fetchFn: Fetch = fetch): Prom
   }
   if (res.status === 201) {
     const body = recordOf(await readJson(res));
+    // 本文に書く名前なので、サーバーが振る形でなければ（resolver が null にする名前を書かない）失敗にする
     if (
       typeof body.name === "string" &&
+      isAttachmentName(body.name) &&
       typeof body.contentType === "string" &&
       typeof body.size === "number"
     ) {
@@ -64,6 +68,8 @@ export async function uploadAttachment(file: File, fetchFn: Fetch = fetch): Prom
   switch (res.status) {
     case 401:
       return { ok: false, kind: "unauthorized" };
+    case 403:
+      return { ok: false, kind: "forbidden" };
     case 413:
       return { ok: false, kind: "too_large" };
     case 415:

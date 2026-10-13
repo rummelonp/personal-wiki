@@ -26,6 +26,15 @@ describe("uploadAttachment", () => {
     expect(init.body).toBe(file);
   });
 
+  it("201 でも、サーバーが振る名前の形でない name は error にする", async () => {
+    for (const name of ["photo.png", "uploading.1-0.png", `${"N".repeat(22)}.svg`, ""]) {
+      const result = await uploadAttachment(png(), async () =>
+        Response.json({ name, contentType: "image/png", size: 3 }, { status: 201 }),
+      );
+      expect(result).toEqual({ ok: false, kind: "error" });
+    }
+  });
+
   it("201 でも形の合わない応答は error にする", async () => {
     const result = await uploadAttachment(png(), async () =>
       Response.json({ name: 1 }, { status: 201 }),
@@ -39,7 +48,7 @@ describe("uploadAttachment", () => {
     [415, { error: "unsupported_media_type" }, "unsupported_type"],
     [503, { error: "attachments_unavailable" }, "unavailable"],
     [503, { error: "something_else" }, "error"],
-    [403, { error: "forbidden" }, "error"],
+    [403, { error: "forbidden" }, "forbidden"],
     [411, { error: "length_required" }, "error"],
     [500, { error: "internal" }, "error"],
   ])("%i %j は %s", async (status, body, kind) => {

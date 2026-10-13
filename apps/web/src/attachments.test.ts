@@ -18,6 +18,7 @@ const KINDS: UploadFailureKind[] = [
   "too_large",
   "unsupported_type",
   "unauthorized",
+  "forbidden",
   "unavailable",
   "error",
 ];
@@ -31,18 +32,11 @@ function setup(result: UploadResult | (() => Promise<UploadResult>)) {
 }
 
 describe("acceptAttachment", () => {
-  it("Worker が受ける画像の種類だけ受ける", () => {
-    for (const type of ATTACHMENT_CONTENT_TYPES) {
+  it("画像は種類を問わず受け取り、画像でないものは既定の貼り付けに任せる", () => {
+    for (const type of [...ATTACHMENT_CONTENT_TYPES, "image/svg+xml", "image/heic", "image/bmp"]) {
       expect(acceptAttachment(new File([], "x", { type }))).toBe(true);
     }
-    for (const type of [
-      "image/svg+xml",
-      "image/bmp",
-      "image/tiff",
-      "text/plain",
-      "application/pdf",
-      "",
-    ]) {
+    for (const type of ["text/plain", "application/pdf", ""]) {
       expect(acceptAttachment(new File([], "x", { type }))).toBe(false);
     }
   });
@@ -68,6 +62,19 @@ describe("createAttachmentUploader", () => {
     expect(notices[0]?.message).toContain("big.png");
     expect(notices[0]?.message).toContain("10 MiB");
   });
+
+  it.each(["image/svg+xml", "image/heic", "image/bmp"])(
+    "受けない種類の画像（%s）は送らずに unsupported_type で通知し、reject する",
+    async (type) => {
+      const { uploader, notices, send } = setup(SAVED);
+      const file = new File(["<svg/>"], "pic.img", { type });
+      await expect(uploader.upload(file)).rejects.toThrow();
+      expect(send).not.toHaveBeenCalled();
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({ kind: "unsupported_type" });
+      expect(notices[0]?.message).toContain("pic.img");
+    },
+  );
 
   it("上限ちょうどの File は送る", async () => {
     const { uploader, send } = setup(SAVED);

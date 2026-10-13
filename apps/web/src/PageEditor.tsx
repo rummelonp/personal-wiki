@@ -112,7 +112,11 @@ function useEditorSession(page: Page): EditorSession {
 
 interface PageEditorProps {
   page: Page;
-  /** 添付（画像）を使える環境か。`/api/me` の features。false なら貼り付けと drop をアップロードしない */
+  /**
+   * 添付（画像）を使える環境か。`/api/me` の features。false なら貼り付けと drop をアップロードしない。
+   * 作った時点の値で固定される（エディタを作り直さない限り反映されない）。
+   * 後から変わりうるなら、PageView の key に含めて画面ごと作り直させる。
+   */
   attachments?: boolean;
   /** 保存済みの title と公開範囲が決まるたびに呼ぶ。URL と document.title を合わせるため */
   onShown?: (page: Pick<Page, "id" | "title" | "visibility">) => void;
@@ -432,7 +436,9 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
               <p key={message}>{message}</p>
             ))}
             <div className="actions">
-              {uploadNotices.some(({ kind }) => kind === "unauthorized") && (
+              {uploadNotices.some(
+                ({ kind }) => kind === "unauthorized" || kind === "forbidden",
+              ) && (
                 <a className="button button-primary" href={loginHref(window.location)}>
                   ログインし直す
                 </a>

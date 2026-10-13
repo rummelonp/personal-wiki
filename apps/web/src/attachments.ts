@@ -36,22 +36,33 @@ function noticeFor(kind: UploadFailureKind, file: File): UploadNotice {
         kind,
         message: `ログインの期限が切れたため、${subject}を添付できませんでした。ログインし直して、もう一度添付してください。`,
       };
+    case "forbidden":
+      return {
+        kind,
+        message: `${subject}を添付できませんでした（サーバーに拒否されました）。ページを再読み込みするか、ログインし直してください。`,
+      };
     case "unavailable":
       return { kind, message: "この環境では添付を使えません。" };
     case "error":
       return {
         kind,
-        message: `${subject}を添付できませんでした。通信を確かめて、もう一度添付してください。`,
+        message: `${subject}を添付できませんでした。通信を確かめて、もう一度添付してください。直らないときはページを再読み込みしてください。`,
       };
   }
 }
 
-/** アップロードできる種類か。サーバーも内容を検査するので、ここは事前の振り分け。 */
-export const acceptAttachment: AcceptAttachment = (file) =>
+/**
+ * 画像なら受け取る。受けない種類（svg、heic など）の画像は、受け取ったうえで `upload` が通知して断る。
+ * 受けないことにすると貼り付けと drop が CodeMirror の既定に落ち、何も起きないように見えるうえ、
+ * ファイルの中身（svg なら XML）が本文に入ってしまう。
+ */
+export const acceptAttachment: AcceptAttachment = (file) => file.type.startsWith("image/");
+
+const isUploadableType = (file: File): boolean =>
   (ATTACHMENT_CONTENT_TYPES as readonly string[]).includes(file.type);
 
 export interface AttachmentUploaderOptions {
-  /** 失敗を利用者に知らせる。上げる前に止めたとき（容量超過）も呼ぶ */
+  /** 失敗を利用者に知らせる。上げる前に止めたとき（受けない種類、容量超過）も呼ぶ */
   notify: (notice: UploadNotice) => void;
   upload?: (file: File) => Promise<UploadResult>;
 }
@@ -80,7 +91,8 @@ export function createAttachmentUploader(options: AttachmentUploaderOptions): At
 
   return {
     async upload(file) {
-      // サーバーも 413 を返すが、上限を超える本文を送り切る前に止める
+      // サーバーも 415 と 413 を返すが、送り切る前に止める
+      if (!isUploadableType(file)) fail("unsupported_type", file);
       if (file.size > ATTACHMENT_MAX_BYTES) fail("too_large", file);
       pending += 1;
       try {
