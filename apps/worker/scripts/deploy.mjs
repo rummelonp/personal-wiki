@@ -27,6 +27,8 @@ export const HELP = `usage:
   4. owner のログイン（ブラウザからの閲覧・編集）を使うときだけ:
        Cloudflare Zero Trust で /_auth/login だけを対象にした Access のアプリケーションを作り、
        deploy.env に ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS を書く
+       Access のポリシーでも owner のメールアドレスだけを許可し、ログイン方法にはメールアドレスを
+       検証する IdP（One-time PIN など）を使う（Worker は JWT の email を信じて owner にする）
        手順 6 の後で、セッション cookie の署名鍵（32 文字以上）を secret で入れる（deploy.env には書かない）
          openssl rand -base64 32 | pnpm exec wrangler secret put SESSION_SECRET --config wrangler.deploy.json
   5. pnpm db:migrate:remote
@@ -38,7 +40,13 @@ export const HELP = `usage:
          --header "Authorization: Bearer <トークン>"
 
 ここでの deploy は wrangler の自動プロビジョニングを無効にする（--x-provision=false）。
-D1 と R2 は手順 2 で作ったものだけを使う。`;
+D1 と R2 は手順 2 で作ったものだけを使う。
+
+owner のセッションを切るとき:
+  - SESSION_SECRET を入れ替えると、発行済みのセッション cookie はすべてすぐに無効になる。
+    cookie や秘密が漏れたときはこれを行う（手順 4 と同じコマンドで新しい値を入れる）
+  - wiki のログアウトは wiki の cookie だけを消す。Access のセッションは
+    https://<ホスト名>/cdn-cgi/access/logout を開くと切れる`;
 
 /**
  * wrangler deploy の引数。deploy.env に ID があるので、リソースの自動作成は止める。
