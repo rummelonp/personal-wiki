@@ -3,8 +3,10 @@ import {
   generateToken,
   hashToken,
   issueSql,
+  main,
   parseArgs,
   revokeSql,
+  run,
   wranglerArgs,
 } from "./api-token.mjs";
 
@@ -83,5 +85,64 @@ describe("SQL と wrangler の引数", () => {
     expect(wranglerArgs("SELECT 1", false)).toContain("--local");
     expect(wranglerArgs("SELECT 1", false)).not.toContain("--remote");
     expect(wranglerArgs("SELECT 1", true)).toContain("--remote");
+  });
+});
+
+describe("main", () => {
+  /** wrangler の代わりに、結果の行を返すだけの spawn を使う。 */
+  function fakeIo(rows: unknown[] = []) {
+    const out = { stdout: "", stderr: "", spawnArgs: [] as string[][] };
+    const io = {
+      spawn: (_command: string, args: string[]) => {
+        out.spawnArgs.push(args);
+        return { status: 0, stdout: JSON.stringify([{ results: rows }]) };
+      },
+      stdout: { write: (chunk: string) => (out.stdout += chunk) },
+      stderr: { write: (chunk: string) => (out.stderr += chunk) },
+      now: () => 1,
+    };
+    return { io, out };
+  }
+
+  it("発行したトークンの平文は標準出力にだけ出し、wrangler には hash だけを渡す", () => {
+    const { io, out } = fakeIo();
+    expect(run(["issue", "laptop", "--scopes", "read"], io)).toBe(0);
+    const token = out.stdout.trimEnd();
+    expect(out.stdout).toBe(`${token}\n`);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(out.stderr).not.toContain(token);
+    expect(out.spawnArgs).toHaveLength(1);
+    const args = out.spawnArgs[0]?.join(" ") ?? "";
+    expect(args).toContain(hashToken(token));
+    expect(args).not.toContain(token);
+    expect(args).toContain("--local");
+  });
+
+  it("失効させる行が無ければ終了コード 1 にする", () => {
+    const { io, out } = fakeIo([]);
+    expect(run(["revoke", "nobody"], io)).toBe(1);
+    expect(out.stderr).toContain('no active token named "nobody"');
+    expect(out.stdout).toBe("");
+  });
+
+  it("失効させた行があれば終了コード 0 にする", () => {
+    const { io } = fakeIo([{ id: 1 }]);
+    expect(run(["revoke", "laptop"], io)).toBe(0);
+  });
+
+  it("wrangler が失敗したら、平文を出さずに終了コード 1 にする", () => {
+    const { io, out } = fakeIo();
+    io.spawn = (_command, args) => {
+      out.spawnArgs.push(args);
+      return { status: 1, stdout: "" };
+    };
+    expect(run(["issue", "laptop", "--scopes", "read"], io)).toBe(1);
+    expect(out.stdout).toBe("");
+  });
+
+  it("未知のオプションでは wrangler を呼ばずに例外を投げる", () => {
+    const { io, out } = fakeIo();
+    expect(() => main(["revoke", "laptop", "--force"], io)).toThrow("unknown option: --force");
+    expect(out.spawnArgs).toHaveLength(0);
   });
 });

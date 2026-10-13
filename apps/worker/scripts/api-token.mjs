@@ -101,22 +101,41 @@ export function wranglerArgs(sql, remote) {
 }
 
 /**
+ * テストで wrangler の実行と出力先を差し替えるための口。
+ * @typedef {{
+ *   spawn: (command: string, args: string[], options: import("node:child_process").SpawnSyncOptionsWithStringEncoding) => { status: number | null; stdout: string };
+ *   stdout: { write(chunk: string): unknown };
+ *   stderr: { write(chunk: string): unknown };
+ *   now: () => number;
+ * }} Io
+ */
+
+/** @type {Io} */
+const defaultIo = {
+  spawn: spawnSync,
+  stdout: process.stdout,
+  stderr: process.stderr,
+  now: Date.now,
+};
+
+/**
  * wrangler を実行し、結果の行数を返す。wrangler の出力は標準出力に流さない
  * （標準出力には発行したトークンだけを出すため）。
  * @param {string[]} args
+ * @param {Io} io
  * @returns {number}
  */
-function runWrangler(args) {
+function runWrangler(args, io) {
   const require = createRequire(import.meta.url);
   const wranglerBin = join(dirname(require.resolve("wrangler/package.json")), "bin", "wrangler.js");
   const cwd = fileURLToPath(new URL("..", import.meta.url));
-  const result = spawnSync(process.execPath, [wranglerBin, ...args], {
+  const result = io.spawn(process.execPath, [wranglerBin, ...args], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
   });
   if (result.status !== 0) {
-    process.stderr.write(result.stdout ?? "");
+    io.stderr.write(result.stdout ?? "");
     throw new Error(`wrangler exited with ${result.status}`);
   }
   /** @type {{ results?: unknown[] }[]} */
@@ -124,28 +143,45 @@ function runWrangler(args) {
   return parsed.reduce((sum, r) => sum + (r.results?.length ?? 0), 0);
 }
 
-/** @param {string[]} argv */
-function main(argv) {
+/**
+ * @param {string[]} argv
+ * @param {Io} [io]
+ */
+export function main(argv, io = defaultIo) {
   const args = parseArgs(argv);
   const target = args.remote ? "remote" : "local";
-  const now = Date.now();
+  const now = io.now();
   if (args.command === "issue") {
     const token = generateToken();
-    runWrangler(wranglerArgs(issueSql({ ...args, tokenHash: hashToken(token), now }), args.remote));
-    process.stderr.write(`issued "${args.name}" (${args.scopes}) on ${target} D1\n`);
-    process.stdout.write(`${token}\n`);
+    runWrangler(
+      wranglerArgs(issueSql({ ...args, tokenHash: hashToken(token), now }), args.remote),
+      io,
+    );
+    io.stderr.write(`issued "${args.name}" (${args.scopes}) on ${target} D1\n`);
+    io.stdout.write(`${token}\n`);
     return;
   }
-  const changes = runWrangler(wranglerArgs(revokeSql({ ...args, now }), args.remote));
+  const changes = runWrangler(wranglerArgs(revokeSql({ ...args, now }), args.remote), io);
   if (changes === 0) throw new Error(`no active token named "${args.name}" on ${target} D1`);
-  process.stderr.write(`revoked "${args.name}" on ${target} D1\n`);
+  io.stderr.write(`revoked "${args.name}" on ${target} D1\n`);
+}
+
+/**
+ * main を実行し、プロセスの終了コードを返す。
+ * @param {string[]} argv
+ * @param {Io} [io]
+ * @returns {number}
+ */
+export function run(argv, io = defaultIo) {
+  try {
+    main(argv, io);
+    return 0;
+  } catch (error) {
+    io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n${USAGE}\n`);
+    return 1;
+  }
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
-  try {
-    main(process.argv.slice(2));
-  } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n${USAGE}\n`);
-    process.exitCode = 1;
-  }
+  process.exitCode = run(process.argv.slice(2));
 }

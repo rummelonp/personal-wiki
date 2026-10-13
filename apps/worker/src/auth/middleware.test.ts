@@ -1,12 +1,13 @@
 import { SELF } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { type Context, Hono } from "hono";
+import { createMiddleware } from "hono/factory";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { AppEnv } from "../env";
 import { generateTestToken, insertToken, lastUsedAt } from "../test/tokens";
 import { LAST_USED_UPDATE_INTERVAL_MS } from "./api-tokens";
-import { allowAnonymous, requireToken } from "./middleware";
+import { allowAnonymous, defineBaseMiddleware, requireToken } from "./middleware";
 
 const T0 = Date.UTC(2026, 9, 1);
 
@@ -153,6 +154,88 @@ describe("認可の宣言が無いルート", () => {
     expect(await res.json()).toEqual({ error: "not_found" });
   });
 
+  it("無効なトークンなら、宣言の無いパスでも 404 より先に 401 にする", async () => {
+    const res = await buildApp().request("/api/test/undeclared", bearer(generateTestToken()));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe("Bearer");
+  });
+
+  describe("別の登録の宣言に便乗させない", () => {
+    const undeclared = vi.fn((c: Context) => c.text("secret"));
+    const declared = (c: Context) => c.text("declared");
+
+    beforeEach(() => {
+      undeclared.mockClear();
+    });
+
+    async function expectRejected(app: Hono<AppEnv>, path: string, method = "GET") {
+      const res = await app.request(path, { method }, env);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(undeclared).not.toHaveBeenCalled();
+    }
+
+    it("後ろに登録した、同じパスにマッチするパラメータ付きルートの宣言", async () => {
+      const app = createApp()
+        .get("/api/pages/secret", undeclared)
+        .get("/api/pages/:slug", requireToken("write"), declared);
+      await expectRejected(app, "/api/pages/secret");
+    });
+
+    it("SPA の catch-all に付けた allowAnonymous()", async () => {
+      const app = createApp().post("/api/pages", undeclared).all("*", allowAnonymous(), declared);
+      await expectRejected(app, "/api/pages", "POST");
+    });
+
+    it("prefix の use() に付けた宣言", async () => {
+      const app = createApp().use("/api/*", allowAnonymous()).get("/api/secret", undeclared);
+      await expectRejected(app, "/api/secret");
+    });
+
+    it("ハンドラより後ろに登録した宣言", async () => {
+      const app = createApp().get("/api/x", undeclared).use("/api/*", requireToken("read"));
+      await expectRejected(app, "/api/x");
+    });
+
+    it("同じパス・同じ method でも、ハンドラより後ろに登録した宣言", async () => {
+      const app = createApp()
+        .get("/api/x", undeclared)
+        .get("/api/x", requireToken("read"), declared);
+      await expectRejected(app, "/api/x");
+    });
+
+    it("同じパスの別の method にだけ付けた宣言", async () => {
+      const app = createApp()
+        .get("/api/pages", allowAnonymous(), declared)
+        .on(["GET", "POST"], "/api/pages", undeclared);
+      await expectRejected(app, "/api/pages", "POST");
+    });
+
+    it("基盤として登録していない全体の middleware", async () => {
+      const app = createApp()
+        .use("*", async (_c, next) => next())
+        .get("/api/x", allowAnonymous(), undeclared);
+      await expectRejected(app, "/api/x");
+    });
+  });
+
+  it("基盤として登録した middleware は宣言を要求しない", async () => {
+    const app = createApp()
+      .use(
+        "*",
+        defineBaseMiddleware(
+          createMiddleware(async (c, next) => {
+            await next();
+            c.header("X-Base", "1");
+          }),
+        ),
+      )
+      .get("/api/x", allowAnonymous(), (c) => c.text("ok"));
+    const res = await app.request("/api/x", {}, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Base")).toBe("1");
+  });
+
   it("onError を持つ子 app を合成しても、子 app のルートの宣言を認める", async () => {
     const token = await insertToken({ name: "laptop", scopes: "read" });
     const child = new Hono<AppEnv>()
@@ -165,6 +248,69 @@ describe("認可の宣言が無いルート", () => {
     );
     expect((await app.request("/api/child/read", {}, env)).status).toBe(401);
     expect((await app.request("/api/child/public", {}, env)).status).toBe(200);
+  });
+});
+
+describe("同じパスに付けた宣言", () => {
+  const mcp = (req: Request) => new Response(`mcp ${new URL(req.url).pathname}`);
+
+  it("use() の宣言で、同じパスに mount したアプリを守る", async () => {
+    const token = await insertToken({ name: "agent", scopes: "read" });
+    const app = createApp().use("/mcp/*", requireToken("read")).mount("/mcp", mcp);
+    const ok = await app.request("/mcp/tools", { headers: bearer(token) }, env);
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe("mcp /tools");
+    expect((await app.request("/mcp/tools", {}, env)).status).toBe(401);
+  });
+
+  it("all() の宣言でハンドラを守る", async () => {
+    const token = await insertToken({ name: "agent", scopes: "read" });
+    const app = createApp().all("/mcp", requireToken("read"), (c) => c.text("ok"));
+    expect(
+      (await app.request("/mcp", { method: "POST", headers: bearer(token) }, env)).status,
+    ).toBe(200);
+    expect((await app.request("/mcp", { method: "POST" }, env)).status).toBe(401);
+  });
+
+  it("SPA の catch-all は匿名で通り、先に登録した API の宣言はそのまま効く", async () => {
+    const app = createApp()
+      .get("/api/pages/:slug", requireToken("read"), (c) => c.text("page"))
+      .get("*", allowAnonymous(), (c) => c.text("spa"));
+    const spa = await app.request("/pages/home", {}, env);
+    expect(spa.status).toBe(200);
+    expect(await spa.text()).toBe("spa");
+    expect((await app.request("/api/pages/home", {}, env)).status).toBe(401);
+  });
+});
+
+describe("キャッシュの制御", () => {
+  it("トークンで認証した応答は、拒否も含めて共有キャッシュに載せない", async () => {
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    const { request } = buildApp();
+    for (const res of [
+      await request("/api/test/read", bearer(token)),
+      await request("/api/test/write", bearer(token), "POST"),
+      await request("/api/healthz", bearer(token)),
+    ]) {
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(res.headers.get("Vary")).toBe("Authorization, Cookie");
+    }
+  });
+
+  it("匿名の応答には Vary だけを付ける", async () => {
+    const res = await buildApp().request("/api/healthz");
+    expect(res.headers.get("Cache-Control")).toBeNull();
+    expect(res.headers.get("Vary")).toBe("Authorization, Cookie");
+  });
+
+  it("ハンドラが直接返した Response にも付ける", async () => {
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    const app = createApp().get("/api/raw", requireToken("read"), () =>
+      Response.redirect("https://wiki.example.com/", 302),
+    );
+    const res = await app.request("/api/raw", { headers: bearer(token) }, env);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
   });
 });
 
