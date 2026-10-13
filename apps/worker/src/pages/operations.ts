@@ -115,7 +115,7 @@ export async function appendToPageAs(
  */
 export async function setVisibilityAs(
   ctx: PageWriteContext,
-  input: { id: string; visibility: Visibility },
+  input: { id: string; visibility: Visibility; expectedVersion?: number },
 ): Promise<WriteSuccess | WriteError> {
   if (ctx.principal.kind !== "owner") throw new Error("visibility を変えられるのは owner だけ");
   if (!isPageId(input.id)) return { ok: false, reason: "not_found" };

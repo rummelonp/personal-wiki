@@ -345,7 +345,15 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!isVisibility(visibility)) {
           return errorResponse(c, 400, "invalid_field", { field: "visibility" });
         }
-        const result = await setVisibilityAs(writeContext(c), { id, visibility });
+        // If-Match は任意。付いていれば、確かめた版と違う本文を公開しないよう照合する
+        const ifMatch = parseIfMatch(c.req.header("If-Match"));
+        if (ifMatch.kind === "invalid") return errorResponse(c, 400, "invalid_if_match");
+        const result = await setVisibilityAs(
+          writeContext(c),
+          ifMatch.kind === "version"
+            ? { id, visibility, expectedVersion: ifMatch.version }
+            : { id, visibility },
+        );
         if (!result.ok) return writeErrorResponse(c, result);
         return pageResponse(c, result.page);
       })

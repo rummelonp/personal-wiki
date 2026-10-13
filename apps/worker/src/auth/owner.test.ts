@@ -281,6 +281,24 @@ describe("CSRF", () => {
     expect((await request("/api/pages", fetchSiteOnly)).status).toBe(201);
   });
 
+  it("Content-Type の大文字小文字と charset の違いは JSON として通す", async () => {
+    const { request } = await setup();
+    const cookie = await ownerCookie(T0);
+    for (const [i, contentType] of [
+      "application/json; charset=utf-8",
+      "Application/JSON",
+      "application/json;charset=UTF-8",
+    ].entries()) {
+      const init = ownerInit(
+        cookie,
+        "POST",
+        { title: `CSRF type ${i}`, body: "" },
+        { "Content-Type": contentType },
+      );
+      expect((await request("/api/pages", init)).status, contentType).toBe(201);
+    }
+  });
+
   it("Origin と Sec-Fetch-Site が無い、別オリジン、JSON でない cookie 付きの変更系を拒む", async () => {
     const { request } = await setup();
     const cookie = await ownerCookie(T0);
@@ -588,6 +606,85 @@ describe("PUT /api/pages/:id/visibility", () => {
     expect((await put(page.id, [])).status).toBe(400);
     expect((await put("AAAAAAAAAAAAAAAAAAAAAA", { visibility: "public" })).status).toBe(404);
     expect((await put("short", { visibility: "public" })).status).toBe(404);
+  });
+
+  it("削除したページは 404 で、visibility を変えない", async () => {
+    const { request } = await setup();
+    const { page, token } = await createPage(request);
+    const deleted = await request(`/api/pages/${page.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}`, "If-Match": `"${page.version}"` },
+    });
+    expect(deleted.status).toBe(204);
+    const res = await request(
+      `/api/pages/${page.id}/visibility`,
+      ownerInit(await ownerCookie(T0), "PUT", { visibility: "public" }),
+    );
+    expect(res.status).toBe(404);
+    const row = await env.DB.prepare("SELECT visibility FROM pages WHERE id = ?")
+      .bind(page.id)
+      .first();
+    expect(row).toEqual({ visibility: "draft" });
+  });
+
+  describe("If-Match（任意）", () => {
+    it("今の版と合えば変え、合わなければ 409 で何も変えない", async () => {
+      const { request } = await setup();
+      const { page } = await createPage(request);
+      const cookie = await ownerCookie(T0);
+      const put = (visibility: string, ifMatch: string) =>
+        request(
+          `/api/pages/${page.id}/visibility`,
+          ownerInit(cookie, "PUT", { visibility }, { "If-Match": ifMatch }),
+        );
+
+      const stale = await put("public", '"5"');
+      expect(stale.status).toBe(409);
+      expect(await stale.json()).toMatchObject({ error: "version_conflict", currentVersion: 1 });
+
+      const published = await put("public", '"1"');
+      expect(published.status).toBe(200);
+      expect(await published.json()).toMatchObject({ visibility: "public", version: 2 });
+
+      // 同じ visibility でも、古い版を指していれば 409
+      const sameButStale = await put("public", '"1"');
+      expect(sameButStale.status).toBe(409);
+      expect(await sameButStale.json()).toMatchObject({ currentVersion: 2 });
+      const same = await put("public", "2");
+      expect(await same.json()).toMatchObject({ visibility: "public", version: 2 });
+
+      const row = await env.DB.prepare("SELECT visibility, version FROM pages WHERE id = ?")
+        .bind(page.id)
+        .first();
+      expect(row).toEqual({ visibility: "public", version: 2 });
+    });
+
+    it("形式の崩れた If-Match は 400", async () => {
+      const { request } = await setup();
+      const { page } = await createPage(request);
+      for (const ifMatch of ["abc", '"0"', "*", 'W/"1"']) {
+        const res = await request(
+          `/api/pages/${page.id}/visibility`,
+          ownerInit(
+            await ownerCookie(T0),
+            "PUT",
+            { visibility: "public" },
+            { "If-Match": ifMatch },
+          ),
+        );
+        expect(res.status, ifMatch).toBe(400);
+        expect(await res.json()).toMatchObject({ error: "invalid_if_match" });
+      }
+    });
+
+    it("無いページは If-Match が付いていても 404", async () => {
+      const { request } = await setup();
+      const res = await request(
+        "/api/pages/AAAAAAAAAAAAAAAAAAAAAA/visibility",
+        ownerInit(await ownerCookie(T0), "PUT", { visibility: "public" }, { "If-Match": '"1"' }),
+      );
+      expect(res.status).toBe(404);
+    });
   });
 });
 

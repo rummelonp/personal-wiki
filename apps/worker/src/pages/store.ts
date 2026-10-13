@@ -357,11 +357,14 @@ export async function deletePage(
 export interface SetVisibilityInput {
   id: string;
   visibility: Visibility;
+  /** 指定されたときだけ今の版と照合し、違えば version_conflict にする */
+  expectedVersion?: number;
   now: number;
 }
 
 /**
- * visibility を変える。版の照合は求めない（本文を書き換えないので、他の保存と競合しても失うものが無い）。
+ * visibility を変える。版の照合は任意にする（本文を書き換えないので、他の保存と競合しても失うものが無い）。
+ * 照合を指定できるのは、owner が確かめた版と違う本文を公開しないよう UI 側で防げるようにするため。
  *
  * 変えたときは版を 1 つ進め、updated_at も更新する。visibility を変える前に読んだ版で本文を
  * 書き換えようとした呼び出し元（draft のつもりの AI など）が、409 で読み直して公開範囲に気づけるように
@@ -372,14 +375,18 @@ export interface SetVisibilityInput {
 export async function setVisibility(
   db: D1Database,
   input: SetVisibilityInput,
-): Promise<WriteSuccess | { ok: false; reason: "not_found" }> {
+): Promise<
+  | WriteSuccess
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "version_conflict"; currentVersion: number }
+> {
   const result = await db
     .prepare(
       `UPDATE pages SET visibility = ?2, version = version + 1, updated_at = ?3
-       WHERE id = ?1 AND deleted_at IS NULL AND visibility != ?2
+       WHERE id = ?1 AND deleted_at IS NULL AND visibility != ?2 AND (?4 IS NULL OR version = ?4)
        RETURNING ${PAGE_COLUMNS}`,
     )
-    .bind(input.id, input.visibility, input.now)
+    .bind(input.id, input.visibility, input.now, input.expectedVersion ?? null)
     .all<PageRow>();
   const row = result.results[0];
   if (row !== undefined) {
@@ -387,6 +394,9 @@ export async function setVisibility(
   }
   const current = await findPageById(db, input.id);
   if (current === null) return { ok: false, reason: "not_found" };
+  if (input.expectedVersion !== undefined && current.version !== input.expectedVersion) {
+    return { ok: false, reason: "version_conflict", currentVersion: current.version };
+  }
   return { ok: true, page: current, rowsWritten: 0 };
 }
 
