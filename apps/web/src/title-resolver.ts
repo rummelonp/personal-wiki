@@ -200,6 +200,8 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
     },
 
     async lookup(target, signal) {
+      // 存在し得ない title は問い合わせない（一覧の取得と同じ扱い）
+      if (!canResolveTitle(target)) return { kind: "missing" };
       const key = foldTitle(target);
       const entry = entryOf(key);
       if (entry.status === "found" && entry.page !== null && entry.generation >= generation) {

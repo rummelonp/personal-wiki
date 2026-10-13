@@ -339,6 +339,13 @@ describe("lookup", () => {
     expect(await offline.resolver.lookup("a")).toEqual({ kind: "error" });
   });
 
+  it("URL に収まらない長さの title は、問い合わせずに missing にする", async () => {
+    const fetchTitles = server([]);
+    const { resolver } = setup(fetchTitles);
+    expect(await resolver.lookup("あ".repeat(1_000))).toEqual({ kind: "missing" });
+    expect(fetchTitles).not.toHaveBeenCalled();
+  });
+
   it("失敗した問い合わせで存在しない印を付けない", async () => {
     const { resolver, onChange } = setup(
       vi.fn<FetchTitles>(async () => ({ ok: false, reason: "error", message: "500" })),
