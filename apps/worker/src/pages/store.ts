@@ -438,7 +438,7 @@ export async function updatePage(
 
 /**
  * 追記の競合で読み直す回数の上限。D1 は 1 invocation あたりのクエリ数に上限（Free で 50）があり、
- * 1 回の試行で読み 1 文と batch の 12 文を使う（store.test.ts で数えている）。
+ * 1 回の試行で読み 1 文と batch の 12 文を使う（query-budget.test.ts で数えている）。
  */
 export const APPEND_MAX_ATTEMPTS = 3;
 
