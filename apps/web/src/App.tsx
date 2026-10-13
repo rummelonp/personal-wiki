@@ -44,19 +44,19 @@ export function App() {
     <div className="app">
       <Header
         session={session}
-        query={route.name === "home" ? route.query : ""}
+        showSearch={route.name !== "home"}
         loggingOut={loggingOut}
         onLogout={() => void handleLogout()}
       />
       <main className="main">
-        {session.status === "loading" && <p className="muted">読み込み中…</p>}
+        {session.status === "loading" && <p className="narrow muted">読み込み中…</p>}
         {session.status === "error" && (
-          <p className="message message-error" role="alert">
+          <p className="narrow message message-error" role="alert">
             ログインの状態を取得できませんでした。再読み込みしてください。
           </p>
         )}
         {session.status === "ready" && !isOwner && <SignInNotice />}
-        {isOwner && route.name === "home" && <HomeView query={route.query} />}
+        {isOwner && route.name === "home" && <HomeView query={route.query} tag={route.tag} />}
         {isOwner && route.name === "page" && <PageView id={route.id} />}
         {isOwner && route.name === "unknown" && (
           <section className="notice">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "./Link";
 import { listBacklinks, type PageSummary } from "./pages-api";
+import { RailSection } from "./Rail";
 import { pageHref } from "./route";
 
 type State =
@@ -50,17 +51,14 @@ export function Backlinks({ pageId }: { pageId: string }) {
   }
 
   return (
-    <section className="backlinks" aria-labelledby="backlinks-title">
-      <h2 id="backlinks-title" className="section-subtitle">
-        このページへのリンク
-      </h2>
+    <RailSection title="このページへのリンク">
       {state.status === "loading" && <p className="muted">読み込み中…</p>}
       {state.status === "error" && <p className="muted">取得できませんでした。</p>}
       {state.status === "ready" && state.pages.length === 0 && (
-        <p className="muted">このページへのリンクはありません。</p>
+        <p className="muted">ありません。</p>
       )}
       {state.status === "ready" && state.pages.length > 0 && (
-        <ul className="backlink-list">
+        <ul className="rail-list">
           {state.pages.map((page) => (
             <li key={page.id}>
               <Link href={pageHref(page.id)}>{page.title}</Link>
@@ -73,6 +71,6 @@ export function Backlinks({ pageId }: { pageId: string }) {
           さらに表示
         </button>
       )}
-    </section>
+    </RailSection>
   );
 }

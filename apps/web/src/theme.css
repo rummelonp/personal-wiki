@@ -2,50 +2,76 @@
  * 見た目の値（色、フォント、角丸、余白、影、境界線）はこのファイルのトークンに集める。
  * 部品の CSS（styles.css）はここで定義した変数だけを参照するので、このファイルを差し替えれば
  * 全体の印象が変わる。ダークは prefers-color-scheme で色のトークンだけを上書きする。
+ *
+ * 現在のテーマは、青みのある白とグラファイトに藍の差し色（Graphite）、
+ * 明朝の見出しと広い行間、ヘッダーに線を引かない構成、丸いタグのチップ（Mincho）の組み合わせ。
+ * 明朝体は OS のものを使う（CSP で外部フォントを読めないため）。
  */
 :root {
   color-scheme: light dark;
 
   /* 色: 面 */
-  --color-bg: #ffffff; /* ページ全体の背景 */
-  --color-surface: #ffffff; /* ヘッダー、ダイアログ、入力欄の背景 */
-  --color-sunken: #f4f4f5; /* 差分、補助的な面、バッジの背景 */
+  --color-bg: #fbfbfc; /* ページ全体の背景 */
+  --color-surface: #f4f5f7; /* 補助の面（差分で省略した行） */
+  --color-input: #f1f2f5; /* 検索欄、本文の編集欄、コードの背景 */
+  --color-selected: #eaecf0; /* 一覧の行にカーソルを置いたとき、押下状態のボタン */
   --color-backdrop: rgb(0 0 0 / 0.4); /* ダイアログの背後 */
 
   /* 色: 文字と線 */
-  --color-fg: #18181b; /* 本文の文字 */
-  --color-fg-muted: #6b6b73; /* 補助の文字（日時、説明） */
-  --color-border: #e4e4e7; /* 区切り線、入力欄の枠 */
-  --color-border-strong: #a1a1aa; /* 強調する枠（フォーカス前のボタンなど） */
+  --color-fg: #1b1e24; /* 本文の文字 */
+  --color-fg-muted: #6b7180; /* 補助の文字（日時、ラベル、説明） */
+  --color-border: #e8e9ed; /* 区切り線 */
+  --color-border-strong: #c9ccd6; /* ボタンと入力欄の枠 */
 
   /* 色: 操作 */
-  --color-accent: #18181b; /* リンク、主ボタンの背景 */
+  --color-accent: #3346c4; /* リンク、主ボタンの背景 */
   --color-accent-fg: #ffffff; /* 主ボタンの文字 */
-  --color-focus: #3f3f46; /* フォーカスリング */
+  --color-focus: #3346c4; /* フォーカスリング */
 
   /* 色: 状態 */
   --color-danger: #b42318; /* 失敗、削除 */
   --color-danger-bg: #fef3f2; /* 失敗の通知の背景 */
-  --color-warn-bg: #fffaeb; /* 注意の通知の背景（退避、ログイン切れ） */
+  --color-warn-bg: #fffaeb; /* 注意の通知の背景（退避、ログイン切れ、衝突） */
   --color-warn-border: #d4a72c; /* 注意の通知の枠 */
-  --color-ok: #3f6f4f; /* 保存済みの表示 */
+  --color-ok: #2f9e6b; /* 保存済み、ログイン中の点 */
   --color-diff-add-bg: #e6f4ea; /* 差分: 手元だけにある行 */
   --color-diff-del-bg: #fdecea; /* 差分: サーバーだけにある行 */
 
+  /* 色: チップ */
+  --color-tag-bg: #eef0fb; /* タグのチップの背景 */
+  --color-tag-fg: #3346c4; /* タグのチップの文字 */
+  --color-draft-bg: #1b1e24; /* 選択中の公開設定の背景 */
+  --color-draft-fg: #ffffff; /* 選択中の公開設定の文字 */
+
   /* 文字 */
-  --font-sans: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans Mono CJK JP", monospace;
-  --font-size-sm: 0.8125rem; /* 補助、バッジ */
-  --font-size-base: 1rem; /* 本文 */
-  --font-size-lg: 1.125rem; /* 一覧のタイトル、小見出し */
-  --font-size-xl: 1.5rem; /* ページ名、見出し */
-  --font-weight-strong: 600; /* 強調、見出し */
-  --line-height: 1.7; /* 本文の行間 */
+  --font-sans:
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", system-ui,
+    sans-serif; /* 本文、操作 */
+  --font-serif:
+    "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif; /* 見出し、ページ名、一覧のタイトル */
+  --font-mono:
+    ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans Mono CJK JP", monospace; /* 差分 */
+  --font-size-xs: 0.6875rem; /* チップ、ラベル */
+  --font-size-sm: 0.8125rem; /* 補助、日時、レールの本文 */
+  --font-size-chip: 0.75rem; /* タグのチップ */
+  --font-size-base: 0.9375rem; /* 本文、操作 */
+  --font-size-md: 1rem; /* 一覧のタイトル */
+  --font-size-lg: 1.25rem; /* 小見出し */
+  --font-size-title: 2.125rem; /* ページ名 */
+  --font-size-title-narrow: 1.75rem; /* 狭い画面でのページ名 */
+  --font-weight-strong: 700; /* 明朝の見出し */
+  --font-weight-medium: 500; /* ラベル */
+  --line-height: 1.7; /* 操作と補助の行間 */
+  --line-height-prose: 1.95; /* 本文の行間 */
   --line-height-tight: 1.35; /* 見出し、ボタン */
+  --letter-spacing-brand: 0.14em; /* wiki 名 */
+  --letter-spacing-heading: 0.02em; /* 明朝の見出し */
+  --letter-spacing-label: 0.1em; /* 小さなラベル */
 
   /* 形 */
-  --radius-sm: 4px; /* バッジ、差分 */
-  --radius-md: 8px; /* ボタン、入力欄、通知、ダイアログ */
+  --radius-sm: 4px; /* 差分、コード */
+  --radius-md: 6px; /* ボタン、入力欄、通知、ダイアログ */
+  --radius-pill: 999px; /* チップ、公開設定の切り替え */
   --border-width: 1px; /* 区切り線と枠の太さ */
   --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.16); /* ダイアログの影 */
 
@@ -56,36 +82,49 @@
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2.5rem;
+  --space-7: 4rem;
 
   /* 寸法 */
-  --content-width: 46rem; /* 本文の幅 */
+  --prose-width: 40em; /* 本文の幅 */
+  --list-width: 42.5rem; /* トップの一覧の幅 */
+  --hero-search-width: 35rem; /* トップの検索欄の幅 */
+  --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
+  --rail-width: 14.375rem; /* ノートの右の情報レールの幅 */
   --control-height: 2.25rem; /* ボタンと 1 行の入力欄の高さ */
+  --control-height-sm: 2rem; /* ヘッダーの操作の高さ */
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
+  --dot-size: 0.5rem; /* ログイン中と保存済みの点 */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #0b0b0c;
-    --color-surface: #131315;
-    --color-sunken: #1c1c1f;
+    --color-bg: #111317;
+    --color-surface: #15181d;
+    --color-input: #1a1d23;
+    --color-selected: #20242c;
     --color-backdrop: rgb(0 0 0 / 0.6);
 
-    --color-fg: #ececef;
-    --color-fg-muted: #9a9aa3;
-    --color-border: #2b2b30;
-    --color-border-strong: #52525b;
+    --color-fg: #e5e7eb;
+    --color-fg-muted: #8f95a3;
+    --color-border: #22262d;
+    --color-border-strong: #3a3f4a;
 
-    --color-accent: #ececef;
-    --color-accent-fg: #0b0b0c;
-    --color-focus: #c4c4cc;
+    --color-accent: #8e9bff;
+    --color-accent-fg: #111317;
+    --color-focus: #8e9bff;
 
     --color-danger: #f97066;
     --color-danger-bg: #2a1512;
     --color-warn-bg: #2a2412;
     --color-warn-border: #8a6d1a;
-    --color-ok: #7fbf92;
+    --color-ok: #4cc38a;
     --color-diff-add-bg: #14281b;
     --color-diff-del-bg: #301917;
+
+    --color-tag-bg: #1d2133;
+    --color-tag-fg: #a3adff;
+    --color-draft-bg: #e5e7eb;
+    --color-draft-fg: #111317;
 
     --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.6);
   }
