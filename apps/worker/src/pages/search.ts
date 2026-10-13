@@ -63,6 +63,14 @@ const toSummary = (row: SummaryRow): PageSummary => ({
 
 export const LIST_DEFAULT_LIMIT = 20;
 export const LIST_MAX_LIMIT = 100;
+/**
+ * title の一覧の 1 回の上限。1 件は id（22 文字）と title、visibility、updatedAt だけで、title は
+ * 平均で数十バイト、上限の MAX_TITLE_BYTES（1024）でも 500 件の応答は 600KB 弱に収まる。
+ * Worker の CPU（Workers Free は 1 リクエスト 10ms）を使うのは 500 件の JSON 化くらいで、
+ * 抜粋とタグを引く LIST_MAX_LIMIT の一覧のように件数を絞る理由が無い。
+ * 並べ替えは D1 が行い、読む行数は limit に関係なく全ページになる。
+ */
+export const TITLES_MAX_LIMIT = 500;
 export const SEARCH_DEFAULT_LIMIT = 20;
 /** 抜粋を作る分、一覧より 1 件あたりの CPU が重いので小さく抑える */
 export const SEARCH_MAX_LIMIT = 50;
@@ -213,6 +221,31 @@ export async function listRecentPages(
     }),
     nextCursor: list.nextCursor,
   };
+}
+
+/**
+ * 削除されていないページの id と title を更新日時の降順で返す。`[[` の候補のように title だけが要る
+ * 呼び出し向けで、listRecentPages と違い抜粋とタグを引かない。cursor と並び順は listRecentPages と同じで、
+ * 走査中の更新が後続のページで返らないことも同じ。
+ */
+export async function listPageTitles(
+  db: D1Database,
+  {
+    limit,
+    cursor,
+    readable,
+  }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
+): Promise<PageList> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, title, visibility, updated_at FROM pages
+       WHERE deleted_at IS NULL AND (?4 = 0 OR visibility = 'public')
+         AND (?1 IS NULL OR updated_at < ?1 OR (updated_at = ?1 AND id < ?2))
+       ORDER BY updated_at DESC, id DESC LIMIT ?3`,
+    )
+    .bind(cursor?.updatedAt ?? null, cursor?.id ?? null, limit + 1, publicOnlyFlag(readable))
+    .all<SummaryRow>();
+  return pageOf(results, limit, toSummary);
 }
 
 /** タグの表記と、そのタグ（子のタグを含む）が付いたページの数。 */

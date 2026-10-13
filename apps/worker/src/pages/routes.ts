@@ -21,6 +21,7 @@ import {
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
   listBacklinks,
+  listPageTitles,
   listRecentPages,
   listTagCounts,
   parseCursor,
@@ -30,6 +31,7 @@ import {
   SEARCH_MAX_LIMIT,
   SEARCH_QUERY_MESSAGES,
   searchPages,
+  TITLES_MAX_LIMIT,
 } from "./search";
 import {
   type AppendError,
@@ -227,8 +229,11 @@ function readCursor(c: PagesContext): Parsed<Cursor | null> {
 }
 
 /** 一覧 API の limit と cursor を読む。 */
-function readPaging(c: PagesContext): Parsed<{ limit: number; cursor: Cursor | null }> {
-  const limit = readLimit(c, LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
+function readPaging(
+  c: PagesContext,
+  max = LIST_MAX_LIMIT,
+): Parsed<{ limit: number; cursor: Cursor | null }> {
+  const limit = readLimit(c, LIST_DEFAULT_LIMIT, max);
   if (!limit.ok) return limit;
   const cursor = readCursor(c);
   if (!cursor.ok) return cursor;
@@ -307,6 +312,16 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         const { pages, nextCursor } = await listRecentPages(c.env.DB, {
           ...paging.value,
           tagKey: tag?.key ?? null,
+          readable: readableVisibilityOf(c.get("principal")),
+        });
+        return c.json({ pages, nextCursor });
+      })
+      // 抜粋とタグを返さない軽い一覧。`/api/pages/:id` より前に登録する
+      .get("/api/pages/titles", allowAnonymousRead(), async (c) => {
+        const paging = readPaging(c, TITLES_MAX_LIMIT);
+        if (!paging.ok) return paging.response;
+        const { pages, nextCursor } = await listPageTitles(c.env.DB, {
+          ...paging.value,
           readable: readableVisibilityOf(c.get("principal")),
         });
         return c.json({ pages, nextCursor });

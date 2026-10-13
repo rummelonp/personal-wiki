@@ -156,6 +156,9 @@ describe("匿名の読み取り", () => {
     const recent = await (await anonymous("/api/pages/recent")).json<{ pages: Listed[] }>();
     expect(ids(recent.pages)).toEqual([linker.id, open.id]);
 
+    const titles = await (await anonymous("/api/pages/titles")).json<{ pages: Listed[] }>();
+    expect(ids(titles.pages)).toEqual([linker.id, open.id]);
+
     const shared = await (await anonymous("/api/pages/recent?tag=shared")).json<{
       pages: Listed[];
     }>();
@@ -219,6 +222,19 @@ describe("匿名の読み取り", () => {
     expect(seen).toHaveLength(3);
     expect(seen).toContain(open.id);
     expect(seen).toContain(linker.id);
+
+    const titleSeen: string[] = [];
+    cursor = null;
+    do {
+      const query: string = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+      const text = await (await anonymous(`/api/pages/titles?limit=1${query}`)).text();
+      expect(text).not.toContain(draft.id);
+      expect(text).not.toContain(fresh.id);
+      const list = JSON.parse(text) as { pages: Listed[]; nextCursor: string | null };
+      titleSeen.push(...list.pages.map((page) => page.id));
+      cursor = list.nextCursor;
+    } while (cursor !== null);
+    expect(titleSeen).toEqual(seen);
   });
 
   it("backlink を 1 件ずつたどっても、より新しい draft のリンク元が出ず、public のリンク元を取りこぼさない", async () => {
@@ -271,6 +287,8 @@ describe("匿名の読み取り", () => {
     expect((await anonymous(`/api/pages/${open.id}`)).status).toBe(200);
     const recent = await (await anonymous("/api/pages/recent")).json<{ pages: Listed[] }>();
     expect(recent.pages.map((page) => page.id)).toEqual([linker.id]);
+    const titles = await (await anonymous("/api/pages/titles")).json<{ pages: Listed[] }>();
+    expect(titles.pages.map((page) => page.id)).toEqual([linker.id]);
     expect(await (await anonymous("/api/tags")).json()).toEqual({
       tags: [{ tag: "pub", count: 1 }],
     });
@@ -282,12 +300,13 @@ describe("匿名の読み取り", () => {
 });
 
 describe("検証できないセッション cookie", () => {
-  /** ページの読み取りの 7 つのルートを 1 つずつ呼ぶパス。 */
+  /** ページの読み取りの 8 つのルートを 1 つずつ呼ぶパス。 */
   function readPaths(open: PageJson): string[] {
     return [
       `/api/pages/by-title?title=${encodeURIComponent("Open Note")}`,
       `/api/pages/resolve?title=${encodeURIComponent("Open Note")}`,
       "/api/pages/recent",
+      "/api/pages/titles",
       "/api/tags",
       `/api/search?q=${encodeURIComponent("Open")}`,
       `/api/pages/${open.id}`,
@@ -437,6 +456,11 @@ describe("匿名向けの応答の総当たり", () => {
         "/api/pages/recent?tag=draftonly",
         "/api/pages/recent?tag=pub",
       ],
+      "GET /api/pages/titles": [
+        "/api/pages/titles",
+        "/api/pages/titles?limit=1",
+        "/api/pages/titles?limit=500",
+      ],
       "GET /api/tags": ["/api/tags"],
       "GET /api/search": [
         search("zebrafish"),
@@ -528,6 +552,8 @@ describe("owner と token の読み取りは変わらない", () => {
 
     const recent = await (await asOwner("/api/pages/recent")).json<{ pages: Listed[] }>();
     expect(recent.pages.map((page) => page.id)).toEqual([linker.id, open.id, draft.id]);
+    const titles = await (await asOwner("/api/pages/titles")).json<{ pages: Listed[] }>();
+    expect(titles.pages.map((page) => page.id)).toEqual([linker.id, open.id, draft.id]);
     expect(await (await asOwner("/api/tags")).json()).toEqual({
       tags: [
         { tag: "pub", count: 2 },
@@ -554,6 +580,7 @@ describe("owner と token の読み取りは変わらない", () => {
     expect(byTitle.status).toBe(200);
     expect(byTitle.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await (await call("/api/pages/recent", { headers })).text()).toContain(draft.id);
+    expect(await (await call("/api/pages/titles", { headers })).text()).toContain(draft.id);
     expect(await (await call("/api/search?q=秘蔵", { headers })).text()).toContain(draft.id);
   });
 

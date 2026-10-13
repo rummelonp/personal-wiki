@@ -323,6 +323,109 @@ describe("GET /api/pages/recent", () => {
   });
 });
 
+describe("GET /api/pages/titles", () => {
+  const titlesOf = async (client: Awaited<ReturnType<typeof buildClient>>, query = "") => {
+    const res = await client.request(`/api/pages/titles${query}`);
+    expect(res.status).toBe(200);
+    return res.json<{ pages: Record<string, unknown>[]; nextCursor: string | null }>();
+  };
+
+  it("更新日時の降順で、削除済みを除き、id、title、visibility、updatedAt だけを返す", async () => {
+    const client = await buildClient();
+    const a = await client.create("a", "本文 #tag");
+    client.clock.now += 1000;
+    const b = await client.create("b");
+    client.clock.now += 1000;
+    const c = await client.create("c");
+    client.clock.now += 1000;
+    await client.update(a, "a", "更新");
+    await client.request(`/api/pages/${b.id}`, {
+      method: "DELETE",
+      headers: { "If-Match": '"1"' },
+    });
+    expect(await titlesOf(client)).toEqual({
+      pages: [
+        { id: a.id, title: "a", visibility: "draft", updatedAt: T0 + 3000 },
+        { id: c.id, title: "c", visibility: "draft", updatedAt: T0 + 2000 },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it("recent と同じ順・同じ cursor でページングし、同じ更新日時のページも取りこぼさない", async () => {
+    const client = await buildClient();
+    for (let i = 0; i < 5; i++) {
+      if (i % 2 === 0) client.clock.now += 1000;
+      await client.create(`p${i}`);
+    }
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let rounds = 0;
+    do {
+      const body = await titlesOf(client, `?limit=2${cursor === null ? "" : `&cursor=${cursor}`}`);
+      seen.push(...body.pages.map((page) => page.id as string));
+      cursor = body.nextCursor;
+      rounds++;
+    } while (cursor !== null);
+    expect(rounds).toBe(3);
+    expect(seen).toEqual((await recent(client)).pages.map((page) => page.id));
+    expect(new Set(seen).size).toBe(5);
+    // 同じ位置からは recent の cursor でも続けられる
+    const first = await titlesOf(client, "?limit=2");
+    const viaRecent = await recent(client, `?limit=2&cursor=${first.nextCursor}`);
+    const viaTitles = await titlesOf(client, `?limit=2&cursor=${first.nextCursor}`);
+    expect(viaTitles.pages.map((page) => page.id)).toEqual(viaRecent.pages.map((page) => page.id));
+  });
+
+  it("limit ちょうどで終わるときは nextCursor が null", async () => {
+    const client = await buildClient();
+    await client.create("a");
+    await client.create("b");
+    expect((await titlesOf(client, "?limit=2")).nextCursor).toBeNull();
+    expect((await titlesOf(client, "?limit=1")).nextCursor).not.toBeNull();
+  });
+
+  it("limit の上限は 500 で、超える値と不正な cursor は 400", async () => {
+    const client = await buildClient();
+    for (const query of ["?limit=0", "?limit=501", "?limit=x", "?cursor=abc", "?cursor="]) {
+      const res = await client.request(`/api/pages/titles${query}`);
+      expect(res.status, query).toBe(400);
+    }
+    const tooMany = await client.request("/api/pages/titles?limit=501");
+    expect(await tooMany.json()).toEqual({ error: "invalid_field", field: "limit", max: 500 });
+    expect((await client.request("/api/pages/titles?limit=500")).status).toBe(200);
+  });
+
+  it("limit を超える件数があれば、上限の件数で切って nextCursor を返す", async () => {
+    const client = await buildClient();
+    const now = client.clock.now;
+    // 500 件を超える数を API で作ると遅いので、同じ形の行を SQL で直接入れる
+    const rows = Array.from({ length: 501 }, (_, i) => i);
+    await env.DB.prepare(
+      `INSERT INTO pages (id, title, title_key, body, visibility, version, created_at, updated_at)
+       SELECT printf('%022d', value), 'bulk ' || value, 'bulk ' || value, '', 'draft', 1, ?2, ?2 + value
+       FROM json_each(?1)`,
+    )
+      .bind(JSON.stringify(rows), now)
+      .run();
+    const body = await titlesOf(client, "?limit=500");
+    expect(body.pages).toHaveLength(500);
+    expect(body.nextCursor).not.toBeNull();
+    const rest = await titlesOf(client, `?limit=500&cursor=${body.nextCursor}`);
+    expect(rest.pages).toHaveLength(1);
+    expect(rest.nextCursor).toBeNull();
+  });
+
+  it("/api/pages/:id と重ならず、token が無ければ匿名として 200、read の token で 200", async () => {
+    const reader = await buildClient({ scopes: "read", name: "reader" });
+    expect((await withoutToken("/api/pages/titles")).status).toBe(200);
+    expect((await reader.request("/api/pages/titles")).status).toBe(200);
+    const writer = await buildClient();
+    expect((await writer.request("/api/pages/titles", { method: "PUT" })).status).toBe(404);
+    expect((await writer.request("/api/pages/titles", { method: "DELETE" })).status).toBe(404);
+  });
+});
+
 async function backlinks(client: Awaited<ReturnType<typeof buildClient>>, id: string, query = "") {
   return client.request(`/api/pages/${id}/backlinks${query}`);
 }
