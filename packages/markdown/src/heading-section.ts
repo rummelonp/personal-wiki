@@ -121,7 +121,11 @@ export function createHeadingSectionExtractor(text: string): (heading: string) =
   };
 }
 
-function sectionOf(text: string, headings: readonly Heading[], path: string[]): string | null {
+/** `path` の見出しの添字と、その範囲の終わり（次に現れる同じか上の level の見出しの添字）。 */
+function locate(
+  headings: readonly Heading[],
+  path: string[],
+): { found: number; end: number } | null {
   let start = 0;
   let end = headings.length;
   let found = -1;
@@ -140,8 +144,26 @@ function sectionOf(text: string, headings: readonly Heading[], path: string[]): 
     start = found + 1;
     end = next;
   }
+  return { found, end };
+}
 
-  const from = (headings[found] as Heading).from;
-  const to = end < headings.length ? (headings[end] as Heading).from : text.length;
+function sectionOf(text: string, headings: readonly Heading[], path: string[]): string | null {
+  const located = locate(headings, path);
+  if (located === null) return null;
+  const from = (headings[located.found] as Heading).from;
+  const to = located.end < headings.length ? (headings[located.end] as Heading).from : text.length;
   return text.slice(from, to).trimEnd();
+}
+
+/**
+ * 本文 `text` から、WikiLink の heading が指す見出しの行の先頭の位置（UTF-16 の添字）を返す。
+ * 見出しの照合は `extractHeadingSection` と同じで、`[[Note#A]]` の移動先と `![[Note#A]]` の展開が
+ * 同じ見出しを指す。見つからなければ null。
+ */
+export function findHeadingOffset(text: string, heading: string): number | null {
+  const path = headingPath(heading);
+  if (path.length === 0) return null;
+  const headings = topLevelHeadings(text);
+  const located = locate(headings, path);
+  return located === null ? null : (headings[located.found] as Heading).from;
 }

@@ -18,6 +18,7 @@ export {
   createHeadingSectionExtractor,
   extractHeadingSection,
   extractLinkableHeadings,
+  findHeadingOffset,
   isBlockReferenceHeading,
 } from "./heading-section";
 export { Highlight, highlightNodes } from "./highlight";

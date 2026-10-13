@@ -67,12 +67,14 @@ export function isAttachmentTarget(target: string): boolean {
  * embed を展開方法で分類する。展開方法を持たないもの（block を指す embed、PDF と音声）は
  * null で、呼び出し側は通常の WikiLink として扱う。
  * 見出しを指す embed（`![[Note#見出し]]`）は `page` で、見出しの範囲を切り出すのは表示側
- * （`extractHeadingSection`）である。block を指す embed（`![[Note^id]]`、`![[Note#^id]]`）は
+ * （`extractHeadingSection`）である。同じ page の見出しを指す `![[#見出し]]`（target が空）は
+ * 自分自身の embed になるので展開しない。block を指す embed（`![[Note^id]]`、`![[Note#^id]]`）は
  * block の範囲を切り出す手段が無く、page 全体を出すと書いた人の意図と違う内容になるので展開しない。
  */
 export function embedKindOf(
   parts: Pick<WikiLinkParts, "target" | "heading" | "blockId">,
 ): EmbedKind | null {
+  if (parts.target === "") return null;
   const media = embedKindForTarget(parts.target);
   if (media !== null) return media;
   if (parts.blockId !== null) return null;

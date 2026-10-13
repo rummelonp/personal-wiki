@@ -7,6 +7,12 @@ describe("extractDerived", () => {
     expect(extractDerived("")).toEqual({ links: [], tags: [], plainText: "" });
   });
 
+  it("does not derive a link from a same-page heading or block reference", () => {
+    expect(
+      extractDerived("[[#見出し]] [[#^abc]] [[A#見出し]]").links.map((l) => l.targetTitle),
+    ).toEqual(["A"]);
+  });
+
   it("derives links, tags and plain text from one body", () => {
     const derived = extractDerived("# 見出し\n\n[[読書メモ|メモ]] と #project/x を書く。\n");
     expect(derived.links).toEqual([{ targetTitle: "読書メモ", targetTitleKey: "読書メモ" }]);

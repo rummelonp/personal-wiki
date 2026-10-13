@@ -3,6 +3,7 @@ import {
   createHeadingSectionExtractor,
   extractHeadingSection,
   extractLinkableHeadings,
+  findHeadingOffset,
   isBlockReferenceHeading,
 } from "./heading-section";
 
@@ -144,6 +145,46 @@ describe("extractLinkableHeadings", () => {
     for (const heading of extractLinkableHeadings(text)) {
       expect(extractHeadingSection(text, heading)).not.toBeNull();
     }
+  });
+});
+
+describe("findHeadingOffset", () => {
+  const text = "前文\n\n## A\n\nA の本文\n\n### A-1\n\n子\n\n## B\n\n### A-1\n\n別の子";
+
+  it("returns the offset of the start of the heading line", () => {
+    expect(findHeadingOffset(text, "A")).toBe(text.indexOf("## A"));
+    expect(findHeadingOffset(text, "B")).toBe(text.indexOf("## B"));
+  });
+
+  it("follows a nested path within the enclosing section", () => {
+    expect(findHeadingOffset(text, "B#A-1")).toBe(text.lastIndexOf("### A-1"));
+    expect(findHeadingOffset(text, "A#A-1")).toBe(text.indexOf("### A-1"));
+  });
+
+  it("takes the first of duplicate headings and trims the heading", () => {
+    expect(findHeadingOffset(text, "  A-1 ")).toBe(text.indexOf("### A-1"));
+  });
+
+  it("reads setext headings and ignores headings in code", () => {
+    const setext = "```\n# X\n```\n\n長い\n見出し\n---\n";
+    expect(findHeadingOffset(setext, "長い 見出し")).toBe(setext.indexOf("長い"));
+    expect(findHeadingOffset(setext, "X")).toBeNull();
+  });
+
+  it("agrees with extractHeadingSection on which heading is found", () => {
+    const sectionStart = (heading: string) => {
+      const section = extractHeadingSection(text, heading);
+      return section === null ? null : text.indexOf(section);
+    };
+    for (const heading of ["A", "B", "A#A-1", "B#A-1", "なし", "a"]) {
+      expect(findHeadingOffset(text, heading)).toBe(sectionStart(heading));
+    }
+  });
+
+  it("returns null for a missing heading or an empty path", () => {
+    expect(findHeadingOffset(text, "なし")).toBeNull();
+    expect(findHeadingOffset(text, "a")).toBeNull();
+    expect(findHeadingOffset(text, " # ")).toBeNull();
   });
 });
 

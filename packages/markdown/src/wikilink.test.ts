@@ -69,6 +69,13 @@ describe("extractWikiLinks", () => {
     expect(refs("[[|Label]]")).toEqual([]);
   });
 
+  it("parses a same-page heading and block reference as links with an empty target", () => {
+    expect(refs("[[#見出し]] と [[#^abc]]")).toEqual([
+      { target: "", label: null, slice: "[[#見出し]]" },
+      { target: "", label: null, slice: "[[#^abc]]" },
+    ]);
+  });
+
   it("falls back to the target when the label is empty", () => {
     expect(refs("[[Title|]]")).toEqual([{ target: "Title", label: null, slice: "[[Title|]]" }]);
   });
@@ -205,6 +212,22 @@ describe("splitWikiLinkContent", () => {
     expect(splitWikiLinkContent("")).toBeNull();
     expect(splitWikiLinkContent("a[b")).toBeNull();
     expect(splitWikiLinkContent("a\nb")).toBeNull();
+  });
+
+  it("allows an empty target only for a heading or a block reference of the same page", () => {
+    expect(splitWikiLinkContent("#見出し")).toMatchObject({
+      target: "",
+      heading: "見出し",
+      blockId: null,
+    });
+    expect(splitWikiLinkContent("#^abc|ラベル")).toMatchObject({
+      target: "",
+      heading: "^abc",
+      label: "ラベル",
+    });
+    expect(splitWikiLinkContent("#")).toBeNull();
+    expect(splitWikiLinkContent("^abc")).toBeNull();
+    expect(splitWikiLinkContent("#|ラベル")).toBeNull();
   });
 
   it("splits on the first pipe only", () => {

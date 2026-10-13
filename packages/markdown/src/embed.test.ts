@@ -26,6 +26,10 @@ describe("embedKindOf", () => {
     expect(kindOf("Note.md")).toBe("page");
   });
 
+  it("does not expand an embed of the same page", () => {
+    expect(kindOf("#見出し")).toBeNull();
+  });
+
   it("reads a heading embed as a page embed", () => {
     expect(kindOf("Note#見出し")).toBe("page");
     expect(kindOf("Note#親#子|別名")).toBe("page");

@@ -54,12 +54,13 @@ export function splitWikiLinkContent(content: string): WikiLinkParts | null {
   // rawTarget は #/^ を含まない先頭部分に必ずマッチするので match は常に非 null。
   const match = /^([^#^]*)(?:([#^])(.*))?$/.exec(rawTarget) as RegExpExecArray;
   const target = (match[1] ?? "").trim();
-  if (target.length === 0) return null;
 
   const marker = match[2];
   const restTrimmed = (match[3] ?? "").trim();
   const heading = marker === "#" && restTrimmed.length > 0 ? restTrimmed : null;
   const blockId = marker === "^" && restTrimmed.length > 0 ? restTrimmed : null;
+  // target を省けるのは、同じ page の見出しと block を指す `[[#見出し]]` と `[[#^id]]` だけ
+  if (target.length === 0 && heading === null) return null;
 
   const hasLabel = separator !== null && label.length > 0;
   return {
@@ -72,6 +73,7 @@ export function splitWikiLinkContent(content: string): WikiLinkParts | null {
 }
 
 export interface WikiLinkParts {
+  /** link 先の page の title。空なら同じ page（`[[#見出し]]`、`[[#^id]]`）で、heading が必ずある */
   readonly target: string;
   /** 区切りより後ろを trim したもの。`\|` などの escape は解かず、書かれたまま持つ */
   readonly label: string | null;
