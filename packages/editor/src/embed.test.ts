@@ -759,6 +759,20 @@ describe("page embed", () => {
     expect(resolve).toHaveBeenCalledWith("Note");
   });
 
+  // 添付の配信 URL はページ単位なので、埋め込んだ本文の添付は埋め込み先のページで引く
+  it("resolves an attachment inside an embedded body with the embedded page's target", () => {
+    const resolve = vi.fn((filename: string, embedTarget?: string) =>
+      embedTarget === undefined ? PIXEL : `${PIXEL}#${embedTarget}/${filename}`,
+    );
+    mount("![[own.png]]\n\n![[Note|別名]]", {
+      resolvePageEmbed: () => resolved("Note", "![[inner.png]]"),
+      resolveAttachmentUrl: resolve,
+    });
+    expect(resolve).toHaveBeenCalledWith("own.png");
+    expect(resolve).toHaveBeenCalledWith("inner.png", "Note");
+    expect(resolve).not.toHaveBeenCalledWith("inner.png");
+  });
+
   // 埋め込み本文は create-editor.ts に readOnlyFocusable: false を渡して作るので、外側の
   // view と違って focus できない。クリックすると外側の view から focus が
   // 奪われ、記法表示や本文の縦位置が崩れるため。直接編集する経路は widget 右上の

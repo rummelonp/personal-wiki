@@ -19,6 +19,8 @@
  */
 export type { EditorView, ViewUpdate } from "@codemirror/view";
 export {
+  type AcceptAttachment,
+  type AttachmentUploadOptions,
   attachmentUpload,
   type UploadAttachment,
   type UploadedAttachment,

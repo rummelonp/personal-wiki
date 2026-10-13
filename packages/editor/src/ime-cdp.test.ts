@@ -3,6 +3,7 @@ import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cdp } from "vitest/browser";
+import type { UploadAttachment } from "./attachment-upload";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 import { invalidateDecorations } from "./decoration-plugin";
 import type { PageEmbedContent } from "./embed";
@@ -212,6 +213,72 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
     await expect.poll(() => v.state.doc.toString()).toBe("一行目を直した\n二行目愛");
     expectOnlyComposeTransactions(duringComposition());
     expect(kindsOf(afterComposition(), "transaction").filter((d) => d === "doc")).toHaveLength(1);
+  });
+
+  /** 呼び出しごとに完了を呼び出し側が決められる upload。完了の順も呼び出し側が決める */
+  function deferredUploads(): {
+    upload: UploadAttachment;
+    complete: (index: number, filename: string) => void;
+  } {
+    const resolvers: ((filename: string) => void)[] = [];
+    return {
+      upload: () =>
+        new Promise((resolve) => {
+          resolvers.push((filename) => resolve({ filename }));
+        }),
+      complete: (index, filename) => resolvers[index]?.(filename),
+    };
+  }
+
+  function pasteImage(v: EditorView, name: string): void {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File([new Uint8Array([1])], name, { type: "image/png" }));
+    v.contentDOM.dispatchEvent(
+      new ClipboardEvent("paste", { cancelable: true, clipboardData: dataTransfer }),
+    );
+  }
+
+  const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+  it("holds the replacement of an uploaded attachment placeholder until the conversion settles", async () => {
+    const uploads = deferredUploads();
+    const v = mount("前", { onUploadAttachment: uploads.upload });
+    pasteImage(v, "a.png");
+    const placeholder = v.state.doc.toString().slice(1);
+    expect(placeholder).toMatch(/^!\[\[uploading-.+\.png\]\]$/);
+    log = [];
+
+    await compose("あ");
+    uploads.complete(0, "FINISHED.png");
+    await nextTask();
+    // 変換中は placeholder のまま（外からの dispatch を保留している）
+    expect(v.state.doc.toString()).toBe(`前${placeholder}あ`);
+    await compose("あい");
+    await commit("愛");
+    await settled(v);
+
+    await expect.poll(() => v.state.doc.toString()).toBe("前![[FINISHED.png]]愛");
+    expectOnlyComposeTransactions(duringComposition());
+  });
+
+  it("replaces every placeholder when several uploads finish during one conversion", async () => {
+    const uploads = deferredUploads();
+    const v = mount("", { onUploadAttachment: uploads.upload });
+    pasteImage(v, "a.png");
+    pasteImage(v, "b.png");
+    log = [];
+
+    await compose("あ");
+    // 完了の順は貼り付けの順と逆でもよい。同じ key で潰し合うと片方が placeholder のまま残る
+    uploads.complete(1, "SECOND.png");
+    uploads.complete(0, "FIRST.png");
+    await nextTask();
+    expect(v.state.doc.toString()).toMatch(/uploading-.+uploading-/);
+    await commit("愛");
+    await settled(v);
+
+    await expect.poll(() => v.state.doc.toString()).toBe("![[FIRST.png]]![[SECOND.png]]愛");
+    expectOnlyComposeTransactions(duringComposition());
   });
 });
 

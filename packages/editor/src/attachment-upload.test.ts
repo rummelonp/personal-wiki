@@ -1,7 +1,11 @@
 import type { EditorView } from "@codemirror/view";
+import { extractDerived, extractWikiLinks, isAttachmentTarget } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { attachmentUpload, type UploadAttachment } from "./attachment-upload";
-import { createEditor } from "./create-editor";
+import { type CreateEditorOptions, createEditor } from "./create-editor";
+
+/** サーバーが振る添付の名前（packages/domain の規則と同じ形） */
+const SERVER_ATTACHMENT_NAME = /^[A-Za-z0-9_-]{22}\.(png|jpg|gif|webp|avif)$/;
 
 let view: EditorView | null = null;
 let host: HTMLElement | null = null;
@@ -10,6 +14,13 @@ function mount(upload: UploadAttachment, doc = "", readOnly = false): EditorView
   host = document.createElement("div");
   document.body.append(host);
   view = createEditor(host, { doc, readOnly, extensions: attachmentUpload(upload) });
+  return view;
+}
+
+function mountWithOptions(options: CreateEditorOptions): EditorView {
+  host = document.createElement("div");
+  document.body.append(host);
+  view = createEditor(host, options);
   return view;
 }
 
@@ -124,5 +135,80 @@ describe("attachmentUpload", () => {
 
     expect(upload).not.toHaveBeenCalled();
     expect(v.state.doc.toString()).toBe("abc");
+  });
+
+  it("replaces every placeholder when several uploads finish in reverse order", async () => {
+    const finishers: ((filename: string) => void)[] = [];
+    const upload: UploadAttachment = () =>
+      new Promise((resolve) => finishers.push((filename) => resolve({ filename })));
+    const v = mount(upload, "");
+
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png"), imageFile("b.png")]));
+    expect(finishers).toHaveLength(2);
+    finishers[1]?.("SECOND.png");
+    finishers[0]?.("FIRST.png");
+
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("![[FIRST.png]]![[SECOND.png]]"));
+  });
+
+  // 自動保存はアップロード中の本文も保存する。サーバーは拡張子の無い embed を page の参照として
+  // links に入れ、添付の参照は 22 文字の base64url の名前だけを受け付ける
+  it("writes a placeholder that is neither a page link nor an attachment name", () => {
+    const upload: UploadAttachment = () => new Promise(() => {});
+    const v = mount(upload, "");
+
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png"), imageFile("b.png")]));
+
+    const body = v.state.doc.toString();
+    expect(extractDerived(body).links).toEqual([]);
+    const embeds = extractWikiLinks(body).filter((ref) => ref.isEmbed);
+    expect(embeds).toHaveLength(2);
+    for (const ref of embeds) {
+      expect(isAttachmentTarget(ref.target)).toBe(true);
+      expect(ref.target).not.toMatch(SERVER_ATTACHMENT_NAME);
+    }
+  });
+
+  it("renders the placeholder as an unresolved image when the resolver returns null", () => {
+    const upload: UploadAttachment = () => new Promise(() => {});
+    const v = mountWithOptions({
+      onUploadAttachment: upload,
+      resolveAttachmentUrl: () => null,
+    });
+
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+
+    const unresolved = v.contentDOM.querySelector(".cm-embed-image .cm-embed-unresolved");
+    expect(unresolved?.textContent).toMatch(/^uploading-.+\.png$/);
+  });
+
+  it("accepts every image/* file by default and lets the host narrow it", async () => {
+    const upload = vi.fn(async (file: File) => ({ filename: file.name }));
+    const v = mountWithOptions({
+      onUploadAttachment: upload,
+      acceptAttachment: (file) => file.type === "image/png" || file.type === "image/webp",
+    });
+    const svg = new File(["<svg/>"], "vector.svg", { type: "image/svg+xml" });
+    const webp = new File([new Uint8Array([1])], "kept.webp", { type: "image/webp" });
+
+    dispatchPaste(v, dataTransferWithFiles([svg, webp]));
+
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("![[kept.webp]]"));
+    expect(upload).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "kept.webp" }));
+  });
+
+  it("leaves the paste to the default handler when the host accepts none of the files", () => {
+    const upload = vi.fn();
+    const v = mountWithOptions({ onUploadAttachment: upload, acceptAttachment: () => false });
+
+    const event = new ClipboardEvent("paste", {
+      cancelable: true,
+      clipboardData: dataTransferWithFiles([imageFile("a.png")]),
+    });
+    v.contentDOM.dispatchEvent(event);
+
+    expect(upload).not.toHaveBeenCalled();
+    expect(v.state.doc.toString()).toBe("");
   });
 });

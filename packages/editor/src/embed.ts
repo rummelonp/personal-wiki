@@ -37,8 +37,12 @@ import { SectionContents } from "./section-content";
  * URL は認可を通す経路（API の attachment 解決）を指すだけでよく、添付が実在するかは
  * ブラウザがその URL を読んだ結果で分かる。読めなければ未解決として表示する。
  * null は URL を作れないことを表し、これも未解決として表示する。
+ *
+ * `embedTarget` は、ページ embed の本文の中に書かれた添付のとき、その埋め込み先の title
+ * （埋め込み元に書かれたまま）。添付の配信 URL はページ単位で、埋め込み先のページが参照している
+ * 添付だけを返すので、埋め込み先のページで解決するために渡す。ページ自身の本文では undefined。
  */
-export type AttachmentUrlResolver = (filename: string) => string | null;
+export type AttachmentUrlResolver = (filename: string, embedTarget?: string) => string | null;
 
 const attachmentUrlResolver = Facet.define<AttachmentUrlResolver, AttachmentUrlResolver | null>({
   combine: (values) => values[0] ?? null,

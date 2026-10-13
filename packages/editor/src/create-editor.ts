@@ -20,7 +20,11 @@ import {
   Tag,
   WikiLink,
 } from "@personal-wiki/markdown";
-import { attachmentUpload, type UploadAttachment } from "./attachment-upload";
+import {
+  type AcceptAttachment,
+  attachmentUpload,
+  type UploadAttachment,
+} from "./attachment-upload";
 import { blockIdAssignment, blockIdHighlight } from "./block-id";
 import { imeDebug } from "./debug-ime";
 import { invalidateDecorations } from "./decoration-plugin";
@@ -97,6 +101,8 @@ export interface CreateEditorOptions {
   readonly onTagClick?: TagClickHandler;
   /** 渡したときだけクリップボード貼り付け/ドラッグ&ドロップでの画像アップロードを有効にする */
   readonly onUploadAttachment?: UploadAttachment;
+  /** アップロードで受け付ける File の判定。既定は `image/*`。`onUploadAttachment` と一緒に渡したときだけ働く */
+  readonly acceptAttachment?: AcceptAttachment;
   /** `![[image.png]]` の画像の URL。渡さないと画像 embed は未解決として表示する */
   readonly resolveAttachmentUrl?: AttachmentUrlResolver;
   /**
@@ -204,7 +210,14 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
       }),
     );
   }
-  if (options.onUploadAttachment) extensions.push(attachmentUpload(options.onUploadAttachment));
+  if (options.onUploadAttachment) {
+    extensions.push(
+      attachmentUpload(
+        options.onUploadAttachment,
+        options.acceptAttachment ? { accept: options.acceptAttachment } : {},
+      ),
+    );
+  }
   if (options.onImeEvent) extensions.push(imeDebug(options.onImeEvent, "body"));
   extensions.push(readOnlyCompartment(options.readOnly ?? false));
   // editable の facet 既定値はすでに true なので、focus を許すだけなら何も足さない。
@@ -225,8 +238,9 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
 /**
  * ページ embed の本文は、埋め込み元と同じ記法の見え方になるよう、同じ装飾の読み取り専用 view に描く。
  * その view に `resolvePageEmbed` を渡さないことで、展開を 1 段に限る（循環参照もここで止まる）。
- * WikiLink の遷移と解決、添付の URL は埋め込み元のものを使う。埋め込み先は埋め込み元と
- * 同じ wiki の page なので、同じ解決で正しい。
+ * WikiLink の遷移と解決は埋め込み元のものを使う。埋め込み先は埋め込み元と同じ wiki の page なので、
+ * 同じ解決で正しい。添付の URL はページ単位なので、埋め込み先の title を resolver に渡して
+ * 埋め込み先のページで解決させる。
  */
 function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | undefined {
   const {
@@ -254,7 +268,12 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
         ...(hrefForWikiLink ? { hrefForWikiLink: (link) => hrefForWikiLink(own(link)) } : {}),
         ...(resolveWikiLink ? { resolveWikiLink } : {}),
         ...(onTagClick ? { onTagClick } : {}),
-        ...(resolveAttachmentUrl ? { resolveAttachmentUrl } : {}),
+        ...(resolveAttachmentUrl
+          ? {
+              resolveAttachmentUrl: (filename: string) =>
+                resolveAttachmentUrl(filename, embedTarget),
+            }
+          : {}),
         extensions: EditorView.updateListener.of((update) => {
           if (update.geometryChanged) onResize();
         }),
