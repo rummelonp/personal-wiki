@@ -1,54 +1,16 @@
 import { Annotation, type EditorState, Transaction } from "@codemirror/state";
-import { type EditorView, type PluginValue, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { compositionSettledNotifier, isCompositionUnsettled } from "./ime";
+import type { EditorView } from "@codemirror/view";
+import { dispatchWhenSettled, settledDispatch } from "./settled-dispatch";
 
 const docReplaced = Annotation.define<true>();
 
-class DocReplacer implements PluginValue {
-  private pending: string | null = null;
-  private timer: ReturnType<typeof setTimeout> | undefined;
-
-  constructor(private readonly view: EditorView) {}
-
-  request(text: string): void {
-    if (isCompositionUnsettled(this.view)) {
-      this.pending = text;
-      return;
-    }
-    this.pending = null;
-    apply(this.view, text);
-  }
-
-  update(update: ViewUpdate): void {
-    if (this.pending === null || isCompositionUnsettled(update.view)) return;
-    // update の最中は dispatch できないので、次の task へ回す。
-    // 通常は `compositionSettled` の update がここに来る。Safari のように compositionend を
-    // 伴わずに composition が終わった場合も、その後の最初の update で拾える。
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), 0);
-  }
-
-  destroy(): void {
-    clearTimeout(this.timer);
-    this.pending = null;
-  }
-
-  private flush(): void {
-    // timer を待つ間に次の composition が始まっていれば、その終わりの update まで持ち越す
-    if (this.pending === null || isCompositionUnsettled(this.view)) return;
-    const text = this.pending;
-    this.pending = null;
-    apply(this.view, text);
-  }
-}
-
-const docReplacer = ViewPlugin.fromClass(DocReplacer);
+const replaceKey = Symbol("replaceDoc");
 
 /**
  * `replaceDoc` が使う extension。`createEditor` と `createTitleEditor` の view には最初から入っている。
  * それ以外の EditorView で `replaceDoc` を使うときだけ自分で足す。
  */
-export const docReplacement = [docReplacer, compositionSettledNotifier];
+export const docReplacement = settledDispatch;
 
 /**
  * ホストが持つ最新の本文（サーバーから取り直した内容など）で view の doc を差し替える。
@@ -67,11 +29,7 @@ export const docReplacement = [docReplacer, compositionSettledNotifier];
  * title の view では改行を空白に直さないので、呼び出し側が正規化した title を渡す。
  */
 export function replaceDoc(view: EditorView, text: string): void {
-  const replacer = view.plugin(docReplacer);
-  if (!replacer) {
-    throw new Error("replaceDoc には docReplacement extension を入れた view が必要です");
-  }
-  replacer.request(text);
+  dispatchWhenSettled(view, replaceKey, () => apply(view, text));
 }
 
 /** `replaceDoc` が出した transaction か。`onUpdate` で保存の対象から外すときに使う */

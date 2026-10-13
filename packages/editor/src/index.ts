@@ -15,6 +15,7 @@
  * そのホストの切り替え方で、editor 自身は読まない）。
  *
  * doc を外から差し替えるときは `view.dispatch` ではなく `replaceDoc` を使う（IME 不変条件 1）。
+ * それ以外の外からの dispatch（selection の移動など）は `dispatchWhenSettled` を通す。
  */
 export type { EditorView, ViewUpdate } from "@codemirror/view";
 export {
@@ -63,6 +64,7 @@ export {
 } from "./page-index";
 export { docReplacement, isDocReplacement, replaceDoc } from "./replace-doc";
 export { createRevealTest, type RevealPolicy, revealPolicy, shouldRevealSource } from "./reveal";
+export { dispatchWhenSettled, settledDispatch } from "./settled-dispatch";
 export { type TagClick, type TagClickHandler, tags } from "./tag";
 export { type CreateTitleEditorOptions, createTitleEditor } from "./title-editor";
 export {
