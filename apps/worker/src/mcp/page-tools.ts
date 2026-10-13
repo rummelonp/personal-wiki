@@ -102,6 +102,9 @@ export const createPageTool = defineTool({
   },
 });
 
+/** REST の If-Match が受け付ける 15 桁と同じ上限。Number で誤差なく表せる範囲に収まる */
+const MAX_VERSION = 999_999_999_999_999;
+
 export const updatePageTool = defineTool({
   name: "update_page",
   scope: "write",
@@ -114,7 +117,12 @@ export const updatePageTool = defineTool({
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema,
-    version: z.number().int().positive().describe("read_page で読んだときの version"),
+    version: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_VERSION)
+      .describe("read_page で読んだときの version"),
     title: z.string().describe("保存後の title（変えないときは読んだ title）"),
     body: z.string().describe("保存後の本文の Markdown 全体"),
   }),

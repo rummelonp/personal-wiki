@@ -549,6 +549,31 @@ describe("ページの tool", () => {
     });
     expect(await snapshotDb()).toEqual(before);
   });
+
+  it("update_page の version は REST の If-Match と同じ 15 桁までで、超えると拒む", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Ver", body: "" });
+    const before = await snapshotDb();
+    const tooLarge = await call("update_page", {
+      id: created.id,
+      version: 1_000_000_000_000_000,
+      title: "Ver",
+      body: "x",
+    });
+    // schema の検証で落ちるので store まで届かず、SDK の平文が返る
+    expect(tooLarge).toMatchObject({
+      isError: true,
+      json: { text: expect.stringContaining("version") },
+    });
+    expect(await snapshotDb()).toEqual(before);
+    const largest = await call("update_page", {
+      id: created.id,
+      version: 999_999_999_999_999,
+      title: "Ver",
+      body: "x",
+    });
+    expect(largest).toMatchObject({ isError: true, json: { error: "version_conflict" } });
+  });
 });
 
 describe("検索と一覧の tool", () => {
