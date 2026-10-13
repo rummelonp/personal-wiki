@@ -3,7 +3,13 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Language } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { EditorState, type Extension } from "@codemirror/state";
-import { drawSelection, EditorView, keymap, type ViewUpdate } from "@codemirror/view";
+import {
+  drawSelection,
+  EditorView,
+  type KeyBinding,
+  keymap,
+  type ViewUpdate,
+} from "@codemirror/view";
 import { Autolink, type MarkdownParser } from "@lezer/markdown";
 import {
   BlockId,
@@ -57,6 +63,13 @@ const markdownWithFrontmatter = new Language(
   [],
   "markdown",
 );
+
+// historyKeymap の undoSelection と redoSelection（Mod-u など）は state.readOnly を見ず、
+// changeFilter も通さずに doc を戻す。readOnly の間に本文が戻らないよう、readOnly ではどれも動かさない。
+const readOnlySafeHistoryKeymap: readonly KeyBinding[] = historyKeymap.map((binding) => {
+  const run = binding.run;
+  return run ? { ...binding, run: (view) => !view.state.readOnly && run(view) } : binding;
+});
 
 export interface CreateEditorOptions {
   /** 最初の本文。作った後に外から差し替えるときは `replaceDoc` を使う */
@@ -150,7 +163,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     drawSelection(),
     EditorView.lineWrapping,
     useHistory ? resettableHistory() : [],
-    keymap.of([...defaultKeymap, ...(useHistory ? historyKeymap : [])]),
+    keymap.of([...defaultKeymap, ...(useHistory ? readOnlySafeHistoryKeymap : [])]),
     listKeymap(),
     editorSurfaceTheme,
     typographyTheme,

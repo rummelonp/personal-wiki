@@ -117,6 +117,8 @@ class ComposeSafeDecorations implements PluginValue {
       // background parser が進んだだけの update も拾う。拾わないと、parse が viewport に
       // 届く前に組んだ（記法をまだ認識していない）decoration が次の操作まで残る。
       syntaxTree(update.startState) === syntaxTree(update.state) &&
+      // builder は readOnly で描き分ける（task のチェックボックス、embed の編集ボタン）
+      update.startState.readOnly === update.state.readOnly &&
       !this.rebuildWhen?.(update)
     ) {
       return;

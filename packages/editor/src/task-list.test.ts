@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 import { isCompositionUnsettled } from "./ime";
+import { setReadOnly } from "./read-only";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -181,6 +182,15 @@ describe("task list checkbox", () => {
     expect(checkboxes(v).map((box) => box.disabled)).toEqual([true]);
     press(checkboxes(v)[0]);
     expect(v.state.doc.toString()).toBe("- [ ] a");
+  });
+
+  it("redraws the checkbox when setReadOnly switches the mode", () => {
+    const v = mount("- [ ] a");
+    expect(checkboxes(v).map((box) => box.disabled)).toEqual([false]);
+    setReadOnly(v, true);
+    expect(checkboxes(v).map((box) => box.disabled)).toEqual([true]);
+    setReadOnly(v, false);
+    expect(checkboxes(v).map((box) => box.disabled)).toEqual([false]);
   });
 
   it("draws no checkbox when Live Preview is off", () => {

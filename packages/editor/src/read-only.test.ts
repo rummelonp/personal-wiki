@@ -1,6 +1,7 @@
 import { completionStatus } from "@codemirror/autocomplete";
+import { undoDepth } from "@codemirror/commands";
 import { EditorState, StateEffect } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, runScopeHandlers } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
@@ -37,6 +38,16 @@ const optionTexts = () =>
 /** autocomplete が source の結果を受けて dispatch しうる期間（`updateSyncTime` の 100ms）より長く待つ */
 const afterCompletionWouldSettle = () => new Promise((resolve) => setTimeout(resolve, 200));
 
+const pressModU = (v: EditorView) =>
+  runScopeHandlers(
+    v,
+    new KeyboardEvent("keydown", {
+      key: "u",
+      ...(/Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true }),
+    }),
+    "editor",
+  );
+
 describe("setReadOnly", () => {
   it("rejects keyboard input while read-only and accepts it again after switching back", async () => {
     const v = mount("本文");
@@ -60,11 +71,27 @@ describe("setReadOnly", () => {
     expect(v.state.doc.toString()).toBe("本文");
   });
 
-  it("lets replaceDoc through", () => {
+  it("lets replaceDoc through and cuts the undo history", () => {
     const v = mount("古い");
+    v.dispatch({ changes: { from: 2, insert: "!" }, userEvent: "input.type" });
+    expect(undoDepth(v.state)).toBe(1);
     setReadOnly(v, true);
-    replaceDoc(v, "新しい");
-    expect(v.state.doc.toString()).toBe("新しい");
+    replaceDoc(v, "新しい!");
+    expect(v.state.doc.toString()).toBe("新しい!");
+    expect(undoDepth(v.state)).toBe(0);
+  });
+
+  it("does not undo with Mod-u while read-only", () => {
+    const v = mount("本文");
+    v.dispatch({ changes: { from: 2, insert: "!" }, userEvent: "input.type" });
+    setReadOnly(v, true);
+    pressModU(v);
+    expect(v.state.doc.toString()).toBe("本文!");
+
+    // 書ける view では同じキーで取り消せる（キーの組み合わせが合っていることの確認）
+    setReadOnly(v, false);
+    pressModU(v);
+    expect(v.state.doc.toString()).toBe("本文");
   });
 
   it("keeps the change filter when the view is created read-only", () => {
@@ -152,12 +179,20 @@ describe("[[ completion while read-only", () => {
   it("does not reopen the candidates after a composition settles", async () => {
     const targets = linkTargets();
     const v = mount("[[Note#", { pageIndex, linkTargets: targets, readOnly: true });
-    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    // source が null を返して候補が出なくても、補完を始めたこと自体を見分けるために記録する
+    const statuses: (string | null)[] = [];
+    v.dispatch({
+      selection: { anchor: v.state.doc.length },
+      effects: StateEffect.appendConfig.of(
+        EditorView.updateListener.of((update) => statuses.push(completionStatus(update.state))),
+      ),
+    });
     v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
     v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
     await vi.waitFor(() => expect(isCompositionUnsettled(v)).toBe(false));
     await afterCompletionWouldSettle();
     expect(optionTexts()).toEqual([]);
+    expect(statuses.filter((status) => status !== null)).toEqual([]);
     expect(targets.load).not.toHaveBeenCalled();
   });
 });
