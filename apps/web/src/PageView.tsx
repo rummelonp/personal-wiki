@@ -6,7 +6,14 @@ import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
-import { failureMessage, findPageByTitle, getPage, type Page, type PageSummary } from "./pages-api";
+import {
+  failureMessage,
+  findPageByTitle,
+  getPage,
+  LOAD_FAILED,
+  type Page,
+  type PageSummary,
+} from "./pages-api";
 import { RailLayout } from "./Rail";
 import { navigate, pageHrefFor } from "./route";
 import { SignInNotice } from "./SignInNotice";
@@ -89,7 +96,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       if (res.ok) setState({ status: "ready", page: res.value });
       else if (res.reason === "not_found") setState({ status: "not_found" });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
-      else setState({ status: "error", message: failureMessage(res, "取得できませんでした。") });
+      else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
     });
     return () => {
       cancelled = true;

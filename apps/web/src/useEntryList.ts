@@ -1,6 +1,6 @@
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { failureMessage, type ListedPage, listRecent, searchPages } from "./pages-api";
+import { failureMessage, type ListedPage, LOAD_FAILED, listRecent, searchPages } from "./pages-api";
 import { restoreCount } from "./scroll-restore";
 
 export type ListState =
@@ -9,7 +9,9 @@ export type ListState =
   | { status: "unauthorized" }
   | { status: "error"; message: string }
   /** 匿名の検索語が API の受け付ける長さに満たない。要求は送っていない。 */
-  | { status: "query_too_short"; min: number };
+  | { status: "query_too_short"; min: number }
+  /** API が検索語を受け付けなかった（長すぎる、制御文字を含む）。一覧の取得の失敗ではなく、語を直す案内にする。 */
+  | { status: "invalid_query"; message: string };
 
 export interface EntryListSource {
   /** 空でなければ検索結果。 */
@@ -67,7 +69,9 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
       if (generation.current !== mine) return;
       if (res.ok) setState({ status: "ready", ...res.value, loadingMore: false });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
-      else setState({ status: "error", message: failureMessage(res, "取得できませんでした。") });
+      else if (res.reason === "invalid_query")
+        setState({ status: "invalid_query", message: res.message });
+      else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
     });
   }, [query, tag, owner, setState]);
 

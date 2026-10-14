@@ -160,12 +160,20 @@ describe("GET /api/search", () => {
     for (const q of ["", "   ", "　"]) {
       const res = await client.request(`/api/search?q=${encodeURIComponent(q)}`);
       expect(res.status).toBe(400);
-      expect(await res.json()).toMatchObject({ error: "invalid_field", field: "q" });
+      expect(await res.json()).toMatchObject({
+        error: "invalid_field",
+        field: "q",
+        reason: "empty",
+      });
     }
     for (const q of ["abc\u0000", "\u0000", "\u0000x", "a\tb", "a\nb\u007f"]) {
       const res = await client.request(`/api/search?q=${encodeURIComponent(q)}`);
       expect(res.status, JSON.stringify(q)).toBe(400);
-      expect(await res.json()).toMatchObject({ error: "invalid_field", field: "q" });
+      expect(await res.json()).toMatchObject({
+        error: "invalid_field",
+        field: "q",
+        reason: "control_char",
+      });
     }
     const missing = await client.request("/api/search");
     expect(missing.status).toBe(400);

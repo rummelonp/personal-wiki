@@ -166,9 +166,64 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("サーバーの message を表示用に使う", async () => {
-    const { fetchFn } = failing(400, { error: "invalid_field", field: "q", message: "検索語が空" });
-    expect(await searchPages("a", fetchFn)).toMatchObject({ ok: false, message: "検索語が空" });
+  it("429 は 5xx と同じく、時間をおくよう伝える", async () => {
+    const { fetchFn } = failing(429, {});
+    expect(await getPage(ID, fetchFn)).toMatchObject({
+      ok: false,
+      message: "サーバーで問題が起きました（HTTP 429）。時間をおいて、もう一度試してください。",
+    });
+  });
+
+  it("その他の 4xx は、待っても変わらないので再読み込みを勧める", async () => {
+    const { fetchFn } = failing(403, {});
+    expect(await getPage(ID, fetchFn)).toMatchObject({
+      ok: false,
+      message:
+        "サーバーに受け付けられませんでした（HTTP 403）。ページを再読み込みしてから、もう一度試してください。",
+    });
+  });
+
+  it("message の無い invalid_field は、固定の文にする", async () => {
+    const { fetchFn } = failing(400, { error: "invalid_field", field: "limit" });
+    expect(await getPage(ID, fetchFn)).toMatchObject({
+      ok: false,
+      message:
+        "リクエストの形が正しくありません。ページを再読み込みしてから、もう一度試してください。",
+    });
+  });
+
+  it("未知の code は、サーバーの message をそのまま使う", async () => {
+    const { fetchFn } = failing(400, { error: "something_new", message: "新しい誤り" });
+    expect(await getPage(ID, fetchFn)).toMatchObject({ ok: false, message: "新しい誤り" });
+  });
+
+  it("検索語の誤りは、サーバーの常体の message ではなく、直す点を示す固定の文にする", async () => {
+    const tooLong = failing(400, {
+      error: "invalid_field",
+      field: "q",
+      reason: "too_long",
+      message: "検索語が長すぎる（上限 200 文字）",
+    });
+    expect(await searchPages("a", tooLong.fetchFn)).toEqual({
+      ok: false,
+      reason: "invalid_query",
+      message: "検索語が長すぎます。短くしてください。",
+    });
+    const unknown = failing(400, { error: "invalid_field", field: "q" });
+    expect(await searchPages("a", unknown.fetchFn)).toMatchObject({
+      reason: "invalid_query",
+      message: "この検索語では検索できません。語を変えてください。",
+    });
+    const short = failing(400, { error: "query_too_short", field: "q", min: 3 });
+    expect(await searchPages("a", short.fetchFn)).toMatchObject({
+      reason: "invalid_query",
+      message: "検索語が短すぎます。3 文字以上で、語を足してください。",
+    });
+  });
+
+  it("検索の 5xx は、語の誤りにせず取得の失敗にする", async () => {
+    const { fetchFn } = failing(500, { error: "internal" });
+    expect(await searchPages("abc", fetchFn)).toMatchObject({ ok: false, reason: "error" });
   });
 });
 

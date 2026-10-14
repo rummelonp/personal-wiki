@@ -75,6 +75,14 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             actions={backToRecent}
           />
         )}
+        {state.status === "invalid_query" && (
+          <EmptyState
+            role="status"
+            title="この検索語では検索できません"
+            text={state.message}
+            actions={backToRecent}
+          />
+        )}
         {state.status === "error" && (
           <Notice inline tone="error" title="一覧を取得できませんでした">
             <p>{state.message}</p>

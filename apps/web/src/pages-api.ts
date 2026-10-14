@@ -59,6 +59,9 @@ export function failureMessage(failure: ApiFailure, fallback: string): string {
     : fallback;
 }
 
+/** failureMessage の fallback に渡す、取得の失敗の文。message を持たない失敗は待てば通ることが多い。 */
+export const LOAD_FAILED = "取得できませんでした。時間をおいて、もう一度試してください。";
+
 export type ApiResult<T> = { ok: true; value: T } | ApiFailure;
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -88,11 +91,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_field: `リクエストの形が正しくありません。${RELOAD}`,
 };
 
-const FIELD_ERROR_CODES = new Set(["invalid_field", "missing_field", "unknown_field"]);
-
-/** サーバーが message も既知の code も返さなかったときの文。5xx は待てば通ることがあり、4xx は待っても変わらない。 */
+/**
+ * サーバーが message も既知の code も返さなかったときの文。5xx と 429 は待てば通ることがあり、
+ * それ以外の 4xx は待っても変わらない。
+ */
 function statusMessage(status: number): string {
-  return status >= 500
+  return status >= 500 || status === 429
     ? `サーバーで問題が起きました（HTTP ${status}）。${RETRY_LATER}`
     : `サーバーに受け付けられませんでした（HTTP ${status}）。${RELOAD}`;
 }
@@ -129,13 +133,10 @@ async function failureOf(res: Response): Promise<ApiFailure> {
       message: "同じ title のページがすでにあります。",
     };
   }
-  // 項目ごとの誤り（検索語の誤りなど）は、サーバーの message が原因を具体的に書いている。
-  // それ以外の code は、サーバーの message が API を使う側（エージェント）向けの常体なので、
-  // 画面の文体にそろえた固定の文を優先する
+  // サーバーの message は API を使う側（エージェント）向けの常体なので、画面の文体にそろえた固定の文を
+  // 優先する。検索語の誤りは searchPages が先に固定の文へ置き換える
   const serverMessage = typeof body.message === "string" ? body.message : undefined;
-  const message = FIELD_ERROR_CODES.has(code)
-    ? (serverMessage ?? ERROR_MESSAGES[code])
-    : (ERROR_MESSAGES[code] ?? serverMessage);
+  const message = ERROR_MESSAGES[code] ?? serverMessage;
   return { ok: false, reason: "error", message: message ?? statusMessage(res.status) };
 }
 
@@ -479,14 +480,49 @@ export async function listBacklinks(
   );
 }
 
+/** 検索語を直せば通る誤り。一覧の取得の失敗とは別に、入力を直す案内として見せる。 */
+export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string };
+
+const QUERY_MESSAGES: Record<string, string> = {
+  empty: "検索語が空か、空白だけになっています。語を入力してください。",
+  too_long: "検索語が長すぎます。短くしてください。",
+  control_char: "検索語に改行などの制御文字が含まれています。取り除いてください。",
+};
+
+/** 検索語の誤りの 400 を固定の文にする。それ以外の失敗は null。 */
+function invalidQueryOf(body: Record<string, unknown>): InvalidQuery | null {
+  if (body.field !== "q") return null;
+  if (body.error === "query_too_short") {
+    const min = typeof body.min === "number" ? `${body.min} 文字以上で、` : "";
+    return {
+      ok: false,
+      reason: "invalid_query",
+      message: `検索語が短すぎます。${min}語を足してください。`,
+    };
+  }
+  if (body.error !== "invalid_field") return null;
+  const reason = typeof body.reason === "string" ? body.reason : "";
+  return {
+    ok: false,
+    reason: "invalid_query",
+    message: QUERY_MESSAGES[reason] ?? "この検索語では検索できません。語を変えてください。",
+  };
+}
+
 /** 3 文字以上は FTS、2 文字以下は LIKE という振り分けは API が行う。 */
 export async function searchPages(
   query: string,
   fetchFn: Fetch = fetch,
-): Promise<ApiResult<SearchHit[]>> {
+): Promise<ApiResult<SearchHit[]> | InvalidQuery> {
   const res = await request(fetchFn, `/api/search?q=${encodeURIComponent(query)}&limit=50`);
   if (isFailure(res)) return res;
-  if (!res.ok) return failureOf(res);
+  if (!res.ok) {
+    if (res.status === 400) {
+      const invalid = invalidQueryOf(recordOf(await readJson(res.clone())));
+      if (invalid !== null) return invalid;
+    }
+    return failureOf(res);
+  }
   const json = recordOf(await readJson(res));
   const results = json.results;
   if (!Array.isArray(results) || !results.every(isSearchHit)) return BAD_SHAPE;

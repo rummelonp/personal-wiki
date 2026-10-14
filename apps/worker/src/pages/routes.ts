@@ -346,6 +346,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!query.ok) {
           return errorResponse(c, 400, "invalid_field", {
             field: "q",
+            reason: query.reason,
             message: SEARCH_QUERY_MESSAGES[query.reason],
           });
         }

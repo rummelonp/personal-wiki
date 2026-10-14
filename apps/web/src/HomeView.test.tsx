@@ -115,6 +115,20 @@ describe("HomeView の強調", () => {
     expect(marks(".entry-excerpt")).toEqual(["img"]);
   });
 
+  it("API が検索語を受け付けなかったときは、取得の失敗ではなく語を直す案内を出す", async () => {
+    vi.mocked(searchPages).mockResolvedValue({
+      ok: false,
+      reason: "invalid_query",
+      message: "検索語が長すぎます。短くしてください。",
+    });
+    await mountHome("長い語", true);
+    await vi.waitFor(() =>
+      expect(container?.textContent).toContain("この検索語では検索できません"),
+    );
+    expect(container?.textContent).toContain("検索語が長すぎます。短くしてください。");
+    expect(container?.textContent).not.toContain("一覧を取得できませんでした");
+  });
+
   it("最近の更新（検索語が無い）では強調しない", async () => {
     vi.mocked(listRecent).mockResolvedValue(
       ok({
