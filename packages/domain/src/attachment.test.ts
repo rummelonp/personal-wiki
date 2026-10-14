@@ -166,7 +166,10 @@ describe("matchesAttachmentMagic", () => {
     function hugeFtyp(size: number, total: number, brandAt?: number): Uint8Array {
       const data = new Uint8Array(total);
       data.set([...u32(size), ...ascii("ftyp"), ...ascii("heic"), ...u32(0)]);
-      for (let offset = 16; offset + 4 <= total; offset += 4) data.set(ascii("mif1"), offset);
+      // 10 MiB を 4 バイトずつ埋めると数秒かかり、並行して負荷が高いと timeout に届く。倍々に複製する
+      data.set(ascii("mif1"), 16);
+      for (let filled = 4; 16 + filled < total; filled *= 2)
+        data.copyWithin(16 + filled, 16, 16 + filled);
       if (brandAt !== undefined) data.set(ascii("avif"), brandAt);
       return data;
     }
