@@ -891,12 +891,13 @@ a {
   margin-inline-start: calc(-1 * var(--editor-line-inset));
 }
 
-.body-editor .cm-editor {
+/* 子孫ではなく子に絞る。embed の本文も中に .cm-editor を持ち、数行の本文が画面の半分の高さを取る */
+.body-editor > .cm-editor {
   min-height: var(--editor-min-height);
 }
 
 /* 本文の下の余白をクリックしても、本文の末尾にカーソルが置けるようにする */
-.body-editor .cm-scroller {
+.body-editor > .cm-editor > .cm-scroller {
   flex-grow: 1;
 }
 
