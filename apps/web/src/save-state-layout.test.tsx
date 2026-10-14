@@ -8,6 +8,7 @@ import { PageEditor } from "./PageEditor";
 import {
   type ApiResult,
   findPageByTitle,
+  getPage,
   listBacklinks,
   listPageTitles,
   type Page,
@@ -166,5 +167,36 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     query(".note").append(probe);
     expect(getComputedStyle(query(".save-state")).color).toBe(getComputedStyle(probe).color);
     probe.remove();
+  });
+
+  it("最も長い文言（衝突）でも、ノートの幅と画面の幅からはみ出さない", async () => {
+    await browserPage.viewport(width, 800);
+    vi.mocked(updatePage).mockResolvedValue({
+      ok: false,
+      reason: "version_conflict",
+      currentVersion: 2,
+    });
+    vi.mocked(getPage).mockResolvedValue(ok({ ...PAGE, body: "サーバーの本文", version: 2 }));
+    const { query, body } = mountEditor();
+    await flushAsync();
+    body().focus();
+    const end = body().state.doc.length;
+    body().dispatch({
+      changes: { from: end, insert: "追記" },
+      selection: { anchor: end + 2 },
+      userEvent: "input.type",
+    });
+    act(() => body().contentDOM.blur());
+    await flushAsync();
+
+    const state = query(".save-state");
+    expect(state.className).toContain("save-state-conflict");
+    expect(state.textContent).toContain("サーバーの内容と食い違っています");
+    const note = query(".note").getBoundingClientRect();
+    const rect = state.getBoundingClientRect();
+    expect(rect.left).toBeGreaterThanOrEqual(note.left - 0.5);
+    expect(rect.right).toBeLessThanOrEqual(note.right + 0.5);
+    expect(state.scrollWidth).toBeLessThanOrEqual(state.clientWidth + 1);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
   });
 });
