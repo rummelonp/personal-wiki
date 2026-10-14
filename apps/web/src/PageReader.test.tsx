@@ -129,6 +129,36 @@ describe("PageReader", () => {
     expect(tag?.getAttribute("href")).toBe(`/?tag=${encodeURIComponent("タグ")}`);
   });
 
+  it("リンク元が無いときは、「このページへのリンク」の節ごと出さない", async () => {
+    renderReader();
+    await vi.waitFor(() => expect(listBacklinks).toHaveBeenCalled());
+    await flushAsync();
+    expect(container?.querySelector(".rail-section-links")).toBeNull();
+    expect(container?.textContent).not.toContain("このページへのリンク");
+    // 情報の節など、ほかの区画は残る
+    expect(container?.textContent).toContain("情報");
+  });
+
+  it("リンク元が有るときは節を出す", async () => {
+    vi.mocked(listBacklinks).mockResolvedValue(
+      ok({
+        pages: [
+          {
+            id: "BBBBBBBBBBBBBBBBBBBBBB",
+            title: "元",
+            visibility: "public" as const,
+            updatedAt: 0,
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    renderReader();
+    await vi.waitFor(() =>
+      expect(container?.querySelector(".rail-section-links")?.textContent).toContain("元"),
+    );
+  });
+
   it("表示したページを onShown で伝える", () => {
     const onShown = vi.fn();
     renderReader(PAGE, onShown);

@@ -106,7 +106,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
           </ul>
         </RailSection>
       )}
-      <Backlinks pageId={page.id} />
+      <Backlinks pageId={page.id} hideEmpty />
       <RailSection title="情報">
         <dl className="facts">
           <dt>更新</dt>

@@ -9,7 +9,12 @@ type State =
   | { status: "ready"; pages: PageSummary[]; next: string | null; loadingMore: boolean }
   | { status: "error" };
 
-export function Backlinks({ pageId }: { pageId: string }) {
+/**
+ * hideEmpty は、読み込み中とリンク元が 0 件のあいだ節ごと出さない。リンク元が無いことは読者にとって
+ * 情報にならない。1 件以上あれば読み込みの後に節が現れ、取得に失敗したときは節を出して失敗を伝える。
+ * owner には「ありません」を出し、リンクを張る手がかりにする。
+ */
+export function Backlinks({ pageId, hideEmpty = false }: { pageId: string; hideEmpty?: boolean }) {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -48,6 +53,14 @@ export function Backlinks({ pageId }: { pageId: string }) {
           }
         : { status: "ready", pages, next, loadingMore: false },
     );
+  }
+
+  // 読み込みの完了前に節を出して消すと、右の欄が一瞬ずれる
+  if (
+    hideEmpty &&
+    (state.status === "loading" || (state.status === "ready" && state.pages.length === 0))
+  ) {
+    return null;
   }
 
   return (
