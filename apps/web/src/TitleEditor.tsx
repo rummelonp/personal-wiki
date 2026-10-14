@@ -1,11 +1,20 @@
 import { EditorView } from "@codemirror/view";
 import {
   createTitleEditor,
+  dispatchWhenSettled,
   isDocReplacement,
   replaceDoc,
   setReadOnly,
 } from "@personal-wiki/editor";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+
+export interface TitleEditorHandle {
+  /**
+   * IME の変換が落ち着いたら resolve する。落ち着いていればすぐに resolve する。
+   * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
+   */
+  whenSettled: () => Promise<void>;
+}
 
 export interface TitleEditorProps {
   /**
@@ -21,7 +30,10 @@ export interface TitleEditorProps {
   readOnly: boolean;
   /** Enter と ↓ で移る先の本文の view */
   bodyView: () => EditorView | null;
+  ref?: Ref<TitleEditorHandle>;
 }
+
+const settledKey = Symbol("whenSettled");
 
 /**
  * title 欄。packages/editor の title エディタを React に載せる。長い title は折り返して全文を出す。
@@ -36,9 +48,12 @@ export function TitleEditor({
   onBlur,
   readOnly,
   bodyView,
+  ref,
 }: TitleEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
+  /** whenSettled を待っている resolve。破棄したときは dispatchWhenSettled が捨てるので、ここで呼ぶ */
+  const settledWaiters = useRef<(() => void)[]>([]);
 
   // EditorView の listener は作ったときに 1 度だけ結ぶので、最新の props は ref から読む
   const latest = useRef({ value, onChange, onCommit, onBlur, readOnly, bodyView });
@@ -79,9 +94,11 @@ export function TitleEditor({
     });
     created = editor;
     view.current = editor;
+    const waiters = settledWaiters.current;
     return () => {
       view.current = null;
       editor.destroy();
+      for (const resolve of waiters.splice(0)) resolve();
     };
   }, []);
 
@@ -101,6 +118,21 @@ export function TitleEditor({
     if (editor === null) return;
     replaceDoc(editor, value);
   }, [value]);
+
+  useImperativeHandle(ref, () => ({
+    whenSettled() {
+      const editor = view.current;
+      if (editor === null) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const waiters = settledWaiters.current;
+        waiters.push(resolve);
+        // 同じ key の保留は最後の 1 つに畳まれるので、待っている全員をまとめて起こす
+        dispatchWhenSettled(editor, settledKey, () => {
+          for (const wake of waiters.splice(0)) wake();
+        });
+      });
+    },
+  }));
 
   return <div ref={host} className="title-input" />;
 }

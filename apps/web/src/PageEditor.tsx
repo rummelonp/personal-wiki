@@ -42,7 +42,7 @@ import {
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
 import { homeHref, navigate, pageHrefFor } from "./route";
-import { TitleEditor } from "./TitleEditor";
+import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
@@ -147,12 +147,15 @@ interface PageEditorProps {
 
 export function PageEditor({ page, attachments = false, onShown }: PageEditorProps) {
   const editor = useRef<BodyEditorHandle>(null);
+  const titleEditor = useRef<TitleEditorHandle>(null);
   // リンクに書けないと知らされた title。保存の応答は、積んだものも飛ばしたものも無ければ書き換えの
   // 数を返さないので、応答ではなく保存済みの title と比べて、別の title に変えたら案内を消す
   const [unsafeTitle, setUnsafeTitle] = useState<string | null>(null);
   const session = useEditorSession(
     page,
-    () => editor.current?.whenSettled() ?? Promise.resolve(),
+    async () => {
+      await Promise.all([titleEditor.current?.whenSettled(), editor.current?.whenSettled()]);
+    },
     (title, queued) => {
       setUnsafeTitle(queued.skipped === "unsafe_title" ? title : null);
       if (queued.queued > 0) linkRewrites.start(queued.queued);
@@ -495,6 +498,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
         )}
 
         <TitleEditor
+          ref={titleEditor}
           value={state.titleInput ?? state.draft.title}
           readOnly={readOnly}
           bodyView={() => editor.current?.view() ?? null}

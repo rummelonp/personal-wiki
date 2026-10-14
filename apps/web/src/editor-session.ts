@@ -38,8 +38,9 @@ export interface EditorDeps {
   /** ログイン切れの間の入力を localStorage へ書くまでの待ち。入力のたびに書かず、まとめる。 */
   stashMs?: number;
   /**
-   * 本文のエディタの IME の変換が落ち着くまで待つ。サーバーの書き換えを手元の本文に重ねる直前に呼ぶ。
-   * 変換中に本文を差し替えると、確定前の文字を含む入力が差し替えを上書きして書き換えが戻るため。
+   * title と本文のエディタの IME の変換が落ち着くまで待つ。サーバーの版を手元に入れる（重ねる、
+   * そのまま取り込む）直前に呼ぶ。変換中に差し替えると、確定前の文字を含む入力が差し替えを
+   * 上書きして、取り込んだ変化が戻るため。title では、他で行われた改名を打ちかけの title が上書きする。
    * エディタが無くなったときも resolve すること（書き込みの列がそこで止まる）。
    */
   whenSettled?: () => Promise<void>;
@@ -378,8 +379,8 @@ export class EditorSession {
    * 片方に重ねる編集が無く、title は server と base が同じことを先に確かめているので、変更を失わない。
    */
   private async rebaseOnServer(server: Page): Promise<boolean> {
-    if (server.title !== this.state.base.title) return false;
-    // 変換中の本文に重ねると、確定前の文字を含む入力が重ねた本文を上書きする
+    // 変換中の本文に重ねると、確定前の文字を含む入力が重ねた本文を上書きする。title が違って
+    // 重ねないときも待つのは、false を受けた takeIn がサーバーの版をそのまま取り込むことがあるため
     await this.whenSettled();
     const { base, draft, pendingBackup } = this.state;
     // 退避が未決の間は、復元か破棄を選ぶまで手元を動かさない
@@ -516,7 +517,11 @@ export class EditorSession {
       }
       const server = res.value;
       if (server.version === this.state.base.version) return;
-      // 確認の応答を待つ間の入力も含めて、返ってきた時点の手元で判断する
+      // 変換中の title や本文をサーバーの版で差し替えない（EditorDeps.whenSettled）。変換が始まった
+      // だけで titleInput がまだ null のこともあるので、手元の状態によらず待つ
+      await this.whenSettled();
+      if (!this.canWrite()) return;
+      // 確認の応答と変換を待つ間の入力も含めて、待ち終えた時点の手元で判断する
       const same = server.title === this.state.draft.title && server.body === this.state.draft.body;
       if (!isDirty(this.state) || same) {
         this.adoptServer(server);

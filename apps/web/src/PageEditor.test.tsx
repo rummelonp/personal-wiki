@@ -1055,6 +1055,28 @@ describe("title の確定", () => {
     expect(titleText()).toBe("打てる");
   });
 
+  it("変換中のフォーカス復帰が他での改名を持ち込んでも、確定後に打ちかけの title で上書きしない", async () => {
+    vi.mocked(getPage).mockResolvedValue(ok({ ...PAGE, title: "他で変えた", version: 2 }));
+    renderPage();
+    act(() => titleView().focus());
+    titleView().contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    typeTitle("題へん", "input.type.compose");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await flushAsync();
+    typeTitle("題変換", "input.type.compose");
+    titleView().contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(titleText()).toBe("他で変えた"));
+    await flushAsync();
+    expect(titleText()).toBe("他で変えた");
+
+    pressEnter(false);
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).not.toHaveBeenCalled();
+  });
+
   it("衝突の解決でサーバーの title を取り込むと、同じ欄の中身を差し替える", async () => {
     const server: Page = { ...PAGE, title: "サーバーの題", version: 2 };
     vi.mocked(updatePage).mockResolvedValue({

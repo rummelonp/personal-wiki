@@ -932,6 +932,43 @@ describe("title の確定", () => {
     expect(session.getState().draft.title).toBe("他で変えた");
   });
 
+  it.each([
+    ["フォーカス復帰", (session: EditorSession) => session.checkFreshness()],
+    [
+      "リンクの書き換え",
+      (session: EditorSession) => session.linkRewritten({ sourcePageId: ID, version: 2 }),
+    ],
+  ])(
+    "%sの取り込みは変換が落ち着くまで待ち、変換中に打った title で他での改名を上書きしない",
+    async (_, adopt) => {
+      let settle = () => {};
+      const whenSettled = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            settle = resolve;
+          }),
+      );
+      const { session, server, api } = setup({ deps: { whenSettled } });
+      server.page = page({ title: "他で変えた", version: 2 });
+      const adopting = adopt(session);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(whenSettled).toHaveBeenCalled();
+      // 変換中の入力は、取り込む前の title を土台にして届く
+      session.editTitle("題へんかん");
+      expect(session.getState().base.version).toBe(1);
+      settle();
+      await adopting;
+      expect(session.getState()).toMatchObject({
+        titleInput: null,
+        base: { version: 2 },
+        draft: { title: "他で変えた" },
+      });
+      await session.commitTitle();
+      expect(api.calls).toEqual(["get"]);
+      expect(server.page.title).toBe("他で変えた");
+    },
+  );
+
   it("リンクの書き換えの取り込みでも、サーバーの title が変わっていれば打っていた title は捨てる", async () => {
     const { session, server } = setup();
     session.editTitle("打ちかけ");
