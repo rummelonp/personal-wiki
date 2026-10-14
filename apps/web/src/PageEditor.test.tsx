@@ -371,6 +371,38 @@ describe("PageEditor の wikilink", () => {
     expect(createPage).not.toHaveBeenCalled();
   });
 
+  it("link の行き先を調べている間は、画面を薄くして開いている途中だと伝える", async () => {
+    const restoreDelay = setLoadingDelay(0);
+    let answer: (result: Awaited<ReturnType<typeof resolvePages>>) => void = () => {};
+    vi.mocked(resolvePages)
+      .mockImplementationOnce(async (titles) => ok(titles.map(() => null)))
+      .mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+    try {
+      renderPage({ ...PAGE, body: "[[無い]]" });
+      await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(1));
+      await flushAsync();
+      clickLink("無い");
+      await vi.waitFor(() =>
+        expect(container?.querySelector(".note")?.classList.contains("note-leaving")).toBe(true),
+      );
+      expect(container?.querySelector(".note")?.getAttribute("aria-busy")).toBe("true");
+      expect(container?.textContent).toContain("「無い」を開いています…");
+
+      await act(async () => answer(ok([null])));
+      await vi.waitFor(() =>
+        expect(container?.textContent).toContain("「無い」のページはまだありません"),
+      );
+      expect(container?.querySelector(".note-leaving")).toBeNull();
+      expect(container?.textContent).not.toContain("を開いています…");
+    } finally {
+      restoreDelay();
+    }
+  });
+
   it("リンク先を調べられなかったときは、無いと言わずに再試行を促す", async () => {
     vi.mocked(resolvePages).mockResolvedValue({ ok: false, reason: "error", message: "500" });
     renderPage({ ...PAGE, body: "[[別]]" });

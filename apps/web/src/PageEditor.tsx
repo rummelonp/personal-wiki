@@ -24,6 +24,7 @@ import {
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
+import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
 import { Notice } from "./Notice";
@@ -259,6 +260,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   });
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
+  /** 行き先を調べている wikilink の target。遅い回線でも押したことが分かるよう、画面を薄くする */
+  const [linkPending, setLinkPending] = useState<string | null>(null);
+  const leaving = useDelayedWhile(linkPending !== null);
   /** title の重複で作れなかったとき、すでにあるページ。開く導線に使う */
   const [taken, setTaken] = useState<{ title: string; href: string } | null>(null);
   const takenTitle =
@@ -303,6 +307,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   async function handleWikiLinkClick(link: WikiLinkClick) {
     if (link.target === "") {
       // 同じページの見出しと block。ページを調べず、位置だけ移る
+      setLinkPending(null);
       linkClick.current?.abort();
       setLinkNotice(null);
       goTo(hashOfLink(link));
@@ -312,8 +317,10 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     const controller = new AbortController();
     linkClick.current = controller;
     setLinkNotice(null);
+    setLinkPending(link.target);
     const found = await links.lookup(link.target, controller.signal);
     if (controller.signal.aborted) return;
+    setLinkPending(null);
     if (found.kind === "found") {
       const hash = hashOfLink(link);
       if (found.page.id === pageId && hash !== "") goTo(hash);
@@ -393,7 +400,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
 
   return (
     <RailLayout rail={rail}>
-      <article className="note">
+      <article className={leaving ? "note note-leaving" : "note"} aria-busy={leaving || undefined}>
+        {linkPending !== null && (
+          <span className="visually-hidden" role="status">
+            {leaving ? `「${linkPending}」を開いています…` : ""}
+          </span>
+        )}
         <p className={`save-state save-state-${status}`} role="status" aria-live="polite">
           <span className="dot" aria-hidden="true" />
           {STATUS_LABELS[status]}

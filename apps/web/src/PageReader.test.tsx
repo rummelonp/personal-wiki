@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLoadingDelay } from "./Loading";
 import { PageReader } from "./PageReader";
 import {
   type ApiResult,
@@ -189,6 +190,36 @@ describe("PageReader", () => {
     await flushAsync();
     clickLink("有る");
     await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("有る")}`));
+  });
+
+  it("link の行き先を調べている間は、画面を薄くして開いている途中だと伝える", async () => {
+    const restoreDelay = setLoadingDelay(0);
+    let answer: (result: Awaited<ReturnType<typeof findPageByTitle>>) => void = () => {};
+    vi.mocked(findPageByTitle).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    try {
+      renderReader();
+      await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+      await flushAsync();
+      clickLink("無い");
+      await vi.waitFor(() =>
+        expect(container?.querySelector(".note")?.classList.contains("note-leaving")).toBe(true),
+      );
+      expect(container?.querySelector(".note")?.getAttribute("aria-busy")).toBe("true");
+      expect(container?.textContent).toContain("「無い」を開いています…");
+
+      await act(async () => answer({ ok: false, reason: "not_found" }));
+      await vi.waitFor(() =>
+        expect(container?.textContent).toContain("「無い」のページはありません"),
+      );
+      expect(container?.querySelector(".note-leaving")).toBeNull();
+      expect(container?.textContent).not.toContain("を開いています…");
+    } finally {
+      restoreDelay();
+    }
   });
 
   it("開けない link は「ページはありません」とだけ出し、作成の操作を出さない", async () => {

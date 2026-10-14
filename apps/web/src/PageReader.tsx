@@ -7,6 +7,7 @@ import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
+import { useDelayedWhile } from "./Loading";
 import { Notice } from "./Notice";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
@@ -53,6 +54,9 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
   );
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
+  /** 行き先を調べている wikilink の target。遅い回線でも押したことが分かるよう、画面を薄くする */
+  const [linkPending, setLinkPending] = useState<string | null>(null);
+  const leaving = useDelayedWhile(linkPending !== null);
 
   useEffect(() => {
     onShown?.({ id: page.id, title: page.title, visibility: page.visibility });
@@ -74,6 +78,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
     linkClick.current?.abort();
     if (link.target === "") {
       // 同じページの見出しと block。ページを調べず、位置だけ移る
+      setLinkPending(null);
       setLinkNotice(null);
       goTo(hashOfLink(link));
       return;
@@ -81,8 +86,10 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
     const controller = new AbortController();
     linkClick.current = controller;
     setLinkNotice(null);
+    setLinkPending(link.target);
     const found = await links.lookup(link.target, controller.signal);
     if (controller.signal.aborted) return;
+    setLinkPending(null);
     if (found.kind === "found") {
       const hash = hashOfLink(link);
       if (found.page.id === page.id && hash !== "") goTo(hash);
@@ -121,7 +128,12 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
 
   return (
     <RailLayout rail={rail}>
-      <article className="note">
+      <article className={leaving ? "note note-leaving" : "note"} aria-busy={leaving || undefined}>
+        {linkPending !== null && (
+          <span className="visually-hidden" role="status">
+            {leaving ? `「${linkPending}」を開いています…` : ""}
+          </span>
+        )}
         {linkNotice !== null && (
           // 読む人には作成できず、リンク先に進めない行き止まりなので warn。PageEditor の同じ通知は作成へ進める案内で info
           <Notice
