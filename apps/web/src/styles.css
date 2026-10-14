@@ -338,6 +338,9 @@ a {
 
 .segmented {
   display: inline-flex;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
   justify-self: start;
   overflow: hidden;
   border: var(--border-width) solid var(--color-border-strong);
@@ -353,14 +356,70 @@ a {
   cursor: pointer;
 }
 
+/*
+ * 選択中は中立の地で示し、公開の選択中だけ差し色の文字と薄い地にする（差し色が「公開中」の印になる）。
+ * どちらも塗りの強調ではなく、1 画面の塗りはヘッダーの新規作成に譲る
+ */
 .segmented-option[aria-pressed="true"] {
-  color: var(--color-draft-fg);
-  background: var(--color-draft-bg);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-fg);
+  background: var(--color-selected);
+}
+
+.segmented-option[aria-pressed="true"][data-value="public"] {
+  color: var(--color-tag-fg);
+  background: var(--color-tag-bg);
 }
 
 .segmented-option:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+/* 公開の状態と操作の行。title の下に置く */
+
+.publish-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.publish-hint,
+.publish-note {
+  margin: 0;
+  color: var(--color-fg-muted);
+}
+
+.publish-note {
+  min-width: 0;
+}
+
+.publish-url {
+  flex: 1 1 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--font-size-input);
+  color: var(--color-fg);
+  background: var(--color-input);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.publish-confirm {
+  flex: 1 1 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.publish-confirm > p {
+  margin: 0 0 var(--space-2);
+  color: var(--color-fg);
 }
 
 /* 部品 */
@@ -420,6 +479,12 @@ a {
 
 .button-danger {
   color: var(--color-danger);
+}
+
+/* 塗らない強調。主ボタン（塗り）が画面に既にあるときの、確定の操作に使う */
+.button-accent {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .chips {

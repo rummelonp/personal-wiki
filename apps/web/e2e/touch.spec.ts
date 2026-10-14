@@ -24,6 +24,7 @@ const TARGETS = [
   ".toc > summary",
   ".segmented-option",
   ".rail .button",
+  ".publish-bar .button",
   ".chips .chip-link",
 ];
 
@@ -189,6 +190,30 @@ test.describe("タップ対象", () => {
     await expect(page.locator(".title-input")).toHaveText(SEED.server);
     await expect(page.locator(".rail-list a").first()).toBeVisible();
     await expectTapTargets(page, [".rail-list a"]);
+  });
+
+  test("公開の切り替えと確認の操作は 44px 以上で、title の下に並ぶ", async ({
+    page,
+    api,
+  }, testInfo) => {
+    const created = await api.createPage({
+      title: uniqueTitle(testInfo, "公開のタップ"),
+      body: "本文",
+    });
+    await page.goto(`/p/${created.id}`);
+    await expect(page.locator(".segmented-option").first()).toBeVisible();
+    await expectTapTargets(page, [".segmented-option"]);
+    await page.locator(".segmented-option", { hasText: /^公開$/ }).click();
+    await expect(page.getByRole("region", { name: "公開の確認" })).toBeVisible();
+    await expectTapTargets(page, [".segmented-option", ".publish-confirm .button"]);
+    // 切り替えは title の下にあり、本文の下まで探さなくても届く（Safari のツールバーの伸縮でずれない位置）
+    const { titleBottom, optionTop, bodyTop } = await page.evaluate(() => ({
+      titleBottom: document.querySelector(".title-input")?.getBoundingClientRect().bottom ?? 0,
+      optionTop: document.querySelector(".segmented-option")?.getBoundingClientRect().top ?? 0,
+      bodyTop: document.querySelector(".body-editor")?.getBoundingClientRect().top ?? 0,
+    }));
+    expect(optionTop, "切り替えが title より下").toBeGreaterThanOrEqual(titleBottom);
+    expect(optionTop, "切り替えが本文より上").toBeLessThan(bodyTop);
   });
 
   test("見出しの多いページの目次", async ({ page, seedIds }) => {

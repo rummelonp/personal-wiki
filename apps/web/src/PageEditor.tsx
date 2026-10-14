@@ -28,6 +28,7 @@ import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
 import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
+import { PublishBar } from "./PublishBar";
 import { hashOfLink } from "./page-fragment";
 import {
   createPage,
@@ -328,22 +329,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     <>
       <Outline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
       {!uncreated && <Backlinks pageId={pageId} />}
-      <RailSection title="公開設定">
-        <div className="segmented">
-          {(["draft", "public"] as const).map((visibility) => (
-            <button
-              key={visibility}
-              type="button"
-              className="segmented-option"
-              aria-pressed={state.base.visibility === visibility}
-              disabled={!canChangeVisibility}
-              onClick={() => void session.changeVisibility(visibility)}
-            >
-              {visibility === "public" ? "公開" : "下書き"}
-            </button>
-          ))}
-        </div>
-      </RailSection>
       {!uncreated && (
         <RailSection title="情報">
           <dl className="facts">
@@ -565,6 +550,19 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             )}
           </section>
         )}
+        <PublishBar
+          visibility={savedVisibility}
+          uncreated={uncreated}
+          disabled={!canChangeVisibility || state.pendingBackup !== null}
+          externalBases={state.externalBases}
+          titlePending={
+            state.titleInput !== null
+              ? state.titleInput !== savedTitle
+              : state.draft.title !== savedTitle
+          }
+          sharePath={pageHrefFor({ id: pageId, title: savedTitle, visibility: "public" })}
+          onChange={(to) => session.changeVisibility(to)}
+        />
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
           ref={editor}
