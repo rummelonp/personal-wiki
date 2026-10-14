@@ -1,18 +1,22 @@
 import { useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { navigate, newPageHref } from "./route";
+import { navigate, newPageHref, parseRoute } from "./route";
 
 /** 新規作成の画面を開いた 1 回分。 */
 export interface NewPageRequest {
   /** 開くたびに増える。`/?new` を開いたまま開き直しても、編集の画面を作り直す合図にする */
   serial: number;
-  /** title 欄の初期値。空でなければ、開いてすぐに作る */
+  /**
+   * title 欄の初期値。空でなければ、開いてすぐに作る。画面が受け取ったら consumeNewPageTitle で
+   * 空に戻す（使い捨て）。残すと、同じ serial の画面を開き直したときに同じ title でもう一度作る
+   */
   title: string;
 }
 
 let current: NewPageRequest = { serial: 0, title: "" };
+/** 作れた新規作成の画面の serial。作れた後の URL は `/p/<id>` に置き換わっている */
+let createdSerial: number | null = null;
 const listeners = new Set<() => void>();
-const leaving = new Set<() => void>();
 
 function publish(next: NewPageRequest): void {
   current = next;
@@ -26,11 +30,18 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-// 戻る・進むで `/?new` に来たときは、前に渡した title で作り直さない（作ったページと title が重なる）。
-// serial は変えない。変えると、`/?new` のまま hash だけ戻ったときにも編集の画面が作り直される
+const onNewPageRoute = () =>
+  parseRoute(window.location.pathname, window.location.search).name === "new";
+
+// 戻る・進むで `/?new` に来たとき、表示中の新規作成の画面が作れていれば、新しい画面に作り直す。
+// 作ったページを `/?new` の URL のまま出さない（作った後に hash を移ってから戻ると起きる）。
+// 作れていなければ serial を変えない。変えると、`/?new` のまま hash だけ戻ったときに打ちかけの画面が
+// 作り直される
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    if (current.title !== "") publish({ serial: current.serial, title: "" });
+    if (onNewPageRoute() && createdSerial === current.serial) {
+      publish({ serial: current.serial + 1, title: "" });
+    }
   });
 }
 
@@ -38,31 +49,28 @@ export function useNewPageRequest(): NewPageRequest {
   return useSyncExternalStore(subscribe, () => current);
 }
 
-/**
- * 開いている編集の画面が、新規作成の画面に移る直前に退避を書く手順を登録する。戻り値で外す。
- *
- * 作る前のページの退避は 1 つの key を共有する。次の画面のセッションは描画の中で退避を読み、
- * 前の画面の unmount（で呼ぶ leave）はその後に走るので、移る前に書いておかないと、次の画面が
- * 前の内容を知らずに同じ key を上書きする。
- */
-export function registerLeaveBeforeNewPage(leave: () => void): () => void {
-  leaving.add(leave);
-  return () => {
-    leaving.delete(leave);
-  };
+/** 新規作成の画面の title を受け取った。描画の中では呼ばない（別の部品の更新になる）。 */
+export function consumeNewPageTitle(serial: number): void {
+  if (current.serial === serial && current.title !== "") publish({ serial, title: "" });
+}
+
+/** 新規作成の画面でページを作れた。 */
+export function markNewPageCreated(serial: number): void {
+  createdSerial = serial;
 }
 
 /**
  * 新規作成の画面を開く。title を渡すと本文に、渡さなければ title 欄にカーソルを置く。
+ * `/?new` から開き直すときは履歴を置き換え、戻るで同じ `/?new` を何度もたどらせない。
  *
  * クリックなどの操作の中で呼ぶこと。iOS の Safari は、操作の中で focus した入力欄にだけ
- * キーボードを出すので、flushSync で画面と editor の mount（autoFocus の effect）までを
+ * キーボードを出すので、flushSync で画面と editor の mount（autoFocus）までを
  * この呼び出しの中で済ませる。
  */
 export function openNewPage(options: { title?: string } = {}): void {
-  for (const leave of [...leaving]) leave();
+  const replace = onNewPageRoute();
   flushSync(() => {
     publish({ serial: current.serial + 1, title: options.title ?? "" });
-    navigate(newPageHref);
+    navigate(newPageHref, { replace });
   });
 }

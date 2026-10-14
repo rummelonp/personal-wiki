@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
 import { NotFound } from "./NotFound";
+import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
 import { failureMessage, findPageByTitle, getPage, type Page, type PageSummary } from "./pages-api";
@@ -92,6 +93,12 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     };
   }, [targetKey]);
 
+  // 開く操作で渡された title は使い捨て。受け取ったら空に戻し、同じ title でもう一度作らせない
+  const newTargetSerial = target.by === "new" ? target.serial : null;
+  useEffect(() => {
+    if (newTargetSerial !== null) consumeNewPageTitle(newTargetSerial);
+  }, [newTargetSerial]);
+
   // ページを表示していない間は、前に開いたページの title を残さない。表示した後は onShown が決める
   useEffect(() => {
     if (state.status !== "ready") setDocumentTitle(null);
@@ -106,6 +113,15 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       navigate(`${path}${window.location.hash}`, { replace: true });
     }
   }, []);
+
+  const newSerial = state.status === "new" ? state.serial : null;
+  const showCreated = useCallback(
+    (page: Pick<PageSummary, "id" | "title" | "visibility">) => {
+      if (newSerial !== null) markNewPageCreated(newSerial);
+      show(page);
+    },
+    [newSerial, show],
+  );
 
   if (target.by === "new" && !owner) return <SignInNotice />;
   switch (state.status) {
@@ -133,7 +149,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
           page={null}
           newTitle={state.title}
           attachments={attachments}
-          onShown={show}
+          onShown={showCreated}
         />
       );
     case "ready":

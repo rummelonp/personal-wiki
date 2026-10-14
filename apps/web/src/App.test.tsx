@@ -637,6 +637,91 @@ describe("App の owner の画面", () => {
       expect(titleText()).toBe("まだ無い題");
     });
 
+    const typeBody = (text: string) => {
+      const editor = main()?.querySelector<HTMLElement>(".body-editor .cm-editor");
+      const view = editor ? EditorView.findFromDOM(editor) : null;
+      if (!view) throw new Error("本文の欄が無い");
+      act(() => {
+        view.dispatch({
+          changes: { from: view.state.doc.length, insert: text },
+          userEvent: "input.type",
+        });
+      });
+    };
+    const statusText = () => main()?.querySelector("[role='status']")?.textContent;
+    const newBackupKeys = () =>
+      Object.keys(localStorage).filter((key) => key.startsWith("personal-wiki:draft:new:"));
+
+    it("/?new で + を押すと、履歴を置き換えて空の画面を開き、打ちかけの内容は尋ねずに端末に残す", async () => {
+      serveCreating();
+      await renderAt("/");
+      act(() => plus()?.click());
+      const length = history.length;
+      typeBody("打ちかけ");
+      act(() => plus()?.click());
+      expect(here()).toBe("/?new");
+      expect(history.length).toBe(length);
+      expect(document.activeElement).toBe(titleContent());
+      expect(bodyContent()?.textContent).toBe("");
+      expect(main()?.textContent).not.toContain("この端末に退避されています");
+      expect(
+        newBackupKeys().map((key) => JSON.parse(localStorage.getItem(key) ?? "null")?.body),
+      ).toContain("打ちかけ");
+      await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      expect(createPage).not.toHaveBeenCalled();
+    });
+
+    it("作る応答を待つ間に + を押すと、作れた後も新しい空の画面のまま", async () => {
+      serve("owner", [PUBLIC, DRAFT]);
+      let resolve: (value: Awaited<ReturnType<typeof createPage>>) => void = () => {};
+      vi.mocked(createPage).mockReturnValue(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+      await renderAt("/");
+      act(() => plus()?.click());
+      commitTitle(created.title);
+      await vi.waitFor(() => expect(createPage).toHaveBeenCalledTimes(1));
+      act(() => plus()?.click());
+      await act(async () => resolve(ok(created)));
+      await act(() => new Promise((r) => setTimeout(r, 30)));
+      expect(here()).toBe("/?new");
+      expect(titleText()).toBe("");
+      expect(statusText()).toBe("タイトルを決めると保存します");
+      expect(main()?.textContent).not.toContain("この端末に退避されています");
+      expect(newBackupKeys()).toEqual([]);
+    });
+
+    it("作った後に戻るで /?new に来ると、作ったページではなく新しい空の画面を開く", async () => {
+      serveCreating();
+      await renderAt("/");
+      act(() => plus()?.click());
+      act(() => navigate("/?new#a"));
+      commitTitle(created.title);
+      await vi.waitFor(() => expect(here()).toBe(`/p/${created.id}`));
+      expect(location.hash).toBe("#a");
+      act(() => history.back());
+      await vi.waitFor(() => expect(here()).toBe("/?new"));
+      await vi.waitFor(() => expect(titleText()).toBe(""));
+      expect(statusText()).toBe("タイトルを決めると保存します");
+      expect(createPage).toHaveBeenCalledTimes(1);
+    });
+
+    it("作る前に hash だけ戻っても、打ちかけの画面を作り直さない", async () => {
+      serveCreating();
+      await renderAt("/");
+      act(() => plus()?.click());
+      act(() => navigate("/?new#a"));
+      const body = bodyContent();
+      typeBody("打ちかけ");
+      act(() => history.back());
+      await vi.waitFor(() => expect(location.hash).toBe(""));
+      await act(() => new Promise((r) => setTimeout(r, 30)));
+      expect(bodyContent()).toBe(body);
+      expect(bodyContent()?.textContent).toBe("打ちかけ");
+    });
+
     it("匿名で /?new を開くと、作成の画面を出さずにログインを案内する", async () => {
       serve("anonymous", [PUBLIC]);
       await renderAt("/?new");
