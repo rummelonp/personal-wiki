@@ -354,10 +354,12 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-line.cm-frontmatter-folded": { display: "none" },
   // source は YAML なので等幅にし、畳んだ枠と同じ地で本文と区切る。文字色は本文のままにして、
   // 明暗どちらの地でも読める状態を `.cm-lp-code` と同じ組み合わせに揃える。
+  // 地の左端はコードブロックと同じく本文の文字の左端に揃える（`.cm-lp-code` のコメント参照）。
   ".cm-line.cm-frontmatter-source": {
     backgroundColor: "var(--ui-color-surface)",
     fontFamily: "var(--ui-font-mono, ui-monospace, monospace)",
-    paddingLeft: "0.75em",
+    marginLeft: LINE_PADDING_LEFT,
+    paddingLeft: `calc(0.75em - ${LINE_PADDING_LEFT})`,
     paddingRight: "0.75em",
   },
   ".cm-frontmatter-chip": {
@@ -402,8 +404,10 @@ export const livePreviewTheme = EditorView.baseTheme({
     // tag を 1 塊で次の行へ送る。inline のままだと、`#` と日本語の名前の間（`word-break: keep-all` でも
     // 消えない）や名前の字の間で折り返す。inline-block なら塊の中は、行の幅より長いときだけ
     // 行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。
+    // 100% は行の content 幅。リスト行は左に `--cm-lp-list-indent` の余白を取って折り返すので、
+    // その分を引かないと、長い tag が右へ余白の分はみ出す。
     display: "inline-block",
-    maxWidth: "100%",
+    maxWidth: "calc(100% - var(--cm-lp-list-indent, 0px))",
     boxSizing: "border-box",
   },
   ".cm-block-ref-highlight": {
@@ -419,11 +423,11 @@ export const livePreviewTheme = EditorView.baseTheme({
   // em にしないのは、見出し行（`.cm-lp-h1` など）で間隔が広がり、前後の行とバーと本文の位置がずれるため。
   // `.cm-line` の既定の padding を上書きするため、`.cm-line` と重ねて詳細度を上げる。
   ".cm-line.cm-lp-blockquote": {
-    paddingLeft: "calc(6px + var(--cm-lp-quote-depth) * 1rem)",
+    paddingLeft: `calc(${LINE_PADDING_LEFT} + var(--cm-lp-quote-depth) * 1rem)`,
     backgroundImage:
       "repeating-linear-gradient(to right, var(--cm-lp-quote-bar, var(--ui-color-border)) 0 3px, transparent 3px 1rem)",
     backgroundSize: "calc(var(--cm-lp-quote-depth) * 1rem) 100%",
-    backgroundPosition: "6px 0",
+    backgroundPosition: `${LINE_PADDING_LEFT} 0`,
     backgroundRepeat: "no-repeat",
   },
   // セルの前後の空白は描かない（table.ts の spaceMark）ので、罫線から文字までの余白は左右の padding

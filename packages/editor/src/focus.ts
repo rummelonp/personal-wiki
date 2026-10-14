@@ -1,7 +1,6 @@
 import { type Extension, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import { decorationPlugin } from "./decoration-plugin";
-import { LINE_PADDING_LEFT } from "./theme";
 
 /**
  * 直前の操作が keyboard だったか。focus が pointer と keyboard のどちらで入ったかを決めるのに使う。
@@ -122,12 +121,15 @@ const activeLineTheme = EditorView.baseTheme({
   ".cm-active-line": {
     backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 7%, var(--ui-color-background))",
   },
-  // 地の左端を本文の文字の左端に揃える（コードブロックの地と同じ理由で、`theme.ts` 参照）。
-  // 左の padding を自前で決めている行は競るので除く。コードと frontmatter の source は地が自前、
-  // 引用と callout は左端から描くバーと地がある。
+  // 地の左端を本文の文字の左端に揃える。行の箱は content の左端から始まるので、そのままでは地が
+  // 既定の左 padding の分（6px）だけ文字の左へはみ出す。コードブロックの地は margin で箱ごと寄せるが
+  // （`theme.ts`）、ここでは margin を使わず、地を content-box で切る。margin で寄せると、CodeMirror が
+  // 複数行の選択範囲の矩形を最初の行の padding-left から計算するため、文書の 1 行目が active のとき
+  // 選択範囲が 6px 左にずれる。active line は本文の行なので padding を変えずに済む。
+  // 引用・callout の行は、バーを background-image で描いており、background-clip は背景の層ごとに
+  // 決まって地の層だけ切れないので、揃えない。コードと frontmatter の source は地が自前。
   ".cm-active-line:not(.cm-lp-code, .cm-lp-blockquote, .cm-frontmatter-source)": {
-    marginLeft: LINE_PADDING_LEFT,
-    paddingLeft: "0",
+    backgroundClip: "content-box",
   },
 });
 

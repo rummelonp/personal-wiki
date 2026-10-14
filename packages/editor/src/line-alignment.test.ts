@@ -69,12 +69,51 @@ describe("地の左端", () => {
     v.focus();
     v.dispatch({ selection: EditorSelection.cursor(0) });
     await vi.waitFor(() => expect(v.contentDOM.querySelector(".cm-active-line")).not.toBeNull());
-    const active = v.contentDOM.querySelector(".cm-active-line");
+    const active = v.contentDOM.querySelector<HTMLElement>(".cm-active-line");
     const other = v.contentDOM.querySelectorAll(".cm-line")[1];
     if (!active || !other) throw new Error("行が無い");
-    expect(active.getBoundingClientRect().left).toBeCloseTo(firstCharLeft(active), 1);
+    const style = getComputedStyle(active);
+    // 地は content-box で切るので、padding の左端（文字の左端）から描かれる
+    expect(style.backgroundClip).toBe("content-box");
+    expect(active.getBoundingClientRect().left + Number.parseFloat(style.paddingLeft)).toBeCloseTo(
+      firstCharLeft(active),
+      1,
+    );
     // 地を寄せても、他の行と文字の位置が揃う
     expect(firstCharLeft(active)).toBeCloseTo(firstCharLeft(other), 1);
+  });
+
+  it("文書の 1 行目が編集中でも、複数行の選択範囲は他の行の文字の左端から始まる", async () => {
+    const v = mount("一行目\n二行目\n三行目\n");
+    v.focus();
+    v.dispatch({ selection: EditorSelection.range(0, v.state.doc.length) });
+    await vi.waitFor(() => expect(v.contentDOM.querySelector(".cm-active-line")).not.toBeNull());
+    await vi.waitFor(() => expect(v.dom.querySelector(".cm-selectionBackground")).not.toBeNull());
+    const second = v.contentDOM.querySelectorAll(".cm-line")[1];
+    if (!second) throw new Error("行が無い");
+    const selection = [...v.dom.querySelectorAll(".cm-selectionBackground")].map(
+      (el) => el.getBoundingClientRect().left,
+    );
+    // 選択範囲の左端は、最初の行の padding-left を基準にする。1 行目が margin で動くと 6px ずれる。
+    expect(Math.min(...selection)).toBeGreaterThanOrEqual(firstCharLeft(second) - 0.5);
+  });
+
+  it("frontmatter の source の地は、本文の文字の左端から始まり、文字は 0.75em の位置に残る", () => {
+    const doc = "---\ntitle: x\n---\n本文";
+    const v = mount(doc);
+    v.focus();
+    v.dispatch({ selection: EditorSelection.cursor(doc.indexOf("title")) });
+    const source = v.contentDOM.querySelector<HTMLElement>(".cm-frontmatter-source");
+    const body = [...v.contentDOM.querySelectorAll<HTMLElement>(".cm-line")].find(
+      (line) => line.textContent === "本文",
+    );
+    if (!source || !body) throw new Error("行が無い");
+    expect(source.getBoundingClientRect().left).toBeCloseTo(firstCharLeft(body), 1);
+    const fontSize = Number.parseFloat(getComputedStyle(source).fontSize);
+    expect(firstCharLeft(source) - v.contentDOM.getBoundingClientRect().left).toBeCloseTo(
+      fontSize * 0.75,
+      1,
+    );
   });
 });
 
@@ -100,5 +139,17 @@ describe("tag の折り返し", () => {
     const rect = tag.getBoundingClientRect();
     expect(rect.height).toBeGreaterThan(lineHeight(v) * 1.5);
     expect(rect.right).toBeLessThanOrEqual(v.contentDOM.getBoundingClientRect().right + 0.5);
+  });
+
+  it.each([
+    ["リスト", `- あ #${"長い".repeat(40)}`],
+    ["入れ子のリスト", `- 親\n  - あ #${"長い".repeat(40)}`],
+  ])("%s の中の長い tag は、行の右端からはみ出さない", (_, doc) => {
+    const v = mount(doc, 300);
+    const tag = v.contentDOM.querySelector<HTMLElement>(".cm-tag");
+    if (!tag) throw new Error("tag が無い");
+    expect(tag.getBoundingClientRect().right).toBeLessThanOrEqual(
+      v.contentDOM.getBoundingClientRect().right,
+    );
   });
 });
