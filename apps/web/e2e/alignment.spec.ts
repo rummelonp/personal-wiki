@@ -38,14 +38,17 @@ async function textLeft(page: Page, selector: string): Promise<number> {
 
 const brandLeft = (page: Page) => textLeft(page, ".brand");
 
+/*
+ * 測り直しを待つ。起動時の「読み込み中…」は画面ごとの「読み込み中…」に差し替わるので、
+ * 要素を見つけてから測るまでの間に外れると、外れた要素の箱（0）を測ってしまう。
+ */
 async function expectAligned(page: Page, selector: string, label: string): Promise<void> {
   const width = page.viewportSize()?.width;
-  const brand = await brandLeft(page);
-  const left = await textLeft(page, selector);
-  expect(
-    Math.abs(left - brand),
-    `${width}px の ${label}（${left}）がロゴ（${brand}）とずれている`,
-  ).toBeLessThan(TOLERANCE);
+  await expect
+    .poll(async () => Math.abs((await textLeft(page, selector)) - (await brandLeft(page))), {
+      message: `${width}px の ${label}がロゴとずれている（値はロゴとの差）`,
+    })
+    .toBeLessThan(TOLERANCE);
 }
 
 /** 応答を release が呼ばれるまで止める。読み込み中の画面を捉える。 */
