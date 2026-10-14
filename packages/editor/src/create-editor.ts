@@ -33,6 +33,7 @@ import { externalLinks } from "./external-link";
 import { activeLine, focusRing } from "./focus";
 import { frontmatterBlock } from "./frontmatter-block";
 import type { ImeEvent } from "./ime";
+import { lineBreakInput } from "./line-break-input";
 import { linkActivation } from "./link-activation";
 import { listKeymap } from "./list-keymap";
 import { livePreview } from "./live-preview";
@@ -160,6 +161,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     useHistory ? resettableHistory() : [],
     keymap.of([...defaultKeymap, ...(useHistory ? readOnlySafeHistoryKeymap : [])]),
     listKeymap(),
+    lineBreakInput(),
     editorSurfaceTheme,
     typographyTheme,
     livePreviewTheme,
