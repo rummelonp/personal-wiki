@@ -64,7 +64,7 @@ export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => num
       if (bounded instanceof Response) return bounded;
       return serveProtocol(c, bounded);
     })
-    .get(OAUTH_AUTHORIZE_PATH, allowAnonymous(), showConsent)
+    .get(OAUTH_AUTHORIZE_PATH, allowAnonymous(), (c) => showConsent(c, now))
     .post(OAUTH_AUTHORIZE_PATH, requireOwner(), decideConsent)
     .get(OAUTH_GRANTS_PATH, allowAnonymous(), showGrants)
     .post(OAUTH_GRANTS_REVOKE_PATH, requireOwner(), revokeGrantFromForm);
@@ -95,7 +95,7 @@ function helpersOf(c: Context<AppEnv>) {
   return oauthServerFor(c.env, new URL(c.req.url).origin).getOAuthApi(c.env);
 }
 
-async function showConsent(c: Context<AppEnv>): Promise<Response> {
+async function showConsent(c: Context<AppEnv>, now: () => number): Promise<Response> {
   if (!isOAuthEnabled(c.env)) return c.notFound();
   if (c.get("principal").kind !== "owner") return redirectToLogin(c);
   const oauth = helpersOf(c);
@@ -110,13 +110,29 @@ async function showConsent(c: Context<AppEnv>): Promise<Response> {
     }
     // describeConsent を先に呼ぶ。client の参照に失敗したとき、KV に同意の記録を残さないため
     const consent = await oauth.describeConsent(request);
+    // CIMD の client は登録でなく取得の時刻になるので、登録した client にだけ出す
+    const registeredAt =
+      consent.clientDomain === undefined ? await registrationTimeOf(oauth, consent.clientId) : null;
     const { handle, headers } = await oauth.beginConsent(request);
     headers.set("Content-Type", "text/html; charset=utf-8");
     headers.set("Content-Security-Policy", consentPagePolicy(consent.redirectUri));
     headers.set("X-Robots-Tag", "noindex");
-    return new Response(consentPage(consent, handle), { headers });
+    return new Response(consentPage(consent, handle, { registeredAt, now: now() }), { headers });
   } catch (error) {
     return authorizationFailure(error);
+  }
+}
+
+/** client の登録時刻（epoch ミリ秒）。記録が無い、読めないときは null */
+async function registrationTimeOf(
+  oauth: ReturnType<typeof helpersOf>,
+  clientId: string,
+): Promise<number | null> {
+  try {
+    const seconds = (await oauth.lookupClient(clientId))?.registrationDate;
+    return typeof seconds === "number" ? seconds * 1000 : null;
+  } catch {
+    return null;
   }
 }
 
@@ -357,6 +373,21 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
+/** 「3 分前（2026-10-01 00:00 UTC）」の形。時計のずれで未来になった場合も 1 分以内に丸める */
+export function describeRegistration(registeredAt: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - registeredAt) / 60_000));
+  const age =
+    minutes < 1
+      ? "1 分以内"
+      : minutes < 60
+        ? `${minutes} 分前`
+        : minutes < 24 * 60
+          ? `${Math.floor(minutes / 60)} 時間前`
+          : `${Math.floor(minutes / (24 * 60))} 日前`;
+  const utc = new Date(registeredAt).toISOString().slice(0, 16).replace("T", " ");
+  return `${age}（${utc} UTC）`;
+}
+
 /** 登録では 100 文字まで受け付けるが、見出しが画面を埋めないよう短く切る */
 const CONSENT_NAME_LENGTH = 40;
 
@@ -369,13 +400,23 @@ function truncate(value: string, length: number): string {
  * client 名、redirect URI、scope は client が登録時に決める値なので、すべてエスケープする。
  * 権限の既定は、要求に関わらず read にする。write は owner が選んだときだけ許す。
  */
-function consentPage(consent: ConsentDescription, handle: string): string {
+function consentPage(
+  consent: ConsentDescription,
+  handle: string,
+  { registeredAt, now }: { registeredAt: number | null; now: number },
+): string {
   const name = escapeHtml(truncate(consent.clientName, CONSENT_NAME_LENGTH));
   const requested =
     consent.scope.length > 0 ? consent.scope.map(escapeHtml).join(" ") : "（指定なし）";
   const loopback = consent.redirectIsLoopback
-    ? `<p class="warn">送り先はこのコンピュータ上のアプリです。どのアプリでも待ち受けられるので、いま自分で接続を始めた場合だけ許可してください。</p>`
+    ? `<p class="warn">送り先はこのコンピュータ上のアプリです。どのアプリでも待ち受けられます。</p>`
     : "";
+  const registered =
+    registeredAt === null
+      ? ""
+      : `<dt>登録</dt>
+<dd>${escapeHtml(describeRegistration(registeredAt, now))}<br><small>いま接続を始めたなら、登録は数分前のはずです。</small></dd>
+`;
   return pageHtml(
     "接続の許可",
     `<h1>${name} に wiki への接続を許可しますか</h1>
@@ -384,9 +425,10 @@ function consentPage(consent: ConsentDescription, handle: string): string {
 <dd>${name}<br><small>名前はクライアントの自己申告で、確認されていません。</small><br><small>client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd>
 <dt>トークンの送り先</dt>
 <dd><strong>${escapeHtml(consent.redirectHost)}</strong><br><code>${escapeHtml(consent.redirectUri)}</code></dd>
-<dt>要求された権限</dt>
+${registered}<dt>要求された権限</dt>
 <dd>${requested}</dd>
 </dl>
+<p class="warn">この接続を、いま自分で始めた場合だけ許可してください。他の人から送られたリンクで開いた場合は、許可しないでください。送り先が claude.ai でも、接続を始めた人が自分とは限りません。</p>
 ${loopback}
 <form method="post">
 <input type="hidden" name="handle" value="${escapeHtml(handle)}">

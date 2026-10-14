@@ -6,6 +6,7 @@ import { fakeJwks, generateSigningKey, ownerCookie, ownerEnv, signAccessJwt } fr
 import { T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
+import { describeRegistration } from "./oauth-routes";
 import { oauthServerFor } from "./oauth-server";
 import { safeReturnUrl } from "./routes";
 
@@ -407,6 +408,29 @@ describe("認可と同意画面", () => {
     expect(html).toContain("<strong>claude.ai</strong>");
     expect(html).toContain(CALLBACK);
     expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
+  });
+
+  it("redirect の種類にかかわらず自分で始めた接続だけを許可する警告と、client の登録時刻を出す", async () => {
+    const { request } = setup();
+    const client = await register(request, { client_name: "<b>x</b>" });
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const { html } = await openConsent(request, path);
+    expect(html).toContain("この接続を、いま自分で始めた場合だけ許可してください");
+    expect(html).toContain("他の人から送られたリンクで開いた場合は、許可しないでください");
+    expect(html).toMatch(/<dt>登録<\/dt>\s*<dd>[^<]*（\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC）/);
+    expect(html).not.toContain("<b>");
+    expect(html).not.toContain("このコンピュータ上のアプリ");
+  });
+
+  it("loopback の redirect には、自分で始めた場合の警告に加えてローカルのアプリの警告を出す", async () => {
+    const { request } = setup({ overrides: { OAUTH_REDIRECT_URIS: "http://127.0.0.1:8765/cb" } });
+    const client = await register(request, { redirect_uris: ["http://127.0.0.1:8765/cb"] });
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge, {
+      redirect_uri: "http://127.0.0.1:8765/cb",
+    });
+    const { html } = await openConsent(request, path);
+    expect(html).toContain("このコンピュータ上のアプリ");
+    expect(html).toContain("この接続を、いま自分で始めた場合だけ許可してください");
   });
 
   it("権限の既定は write を要求されても read にし、長い client 名は切って見せる", async () => {
@@ -933,5 +957,33 @@ describe("OAuth を閉じた環境", () => {
     expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(401);
     const token = await insertToken({ name: "laptop", scopes: "read" });
     expect((await postMcp(request, token, "tools/list")).status).toBe(200);
+  });
+});
+
+describe("describeRegistration", () => {
+  const registeredAt = Date.UTC(2026, 9, 1, 12, 34, 56);
+  const minute = 60_000;
+
+  it("経過時間を分、時間、日で表し、UTC の日時を添える", () => {
+    const utc = "（2026-10-01 12:34 UTC）";
+    for (const [elapsed, label] of [
+      [10_000, "1 分以内"],
+      [3 * minute, "3 分前"],
+      [59 * minute, "59 分前"],
+      [60 * minute, "1 時間前"],
+      [23 * 60 * minute, "23 時間前"],
+      [24 * 60 * minute, "1 日前"],
+      [40 * 24 * 60 * minute, "40 日前"],
+    ] as const) {
+      expect(describeRegistration(registeredAt, registeredAt + elapsed), label).toBe(
+        `${label}${utc}`,
+      );
+    }
+  });
+
+  it("時計のずれで登録が未来になっても 1 分以内に丸める", () => {
+    expect(describeRegistration(registeredAt, registeredAt - 5 * minute)).toBe(
+      "1 分以内（2026-10-01 12:34 UTC）",
+    );
   });
 });
