@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEPLOY_ENV_PATH, readDeployValues } from "./deploy-config.mjs";
+import { parseOriginArg } from "./origin-arg.mjs";
 
 const LOCAL_URL = "http://localhost:8787";
 // zone の Browser Integrity Check は、Node などの既定の User-Agent を弾くことがある
@@ -46,9 +47,7 @@ export function parseArgs(argv) {
     else if (arg.startsWith("--target=")) target = arg.slice("--target=".length);
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if (url !== undefined && !/^https?:\/\/[^/\s]+$/.test(url)) {
-    throw new Error("--url must be an origin such as http://localhost:8787");
-  }
+  if (url !== undefined) parseOriginArg(url);
   if (remote && url !== undefined) throw new Error("--remote and --url cannot be combined");
   if (argv.includes("--target") && target === null) throw new Error("--target needs a page id");
   return { remote, url, target };
