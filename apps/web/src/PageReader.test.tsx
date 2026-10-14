@@ -124,12 +124,12 @@ describe("PageReader", () => {
 
   it("作成直後の focus の印と、キーボードを保つ input を残さない", () => {
     requestBodyFocus(PAGE.id);
-    expect(document.querySelector("input[aria-hidden='true']")).not.toBeNull();
+    expect(document.querySelector("[data-body-focus-holder]")).not.toBeNull();
 
     renderReader();
 
     expect(wantsBodyFocus(PAGE.id)).toBe(false);
-    expect(document.querySelector("input[aria-hidden='true']")).toBeNull();
+    expect(document.querySelector("[data-body-focus-holder]")).toBeNull();
   });
 
   it("タグを一覧への link で出す", () => {

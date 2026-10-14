@@ -24,7 +24,11 @@ function holdKeyboard(): void {
   releaseKeyboard();
   if (typeof document === "undefined") return;
   const input = document.createElement("input");
-  input.setAttribute("aria-hidden", "true");
+  // aria-hidden は focus 中の要素に付けると支援技術の扱いが不定なので、名前を付けて残す。
+  // autocomplete="off" は、iOS の QuickType や自動入力の候補を出さないため
+  input.setAttribute("aria-label", "本文を準備中");
+  input.setAttribute("autocomplete", "off");
+  input.setAttribute("data-body-focus-holder", "");
   input.tabIndex = -1;
   Object.assign(input.style, {
     position: "fixed",

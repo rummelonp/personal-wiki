@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { clearBodyFocusRequest, requestBodyFocus, wantsBodyFocus } from "./body-focus";
 
-const holders = () => document.querySelectorAll<HTMLInputElement>("input[aria-hidden='true']");
+const holders = () => document.querySelectorAll<HTMLInputElement>("[data-body-focus-holder]");
 
 afterEach(() => {
   clearBodyFocusRequest("A");
@@ -19,6 +19,9 @@ describe("requestBodyFocus", () => {
     expect(document.activeElement).toBe(holder);
     expect(holder.tabIndex).toBe(-1);
     expect(holder.style.fontSize).toBe("16px");
+    expect(holder.getAttribute("aria-label")).toBe("本文を準備中");
+    expect(holder.hasAttribute("aria-hidden")).toBe(false);
+    expect(holder.autocomplete).toBe("off");
   });
 
   it("続けて呼んでも input は 1 つだけ残る", () => {
