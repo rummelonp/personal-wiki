@@ -59,11 +59,14 @@ export function uniqueTitle(testInfo: TestInfo, label: string): string {
 export const bodyEditor = (page: Page): Locator => page.locator('.cm-content[aria-label="本文"]');
 export const saveState = (page: Page): Locator => page.locator(".save-state");
 
-/** 本文の末尾に caret を置いて打つ。 */
+/**
+ * 本文の最後の行の末尾に caret を置いて打つ。最後の行は装飾の無い文字だけにしておく。
+ * 文書の末尾へ飛ぶ組み合わせ（Ctrl/Cmd+End）は、アプリが UA で Mac かを決め、Desktop Chrome の
+ * descriptor の UA が Windows なので、ブラウザによって効く修飾キーがずれる。行の末尾（End）で済ませる。
+ */
 export async function typeAtBodyEnd(page: Page, text: string): Promise<void> {
-  const body = bodyEditor(page);
-  await body.click();
-  await page.keyboard.press("ControlOrMeta+End");
+  await bodyEditor(page).locator(".cm-line").last().click();
+  await page.keyboard.press("End");
   await page.keyboard.type(text);
 }
 
