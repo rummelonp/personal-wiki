@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { homeHref, pageHref, pageHrefFor, parseRoute, tagHref } from "./route";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { homeHref, navigate, pageHref, pageHrefFor, parseRoute, tagHref } from "./route";
 
 const ID = "AAAAAAAAAAAAAAAAAAAAAA";
 
@@ -62,5 +62,69 @@ describe("href", () => {
       const href = pageHrefFor({ id: ID, title, visibility: "public" });
       expect(parseRoute(href, "")).toEqual({ name: "title", title });
     }
+  });
+});
+
+describe("navigate のスクロール", () => {
+  /** pushState と replaceState が location を更新するだけの、最小の window と history */
+  function stubBrowser(start: string) {
+    const location = new URL(start, "http://wiki.test");
+    const move = (_state: unknown, _title: string, href: string) => {
+      const next = new URL(href, location);
+      location.pathname = next.pathname;
+      location.search = next.search;
+      location.hash = next.hash;
+    };
+    const scrollTo = vi.fn();
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", { location, scrollTo, dispatchEvent });
+    vi.stubGlobal("history", { pushState: vi.fn(move), replaceState: vi.fn(move) });
+    return { scrollTo, dispatchEvent };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("パスが変わる遷移は、先頭へ戻して通知する", () => {
+    const { scrollTo, dispatchEvent } = stubBrowser(`/p/${ID}`);
+    navigate("/%E9%A1%8C");
+    expect(scrollTo).toHaveBeenCalledExactlyOnceWith(0, 0);
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(history.pushState).toHaveBeenCalledOnce();
+  });
+
+  it("パスが同じでクエリだけ変わる遷移も、先頭へ戻す", () => {
+    const { scrollTo } = stubBrowser("/?q=a");
+    navigate("/?q=b");
+    expect(scrollTo).toHaveBeenCalledOnce();
+  });
+
+  it("別のパスの hash 付きの遷移は、先頭へ戻す（hash の位置へは移った先が動かす）", () => {
+    const { scrollTo } = stubBrowser("/A");
+    navigate("/B#X");
+    expect(scrollTo).toHaveBeenCalledOnce();
+  });
+
+  it("hash だけが変わる遷移では戻さない", () => {
+    const { scrollTo, dispatchEvent } = stubBrowser("/A?x=1#a");
+    navigate("/A?x=1#b");
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+  });
+
+  it("同じ URL への遷移では戻さない", () => {
+    const { scrollTo } = stubBrowser("/A");
+    navigate("/A");
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("置き換えでは、パスが変わっても戻さず、履歴を積まない", () => {
+    const { scrollTo, dispatchEvent } = stubBrowser(`/p/${ID}`);
+    navigate("/%E9%A1%8C", { replace: true });
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(history.pushState).not.toHaveBeenCalled();
+    expect(history.replaceState).toHaveBeenCalledOnce();
+    expect(dispatchEvent).toHaveBeenCalledOnce();
   });
 });

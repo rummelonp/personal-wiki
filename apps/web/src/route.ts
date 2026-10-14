@@ -40,9 +40,23 @@ export const pageHrefFor = canonicalPagePath;
 
 const NAVIGATE_EVENT = "personal-wiki:navigate";
 
+/**
+ * 履歴に積む遷移でパスかクエリが変わるときは、先頭までスクロールを戻す。SPA の遷移はブラウザの
+ * 読み込みと違い、前の画面のスクロール位置が残る（入力欄の focus でずれた位置も残り、移った先が
+ * 先頭を通り過ぎて表示される）。hash だけの変化と置き換えは同じ画面の中の移動なので戻さない。
+ * 戻る・進む（popstate）の位置はブラウザの復元に任せる。
+ * hash が指す位置へは、移った先が描画された後に use-fragment-jump が動かす。
+ */
 export function navigate(href: string, options: { replace?: boolean } = {}): void {
-  if (options.replace === true) history.replaceState(null, "", href);
-  else history.pushState(null, "", href);
+  if (options.replace === true) {
+    history.replaceState(null, "", href);
+  } else {
+    const next = new URL(href, window.location.href);
+    const moves =
+      next.pathname !== window.location.pathname || next.search !== window.location.search;
+    history.pushState(null, "", href);
+    if (moves) window.scrollTo(0, 0);
+  }
   window.dispatchEvent(new Event(NAVIGATE_EVENT));
 }
 
