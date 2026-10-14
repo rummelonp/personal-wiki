@@ -143,7 +143,7 @@ describe("1 invocation のクエリ数", () => {
     expectWithinBudget(racing.counter);
   });
 
-  it("owner の cookie で呼ぶ step は、認証にクエリを使わず token より 2 少ない", async () => {
+  it("owner の cookie で呼ぶ step は、認証に D1 のクエリを使わない", async () => {
     const client = await buildClient();
     const target = await client.create("Old");
     const links = Array.from({ length: 30 }, (_, i) => `[[Old]] [[L${i}]] #t${i}`).join("\n");

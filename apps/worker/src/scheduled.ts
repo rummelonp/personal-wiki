@@ -21,7 +21,8 @@ export function createScheduledHandler({
   recordWrite = logWriteMetric,
 }: ScheduledOptions = {}) {
   return async (_controller: ScheduledController, env: Bindings): Promise<void> => {
-    // 例外のとき、どのリンク元で起きたかをログに残す。選ぶ前の失敗では null のまま
+    // 例外のとき、その発火で選んだリンク元をログに残す。選ぶ前の失敗では null のまま。
+    // 本文の書き換えが確定した後の失敗でも入るので、この id のページが書き換わっていないとは限らない
     let sourcePageId: string | null = null;
     try {
       const result = await stepLinkRewritesRecorded(
