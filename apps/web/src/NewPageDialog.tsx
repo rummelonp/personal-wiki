@@ -1,18 +1,15 @@
 import { type FormEvent, type RefObject, useState } from "react";
-import { createPage, failureMessage, findPageByTitle } from "./pages-api";
-import { navigate, pageHref } from "./route";
+import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
 
 interface NewPageDialogProps {
   dialogRef: RefObject<HTMLDialogElement | null>;
 }
 
-type Problem = { message: string; existingId: string | null };
-
 /** title だけで空のページを作り、作れたらそのページの編集画面へ移る。 */
 export function NewPageDialog({ dialogRef }: NewPageDialogProps) {
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<Problem | null>(null);
+  const [problem, setProblem] = useState<CreateProblem | null>(null);
 
   function close() {
     dialogRef.current?.close();
@@ -29,28 +26,10 @@ export function NewPageDialog({ dialogRef }: NewPageDialogProps) {
     if (trimmed === "" || busy) return;
     setBusy(true);
     setProblem(null);
-    const res = await createPage({ title: trimmed, body: "" });
-    if (res.ok) {
-      setBusy(false);
-      close();
-      navigate(pageHref(res.value.id));
-      return;
-    }
-    if (res.reason === "title_conflict") {
-      const existing = await findPageByTitle(trimmed);
-      setProblem({ message: res.message, existingId: existing.ok ? existing.value.id : null });
-    } else if (res.reason === "unauthorized") {
-      setProblem({
-        message: "ログインの期限が切れました。ログインし直してください",
-        existingId: null,
-      });
-    } else {
-      setProblem({
-        message: failureMessage(res, "作成できなかった"),
-        existingId: null,
-      });
-    }
+    const failed = await createPageAndOpen(trimmed);
     setBusy(false);
+    if (failed === null) close();
+    else setProblem(failed);
   }
 
   return (
@@ -60,7 +39,7 @@ export function NewPageDialog({ dialogRef }: NewPageDialogProps) {
           新規作成
         </h2>
         <label className="field">
-          <span className="field-label">title</span>
+          <span className="field-label">タイトル</span>
           <input
             className="text-input"
             value={title}
@@ -68,26 +47,7 @@ export function NewPageDialog({ dialogRef }: NewPageDialogProps) {
             autoFocus
           />
         </label>
-        {problem !== null && (
-          <p className="message message-error" role="alert">
-            {problem.message}
-            {problem.existingId !== null && (
-              <>
-                {" "}
-                <a
-                  href={pageHref(problem.existingId)}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    close();
-                    navigate(pageHref(problem.existingId as string));
-                  }}
-                >
-                  そのページを開く
-                </a>
-              </>
-            )}
-          </p>
-        )}
+        {problem !== null && <CreateProblemMessage problem={problem} onOpenExisting={close} />}
         <div className="actions">
           <button
             type="submit"

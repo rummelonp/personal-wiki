@@ -78,11 +78,15 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
 
   switch (state.status) {
     case "loading":
-      return <p className="muted">読み込み中…</p>;
+      return <p className="narrow muted">読み込み中…</p>;
     case "unauthorized":
       return <SignInNotice expired />;
     case "not_found":
-      return <NotFound />;
+      return owner && target.by === "title" ? (
+        <NotFound creatableTitle={target.title} />
+      ) : (
+        <NotFound />
+      );
     case "error":
       return (
         <p className="message message-error" role="alert">
