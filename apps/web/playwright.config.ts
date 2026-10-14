@@ -5,6 +5,7 @@ import { E2E_ORIGIN } from "./e2e/support/stack";
  * 主の環境（デスクトップの Chromium、iPhone 幅の WebKit）ではすべてのテストを、従の環境では
  * @smoke を付けたテストだけを走らせる。速さの計測（@perf）は、他のテストと CPU を取り合わないよう
  * 機能のテストがすべて終わった後に走らせる。
+ * 幅を変えて調べるテスト（@widths）は、幅を自分で切り替えるのでデスクトップの Chromium だけで走らせる。
  */
 
 const PRIMARY = ["chromium-desktop", "webkit-iphone"];
@@ -40,7 +41,7 @@ export default defineConfig({
     {
       name: "webkit-iphone",
       use: { ...devices["iPhone 15"] },
-      grepInvert: /@perf/,
+      grepInvert: /@perf|@widths/,
     },
     {
       name: "firefox-desktop",

@@ -35,7 +35,7 @@ export function longPageBody(): string {
   for (let i = 1; i <= 40; i++) {
     const paragraph =
       `${i} 番目の節の本文。長いページで打鍵から表示までの時間を測るため、` +
-      "日本語と English の文を混ぜて段落を長くしている。".repeat(4) +
+      "日本語と English の文を混ぜて段落を長くしている。".repeat(5) +
       `[[${SEED.welcome}]] へのリンクと #長文 のタグも入れる。`;
     sections.push(`## 見出し ${i}\n\n${paragraph}\n\n- 箇条書き ${i}-1\n- 箇条書き ${i}-2`);
   }

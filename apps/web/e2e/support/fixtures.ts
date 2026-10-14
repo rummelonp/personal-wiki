@@ -72,9 +72,13 @@ export async function typeAtBodyEnd(page: Page, text: string): Promise<void> {
 
 /** 横スクロールが出ていないこと。ずれた量が分かるよう、2 つの値をそのまま比べる。 */
 export async function expectNoHorizontalScroll(page: Page): Promise<void> {
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
+  // 幅を変えた直後でも、変えた後の配置で測る
+  const { scrollWidth, clientWidth } = await page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    };
+  });
   expect(scrollWidth, "document の横幅が画面の幅を超えている").toBeLessThanOrEqual(clientWidth);
 }
