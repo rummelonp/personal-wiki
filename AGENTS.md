@@ -83,6 +83,8 @@ Cron Trigger はアカウント全体で 5 本までなので既定は空で、�
 Cron が飛ばしたページ（D1 の一時的な失敗が 3 発火続いた分を含む）は Worker のログ（`wrangler tail` の `link_rewrites.failed`）にしか出ず、`link-rewrites` でも拾えないので、気づいたら手で直す。`link_rewrites.scheduled_error` の `sourcePageId` はその発火で選んだリンク元で、書き換えが済んでいることもある。
 Cron の予約は script の設定なので、前の版（`scheduled` の無い版）に戻しても残り、発火ごとにエラーになる。前の版の deploy は予約に触れないので、外すならダッシュボードで外す。
 
+Worker を前の版（新規作成が `/?new` の画面でない版）に戻すと、web は localStorage の `personal-wiki:draft:new:` で始まる key（作れなかった新規作成の内容の退避）を読まない。退避はブラウザに残り、今の版に戻すと、次に + で開いた新規作成の画面で復元を尋ねる。
+
 ### 添付（R2）
 
 - 画像は `POST /api/attachments` に、本文を画像のバイト列、`Content-Type` を画像の種類にして送る。`Content-Length` は必須で、無ければ 411 を返す。
