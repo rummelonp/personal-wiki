@@ -94,7 +94,12 @@ test.describe("タップ対象", () => {
   test.skip(({ isMobile }) => !isMobile, "pointer: coarse の端末だけ");
   test.use({ viewport: { width: 375, height: 812 } });
 
-  test("owner の一覧", async ({ page }) => {
+  test("owner の一覧", async ({ page, api }, testInfo) => {
+    // 他のテストが作るタグなしのページで一覧の先頭が埋まっても chip の行が出るよう、行を自分で作る
+    await api.createPage({
+      title: uniqueTitle(testInfo, "一覧のタップ"),
+      body: "一覧のタップ対象の検査。 #タップ検査",
+    });
     await page.goto("/");
     await expect(page.locator(".entries .entry").first()).toBeVisible();
     await expect(page.locator(".rail .chip-link").first()).toBeVisible();
