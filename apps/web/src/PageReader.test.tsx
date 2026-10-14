@@ -130,6 +130,18 @@ describe("PageReader", () => {
     expect(tag?.getAttribute("href")).toBe(`/?tag=${encodeURIComponent("タグ")}`);
   });
 
+  it("本文の #tag を押すと、チップと同じタグの一覧へ移る", () => {
+    renderReader({ ...PAGE, body: "本文 #タグ" });
+    const tag = container?.querySelector(".cm-tag");
+    if (!tag) throw new Error("#tag が描かれていない");
+    act(() => {
+      tag.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+    expect(location.pathname + location.search).toBe(`/?tag=${encodeURIComponent("タグ")}`);
+  });
+
   it("リンク元が無いときは、「このページへのリンク」の節ごと出さない", async () => {
     renderReader();
     await vi.waitFor(() => expect(listBacklinks).toHaveBeenCalled());

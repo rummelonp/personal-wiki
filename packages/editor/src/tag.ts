@@ -3,6 +3,7 @@ import { type Extension, Facet, type Range } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { tagNodes } from "@personal-wiki/markdown";
 import { type BuiltDecorations, decorationPlugin } from "./decoration-plugin";
+import { isModifiedClick } from "./link-activation";
 
 export interface TagClick {
   readonly name: string;
@@ -50,10 +51,14 @@ function build(view: EditorView): BuiltDecorations {
   return { decorations: Decoration.set(decorations, true) };
 }
 
-/** 素のクリックでナビゲーションする（`wikilink.ts` と同じ規約）。 */
+/**
+ * 素のクリックでナビゲーションする（`wikilink.ts` と同じ規約）。修飾クリックは取らず、Shift の
+ * 範囲選択などエディタの既定に任せる。tag は `<a href>` を持たないので、wikilink と違って
+ * 修飾クリックで別タブには開けない。
+ */
 const clickToNavigate = EditorView.domEventHandlers({
   mousedown(event, view) {
-    if (event.button !== 0) return false;
+    if (event.button !== 0 || isModifiedClick(event)) return false;
     const handlers = view.state.facet(tagClickHandler);
     if (handlers.length === 0) return false;
     const element =

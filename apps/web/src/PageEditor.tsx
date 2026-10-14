@@ -45,7 +45,7 @@ import {
   updatePage,
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { homeHref, missingPagePath, navigate, pageHrefFor } from "./route";
+import { homeHref, missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
@@ -675,6 +675,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           resolveAttachmentUrl={attachmentUrl}
           {...(attachments ? { onUploadAttachment: upload, acceptAttachment } : {})}
           onWikiLinkClick={(link) => void handleWikiLinkClick(link)}
+          onTagClick={openTag}
           onChange={(body) => session.edit({ ...session.getState().draft, body })}
           onBlur={() => void session.flush()}
         />

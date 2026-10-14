@@ -171,6 +171,23 @@ test("一覧からタグで別の一覧へ移って戻ると、元の一覧の�
   await expect.poll(() => scrollY(page)).toBeLessThan(before + TOLERANCE);
 });
 
+test("owner の編集画面で本文の #tag を押すと、タグの一覧へ移り、戻ると元のページに戻る", async ({
+  page,
+  seedIds,
+}) => {
+  await page.goto(`/p/${seedIds[SEED.welcome]}`);
+  const tag = bodyEditor(page).locator(".cm-tag", { hasText: "#メモ" });
+  await expect(tag).toBeVisible();
+  const pageUrl = page.url();
+  await tag.click();
+  await expect(page).toHaveURL(`/?tag=${encodeURIComponent("メモ")}`);
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(pageUrl);
+  await expect(bodyEditor(page)).toBeVisible();
+});
+
 test("長いページから wikilink で別のページへ移って戻ると、元のページの位置が戻る", async ({
   page,
   seedIds,

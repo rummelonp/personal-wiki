@@ -42,6 +42,17 @@ test("public のページを title の URL で開き、リンクをたどれる 
   await expectNoHorizontalScroll(page);
 });
 
+test("本文の #tag を押すとタグの一覧へ移り、戻るで元のページに戻る", async ({ page }) => {
+  await page.goto(titlePath(SEED.welcome));
+  await bodyEditor(page).locator(".cm-tag", { hasText: "#メモ" }).click();
+  await expect(page).toHaveURL(`/?tag=${encodeURIComponent("メモ")}`);
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(titlePath(SEED.welcome));
+  await expect(page.getByRole("heading", { level: 1, name: SEED.welcome })).toBeVisible();
+});
+
 test("トップの一覧とタグに draft が出ない @smoke", async ({ page, api }, testInfo) => {
   // 他のテストが公開ページを作り続けると seed のページが一覧の先頭から外れるので、見るページを自分で作る
   const title = uniqueTitle(testInfo, "匿名の一覧");

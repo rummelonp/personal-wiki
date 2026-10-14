@@ -13,7 +13,7 @@ import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import type { Page } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { missingPagePath, navigate, pageHrefFor, tagHref } from "./route";
+import { missingPagePath, navigate, openTag, pageHrefFor, tagHref } from "./route";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
@@ -178,6 +178,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
           links={links}
           resolveAttachmentUrl={attachmentUrl}
           onWikiLinkClick={(link) => void handleWikiLinkClick(link)}
+          onTagClick={openTag}
         />
       </article>
     </RailLayout>

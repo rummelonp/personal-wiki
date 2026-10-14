@@ -287,6 +287,31 @@ describe("PageEditor と本文のエディタ", () => {
   });
 });
 
+describe("PageEditor の tag", () => {
+  const pressTag = (init: MouseEventInit = {}) => {
+    const tag = container?.querySelector(".cm-tag");
+    if (!tag) throw new Error("#tag が描かれていない");
+    act(() => {
+      tag.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init }),
+      );
+    });
+  };
+
+  it("本文の #tag の素のクリックは、チップと同じタグの一覧へ移る", () => {
+    renderPage({ ...PAGE, body: "本文 #タグ" });
+    pressTag();
+    expect(location.pathname + location.search).toBe(`/?tag=${encodeURIComponent("タグ")}`);
+  });
+
+  it("修飾キー付きのクリックは移らず、エディタの既定（選択）に任せる", () => {
+    renderPage({ ...PAGE, body: "本文 #タグ" });
+    const before = location.pathname + location.search;
+    pressTag({ shiftKey: true });
+    expect(location.pathname + location.search).toBe(before);
+  });
+});
+
 describe("PageEditor の wikilink", () => {
   const clickLink = (text: string) => {
     const link = [...(container?.querySelectorAll(".cm-wikilink") ?? [])].find(

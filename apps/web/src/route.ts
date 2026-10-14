@@ -82,6 +82,11 @@ export function navigate(href: string, options: { replace?: boolean } = {}): voi
   window.dispatchEvent(new Event(NAVIGATE_EVENT));
 }
 
+/** 本文の `#tag` と frontmatter の tag を押したときの行き先。一覧の行のチップと同じ URL へ移る。 */
+export function openTag(tag: { readonly name: string }): void {
+  navigate(tagHref(tag.name));
+}
+
 function subscribe(listener: () => void): () => void {
   window.addEventListener("popstate", listener);
   window.addEventListener(NAVIGATE_EVENT, listener);

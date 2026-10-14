@@ -13,6 +13,7 @@ import {
   replaceDoc,
   revealBlockId,
   setReadOnly,
+  type TagClick,
   type UploadAttachment,
   type WikiLinkClick,
 } from "@personal-wiki/editor";
@@ -68,6 +69,11 @@ export interface BodyEditorProps {
    * 渡されているかを見る）。呼ぶ関数は最新のものを使う。
    */
   onWikiLinkClick?: (link: WikiLinkClick) => void;
+  /**
+   * 本文の `#tag` と frontmatter の tag の素のクリック（`onWikiLinkClick` と同じく、作った時点で
+   * 渡されているかを見て、呼ぶ関数は最新のものを使う）。
+   */
+  onTagClick?: (tag: TagClick) => void;
   /**
    * 渡すと、貼り付けと drop の画像をアップロードする。作った時点のものを使い続ける。
    * 失敗の通知は渡す関数の中で行う（reject すると編集部品は placeholder を黙って除く）。
@@ -142,6 +148,7 @@ export function BodyEditor({
   linkTargets,
   links,
   onWikiLinkClick,
+  onTagClick,
   onUploadAttachment,
   acceptAttachment,
   resolveAttachmentUrl,
@@ -163,6 +170,7 @@ export function BodyEditor({
     linkTargets,
     links,
     onWikiLinkClick,
+    onTagClick,
     onUploadAttachment,
     acceptAttachment,
     resolveAttachmentUrl,
@@ -177,6 +185,7 @@ export function BodyEditor({
     linkTargets,
     links,
     onWikiLinkClick,
+    onTagClick,
     onUploadAttachment,
     acceptAttachment,
     resolveAttachmentUrl,
@@ -210,6 +219,9 @@ export function BodyEditor({
       ...(initial.onWikiLinkClick === undefined
         ? {}
         : { onWikiLinkClick: (link: WikiLinkClick) => latest.current.onWikiLinkClick?.(link) }),
+      ...(initial.onTagClick === undefined
+        ? {}
+        : { onTagClick: (tag: TagClick) => latest.current.onTagClick?.(tag) }),
       // 渡さなければ貼り付けと drop に触れない。どちらも作った時点のものを使い続ける
       ...(initial.onUploadAttachment === undefined
         ? {}
