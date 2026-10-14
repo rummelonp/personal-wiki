@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { requestBodyFocus, wantsBodyFocus } from "./body-focus";
 import { PageReader } from "./PageReader";
 import {
   type ApiResult,
@@ -119,6 +120,16 @@ describe("PageReader", () => {
     for (const label of ["新規", "公開", "下書き", "削除", "保存"]) {
       expect(buttonTexts().some((text) => text.includes(label))).toBe(false);
     }
+  });
+
+  it("作成直後の focus の印と、キーボードを保つ input を残さない", () => {
+    requestBodyFocus(PAGE.id);
+    expect(document.querySelector("input[aria-hidden='true']")).not.toBeNull();
+
+    renderReader();
+
+    expect(wantsBodyFocus(PAGE.id)).toBe(false);
+    expect(document.querySelector("input[aria-hidden='true']")).toBeNull();
   });
 
   it("タグを一覧への link で出す", () => {
