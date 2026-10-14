@@ -207,6 +207,23 @@ test("/?new に横スクロールが出ない", async ({ page }) => {
   await expectNoHorizontalScroll(page);
 });
 
+test("新規ページの 1 行目で [[ を打つと、補完の窓がヘッダーの下に見える", async ({
+  page,
+}, testInfo) => {
+  await openFromPlus(page);
+  await typeTitleThenBody(page, uniqueTitle(testInfo, "補完"), `[[${SEED.welcome.slice(0, 2)}`);
+  const popup = page.locator(".cm-tooltip-autocomplete");
+  await expect(popup).toBeVisible();
+  await expect(popup.getByText(SEED.welcome).first()).toBeVisible();
+  const header = await page.locator("header.header").boundingBox();
+  const box = await popup.boundingBox();
+  const viewport = page.viewportSize();
+  expect(header).not.toBeNull();
+  expect(box).not.toBeNull();
+  expect(box?.y ?? 0).toBeGreaterThanOrEqual((header?.y ?? 0) + (header?.height ?? 0));
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(viewport?.height ?? 0);
+});
+
 test.describe("匿名", () => {
   test.use({ role: "anonymous" });
 

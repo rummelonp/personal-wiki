@@ -79,6 +79,7 @@ export {
 } from "./wikilink";
 export {
   type LinkTargetSource,
+  tooltipSpace,
   type WikiLinkAutocompleteOptions,
   wikiLinkAutocomplete,
   wikiLinkCompletionSource,

@@ -569,6 +569,95 @@ describe("jumpToFragment", () => {
         expect(top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
       });
     });
+
+    describe("[[ の補完の窓", () => {
+      const DOCK_HEIGHT = 200;
+      const pageIndex = createMemoryPageIndex([{ id: "1", title: "Note" }], {
+        normalize: (text) => text.toLowerCase(),
+      });
+      const long = `\n${filler}\n\n## 末尾の見出し\n\n${filler}`;
+
+      /** 窓が実際に見える位置にあるか。置けないときの CodeMirror は画面の外へ追いやる */
+      const tooltipRect = () => {
+        const tooltip = document.querySelector(".cm-tooltip-autocomplete");
+        if (tooltip === null) throw new Error("窓が無い");
+        return tooltip.getBoundingClientRect();
+      };
+
+      it("scroll 0 の 1 行目で打っても、ヘッダーの下に見える", async () => {
+        const { view } = controlled(long, { pageIndex });
+        const v = view();
+        act(() => v.focus());
+        v.dispatch({
+          changes: { from: 0, insert: "[[No" },
+          selection: { anchor: 4 },
+          userEvent: "input.type",
+        });
+        await vi.waitFor(() => {
+          const rect = tooltipRect();
+          expect(rect.top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+          expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight);
+        });
+      });
+
+      it("目次への移動のあと scroll 0 に戻っても、1 行目で窓が見える", async () => {
+        const ref = createRef<BodyEditorHandle>();
+        const { view } = controlled(long, { pageIndex, ref });
+        const v = view();
+        act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "末尾の見出し" }));
+        await vi.waitFor(() => expect(window.scrollY).toBeGreaterThan(0));
+        window.scrollTo(0, 0);
+        act(() => v.focus());
+        v.dispatch({
+          changes: { from: 0, insert: "[[No" },
+          selection: { anchor: 4 },
+          userEvent: "input.type",
+        });
+        await vi.waitFor(() => {
+          const rect = tooltipRect();
+          expect(rect.top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+          expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight);
+        });
+      });
+
+      describe("通知の台があるとき", () => {
+        let dock: HTMLElement | null = null;
+
+        beforeEach(() => {
+          // 台の高さ分の文書末尾の余白（styles.css が --notice-height で取る）
+          document.documentElement.style.paddingBottom = `${DOCK_HEIGHT}px`;
+          dock = document.createElement("div");
+          dock.className = "notice-dock";
+          dock.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:${DOCK_HEIGHT}px`;
+          dock.append(document.createElement("div"));
+          document.body.append(dock);
+        });
+
+        afterEach(() => {
+          dock?.remove();
+          dock = null;
+          document.documentElement.style.removeProperty("padding-bottom");
+        });
+
+        it("最後の行で打っても、窓は台と重ならずに見える", async () => {
+          const { view } = controlled(long, { pageIndex });
+          const v = view();
+          act(() => v.focus());
+          const end = v.state.doc.length;
+          v.dispatch({
+            changes: { from: end, insert: "\n\n[[No" },
+            selection: { anchor: end + 6 },
+            scrollIntoView: true,
+            userEvent: "input.type",
+          });
+          await vi.waitFor(() => {
+            const rect = tooltipRect();
+            expect(rect.top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+            expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT);
+          });
+        });
+      });
+    });
   });
 
   it("変換中は落ち着くまで待つ", async () => {
