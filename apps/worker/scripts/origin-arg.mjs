@@ -9,7 +9,7 @@ const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
  * @returns {string} 渡された origin（正規化しない）
  */
 export function parseOriginArg(value) {
-  if (!/^https?:\/\/[^/\s]+$/.test(value)) {
+  if (!/^https?:\/\/[^/?#\\\s]+$/.test(value)) {
     throw new Error("--url must be an origin such as http://localhost:8787");
   }
   let parsed;
