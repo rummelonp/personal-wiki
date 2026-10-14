@@ -39,6 +39,7 @@ function setup(updatePage?: EditorApi["updatePage"]) {
     updatePage ?? (async (_id, version, input) => ok({ ...BASE, ...input, version: version + 1 })),
   );
   const api: EditorApi = {
+    createPage: async () => ok(BASE),
     getPage: async () => ok(BASE),
     updatePage: put,
     setVisibility: async () => ok(BASE),

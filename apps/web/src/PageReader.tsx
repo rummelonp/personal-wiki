@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createAttachmentUrlResolver } from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
-import { clearBodyFocusRequest } from "./body-focus";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
@@ -43,11 +42,11 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
   const { goTo } = useFragmentJump(editor);
   const outline = useMemo(() => extractOutline(page.body), [page.body]);
   const tags = useMemo(() => extractDerived(page.body).tags.map(({ tag }) => tag), [page.body]);
-  const [links] = useState(() => createWikiLinks({ pageId: page.id }));
+  const [links] = useState(() => createWikiLinks({ pageId: () => page.id }));
   const [attachmentUrl] = useState(() =>
     createAttachmentUrlResolver({
       enabled: attachments,
-      pageId: page.id,
+      pageId: () => page.id,
       embedPageId: (target) => links.embedPageId(target),
     }),
   );
@@ -57,12 +56,6 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
   useEffect(() => {
     onShown?.({ id: page.id, title: page.title, visibility: page.visibility });
   }, [onShown, page.id, page.title, page.visibility]);
-
-  // 作った直後に権限を失うなどして閲覧の画面になったとき、本文が受け取らない focus の印と、
-  // キーボードを保つ input を残さない
-  useEffect(() => {
-    clearBodyFocusRequest(page.id);
-  }, [page.id]);
 
   useEffect(() => {
     const onVisible = () => {

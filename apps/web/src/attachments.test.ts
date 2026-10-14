@@ -153,7 +153,7 @@ describe("createAttachmentUrlResolver", () => {
   const make = (enabled = true) =>
     createAttachmentUrlResolver({
       enabled,
-      pageId: "SELF",
+      pageId: () => "SELF",
       embedPageId: (target) => embedIds.get(target) ?? null,
     });
 

@@ -6,6 +6,7 @@ import {
   type EditorDeps,
   EditorSession,
   isReadOnly,
+  NEW_PAGE_BACKUP_KEY,
   saveStatusOf,
 } from "./editor-session";
 import type { ApiResult, Page } from "./pages-api";
@@ -43,6 +44,11 @@ function fakeApi(server: { page: Page }): EditorApi & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
+    async createPage(input) {
+      calls.push("create");
+      server.page = { ...page(), ...input, version: 1 };
+      return ok(server.page);
+    },
     async getPage() {
       calls.push("get");
       return ok(server.page);
@@ -1291,5 +1297,223 @@ describe("離脱のあと", () => {
     session.edit({ title: "題", body: "[[新2]] 本文 追記 続き" });
     await vi.advanceTimersByTimeAsync(2100);
     expect(server.page.body).toBe("[[新2]] 本文 追記 続き");
+  });
+});
+
+describe("まだ作っていないページ", () => {
+  function setupNew(options: { title?: string; backup?: BackupStore; api?: EditorApi } = {}) {
+    const server = { page: page() };
+    const api = (options.api ?? fakeApi(server)) as EditorApi & { calls: string[] };
+    const backup = options.backup ?? memoryBackup();
+    let now = 1000;
+    const session = new EditorSession(null, { api, backup, now: () => now++ }, options.title ?? "");
+    return { server, api, backup: backup as BackupStore, session };
+  }
+
+  function deferredCreate(api: EditorApi & { calls: string[] }) {
+    let release: () => void = () => {};
+    const original = api.createPage.bind(api);
+    api.createPage = (input) =>
+      new Promise((resolve) => {
+        release = () => void original(input).then(resolve);
+      });
+    return () => release();
+  }
+
+  it("title を確定すると、title と本文で作り、作った版を base にする", async () => {
+    const { session, api, server } = setupNew();
+    expect(saveStatusOf(session.getState())).toBe("new");
+    session.editTitle(" 新しい題 ");
+    session.edit({ ...session.getState().draft, body: "本文" });
+    await session.commitTitle();
+    expect(api.calls).toEqual(["create"]);
+    expect(server.page).toMatchObject({ title: "新しい題", body: "本文" });
+    expect(session.getState()).toMatchObject({ uncreated: false, base: { id: ID, version: 1 } });
+    expect(saveStatusOf(session.getState())).toBe("saved");
+  });
+
+  it("空の title では作らない", async () => {
+    const { session, api } = setupNew();
+    session.edit({ title: "", body: "本文" });
+    session.editTitle("   ");
+    await session.commitTitle();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.calls).toEqual([]);
+    expect(session.getState().uncreated).toBe(true);
+  });
+
+  it("本文の入力、blur、離脱では作らない", async () => {
+    const { session, api, backup } = setupNew();
+    session.edit({ title: "", body: "本文" });
+    await session.flush();
+    await vi.advanceTimersByTimeAsync(5000);
+    session.editTitle("題");
+    await session.leave();
+    expect(api.calls).toEqual([]);
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toMatchObject({ title: "題", body: "本文" });
+  });
+
+  it("作成の応答を待つ間の入力は、作れた後に自動保存で送る", async () => {
+    const { session, api, server } = setupNew();
+    const release = deferredCreate(api);
+    session.editTitle("題");
+    const created = session.commitTitle();
+    await vi.advanceTimersByTimeAsync(0);
+    session.edit({ title: "題", body: "待つ間の入力" });
+    expect(saveStatusOf(session.getState())).toBe("creating");
+    release();
+    await created;
+    expect(server.page.body).toBe("");
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(api.calls).toEqual(["create", "put@1"]);
+    expect(server.page.body).toBe("待つ間の入力");
+  });
+
+  it("Enter に続く blur の確定でも、作るのは 1 回", async () => {
+    const { session, api } = setupNew();
+    session.editTitle("題");
+    const first = session.commitTitle();
+    const second = session.commitTitle();
+    await Promise.all([first, second]);
+    expect(api.calls).toEqual(["create"]);
+  });
+
+  it("title を渡して始めたら、確定だけで作る", async () => {
+    const { session, api, server } = setupNew({ title: "リンクの題" });
+    await session.commitTitle();
+    expect(api.calls).toEqual(["create"]);
+    expect(server.page.title).toBe("リンクの題");
+  });
+
+  it("title の重複は、title を直すまで本文を打っても案内を残し、直して確定すると作り直す", async () => {
+    const { session, api } = setupNew();
+    const create = api.createPage.bind(api);
+    api.createPage = async () => ({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じ title のページがすでにある",
+    });
+    session.editTitle("題");
+    await session.commitTitle();
+    expect(session.getState().failedOp).toEqual({ kind: "create", titleTaken: true });
+    session.edit({ title: "題", body: "続き" });
+    expect(session.getState().error).not.toBeNull();
+    api.createPage = create;
+    session.editTitle("別の題");
+    await session.commitTitle();
+    expect(session.getState()).toMatchObject({ uncreated: false, error: null });
+    expect(session.getState().base).toMatchObject({ title: "別の題", body: "続き" });
+  });
+
+  it("通信の失敗は再試行で作る", async () => {
+    const { session, api } = setupNew();
+    const create = api.createPage.bind(api);
+    api.createPage = async () => ({
+      ok: false,
+      reason: "error",
+      message: "サーバーに接続できない",
+    });
+    session.editTitle("題");
+    await session.commitTitle();
+    expect(session.getState().failedOp).toEqual({ kind: "create", titleTaken: false });
+    api.createPage = create;
+    await session.retryCreate();
+    expect(session.getState().uncreated).toBe(false);
+  });
+
+  it("401 はログイン切れにして退避し、ログインし直した後の再試行で作る", async () => {
+    const { session, api, backup } = setupNew();
+    const create = api.createPage.bind(api);
+    api.createPage = async () => ({ ok: false, reason: "unauthorized" });
+    session.editTitle("題");
+    await session.commitTitle();
+    expect(saveStatusOf(session.getState())).toBe("auth");
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toMatchObject({ title: "題" });
+    api.createPage = create;
+    await session.retry();
+    expect(session.getState().uncreated).toBe(false);
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toBeNull();
+  });
+
+  it("作る前の確認、公開範囲、削除は何もしない", async () => {
+    const { session, api } = setupNew();
+    session.edit({ title: "", body: "本文" });
+    await session.checkFreshness();
+    await session.changeVisibility("public");
+    expect(await session.remove()).toBe(false);
+    expect(api.calls).toEqual([]);
+  });
+
+  it("作る前の入力は止まってから退避し、作れたら退避を消す", async () => {
+    const { session, backup } = setupNew();
+    session.edit({ title: "", body: "本文" });
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toMatchObject({ body: "本文" });
+    session.editTitle("題");
+    await session.commitTitle();
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toBeNull();
+  });
+
+  it("作成の応答を待つ間に別の画面が退避を書き直していたら、その退避は消さない", async () => {
+    const { session, api, backup } = setupNew();
+    const release = deferredCreate(api);
+    session.editTitle("題");
+    const created = session.commitTitle();
+    await vi.advanceTimersByTimeAsync(0);
+    // 離脱の保存は作成の後ろに並ぶので、待たない
+    void session.leave();
+    backup.save(NEW_PAGE_BACKUP_KEY, {
+      title: "次",
+      body: "",
+      baseVersion: 0,
+      savedAt: 99999,
+    });
+    release();
+    await created;
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toMatchObject({ title: "次" });
+  });
+
+  it("作成の応答を待つ間に離れたら、作れた後も保存せず、続きの入力は作ったページの退避に残す", async () => {
+    const { session, api, backup } = setupNew();
+    const release = deferredCreate(api);
+    session.editTitle("題");
+    const created = session.commitTitle();
+    await vi.advanceTimersByTimeAsync(0);
+    session.edit({ title: "題", body: "待つ間の入力" });
+    void session.leave();
+    release();
+    await created;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.calls).toEqual(["create"]);
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toBeNull();
+    expect(backup.load(ID)).toMatchObject({ body: "待つ間の入力", baseVersion: 1 });
+  });
+
+  it("前の新規作成の画面の退避は、復元か破棄を選ぶまで読み取り専用にし、作れても消さない", async () => {
+    const backup = memoryBackup();
+    backup.save(NEW_PAGE_BACKUP_KEY, { title: "前の題", body: "前", baseVersion: 0, savedAt: 1 });
+    const { session } = setupNew({ backup, title: "今の題" });
+    expect(session.getState().pendingBackup).toMatchObject({ title: "前の題" });
+    expect(isReadOnly(session.getState())).toBe(true);
+  });
+
+  it("退避を復元すると、その title で作る", async () => {
+    const backup = memoryBackup();
+    backup.save(NEW_PAGE_BACKUP_KEY, { title: "前の題", body: "前", baseVersion: 0, savedAt: 1 });
+    const { session, server } = setupNew({ backup });
+    session.restoreBackup();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.page).toMatchObject({ title: "前の題", body: "前" });
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toBeNull();
+  });
+
+  it("退避を破棄すると、渡された title で作る", async () => {
+    const backup = memoryBackup();
+    backup.save(NEW_PAGE_BACKUP_KEY, { title: "前の題", body: "前", baseVersion: 0, savedAt: 1 });
+    const { session, server } = setupNew({ backup, title: "今の題" });
+    session.discardBackup();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.page.title).toBe("今の題");
+    expect(backup.load(NEW_PAGE_BACKUP_KEY)).toBeNull();
   });
 });

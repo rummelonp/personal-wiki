@@ -50,8 +50,11 @@ export interface WikiLinks extends WikiLinkSources {
 }
 
 export interface WikiLinksOptions {
-  /** 埋め込み元の page。自分自身の embed は展開しない。 */
-  pageId: string;
+  /**
+   * 埋め込み元の page の id。自分自身の embed は展開しない。新規作成の画面では作れた時点で
+   * 変わるので、使うたびに読む（作る前は空文字列）。
+   */
+  pageId: () => string;
   resolvePages?: (titles: string[], fetchFn: Fetch) => Promise<ApiResult<(ResolvedPage | null)[]>>;
   findPageByTitle?: (title: string, fetchFn: Fetch) => Promise<ApiResult<Page>>;
 }
@@ -88,11 +91,19 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
 
   const embedIds = new Map<string, string>();
 
-  // 破棄後の再利用（StrictMode）のために、使うときに作る
+  // 破棄後の再利用（StrictMode）のために、使うときに作る。自分の id が変わったら作り直す
+  // （作る前に引いた自分の title の embed を、作った後も自分と見分けられるように）
   let embeds: PageEmbedCache | null = null;
+  let embedsFor = "";
   const embedCache = (): PageEmbedCache => {
+    const self = options.pageId();
+    if (embeds !== null && embedsFor !== self) {
+      embeds.dispose();
+      embeds = null;
+    }
+    embedsFor = self;
     embeds ??= createPageEmbedCache({
-      selfPageId: options.pageId,
+      selfPageId: self,
       onChange: notify,
       load: async (title, signal) => {
         const res = await find(title, withSignal(signal));

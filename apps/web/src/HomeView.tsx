@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
+import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
 import { homeHref, tagHref } from "./route";
 import { SearchBox } from "./SearchBox";
@@ -35,20 +35,6 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   );
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
-  const [creating, setCreating] = useState(false);
-  // 失敗はその語に紐づける。検索語を変えたあとに前の語の失敗を出さない
-  const [failure, setFailure] = useState<{ title: string; problem: CreateProblem } | null>(null);
-  const problem = failure !== null && failure.title === trimmed ? failure.problem : null;
-
-  async function create() {
-    if (creating) return;
-    setCreating(true);
-    setFailure(null);
-    const title = trimmed;
-    const failed = await createPageAndOpen(title);
-    setCreating(false);
-    if (failed !== null) setFailure({ title, problem: failed });
-  }
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 
@@ -86,21 +72,17 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             {searching ? "一致するページがありません。" : "ページがまだありません。"}
           </p>
         )}
-        {/* 検索語の title で作る入口。匿名は作れないので出さない */}
+        {/* 検索語の title で作る入口。匿名は作れないので出さない。作れなかったときは新規作成の画面が知らせる */}
         {state.status === "ready" && state.entries.length === 0 && searching && owner && (
-          <>
-            <div>
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => void create()}
-                disabled={creating}
-              >
-                {`「${trimmed}」を作成`}
-              </button>
-            </div>
-            {problem !== null && <CreateProblemMessage problem={problem} />}
-          </>
+          <div>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => openNewPage({ title: trimmed })}
+            >
+              {`「${trimmed}」を作成`}
+            </button>
+          </div>
         )}
         {state.status === "ready" && state.entries.length > 0 && (
           <>

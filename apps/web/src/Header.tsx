@@ -1,8 +1,7 @@
-import { useRef } from "react";
 import { loginHref, type Me } from "./api";
 import { LogoutIcon, PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
-import { NewPageDialog } from "./NewPageDialog";
+import { openNewPage } from "./new-page";
 import { homeHref } from "./route";
 import { switcherShortcutKeys, switcherShortcutLabel } from "./shortcut";
 
@@ -26,7 +25,6 @@ interface HeaderProps {
  */
 export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderProps) {
   const isOwner = session.status === "ready" && session.me.kind === "owner";
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   return (
     <header className="header">
@@ -52,7 +50,7 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
             type="button"
             className="button button-primary button-compact header-new"
             aria-label="新規作成"
-            onClick={() => dialogRef.current?.showModal()}
+            onClick={() => openNewPage()}
           >
             <PlusIcon />
             <span className="header-new-label">新規作成</span>
@@ -80,7 +78,6 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
           </a>
         )}
       </div>
-      {isOwner && <NewPageDialog dialogRef={dialogRef} />}
     </header>
   );
 }

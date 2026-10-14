@@ -33,7 +33,7 @@ function setup(
     }),
   }));
   const links = createWikiLinks({
-    pageId: SELF,
+    pageId: () => SELF,
     findPageByTitle: find,
     resolvePages: resolve,
     ...overrides,

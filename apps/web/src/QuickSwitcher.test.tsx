@@ -1,15 +1,9 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearBodyFocusRequest } from "./body-focus";
 import { ANONYMOUS_TITLE_INDEX_MAX_REQUESTS, TITLE_INDEX_MAX_REQUESTS } from "./link-sources";
-import {
-  type ApiResult,
-  createPage,
-  findPageByTitle,
-  listPageTitles,
-  type Page,
-} from "./pages-api";
+import { openNewPage } from "./new-page";
+import { type ApiResult, listPageTitles } from "./pages-api";
 import { QuickSwitcher } from "./QuickSwitcher";
 
 vi.mock("./pages-api", async (importOriginal) => {
@@ -17,10 +11,10 @@ vi.mock("./pages-api", async (importOriginal) => {
   return {
     ...actual,
     listPageTitles: vi.fn(),
-    createPage: vi.fn(),
-    findPageByTitle: vi.fn(),
   };
 });
+
+vi.mock("./new-page", () => ({ openNewPage: vi.fn() }));
 
 const ok = <T,>(value: T): ApiResult<T> => ({ ok: true, value });
 
@@ -51,7 +45,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  clearBodyFocusRequest("NNNNNNNNNNNNNNNNNNNNNN");
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -250,7 +243,7 @@ describe("QuickSwitcher の操作", () => {
     typeText("まだ無い語");
     expect(selected()).toBe("「まだ無い語」を本文から検索");
     press("Enter");
-    expect(createPage).not.toHaveBeenCalled();
+    expect(openNewPage).not.toHaveBeenCalled();
     expect(new URLSearchParams(location.search).get("q")).toBe("まだ無い語");
   });
 
@@ -258,92 +251,25 @@ describe("QuickSwitcher の操作", () => {
     await renderSwitcher(true);
     typeText("メモ");
     press("Enter");
-    expect(createPage).not.toHaveBeenCalled();
+    expect(openNewPage).not.toHaveBeenCalled();
     expect(location.pathname).toBe(`/p/${RECENT[2]?.id}`);
   });
 
-  it("「作成」を選ぶと空のページを作って、そのページへ移る", async () => {
-    vi.mocked(createPage).mockResolvedValue(
-      ok({ id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ" } as Page),
-    );
+  it("「作成」を選ぶと、閉じてからその title で新規作成の画面を開く", async () => {
+    let openWhenCreated: boolean | null = null;
+    vi.mocked(openNewPage).mockImplementation(() => {
+      // modal を閉じた後でないと、新規作成の画面の title 欄や本文に focus できない
+      openWhenCreated = dialog().open;
+    });
     await renderSwitcher(true);
     typeText(" ほげ ");
     expect(selected()).toBe("「ほげ」を本文から検索");
     press("ArrowDown");
     expect(selected()).toBe("「ほげ」を作成");
     press("Enter");
-    await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
-    expect(createPage).toHaveBeenCalledWith({ title: "ほげ", body: "" });
+    expect(openNewPage).toHaveBeenCalledWith({ title: "ほげ" });
+    expect(openWhenCreated).toBe(false);
     expect(dialog().open).toBe(false);
-  });
-
-  it("「作成」で作ると、modal を閉じた後にキーボードを保つ input が focus を持つ", async () => {
-    vi.mocked(createPage).mockResolvedValue(
-      ok({ id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ" } as Page),
-    );
-    await renderSwitcher(true);
-    typeText("ほげ");
-    press("ArrowDown");
-    press("Enter");
-    await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
-    const holder = document.querySelector("[data-body-focus-holder]");
-    expect(holder).not.toBeNull();
-    expect(document.activeElement).toBe(holder);
-  });
-
-  it("作れなかったら閉じずに理由を出し、重複なら既存のページを開ける", async () => {
-    vi.mocked(createPage).mockResolvedValue({
-      ok: false,
-      reason: "title_conflict",
-      message: "同じ title のページがすでにある",
-    });
-    vi.mocked(findPageByTitle).mockResolvedValue(ok({ id: "EEEEEEEEEEEEEEEEEEEEEE" } as Page));
-    await renderSwitcher(true);
-    typeText("メ");
-    for (let i = 0; i < options().length; i++) press("ArrowDown");
-    expect(selected()).toBe("「メ」を作成");
-    press("Enter");
-    await vi.waitFor(() =>
-      expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(
-        "/p/EEEEEEEEEEEEEEEEEEEEEE",
-      ),
-    );
-    expect(dialog().open).toBe(true);
-  });
-
-  it("既存のページを新しいタブで開く操作（修飾キー付きのクリック）では閉じない", async () => {
-    vi.mocked(createPage).mockResolvedValue({
-      ok: false,
-      reason: "title_conflict",
-      message: "同じ title のページがすでにある",
-    });
-    vi.mocked(findPageByTitle).mockResolvedValue(ok({ id: "EEEEEEEEEEEEEEEEEEEEEE" } as Page));
-    await renderSwitcher(true);
-    typeText("メ");
-    for (let i = 0; i < options().length; i++) press("ArrowDown");
-    press("Enter");
-    await vi.waitFor(() => expect(container?.querySelector("[role='alert'] a")).not.toBeNull());
-    const link = container?.querySelector<HTMLAnchorElement>("[role='alert'] a");
-    const pathname = location.pathname;
-    // 修飾キー付きのクリックの既定動作（新しいタブ）で、テストの iframe ごと動かさない
-    const keepPage = (event: Event) => event.preventDefault();
-    document.addEventListener("click", keepPage);
-    try {
-      act(() => {
-        link?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }),
-        );
-      });
-    } finally {
-      document.removeEventListener("click", keepPage);
-    }
-    expect(dialog().open).toBe(true);
-    expect(location.pathname).toBe(pathname);
-    act(() => {
-      link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-    expect(dialog().open).toBe(false);
-    expect(location.pathname).toBe("/p/EEEEEEEEEEEEEEEEEEEEEE");
   });
 
   it("Esc で閉じる", async () => {
@@ -386,7 +312,7 @@ describe("QuickSwitcher の日本語入力", () => {
     press("Enter", { isComposing: true });
     expect(location.pathname).not.toMatch(/^\/p\//);
     expect(location.search).toBe(new URL(startUrl).search);
-    expect(createPage).not.toHaveBeenCalled();
+    expect(openNewPage).not.toHaveBeenCalled();
     expect(dialog().open).toBe(true);
     expect(input().value).toBe("ほげ");
   });
@@ -396,7 +322,7 @@ describe("QuickSwitcher の日本語入力", () => {
     typeText("ほげ");
     press("Enter", { keyCode: 229 });
     expect(location.search).toBe(new URL(startUrl).search);
-    expect(createPage).not.toHaveBeenCalled();
+    expect(openNewPage).not.toHaveBeenCalled();
     expect(dialog().open).toBe(true);
   });
 

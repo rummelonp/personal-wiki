@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
+import { useEffect } from "react";
 import { setDocumentTitle } from "./document-title";
 import { Link } from "./Link";
+import { openNewPage } from "./new-page";
 import { homeHref } from "./route";
 
 interface NotFoundProps {
@@ -33,30 +33,14 @@ export function NotFound({ creatableTitle }: NotFoundProps) {
 }
 
 function Creatable({ title }: { title: string }) {
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<CreateProblem | null>(null);
-
-  async function create() {
-    setBusy(true);
-    setProblem(null);
-    const failed = await createPageAndOpen(title);
-    // 作れたときは、移った先のページがこの画面を置き換える
-    if (failed !== null) {
-      setBusy(false);
-      setProblem(failed);
-    }
-  }
-
   return (
     <section className="notice">
       <h1 className="notice-title">「{title}」はまだありません</h1>
-      {problem !== null && <CreateProblemMessage problem={problem} />}
       <div className="actions">
         <button
           type="button"
           className="button button-primary"
-          disabled={busy}
-          onClick={() => void create()}
+          onClick={() => openNewPage({ title })}
         >
           このタイトルで作成
         </button>

@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { homeHref, navigate, pageHref, pageHrefFor, parseRoute, tagHref } from "./route";
+import {
+  homeHref,
+  navigate,
+  newPageHref,
+  pageHref,
+  pageHrefFor,
+  parseRoute,
+  tagHref,
+} from "./route";
 
 const ID = "AAAAAAAAAAAAAAAAAAAAAA";
 
@@ -12,6 +20,12 @@ describe("parseRoute", () => {
       tag: "",
     });
     expect(parseRoute("/", "?tag=%E6%97%A5%E8%A8%98")).toMatchObject({ query: "", tag: "日記" });
+  });
+
+  it("/?new は新規作成の画面にする。ほかのパスの new は title として読む", () => {
+    expect(parseRoute("/", newPageHref.slice(1))).toEqual({ name: "new" });
+    expect(parseRoute("/", "?new=")).toEqual({ name: "new" });
+    expect(parseRoute("/new", "")).toEqual({ name: "title", title: "new" });
   });
 
   it("/p/<id> は id の形のときだけページにする", () => {

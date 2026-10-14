@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clearBodyFocusRequest } from "./body-focus";
 import { setDocumentTitle } from "./document-title";
 import { NotFound } from "./NotFound";
 import { PageEditor } from "./PageEditor";
@@ -9,12 +8,19 @@ import { navigate, pageHrefFor } from "./route";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScrollAfterMount } from "./scroll-restore";
 
-/** ページの URL が指すもの。`/p/<id>` は id、`/<title>` は title で引く。 */
-export type PageTarget = { by: "id"; id: string } | { by: "title"; title: string };
+/**
+ * ページの URL が指すもの。`/p/<id>` は id、`/<title>` は title で引く。`/?new` はまだ作っていない
+ * ページで、serial と title は新規作成の画面を開いた 1 回分（NewPageRequest）。
+ */
+export type PageTarget =
+  | { by: "id"; id: string }
+  | { by: "title"; title: string }
+  | { by: "new"; serial: number; title: string };
 
 type State =
   | { status: "loading" }
   | { status: "ready"; page: Page }
+  | { status: "new"; serial: number; title: string }
   | { status: "not_found" }
   | { status: "unauthorized" }
   | { status: "error"; message: string };
@@ -37,47 +43,52 @@ interface PageViewProps {
  *
  * 置き換えた URL は同じページを指すので、その後のルートの変化では取り直さない。取り直すと
  * 編集中のエディタが作り直され、変換中の文字が消える。
+ *
+ * `/?new` は取得を待たずに、同じ描画の中で編集の画面を出す（新規作成の画面を開く操作の中で
+ * title 欄に focus するため）。作れたら `/p/<id>` に置き換えるが、上と同じ理由で作り直さず、
+ * 作る前の編集の画面をそのまま使い続ける。
  */
 export function PageView({ target, owner, attachments }: PageViewProps) {
-  const [state, setState] = useState<State>({ status: "loading" });
+  const [state, setState] = useState<State>(() =>
+    target.by === "new"
+      ? { status: "new", serial: target.serial, title: target.title }
+      : { status: "loading" },
+  );
   /** 表示中のページの正の URL のパス。アドレスバーがこれと同じなら、ルートが変わっても取り直さない */
   const shownPath = useRef<string | null>(null);
-  /** 取得の応答を待っている id。作成直後の focus の印を、編集の画面が受け取らずに終わったとき消すのに使う */
-  const pendingId = useRef<string | null>(null);
-  const targetKey = target.by === "id" ? `id:${target.id}` : `title:${target.title}`;
+  const targetKey =
+    target.by === "id"
+      ? `id:${target.id}`
+      : target.by === "title"
+        ? `title:${target.title}`
+        : `new:${target.serial}`;
   useRestoreScrollAfterMount(state.status === "ready");
+
+  // effect で切り替えると、編集の画面の mount が開く操作の後になる
+  if (target.by === "new" && !(state.status === "new" && state.serial === target.serial)) {
+    setState({ status: "new", serial: target.serial, title: target.title });
+  }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表す
   useEffect(() => {
+    if (target.by === "new") {
+      shownPath.current = null;
+      return;
+    }
     if (shownPath.current !== null && shownPath.current === window.location.pathname) return;
     shownPath.current = null;
     let cancelled = false;
     setState({ status: "loading" });
     const request = target.by === "id" ? getPage(target.id) : findPageByTitle(target.title);
-    const id = target.by === "id" ? target.id : null;
-    pendingId.current = id;
     void request.then((res) => {
       if (cancelled) return;
-      pendingId.current = null;
-      if (res.ok) {
-        setState({ status: "ready", page: res.value });
-        return;
-      }
-      // 開けなかったページの印を残すと、後でそのページを開いたときに作成直後でなくても focus する
-      if (id !== null) clearBodyFocusRequest(id);
-      if (res.reason === "not_found") setState({ status: "not_found" });
+      if (res.ok) setState({ status: "ready", page: res.value });
+      else if (res.reason === "not_found") setState({ status: "not_found" });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
       else setState({ status: "error", message: failureMessage(res, "取得できなかった") });
     });
     return () => {
       cancelled = true;
-      if (id === null || pendingId.current !== id) return;
-      pendingId.current = null;
-      // 取得の途中で別のページや画面に移ったときの片付け。StrictMode は後片付けの直後に同じ id で
-      // effect を付け直すので、同じ tick の中では消さず、付け直されなかったときだけ消す
-      queueMicrotask(() => {
-        if (pendingId.current !== id) clearBodyFocusRequest(id);
-      });
     };
   }, [targetKey]);
 
@@ -96,6 +107,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     }
   }, []);
 
+  if (target.by === "new" && !owner) return <SignInNotice />;
   switch (state.status) {
     case "loading":
       return <p className="narrow muted">読み込み中…</p>;
@@ -112,6 +124,17 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
         <p className="message message-error" role="alert">
           {state.message}
         </p>
+      );
+    case "new":
+      // owner が変わると key で作り直されるので、ここに来るのは owner だけ
+      return (
+        <PageEditor
+          key={`new:${state.serial}`}
+          page={null}
+          newTitle={state.title}
+          attachments={attachments}
+          onShown={show}
+        />
       );
     case "ready":
       return owner ? (

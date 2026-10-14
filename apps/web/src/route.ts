@@ -4,11 +4,12 @@ import { rememberScroll, stateForReplace } from "./scroll-restore";
 
 /**
  * SPA のパスは `/`、`/p/<id>`、`/<title>` だけ。最上位のパスは title に使うので、`/search` や
- * `/new` のようなパスは増やさない。検索はクエリ（`/?q=`）で表す。
+ * `/new` のようなパスは増やさない。検索はクエリ（`/?q=`）、新規作成の画面は `/?new` で表す。
  * ページの URL の読み方は Worker（OGP の差し込み）と同じ parsePagePath に任せる。
  */
 export type Route =
   | { name: "home"; query: string; tag: string }
+  | { name: "new" }
   | { name: "page"; id: string }
   | { name: "title"; title: string }
   | { name: "unknown" };
@@ -16,6 +17,7 @@ export type Route =
 export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/") {
     const params = new URLSearchParams(search);
+    if (params.has("new")) return { name: "new" };
     return { name: "home", query: params.get("q") ?? "", tag: params.get("tag") ?? "" };
   }
   const path = parsePagePath(pathname);
@@ -27,6 +29,8 @@ export function homeHref(query = ""): string {
   const q = query.trim();
   return q === "" ? "/" : `/?q=${encodeURIComponent(q)}`;
 }
+
+export const newPageHref = "/?new";
 
 /** タグで絞った一覧。パスは増やさず、クエリで表す。 */
 export const tagHref = (tag: string): string => `/?tag=${encodeURIComponent(tag)}`;

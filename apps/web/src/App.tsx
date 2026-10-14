@@ -1,4 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import {
+  type ComponentProps,
+  type ComponentType,
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
 import { fetchMe, logout, NO_FEATURES } from "./api";
 import { setDocumentTitle } from "./document-title";
 import { saveAllEditors } from "./editor-lifecycle";
@@ -7,23 +14,47 @@ import { HomeView } from "./HomeView";
 import { LinkRewriteStatus } from "./LinkRewriteStatus";
 import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
+import { useNewPageRequest } from "./new-page";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { parseRoute, useRoute } from "./route";
 import { isSwitcherShortcut } from "./shortcut";
 
+type PageViewModule = typeof import("./PageView");
+type PageViewProps = ComponentProps<PageViewModule["PageView"]>;
+
+let loadedPageView: PageViewModule | null = null;
+
 // エディタ（CodeMirror）はページの画面でしか使わないので、トップと検索の初回の読み込みから外す。
 // 読み込みの失敗（デプロイで古い版の chunk が消えた後の遷移など）は、画面全体を壊さず再読み込みを促す
-const loadPageView = () => import("./PageView");
-const PageView = lazy(() =>
-  loadPageView().then(
+const loadPageView = () =>
+  import("./PageView").then((module) => {
+    loadedPageView = module;
+    return module;
+  });
+
+// 読み込み済みなら、then を同期で呼ぶ thenable を返す。lazy はこれを待たずに描画するので、
+// 新規作成の画面を開く操作（openNewPage の flushSync）の中で editor の mount と focus まで済む。
+// Promise を返すと、読み込み済みでも最初の描画が 1 度 suspend し、iOS でキーボードが出ない
+type PageViewExport = { default: ComponentType<PageViewProps> };
+const PageView = lazy((): Promise<PageViewExport> => {
+  const loaded = loadedPageView;
+  if (loaded !== null) {
+    const ready: PromiseLike<PageViewExport> = {
+      // biome-ignore lint/suspicious/noThenProperty: 同期に解決する thenable がここでの目的
+      then: (resolve) => resolve?.({ default: loaded.PageView }) as never,
+    };
+    // lazy が呼ぶのは then だけ
+    return ready as Promise<PageViewExport>;
+  }
+  return loadPageView().then(
     (module) => ({ default: module.PageView }),
     () => ({ default: PageViewLoadFailed }),
-  ),
-);
+  );
+});
 
 // ページの URL で開いたときは、/api/me の応答を待つ間にエディタも読み込んでおく
 const initialRoute = parseRoute(window.location.pathname, window.location.search);
-if (initialRoute.name === "page" || initialRoute.name === "title") {
+if (initialRoute.name === "page" || initialRoute.name === "title" || initialRoute.name === "new") {
   loadPageView().catch(() => {});
 }
 
@@ -40,6 +71,7 @@ export function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const route = useRoute();
+  const newPage = useNewPageRequest();
 
   useEffect(() => {
     let cancelled = false;
@@ -102,7 +134,12 @@ export function App() {
     if (canRewriteLinks) linkRewrites.start();
   }, [canRewriteLinks]);
 
-  // ⌘K（Mac）/ Ctrl+K で quick switcher を開閉する。ほかのダイアログ（新規作成）が開いている間は奪わない
+  // owner の + で開く新規作成の画面が suspend しないよう、owner と分かった時点で読み込んでおく
+  useEffect(() => {
+    if (isOwner) loadPageView().catch(() => {});
+  }, [isOwner]);
+
+  // ⌘K（Mac）/ Ctrl+K で quick switcher を開閉する。ほかのダイアログが開いている間は奪わない
   useEffect(() => {
     if (!ready) return;
     function handleKeyDown(event: KeyboardEvent) {
@@ -140,15 +177,18 @@ export function App() {
             owner={isOwner}
           />
         )}
-        {ready && (route.name === "page" || route.name === "title") && (
+        {ready && (route.name === "page" || route.name === "title" || route.name === "new") && (
           <Suspense fallback={<p className="narrow muted">読み込み中…</p>}>
             <PageView
-              // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す
+              // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す。
+              // `/?new` も同じ位置と key に置き、作れた後の `/p/<id>` で作り直さない
               key={isOwner ? "owner" : "reader"}
               target={
                 route.name === "page"
                   ? { by: "id", id: route.id }
-                  : { by: "title", title: route.title }
+                  : route.name === "title"
+                    ? { by: "title", title: route.title }
+                    : { by: "new", ...newPage }
               }
               owner={isOwner}
               attachments={session.me.features.attachments}

@@ -1,5 +1,4 @@
-import { foldTitle } from "@personal-wiki/domain/title";
-import type { WikiLinkClick } from "@personal-wiki/editor";
+import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import {
@@ -10,7 +9,6 @@ import {
 } from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
-import { clearBodyFocusRequest, wantsBodyFocus } from "./body-focus";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
 import { bindLifecycle, registerEditor } from "./editor-lifecycle";
@@ -25,14 +23,15 @@ import {
 } from "./editor-session";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
+import { Link } from "./Link";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
+import { openNewPage, registerLeaveBeforeNewPage } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import {
   createPage,
   deletePage,
-  failureMessage,
   findPageByTitle,
   getPage,
   type LinkRewritesQueued,
@@ -50,6 +49,7 @@ import { createWikiLinks } from "./wiki-links";
 /** 保存の応答のリンクの書き換えの数は、セッションに渡さず、保存した title と一緒に onLinkRewrites に渡す。 */
 function editorApi(onLinkRewrites: (title: string, queued: LinkRewritesQueued) => void): EditorApi {
   return {
+    createPage: (input) => createPage(input),
     getPage: (id) => getPage(id),
     updatePage: async (id, version, input, options) => {
       const res = await updatePage(id, version, input, options);
@@ -70,6 +70,8 @@ const findWithSignal = (title: string, signal: AbortSignal) =>
   findPageByTitle(title, (input, init) => fetch(input, { ...init, signal }));
 
 const STATUS_LABELS: Record<SaveStatus, string> = {
+  new: "タイトルを決めると保存します",
+  creating: "作成中…",
   saved: "保存済み",
   unsaved: "未保存の変更あり",
   saving: "保存中…",
@@ -80,6 +82,7 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
 };
 
 const FAILURE_LEADS: Record<FailedOp["kind"], string> = {
+  create: "作成できませんでした。",
   save: "保存に失敗しました。",
   visibility: "公開設定を変えられませんでした。",
   delete: "削除できませんでした。",
@@ -87,6 +90,8 @@ const FAILURE_LEADS: Record<FailedOp["kind"], string> = {
 
 function retryLabel(op: FailedOp): string {
   switch (op.kind) {
+    case "create":
+      return "もう一度作成する";
     case "save":
       return "もう一度保存する";
     case "visibility":
@@ -100,31 +105,34 @@ function retryLabel(op: FailedOp): string {
 const MAX_UPLOAD_NOTICES = 5;
 
 /** 本文のリンクをクリックしても開けなかったときの案内。 */
-type LinkNotice =
-  | { kind: "missing"; title: string; busy: boolean; error: string | null }
-  | { kind: "error" };
+type LinkNotice = { kind: "missing"; title: string } | { kind: "error" };
 
 function useEditorSession(
-  page: Page,
+  page: Page | null,
+  newTitle: string,
   whenSettled: () => Promise<void>,
   onLinkRewrites: (title: string, queued: LinkRewritesQueued) => void,
 ): EditorSession {
   const [session] = useState(
     () =>
-      new EditorSession(page, {
-        api: editorApi(onLinkRewrites),
-        backup: createLocalBackupStore(),
-        whenSettled,
-      }),
+      new EditorSession(
+        page,
+        { api: editorApi(onLinkRewrites), backup: createLocalBackupStore(), whenSettled },
+        newTitle,
+      ),
   );
 
   useEffect(() => {
     const unbind = bindLifecycle(session, document, window);
     const unregister = registerEditor(session);
+    const unregisterLeave = registerLeaveBeforeNewPage(() => void session.leave());
     const leaveRewrites = linkRewrites.register(session);
+    // title を渡して開いた新規作成の画面は、title 欄の確定を待たずに作る
+    if (session.getState().uncreated) void session.commitTitle();
     return () => {
       unbind();
       unregister();
+      unregisterLeave();
       // アプリ内の遷移でも、未保存の変更をここで送る。送り終えるまでは、step がこのページを
       // 書き換えたら取り込めるよう、リンクの書き換えからは外さない
       void session.leave().finally(leaveRewrites);
@@ -135,18 +143,27 @@ function useEditorSession(
 }
 
 interface PageEditorProps {
-  page: Page;
+  /** null なら、まだ作っていないページ（新規作成の画面）を開く */
+  page: Page | null;
+  /**
+   * 新規作成の画面の title 欄の初期値。空なら title 欄に、空でなければ本文にカーソルを置き、
+   * 空でなければ開いてすぐに作る。
+   */
+  newTitle?: string;
   /**
    * 添付（画像）を使える環境か。`/api/me` の features。false なら貼り付けと drop をアップロードしない。
    * 作った時点の値で固定される（エディタを作り直さない限り反映されない）。
    * 後から変わりうるなら、PageView の key に含めて画面ごと作り直させる。
    */
   attachments?: boolean;
-  /** 保存済みの title と公開範囲が決まるたびに呼ぶ。URL と document.title を合わせるため */
+  /**
+   * 保存済みの title と公開範囲が決まるたびに呼ぶ。URL と document.title を合わせるため。
+   * まだ作っていないページでは、作れるまで呼ばない
+   */
   onShown?: (page: Pick<Page, "id" | "title" | "visibility">) => void;
 }
 
-export function PageEditor({ page, attachments = false, onShown }: PageEditorProps) {
+export function PageEditor({ page, newTitle = "", attachments = false, onShown }: PageEditorProps) {
   const editor = useRef<BodyEditorHandle>(null);
   const titleEditor = useRef<TitleEditorHandle>(null);
   // リンクに書けないと知らされた title。保存の応答は、積んだものも飛ばしたものも無ければ書き換えの
@@ -154,6 +171,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
   const [unsafeTitle, setUnsafeTitle] = useState<string | null>(null);
   const session = useEditorSession(
     page,
+    newTitle,
     async () => {
       await Promise.all([titleEditor.current?.whenSettled(), editor.current?.whenSettled()]);
     },
@@ -163,11 +181,16 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
     },
   );
   const state = useSyncExternalStore(session.subscribe, session.getState);
-  const { title: savedTitle, visibility: savedVisibility } = state.base;
+  const { id: pageId, title: savedTitle, visibility: savedVisibility } = state.base;
+  const { uncreated } = state;
+  // カーソルを置く先は開いた時点で決め、作れた後も変えない
+  const [focusTarget] = useState(() =>
+    page === null ? (session.getState().draft.title === "" ? "title" : "body") : null,
+  );
 
   useEffect(() => {
-    onShown?.({ id: page.id, title: savedTitle, visibility: savedVisibility });
-  }, [onShown, page.id, savedTitle, savedVisibility]);
+    if (!uncreated) onShown?.({ id: pageId, title: savedTitle, visibility: savedVisibility });
+  }, [onShown, uncreated, pageId, savedTitle, savedVisibility]);
   const { goTo } = useFragmentJump(editor);
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
@@ -175,11 +198,14 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
   const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
   const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
-  const [links] = useState(() => createWikiLinks({ pageId: page.id }));
+  const [links] = useState(() => createWikiLinks({ pageId: () => session.getState().base.id }));
   const [attachmentUrl] = useState(() =>
     createAttachmentUrlResolver({
       enabled: attachments,
-      pageId: page.id,
+      pageId: () => {
+        const current = session.getState();
+        return current.uncreated ? null : current.base.id;
+      },
       embedPageId: (target) => links.embedPageId(target),
     }),
   );
@@ -194,15 +220,35 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
         ),
     }),
   );
-  // 作った直後に開いたときだけ、本文にカーソルを置く。印は開いた時点の 1 回で使い切る
-  const [focusBody] = useState(() => wantsBodyFocus(page.id));
-  useEffect(() => {
-    clearBodyFocusRequest(page.id);
-  }, [page.id]);
+  // 添付はページの id の下に置くので、作る前の貼り付けは受け付けない
+  const [upload] = useState<UploadAttachment>(() => (file: File) => {
+    if (!session.getState().uncreated) return uploader.upload(file);
+    const message = "画像は、タイトルを決めてページを作ってから貼ってください。";
+    setUploadNotices((current) =>
+      [
+        ...current.filter((notice) => notice.message !== message),
+        { kind: "error" as const, message },
+      ].slice(-MAX_UPLOAD_NOTICES),
+    );
+    return Promise.reject(new Error("page not created"));
+  });
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
-  /** 作成の応答を待っている title。null なら作成中ではない */
-  const creating = useRef<string | null>(null);
+  /** title の重複で作れなかったとき、すでにあるページ。開く導線に使う */
+  const [taken, setTaken] = useState<{ title: string; href: string } | null>(null);
+  const titleTaken = state.failedOp?.kind === "create" && state.failedOp.titleTaken;
+  const takenTitle = titleTaken ? state.draft.title : null;
+
+  useEffect(() => {
+    if (takenTitle === null) return;
+    const controller = new AbortController();
+    void findWithSignal(takenTitle, controller.signal).then((res) => {
+      if (!controller.signal.aborted && res.ok) {
+        setTaken({ title: takenTitle, href: pageHrefFor(res.value) });
+      }
+    });
+    return () => controller.abort();
+  }, [takenTitle]);
 
   useEffect(() => {
     void titleIndex.refresh();
@@ -237,10 +283,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
       goTo(hashOfLink(link));
       return;
     }
-    // 作成中の title をもう一度押されても、作成の表示と応答を取り替えない
-    if (creating.current !== null && foldTitle(creating.current) === foldTitle(link.target)) return;
     linkClick.current?.abort();
-    creating.current = null;
     const controller = new AbortController();
     linkClick.current = controller;
     setLinkNotice(null);
@@ -248,47 +291,11 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
     if (controller.signal.aborted) return;
     if (found.kind === "found") {
       const hash = hashOfLink(link);
-      if (found.page.id === page.id && hash !== "") goTo(hash);
+      if (found.page.id === pageId && hash !== "") goTo(hash);
       else navigate(`${pageHrefFor(found.page)}${hash}`);
     } else if (found.kind === "missing") {
-      setLinkNotice({ kind: "missing", title: link.target, busy: false, error: null });
+      setLinkNotice({ kind: "missing", title: link.target });
     } else setLinkNotice({ kind: "error" });
-  }
-
-  // 作ったページを開くので、未保存の変更はこのページを離れるときの leave が送る。
-  // 応答を待つ間に別の link を押す、閉じる、ページを離れるとクリックの controller が中断される。
-  // その場合は作成の応答が来ても遷移しない（作成の要求自体は止めず、ページはできる）
-  async function createLinkedPage(title: string) {
-    if (creating.current !== null) return;
-    linkClick.current?.abort();
-    const controller = new AbortController();
-    linkClick.current = controller;
-    creating.current = title;
-    setLinkNotice({ kind: "missing", title, busy: true, error: null });
-    try {
-      const res = await createPage({ title, body: "" });
-      if (controller.signal.aborted) return;
-      if (res.ok) {
-        navigate(pageHrefFor(res.value));
-        return;
-      }
-      if (res.reason === "title_conflict") {
-        // 別のところで同じ title のページができていた
-        const existing = await links.lookup(title, controller.signal);
-        if (controller.signal.aborted) return;
-        if (existing.kind === "found") {
-          navigate(pageHrefFor(existing.page));
-          return;
-        }
-      }
-      const message =
-        res.reason === "unauthorized"
-          ? "ログインの期限が切れました。ログインし直してください"
-          : failureMessage(res, "作成できなかった");
-      setLinkNotice({ kind: "missing", title, busy: false, error: message });
-    } finally {
-      if (linkClick.current === controller) creating.current = null;
-    }
   }
 
   async function handleDelete() {
@@ -300,7 +307,8 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
   // 削除の再試行は確認を挟まない。ボタン自体が「もう一度削除する」と明示している
   async function retryFailed(op: FailedOp | null) {
     if (op === null) return;
-    if (op.kind === "save") await session.flush();
+    if (op.kind === "create") await session.retryCreate();
+    else if (op.kind === "save") await session.flush();
     else if (op.kind === "visibility") await session.changeVisibility(op.to);
     else if (await session.remove()) navigate(homeHref());
   }
@@ -308,7 +316,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
   const rail = (
     <>
       <Outline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
-      <Backlinks pageId={page.id} />
+      {!uncreated && <Backlinks pageId={pageId} />}
       <RailSection title="公開設定">
         <div className="segmented">
           {(["draft", "public"] as const).map((visibility) => (
@@ -325,21 +333,24 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           ))}
         </div>
       </RailSection>
-      <RailSection title="情報">
-        <dl className="facts">
-          <dt>版</dt>
-          <dd>{state.base.version}</dd>
-          <dt>更新</dt>
-          <dd>{formatTime(state.base.updatedAt)}</dd>
-          <dt>作成</dt>
-          <dd>{formatTime(state.base.createdAt)}</dd>
-        </dl>
-      </RailSection>
+      {!uncreated && (
+        <RailSection title="情報">
+          <dl className="facts">
+            <dt>版</dt>
+            <dd>{state.base.version}</dd>
+            <dt>更新</dt>
+            <dd>{formatTime(state.base.updatedAt)}</dd>
+            <dt>作成</dt>
+            <dd>{formatTime(state.base.createdAt)}</dd>
+          </dl>
+        </RailSection>
+      )}
       <div>
         <button
           type="button"
           className="button button-quiet button-danger"
           disabled={
+            uncreated ||
             !idle ||
             state.gone ||
             state.authLost ||
@@ -417,7 +428,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           </section>
         )}
 
-        {state.error !== null && state.failedOp !== null && (
+        {state.error !== null && state.failedOp !== null && state.failedOp.kind !== "create" && (
           <section className="message message-error" role="alert">
             <p>
               {FAILURE_LEADS[state.failedOp.kind]}
@@ -449,18 +460,15 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
             {linkNotice.kind === "error" ? (
               <p>リンク先を調べられませんでした。通信を確かめて、もう一度クリックしてください。</p>
             ) : (
-              <>
-                <p>「{linkNotice.title}」のページはまだありません。</p>
-                {linkNotice.error !== null && <p>{linkNotice.error}</p>}
-              </>
+              <p>「{linkNotice.title}」のページはまだありません。</p>
             )}
             <div className="actions">
               {linkNotice.kind === "missing" && (
                 <button
                   type="button"
                   className="button button-primary"
-                  disabled={linkNotice.busy}
-                  onClick={() => void createLinkedPage(linkNotice.title)}
+                  // このページの未保存の変更は、離れるときの leave が送る
+                  onClick={() => openNewPage({ title: linkNotice.title })}
                 >
                   作成して開く
                 </button>
@@ -507,22 +515,54 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           ref={titleEditor}
           value={state.titleInput ?? state.draft.title}
           readOnly={readOnly}
+          autoFocus={focusTarget === "title"}
           bodyView={() => editor.current?.view() ?? null}
           onChange={(title) => session.editTitle(title)}
           onCommit={() => void session.commitTitle()}
           onBlur={() => void session.commitTitle()}
         />
+        {state.error !== null && state.failedOp?.kind === "create" && (
+          // 作成は title の確定で起きるので、失敗は title のすぐ下で知らせる
+          <section className="message message-error" role="alert">
+            <p>
+              {FAILURE_LEADS.create}
+              {state.error}
+            </p>
+            {state.failedOp.titleTaken ? (
+              <p>
+                タイトルを変えて Enter を押すと、もう一度作ります。
+                {taken !== null && taken.title === state.draft.title && (
+                  <>
+                    {" "}
+                    <Link href={taken.href}>そのページを開く</Link>
+                  </>
+                )}
+              </p>
+            ) : (
+              <div className="actions">
+                <button
+                  type="button"
+                  className="button"
+                  disabled={!idle}
+                  onClick={() => void retryFailed(state.failedOp)}
+                >
+                  {retryLabel(state.failedOp)}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
           ref={editor}
           value={state.draft.body}
           readOnly={readOnly}
-          autoFocus={focusBody}
+          autoFocus={focusTarget === "body"}
           pageIndex={titleIndex}
           linkTargets={linkTargets}
           links={links}
           resolveAttachmentUrl={attachmentUrl}
-          {...(attachments ? { onUploadAttachment: uploader.upload, acceptAttachment } : {})}
+          {...(attachments ? { onUploadAttachment: upload, acceptAttachment } : {})}
           onWikiLinkClick={(link) => void handleWikiLinkClick(link)}
           onChange={(body) => session.edit({ ...session.getState().draft, body })}
           onBlur={() => void session.flush()}

@@ -16,6 +16,7 @@ export interface Draft {
 }
 
 export interface EditorApi {
+  createPage(input: Draft): Promise<ApiResult<Page>>;
   getPage(id: string): Promise<ApiResult<Page>>;
   updatePage(
     id: string,
@@ -53,18 +54,27 @@ export interface ProcessedLinkRewrite {
 }
 
 export type FailedOp =
+  | { kind: "create"; titleTaken: boolean }
   | { kind: "save" }
   | { kind: "visibility"; to: Visibility }
   | { kind: "delete" };
 
 const NO_ERROR = { error: null, failedOp: null } as const;
 
+/** まだ作っていないページの退避の key。page id は 22 文字なので重ならない。 */
+export const NEW_PAGE_BACKUP_KEY = "new";
+
 export interface EditorState {
-  /** サーバーで最後に確認した内容。保存済みかどうかはこれと draft の比較で決まる。 */
+  /**
+   * サーバーで最後に確認した内容。保存済みかどうかはこれと draft の比較で決まる。
+   * 作る前は、空の title と本文の仮の版（id は空文字列、version は 0）。
+   */
   base: Page;
+  /** まだサーバーに無いページ。title の確定（commitTitle）で作る。 */
+  uncreated: boolean;
   draft: Draft;
-  /** 書き込み中の操作。保存・visibility・削除は直列に走るので 1 つだけ。 */
-  busy: "saving" | "visibility" | "deleting" | null;
+  /** 書き込み中の操作。作成・保存・visibility・削除は直列に走るので 1 つだけ。 */
+  busy: "creating" | "saving" | "visibility" | "deleting" | null;
   /** 直近の失敗の説明。次の編集か再試行で消える。どの操作の失敗かは failedOp が持つ。 */
   error: string | null;
   /** error を起こした操作。保存の失敗だけが保存の状態（SaveStatus）になる。 */
@@ -85,7 +95,16 @@ export interface EditorState {
   titleInput: string | null;
 }
 
-export type SaveStatus = "saved" | "unsaved" | "saving" | "error" | "conflict" | "auth" | "gone";
+export type SaveStatus =
+  | "new"
+  | "creating"
+  | "saved"
+  | "unsaved"
+  | "saving"
+  | "error"
+  | "conflict"
+  | "auth"
+  | "gone";
 
 export const isDirty = (state: Pick<EditorState, "base" | "draft">): boolean =>
   state.draft.title !== state.base.title || state.draft.body !== state.base.body;
@@ -107,10 +126,22 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.gone) return "gone";
   if (state.authLost) return "auth";
   if (state.conflict !== null) return "conflict";
+  if (state.busy === "creating") return "creating";
   if (state.busy === "saving") return "saving";
   if (state.error !== null && state.failedOp?.kind === "save") return "error";
+  if (state.uncreated) return "new";
   return isDirty(state) || hasPendingTitle(state) ? "unsaved" : "saved";
 }
+
+const placeholderPage = (now: number): Page => ({
+  id: "",
+  title: "",
+  body: "",
+  visibility: "draft",
+  version: 0,
+  createdAt: now,
+  updatedAt: now,
+});
 
 const DEFAULT_AUTOSAVE_MS = 2000;
 const DEFAULT_MIN_CHECK_MS = 3000;
@@ -147,8 +178,20 @@ export class EditorSession {
    * 表に戻るまで保存しない（内容は退避に残る）。hidden と unmount を区別するより単純なのでこうしている。
    */
   private left = false;
+  /** 応答を待っている作成。title の Enter に続く blur が、同じページをもう 1 つ作らないようにまとめる */
+  private creating: Promise<void> | null = null;
+  /**
+   * 作る前の退避（NEW_PAGE_BACKUP_KEY）のうち、このセッションの内容を写したものの savedAt。
+   * 作れたときに消してよいのは、これと同じ退避だけ。key は新規作成の画面のすべてで共有なので、
+   * 作成の応答を待つ間に開き直した次の画面の退避を消さないようにする。
+   */
+  private ownNewBackupAt: number | null = null;
 
-  constructor(page: Page, deps: EditorDeps) {
+  /**
+   * page に null を渡すと、まだ作っていないページ（新規作成の画面）として始める。title は
+   * そのときの title 欄の初期値で、作成は始めない（呼び出し側が commitTitle で始める）。
+   */
+  constructor(page: Page | null, deps: EditorDeps, title = "") {
     this.api = deps.api;
     this.backup = deps.backup;
     this.now = deps.now ?? Date.now;
@@ -156,6 +199,23 @@ export class EditorSession {
     this.minCheckMs = deps.minCheckIntervalMs ?? DEFAULT_MIN_CHECK_MS;
     this.stashMs = deps.stashMs ?? DEFAULT_STASH_MS;
     this.whenSettled = deps.whenSettled ?? (() => Promise.resolve());
+    if (page === null) {
+      const saved = this.backup.load(NEW_PAGE_BACKUP_KEY);
+      const kept = saved !== null && (saved.title !== "" || saved.body !== "") ? saved : null;
+      this.state = {
+        base: placeholderPage(this.now()),
+        uncreated: true,
+        draft: { title: singleLineTitle(title), body: "" },
+        busy: null,
+        ...NO_ERROR,
+        conflict: null,
+        authLost: false,
+        gone: false,
+        pendingBackup: kept,
+        titleInput: null,
+      };
+      return;
+    }
     const saved = this.backup.load(page.id);
     // 離脱の保存が成立し、その後に step が本文を書き換えた退避は、サーバーと同じ内容として消す
     const differs =
@@ -165,6 +225,7 @@ export class EditorSession {
     if (saved !== null && !differs) this.backup.remove(page.id);
     this.state = {
       base: page,
+      uncreated: false,
       draft: { title: page.title, body: page.body },
       busy: null,
       ...NO_ERROR,
@@ -220,18 +281,24 @@ export class EditorSession {
     if (this.state.pendingBackup === null) this.backup.remove(pageId);
   }
 
+  private backupKey(): string {
+    return this.state.uncreated ? NEW_PAGE_BACKUP_KEY : this.state.base.id;
+  }
+
   private stash(): void {
     // 未決の間は上書きしない。手元は退避と同じ内容か、まだ復元していない
     if (this.state.pendingBackup !== null) return;
     const { base, draft } = this.state;
-    this.backup.save(base.id, {
+    const savedAt = this.now();
+    this.backup.save(this.backupKey(), {
       title: draft.title,
       body: draft.body,
       baseVersion: base.version,
       baseTitle: base.title,
       baseBody: base.body,
-      savedAt: this.now(),
+      savedAt,
     });
+    if (this.state.uncreated) this.ownNewBackupAt = savedAt;
   }
 
   /** 保存できなかった手元の内容を localStorage に残す。 */
@@ -243,7 +310,10 @@ export class EditorSession {
     // 画面側でも読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
     if (isReadOnly(this.state)) return;
     this.markActive();
-    this.set({ draft, ...NO_ERROR });
+    // 作成の失敗は title を直すまで案内を残す。本文を打っても直らないので消さない
+    const keepError =
+      this.state.failedOp?.kind === "create" && draft.title === this.state.draft.title;
+    this.set(keepError ? { draft } : { draft, ...NO_ERROR });
     this.rearm();
   }
 
@@ -268,7 +338,7 @@ export class EditorSession {
       this.stashIfDirty();
       return;
     }
-    if (this.state.authLost) {
+    if (this.state.authLost || this.state.uncreated) {
       // 保存はできないので、入力のたびに localStorage へ書かず、止まってからまとめて書く。
       // 離脱（leave）では待たずに書く
       this.clearStashTimer();
@@ -294,10 +364,62 @@ export class EditorSession {
     this.set({ titleInput: title });
   }
 
-  /** title 欄の確定（blur、Enter）。打っていた title を draft に入れて、すぐに保存する。 */
+  /**
+   * title 欄の確定（blur、Enter）。打っていた title を draft に入れて、すぐに保存する。
+   * まだ作っていないページなら、ここで作る。
+   */
   commitTitle(): Promise<void> {
     this.applyPendingTitle();
-    return this.flush();
+    return this.state.uncreated ? this.create() : this.flush();
+  }
+
+  /**
+   * まだ作っていないページを、手元の title と本文で作る。title が空なら作らない。
+   * 応答を待つ間の入力は、作れた後に自動保存で送る。
+   */
+  private create(): Promise<void> {
+    if (this.creating !== null) return this.creating;
+    const run = this.enqueue(() => this.createNow()).finally(() => {
+      this.creating = null;
+    });
+    this.creating = run;
+    return run;
+  }
+
+  private async createNow(): Promise<void> {
+    const { uncreated, draft } = this.state;
+    if (!uncreated || !this.canWrite() || isReadOnly(this.state) || draft.title === "") return;
+    const sent: Draft = { ...draft };
+    this.clearStashTimer();
+    this.set({ busy: "creating", ...NO_ERROR });
+    const res = await this.api.createPage(sent);
+    if (res.ok) {
+      this.set({ base: res.value, uncreated: false, busy: null });
+      this.removeOwnNewBackup();
+      // 応答を待つ間に離れていれば rearm は退避を作ったページの key へ写すだけで、保存はしない
+      if (isDirty(this.state)) this.rearm();
+      return;
+    }
+    this.set({ busy: null });
+    if (res.reason === "unauthorized") {
+      this.set({ authLost: true });
+      this.stashIfDirty();
+      return;
+    }
+    this.set({
+      error: failureMessage(res, "作成できなかった"),
+      failedOp: { kind: "create", titleTaken: res.reason === "title_conflict" },
+    });
+    this.stashIfDirty();
+  }
+
+  private removeOwnNewBackup(): void {
+    if (this.state.pendingBackup !== null || this.ownNewBackupAt === null) return;
+    const saved = this.backup.load(NEW_PAGE_BACKUP_KEY);
+    if (saved !== null && saved.savedAt === this.ownNewBackupAt) {
+      this.backup.remove(NEW_PAGE_BACKUP_KEY);
+    }
+    this.ownNewBackupAt = null;
   }
 
   /**
@@ -332,7 +454,8 @@ export class EditorSession {
    * すぐには送り直さず、自動保存に任せる（書き換えが続く間に送り直しを重ねない）。
    */
   private async saveIfDirty(options: UpdateOptions = {}, retried = false): Promise<void> {
-    if (!this.canWrite() || !isDirty(this.state)) return;
+    // 作る前のページは本文の blur や離脱では作らない。作るのは title の確定だけ
+    if (this.state.uncreated || !this.canWrite() || !isDirty(this.state)) return;
     const { base } = this.state;
     const snapshot: Draft = { ...this.state.draft };
     this.set({ busy: "saving", ...NO_ERROR });
@@ -498,7 +621,7 @@ export class EditorSession {
       if (isDirty(this.state)) this.rearm();
     }
     return this.enqueue(async () => {
-      if (!this.canWrite()) return;
+      if (this.state.uncreated || !this.canWrite()) return;
       const at = this.now();
       if (at - this.lastCheckAt < this.minCheckMs) return;
       this.lastCheckAt = at;
@@ -539,7 +662,9 @@ export class EditorSession {
    * conflict を返して呼び直され、保存の 409 は書き換えを重ねて送り直すので、手元の編集は失わない。
    */
   linkRewritten(processed: ProcessedLinkRewrite): Promise<void> {
-    if (processed.sourcePageId !== this.state.base.id) return Promise.resolve();
+    if (this.state.uncreated || processed.sourcePageId !== this.state.base.id) {
+      return Promise.resolve();
+    }
     return this.enqueue(() => this.adoptLinkRewrite(processed.version));
   }
 
@@ -601,7 +726,13 @@ export class EditorSession {
   retry(): Promise<void> {
     this.markActive();
     this.set({ authLost: false, ...NO_ERROR });
-    return this.flush();
+    return this.state.uncreated ? this.create() : this.flush();
+  }
+
+  /** 作成の失敗の再試行。title を変えずに、もう一度作る。 */
+  retryCreate(): Promise<void> {
+    this.markActive();
+    return this.create();
   }
 
   /**
@@ -623,6 +754,13 @@ export class EditorSession {
     this.markActive();
     const draft = { title: saved.title, body: saved.body };
     this.set({ pendingBackup: null, titleInput: null });
+    if (this.state.uncreated) {
+      // 戻した内容は作れたときに消す。title があれば、確定し直させずにそのまま作る
+      this.ownNewBackupAt = saved.savedAt;
+      this.edit(draft);
+      if (draft.title !== "") void this.create();
+      return;
+    }
     if (saved.baseVersion === this.state.base.version) {
       this.edit(draft);
       return;
@@ -644,14 +782,17 @@ export class EditorSession {
 
   discardBackup(): void {
     if (this.state.pendingBackup === null) return;
-    this.backup.remove(this.state.base.id);
+    this.backup.remove(this.backupKey());
     this.set({ pendingBackup: null });
+    // title を渡して開いた新規作成の画面は、未決の退避が作成を止めていた
+    if (this.state.uncreated && this.state.draft.title !== "") void this.create();
   }
 
   /** 未保存の変更を先に保存してから変える。保存できなければ visibility は変えない。 */
   changeVisibility(visibility: Visibility): Promise<void> {
     this.markActive();
     return this.enqueue(async () => {
+      if (this.state.uncreated) return;
       this.clearTimer();
       // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える
       this.set(NO_ERROR);
@@ -683,7 +824,9 @@ export class EditorSession {
   remove(): Promise<boolean> {
     return this.enqueue(async () => {
       // 退避が未決のまま消すと、復元の機会を失う
-      if (!this.canWrite() || this.state.pendingBackup !== null) return false;
+      if (this.state.uncreated || !this.canWrite() || this.state.pendingBackup !== null) {
+        return false;
+      }
       this.clearTimer();
       const { base } = this.state;
       this.set({ busy: "deleting", ...NO_ERROR });
@@ -699,13 +842,18 @@ export class EditorSession {
     });
   }
 
-  /** ページを離れるとき。打っていた title を確定し、未保存の内容を退避してから保存を試みる。 */
+  /**
+   * ページを離れるとき。打っていた title を確定し、未保存の内容を退避してから保存を試みる。
+   * まだ作っていないページは作らず、退避だけを残す。作成の応答を待っている間に離れたときも、
+   * 作れた後に続きを保存しない（離れた後の保存の列に、作ったページへの保存を並べない）。
+   */
   leave(): Promise<void> {
     this.applyPendingTitle();
     this.left = true;
     this.clearTimer();
     this.clearStashTimer();
     if (!this.state.gone) this.stashIfDirty();
+    if (this.state.uncreated) return Promise.resolve();
     return this.flush({ keepalive: true });
   }
 }

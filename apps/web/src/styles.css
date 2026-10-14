@@ -408,16 +408,6 @@ a {
   color: var(--color-danger);
 }
 
-.text-input {
-  min-height: var(--control-height);
-  padding: 0 var(--space-3);
-  font: inherit;
-  color: var(--color-fg);
-  background: var(--color-input);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -761,44 +751,6 @@ a {
   font-size: var(--font-size-sm);
 }
 
-/* ダイアログ */
-
-.dialog {
-  width: min(100% - var(--space-5), var(--dialog-width));
-  padding: var(--space-4);
-  color: var(--color-fg);
-  background: var(--color-bg);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-popover);
-}
-
-.dialog::backdrop {
-  background: var(--color-backdrop);
-}
-
-.dialog-title {
-  margin: 0 0 var(--space-3);
-  font-family: var(--font-serif);
-  font-size: var(--font-size-lg);
-  letter-spacing: var(--letter-spacing-heading);
-}
-
-.field {
-  display: block;
-  margin-bottom: var(--space-3);
-}
-
-.field-label {
-  display: block;
-  font-size: var(--font-size-sm);
-  color: var(--color-fg-muted);
-}
-
-.field .text-input {
-  width: 100%;
-}
-
 /* quick switcher: 上端を固定する。中央に置くと、候補が減るたびに入力欄が上下に動く */
 
 .switcher {
@@ -850,10 +802,9 @@ a {
 /*
  * iOS は font-size が 16px 未満の input に focus するとページを拡大し、拡大が残る。
  * 本文の大きさ（--font-size-base）は変えず、タッチ操作の端末の入力欄だけを 16px にする。
- * 3 つの入力欄の基本の規則より後ろに置き、同じ詳細度で上書きする。
+ * 入力欄の基本の規則より後ろに置き、同じ詳細度で上書きする。
  */
 @media (pointer: coarse) {
-  .text-input,
   .search-input,
   .switcher-input {
     font-size: var(--font-size-input);

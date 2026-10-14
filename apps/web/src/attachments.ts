@@ -121,8 +121,8 @@ export function attachmentUrl(pageId: string, name: string): string {
 export interface AttachmentUrlResolverOptions {
   /** `/api/me` の features.attachments。false の間は要求を出さない */
   enabled: boolean;
-  /** この resolver を使うページの id */
-  pageId: string;
+  /** この resolver を使うページの id。作る前のページは null（このページの添付は引かない） */
+  pageId: () => string | null;
   /** 入れ子の embed の埋め込み先（本文に書かれたままの title）の id。取得前と読めないページは null */
   embedPageId: (target: string) => string | null;
 }
@@ -137,7 +137,7 @@ export function createAttachmentUrlResolver(
 ): AttachmentUrlResolver {
   return (filename, embedTarget) => {
     if (!options.enabled || !isAttachmentName(filename)) return null;
-    const pageId = embedTarget === undefined ? options.pageId : options.embedPageId(embedTarget);
+    const pageId = embedTarget === undefined ? options.pageId() : options.embedPageId(embedTarget);
     return pageId === null ? null : attachmentUrl(pageId, filename);
   };
 }

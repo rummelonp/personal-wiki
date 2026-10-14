@@ -93,7 +93,6 @@
   --prose-width: 40em; /* 本文の幅 */
   --list-width: 42.5rem; /* トップの一覧の幅 */
   --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
-  --dialog-width: 24rem; /* ダイアログの幅の上限（狭い画面では画面幅から余白を引いた幅） */
   --switcher-width: 34rem; /* quick switcher の幅 */
   --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */

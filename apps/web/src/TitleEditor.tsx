@@ -30,6 +30,8 @@ export interface TitleEditorProps {
   readOnly: boolean;
   /** Enter と ↓ で移る先の本文の view */
   bodyView: () => EditorView | null;
+  /** 作った時点で 1 度だけ、エディタに focus する（新規作成の画面）。読み取り専用なら focus しない */
+  autoFocus?: boolean;
   ref?: Ref<TitleEditorHandle>;
 }
 
@@ -48,6 +50,7 @@ export function TitleEditor({
   onBlur,
   readOnly,
   bodyView,
+  autoFocus = false,
   ref,
 }: TitleEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -56,8 +59,8 @@ export function TitleEditor({
   const settledWaiters = useRef<(() => void)[]>([]);
 
   // EditorView の listener は作ったときに 1 度だけ結ぶので、最新の props は ref から読む
-  const latest = useRef({ value, onChange, onCommit, onBlur, readOnly, bodyView });
-  latest.current = { value, onChange, onCommit, onBlur, readOnly, bodyView };
+  const latest = useRef({ value, onChange, onCommit, onBlur, readOnly, bodyView, autoFocus });
+  latest.current = { value, onChange, onCommit, onBlur, readOnly, bodyView, autoFocus };
 
   useEffect(() => {
     const parent = host.current;
@@ -94,6 +97,7 @@ export function TitleEditor({
     });
     created = editor;
     view.current = editor;
+    if (initial.autoFocus && !initial.readOnly) editor.focus();
     const waiters = settledWaiters.current;
     return () => {
       view.current = null;

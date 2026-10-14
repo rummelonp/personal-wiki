@@ -2,7 +2,6 @@ import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/do
 import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor";
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
-import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
 import { highlightMatches } from "./highlight";
 import { PlusIcon, SearchIcon } from "./icons";
 import {
@@ -11,6 +10,7 @@ import {
   TITLE_INDEX_MAX_REQUESTS,
   type TitleIndex,
 } from "./link-sources";
+import { openNewPage } from "./new-page";
 import { listPageTitles } from "./pages-api";
 import { homeHref, navigate, pageHref } from "./route";
 
@@ -80,11 +80,12 @@ export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps)
           index={index}
           owner={owner}
           onClose={() => onOpenChange(false)}
-          onCreated={() => {
-            // 作成の後は、modal の外の要素（キーボードを保つ input）に focus できるよう、
+          onCreate={(title) => {
+            // modal の間は外の要素に focus できないので、新規作成の画面が title 欄に focus する前に、
             // state の反映を待たず今すぐ閉じる。dialog の onClose が state を合わせる
             dialogRef.current?.close();
             onOpenChange(false);
+            openNewPage({ title });
           }}
         />
       )}
@@ -96,19 +97,17 @@ function SwitcherBody({
   index,
   owner,
   onClose,
-  onCreated,
+  onCreate,
 }: {
   index: TitleIndex;
   owner: boolean;
   onClose: () => void;
-  /** 作成が成功し、`createPageAndOpen` が移る直前に呼ぶ。dialog を閉じ終えること */
-  onCreated: () => void;
+  /** 「作成」の行を選んだとき。dialog を閉じて、その title で新規作成の画面を開く */
+  onCreate: (title: string) => void;
 }) {
   const [query, setQuery] = useState("");
   // null は「先頭の行」
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<CreateProblem | null>(null);
   // 一覧を取り直し終えたら、同じ index から候補を引き直させる
   const [, setLoaded] = useState(0);
   // マウスが載った行はすでに見えているので、それによる選択の変更ではスクロールしない
@@ -165,15 +164,6 @@ function SwitcherBody({
     }
   }, [activeOptionId]);
 
-  async function create() {
-    if (busy) return;
-    setBusy(true);
-    setProblem(null);
-    const failed = await createPageAndOpen(trimmed, onCreated);
-    setBusy(false);
-    if (failed !== null) setProblem(failed);
-  }
-
   function selectRow(row: Row) {
     if (row.kind === "page") {
       onClose();
@@ -182,7 +172,7 @@ function SwitcherBody({
       onClose();
       navigate(homeHref(trimmed));
     } else {
-      void create();
+      onCreate(trimmed);
     }
   }
 
@@ -225,7 +215,6 @@ function SwitcherBody({
         onChange={(event) => {
           setQuery(event.target.value);
           setSelectedKey(null);
-          setProblem(null);
         }}
         onKeyDown={handleKeyDown}
       />
@@ -261,7 +250,6 @@ function SwitcherBody({
             className="switcher-option"
             aria-selected={i === selectedIndex}
             data-row-kind={row.kind}
-            disabled={row.kind === "create" && busy}
             onMouseMove={() => {
               if (i !== selectedIndex) hoveredRef.current = true;
               setSelectedKey(rowKey(row));
@@ -290,7 +278,6 @@ function SwitcherBody({
           </button>
         ))}
       </div>
-      {problem !== null && <CreateProblemMessage problem={problem} onOpenExisting={onClose} />}
       {/* 物理キーボードの案内なので、タッチ操作が主の狭い幅では出さない（CSS） */}
       <p className="switcher-hints" aria-hidden="true">
         <span>↑↓ 選ぶ</span>
