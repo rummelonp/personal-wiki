@@ -175,6 +175,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const titleEditor = useRef<TitleEditorHandle>(null);
   // リンクに書けないと知らされた title。保存の応答は、積んだものも飛ばしたものも無ければ書き換えの
   // 数を返さないので、応答ではなく保存済みの title と比べて、別の title に変えたら案内を消す
+  const [pendingVisibility, setPendingVisibility] = useState<"draft" | "public" | null>(null);
   const [unsafeTitle, setUnsafeTitle] = useState<string | null>(null);
   const session = useEditorSession(
     page,
@@ -217,6 +218,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
+  const deleting = state.busy === "deleting";
   const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
   const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
@@ -320,6 +322,16 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     } else setLinkNotice({ kind: "error" });
   }
 
+  // 待っている先は session の状態に無いので、ここで持つ。再試行の経路も通し、どちらでも選択に出す
+  async function changeVisibility(to: "draft" | "public") {
+    setPendingVisibility(to);
+    try {
+      await session.changeVisibility(to);
+    } finally {
+      setPendingVisibility(null);
+    }
+  }
+
   async function handleDelete() {
     if (!window.confirm(`「${state.base.title}」を削除します。元に戻せません。よろしいですか？`))
       return;
@@ -331,7 +343,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (op === null) return;
     if (op.kind === "create") await session.retryCreate();
     else if (op.kind === "save") await session.flush();
-    else if (op.kind === "visibility") await session.changeVisibility(op.to);
+    else if (op.kind === "visibility") await changeVisibility(op.to);
     else if (await session.remove()) navigate(homeHref());
   }
 
@@ -365,8 +377,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           }
           onClick={() => void handleDelete()}
         >
-          このページを削除
+          {deleting ? "削除中…" : "このページを削除"}
         </button>
+        <span className="visually-hidden" role="status">
+          {deleting ? "削除中…" : ""}
+        </span>
       </div>
     </>
   );
@@ -616,7 +631,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
               : state.draft.title !== savedTitle
           }
           sharePath={pageHrefFor({ id: pageId, title: savedTitle, visibility: "public" })}
-          onChange={(to) => session.changeVisibility(to)}
+          pending={pendingVisibility}
+          onChange={changeVisibility}
         />
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor

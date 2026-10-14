@@ -390,6 +390,11 @@ a {
   opacity: 0.5;
 }
 
+/* 応答を待っている間は、押した選択を薄くせず、押したことが分かるようにする */
+.segmented[data-pending] .segmented-option[aria-pressed="true"]:disabled {
+  opacity: 1;
+}
+
 /* 公開の状態と操作の行。title の下に置く */
 
 .publish-bar {

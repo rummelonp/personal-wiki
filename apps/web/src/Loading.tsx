@@ -68,6 +68,30 @@ export function useSkeletonPainted(): boolean {
   return painted;
 }
 
+/**
+ * 操作の応答を待つ間の状態の文字を、待ちが遅れの長さを超えたときだけ出すための印。
+ * すぐ届く応答で文字がちらつかないよう、帯と同じ遅れ（`LOADING_DELAY_MS`）を使う。
+ * 帯とは別の待ちなので、帯を描いた記録（`painting`）は読み書きしない。
+ */
+export function useDelayedWhile(active: boolean): boolean {
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setShown(false);
+      return;
+    }
+    if (delayMs <= 0) {
+      setShown(true);
+      return;
+    }
+    const timer = setTimeout(() => setShown(true), delayMs);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  return active && shown;
+}
+
 /** 支援技術にだけ伝える「読み込み中…」。取得中の領域の中に置く。 */
 export function LoadingStatus() {
   return (

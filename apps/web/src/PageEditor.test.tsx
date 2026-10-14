@@ -2,18 +2,21 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLoadingDelay } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites-api";
 import { PageEditor } from "./PageEditor";
 import {
   type ApiResult,
   createPage,
+  deletePage,
   findPageByTitle,
   getPage,
   listBacklinks,
   listPageTitles,
   type Page,
   resolvePages,
+  setVisibility,
   updatePage,
 } from "./pages-api";
 import { navigate } from "./route";
@@ -1346,5 +1349,133 @@ describe("リンクの書き換えの取り込み", () => {
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(3);
     expect(container?.textContent).not.toContain("この title はリンクに書けないので");
+  });
+});
+
+describe("公開の切り替えと削除の待ち", () => {
+  const PUBLIC: Page = { ...PAGE, visibility: "public" };
+  let restoreDelay: (() => void) | null = null;
+
+  afterEach(() => {
+    restoreDelay?.();
+    restoreDelay = null;
+  });
+
+  const option = (label: string) => {
+    const found = [
+      ...(container?.querySelectorAll<HTMLButtonElement>(".segmented-option") ?? []),
+    ].find((b) => b.textContent === label);
+    if (!found) throw new Error(`${label} の選択が無い`);
+    return found;
+  };
+  const publishNote = () => container?.querySelector(".publish-note")?.textContent;
+
+  function deferred<T>() {
+    let resolve: (value: T) => void = () => {};
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it("公開を押した直後に「公開」を選択中にして、遅れた後に「公開中…」を出す。押し直しは受けない", async () => {
+    restoreDelay = setLoadingDelay(40);
+    const reply = deferred<ApiResult<Page>>();
+    vi.mocked(setVisibility).mockReturnValue(reply.promise);
+    const { button } = renderPage();
+    await flushAsync();
+
+    act(() => option("公開").click());
+    act(() => button("公開する").click());
+    await flushAsync();
+    expect(setVisibility).toHaveBeenCalledWith(ID, 1, "public");
+    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("false");
+    expect(option("公開").disabled).toBe(true);
+    expect(option("下書き").disabled).toBe(true);
+    expect(publishNote()).toBe("");
+
+    await act(() => new Promise((resolve) => setTimeout(resolve, 60)));
+    expect(publishNote()).toBe("公開中…");
+
+    await act(async () => reply.resolve(ok({ ...PAGE, visibility: "public", version: 2 })));
+    await flushAsync();
+    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+    expect(option("公開").disabled).toBe(false);
+    expect(publishNote()).toBe("公開しました。");
+  });
+
+  it("公開が失敗したら元の「下書き」に戻し、失敗の通知を出す", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const reply = deferred<ApiResult<Page>>();
+    vi.mocked(setVisibility).mockReturnValue(reply.promise);
+    const { button } = renderPage();
+    await flushAsync();
+
+    act(() => option("公開").click());
+    act(() => button("公開する").click());
+    await flushAsync();
+    expect(publishNote()).toBe("公開中…");
+
+    await act(async () => reply.resolve({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(option("公開").getAttribute("aria-pressed")).toBe("false");
+    expect(publishNote()).toBe("");
+    expect(container?.textContent).toContain("公開設定を変えられませんでした");
+  });
+
+  it("下書きに戻す間は「下書き」を選択中にして「下書きに戻し中…」を出す", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const reply = deferred<ApiResult<Page>>();
+    vi.mocked(setVisibility).mockReturnValue(reply.promise);
+    renderPage(PUBLIC);
+    await flushAsync();
+
+    act(() => option("下書き").click());
+    await flushAsync();
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(option("公開").getAttribute("aria-pressed")).toBe("false");
+    expect(publishNote()).toBe("下書きに戻し中…");
+
+    await act(async () => reply.resolve(ok({ ...PUBLIC, visibility: "draft", version: 2 })));
+    await flushAsync();
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(publishNote()).toBe("下書きに戻しました。");
+  });
+
+  it("応答がすぐ届けば、状態の文字を出さない", async () => {
+    restoreDelay = setLoadingDelay(1000);
+    vi.mocked(setVisibility).mockResolvedValue(ok({ ...PUBLIC, version: 2 }));
+    const { button } = renderPage();
+    await flushAsync();
+
+    act(() => option("公開").click());
+    act(() => button("公開する").click());
+    await flushAsync();
+    expect(publishNote()).toBe("公開しました。");
+  });
+
+  it("削除の応答を待つ間は、削除ボタンを「削除中…」にして、読み上げ用の status にも出す", async () => {
+    const reply = deferred<ApiResult<null>>();
+    vi.mocked(deletePage).mockReturnValue(reply.promise);
+    const { button } = renderPage();
+    await flushAsync();
+    const remove = button("このページを削除");
+    const statusOf = () => remove.parentElement?.querySelector("[role='status']")?.textContent;
+    expect(statusOf()).toBe("");
+
+    act(() => remove.click());
+    await flushAsync();
+    expect(deletePage).toHaveBeenCalled();
+    expect(remove.textContent).toBe("削除中…");
+    expect(remove.disabled).toBe(true);
+    expect(statusOf()).toBe("削除中…");
+
+    await act(async () => reply.resolve({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    expect(remove.textContent).toBe("このページを削除");
+    expect(statusOf()).toBe("");
+    expect(button("もう一度削除する")).toBeDefined();
   });
 });

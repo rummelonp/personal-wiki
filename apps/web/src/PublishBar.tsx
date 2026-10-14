@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDelayedWhile } from "./Loading";
 
 type Visibility = "draft" | "public";
 
@@ -6,6 +7,11 @@ const OPTIONS: ReadonlyArray<{ value: Visibility; label: string }> = [
   { value: "draft", label: "下書き" },
   { value: "public", label: "公開" },
 ];
+
+const PENDING_NOTES: Record<Visibility, string> = {
+  public: "公開中…",
+  draft: "下書きに戻し中…",
+};
 
 /** 結果の知らせを出しておく時間。残しすぎると、前の操作の結果が今の状態のように読める */
 const NOTE_MS = 6_000;
@@ -25,6 +31,8 @@ interface PublishBarProps {
   titlePending: boolean;
   /** 匿名が開ける URL のパス。public のときの正の URL（title の URL、予約語の title は id の URL） */
   sharePath: string;
+  /** 切り替えを依頼して応答を待っている先。待っている間は、この選択を選択中として見せ、押し直しを受けない */
+  pending: Visibility | null;
   /** 切り替えを依頼し、済むまで待つ。失敗は呼び出し側の通知が伝え、状態は元のまま */
   onChange: (to: Visibility) => Promise<void>;
 }
@@ -45,6 +53,7 @@ export function PublishBar({
   externalBases,
   titlePending,
   sharePath,
+  pending,
   onChange,
 }: PublishBarProps) {
   const [confirming, setConfirming] = useState(false);
@@ -55,6 +64,9 @@ export function PublishBar({
   const urlInput = useRef<HTMLInputElement>(null);
   const previousVisibility = useRef(visibility);
   const refocusPublic = useRef(false);
+  // 選択は押した直後に動かす。文字は応答がすぐ届くときにちらつかないよう、遅らせて出す
+  const pendingShown = useDelayedWhile(pending !== null);
+  const shownVisibility = pending ?? visibility;
   const shareUrl = `${window.location.origin}${sharePath}`;
   const manualShown =
     manualUrl !== null && manualUrl === shareUrl && visibility === "public" && !uncreated;
@@ -131,7 +143,12 @@ export function PublishBar({
 
   return (
     <div className="publish-bar">
-      <fieldset className="segmented" aria-label="公開範囲">
+      <fieldset
+        className="segmented"
+        aria-label="公開範囲"
+        aria-busy={pending !== null}
+        data-pending={pending ?? undefined}
+      >
         {OPTIONS.map(({ value, label }) => (
           <button
             key={value}
@@ -139,8 +156,8 @@ export function PublishBar({
             type="button"
             className="segmented-option"
             data-value={value}
-            aria-pressed={visibility === value}
-            disabled={uncreated || disabled}
+            aria-pressed={shownVisibility === value}
+            disabled={uncreated || disabled || pending !== null}
             onClick={() => choose(value)}
           >
             {label}
@@ -160,7 +177,11 @@ export function PublishBar({
       )}
       {uncreated && <span className="publish-hint">ページを作ると、公開を選べます。</span>}
       <p className="publish-note" role="status" aria-live="polite">
-        {manualShown ? "コピーできませんでした。下の URL を選んでコピーしてください。" : note}
+        {pendingShown
+          ? PENDING_NOTES[pending as Visibility]
+          : manualShown
+            ? "コピーできませんでした。下の URL を選んでコピーしてください。"
+            : note}
       </p>
       {manualShown && (
         <input
