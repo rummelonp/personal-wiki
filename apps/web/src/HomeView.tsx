@@ -11,18 +11,19 @@ import { useEntryList } from "./useEntryList";
 interface HomeViewProps {
   query: string;
   tag: string;
+  owner: boolean;
 }
 
 /**
  * トップの配置。中央に検索欄と抜粋付きの一覧、右にタグの一覧を置く。
  * データは useEntryList、行は EntryRow が受け持つので、配置を変えるときはこのファイルだけを直す。
  */
-export function HomeView({ query, tag }: HomeViewProps) {
+export function HomeView({ query, tag, owner }: HomeViewProps) {
   const trimmed = query.trim();
   const searching = trimmed !== "";
   // 検索 API に tag の絞り込みは無いので、検索中は tag を一覧の取得にも強調にも使わない
   const effectiveTag = searching ? "" : tag;
-  const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag });
+  const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
   const tags = useTags();
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
@@ -50,6 +51,9 @@ export function HomeView({ query, tag }: HomeViewProps) {
           </p>
         )}
         {state.status === "loading" && <p className="muted">読み込み中…</p>}
+        {state.status === "query_too_short" && (
+          <p className="muted" role="status">{`${state.min} 文字以上で検索してください`}</p>
+        )}
         {state.status === "error" && (
           <p className="message message-error" role="alert">
             {state.message}

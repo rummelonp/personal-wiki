@@ -1,3 +1,4 @@
+import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { failureMessage, type ListedPage, listRecent, searchPages } from "./pages-api";
 
@@ -5,23 +6,31 @@ export type ListState =
   | { status: "loading" }
   | { status: "ready"; entries: ListedPage[]; next: string | null; loadingMore: boolean }
   | { status: "unauthorized" }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string }
+  /** 匿名の検索語が API の受け付ける長さに満たない。要求は送っていない。 */
+  | { status: "query_too_short"; min: number };
 
 export interface EntryListSource {
   /** 空でなければ検索結果。 */
   query: string;
   /** query が空のとき、このタグで絞った最近の更新。 */
   tag: string;
+  /** false（匿名）なら、API が 400 で拒む短い検索語を送らない。 */
+  owner: boolean;
 }
 
 /** 一覧のデータだけを扱う。見せ方（行、配置）は持たない。 */
-export function useEntryList({ query, tag }: EntryListSource) {
+export function useEntryList({ query, tag, owner }: EntryListSource) {
   const [state, setState] = useState<ListState>({ status: "loading" });
   // 条件が変わった後に遅れて届いた応答で、表示を上書きしない
   const generation = useRef(0);
 
   useEffect(() => {
     const mine = ++generation.current;
+    if (query !== "" && !owner && searchQueryLength(query) < ANONYMOUS_SEARCH_MIN_CHARS) {
+      setState({ status: "query_too_short", min: ANONYMOUS_SEARCH_MIN_CHARS });
+      return;
+    }
     setState({ status: "loading" });
     const load =
       query !== ""
@@ -39,7 +48,7 @@ export function useEntryList({ query, tag }: EntryListSource) {
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
       else setState({ status: "error", message: failureMessage(res, "取得できなかった") });
     });
-  }, [query, tag]);
+  }, [query, tag, owner]);
 
   const loadMore = useCallback(async () => {
     if (state.status !== "ready" || state.next === null || state.loadingMore) return;

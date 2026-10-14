@@ -38,11 +38,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function renderHome(query: string) {
+async function mountHome(query: string, owner: boolean) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<HomeView query={query} tag="" />));
+  await act(async () => root?.render(<HomeView query={query} tag="" owner={owner} />));
+}
+
+async function renderHome(query: string, owner = true) {
+  await mountHome(query, owner);
   await vi.waitFor(() => expect(container?.querySelector(".entries")).not.toBeNull());
 }
 
@@ -112,5 +116,38 @@ describe("HomeView の強調", () => {
     await renderHome("");
     expect(container?.querySelector(".entry-title")?.textContent).toBe("Hono のメモ");
     expect(container?.querySelector("mark")).toBeNull();
+  });
+});
+
+describe("HomeView の短い検索語", () => {
+  const guidance = () => container?.querySelector("[role='status']")?.textContent;
+
+  it("匿名の 1〜2 文字（NFKC と前後の空白を畳んだ後）は検索を送らず、文字数を案内する", async () => {
+    for (const query of ["a", "ab", " ab　", "ｶﾞｷ"]) {
+      await mountHome(query, false);
+      expect(guidance(), query).toBe("3 文字以上で検索してください");
+      expect(container?.querySelector(".message-error"), query).toBeNull();
+      act(() => root?.unmount());
+      container?.remove();
+    }
+    expect(searchPages).not.toHaveBeenCalled();
+  });
+
+  it("匿名でも 3 文字からは検索する", async () => {
+    vi.mocked(searchPages).mockResolvedValue(
+      ok([{ ...summary("AAAAAAAAAAAAAAAAAAAAAA", "abc"), excerpt: "abc" }]),
+    );
+    await renderHome("abc", false);
+    expect(searchPages).toHaveBeenCalledWith("abc");
+    expect(guidance()).toBeUndefined();
+  });
+
+  it("owner は 2 文字でも検索する", async () => {
+    vi.mocked(searchPages).mockResolvedValue(
+      ok([{ ...summary("AAAAAAAAAAAAAAAAAAAAAA", "ab"), excerpt: "ab" }]),
+    );
+    await renderHome("ab", true);
+    expect(searchPages).toHaveBeenCalledWith("ab");
+    expect(guidance()).toBeUndefined();
   });
 });

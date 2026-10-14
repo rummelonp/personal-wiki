@@ -137,6 +137,7 @@ export function App() {
             key={isOwner ? "owner" : "reader"}
             query={route.query}
             tag={route.tag}
+            owner={isOwner}
           />
         )}
         {ready && (route.name === "page" || route.name === "title") && (
