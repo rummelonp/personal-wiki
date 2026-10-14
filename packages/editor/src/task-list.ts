@@ -138,6 +138,8 @@ const taskListTheme = EditorView.baseTheme({
     margin: `0 ${TASK_CHECKBOX_EM.gap}em 0 0`,
     verticalAlign: "-0.15em",
     cursor: "pointer",
+    // 既定の青は、ホストの accent（ライトとダークで値が違う）と食い違う
+    accentColor: "var(--ui-color-accent)",
   },
   ".cm-lp-task-checkbox:disabled": { cursor: "default" },
   ".cm-lp-task-checked": { color: "var(--ui-color-muted)", textDecoration: "line-through" },

@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 import { isCompositionUnsettled } from "./ime";
 import { setReadOnly } from "./read-only";
+import { resetScheme, setScheme } from "./test-tokens";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+  resetScheme();
 });
 
 function mount(doc: string, options: CreateEditorOptions = {}): EditorView {
@@ -192,6 +194,22 @@ describe("task list checkbox", () => {
     setReadOnly(v, false);
     expect(checkboxes(v).map((box) => box.disabled)).toEqual([false]);
   });
+
+  it.each(["light", "dark"] as const)(
+    "%s: colors the checkbox with the accent token instead of the browser default",
+    (scheme) => {
+      setScheme(scheme);
+      const v = mount("- [x] a");
+      const box = checkboxes(v)[0];
+      if (!box) throw new Error("checkbox is not drawn");
+      const probe = document.createElement("span");
+      probe.style.color = "var(--ui-color-accent)";
+      v.dom.append(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      expect(getComputedStyle(box).accentColor).toBe(accent);
+    },
+  );
 
   it("draws no checkbox when Live Preview is off", () => {
     const v = mount("- [ ] a", { livePreview: false });
