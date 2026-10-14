@@ -8,6 +8,7 @@ import {
 import type { Context, Hono } from "hono";
 import type { AppEnv } from "../env";
 import { allowAnonymous, requireOwner } from "./middleware";
+import { boundRegistrationRequest } from "./oauth-registration";
 import {
   AUTHORIZATION_SERVER_METADATA_PATH,
   isOAuthEnabled,
@@ -28,20 +29,23 @@ import type { Scope } from "./principal";
  * OAuth の認可サーバーのルートを登録する。OAuth を閉じた環境（isOAuthEnabled）ではどれも 404 にする。
  * - メタデータ 2 つ、トークン、client の登録は匿名に開き、応答はライブラリが作る（クライアントは wiki の
  *   資格情報を持たない）。トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す。
- *   登録は KV に書く前に oauth-registration.ts の検査を通す
+ *   登録は、ライブラリに渡す前に本文の大きさを断り、KV に書く前に oauth-registration.ts の検査を通す
  * - 認可（同意画面）と接続の一覧は owner のセッションを要る。無ければ /_auth/login を経由して戻す。
  *   Access の対象は /_auth/login のままで、/_auth/oauth/* は Access を通さない
  * CORS と OPTIONS は扱わない。想定するクライアント（claude.ai など）はサーバーから呼ぶので、ブラウザで
  * 動く MCP のクライアントは対象にしない。
  */
 export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => number }) {
-  const serveProtocol = (c: Context<AppEnv>): Response | Promise<Response> => {
+  const serveProtocol = (
+    c: Context<AppEnv>,
+    request: Request = c.req.raw,
+  ): Response | Promise<Response> => {
     if (!isOAuthEnabled(c.env)) return c.notFound();
     const server = oauthServerFor(c.env, new URL(c.req.url).origin, now);
-    return server.fetch(c.req.raw, c.env, executionContextOf(c));
+    return server.fetch(request, c.env, executionContextOf(c));
   };
   return app
-    .get(AUTHORIZATION_SERVER_METADATA_PATH, allowAnonymous(), serveProtocol)
+    .get(AUTHORIZATION_SERVER_METADATA_PATH, allowAnonymous(), (c) => serveProtocol(c))
     .get(PROTECTED_RESOURCE_METADATA_PATH, allowAnonymous(), (c) => {
       if (!isOAuthEnabled(c.env)) return c.notFound();
       const { origin } = new URL(c.req.url);
@@ -53,8 +57,13 @@ export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => num
         resource_name: "personal-wiki",
       });
     })
-    .post(OAUTH_TOKEN_PATH, allowAnonymous(), serveProtocol)
-    .post(OAUTH_REGISTER_PATH, allowAnonymous(), serveProtocol)
+    .post(OAUTH_TOKEN_PATH, allowAnonymous(), (c) => serveProtocol(c))
+    .post(OAUTH_REGISTER_PATH, allowAnonymous(), async (c) => {
+      if (!isOAuthEnabled(c.env)) return c.notFound();
+      const bounded = await boundRegistrationRequest(c.req.raw);
+      if (bounded instanceof Response) return bounded;
+      return serveProtocol(c, bounded);
+    })
     .get(OAUTH_AUTHORIZE_PATH, allowAnonymous(), showConsent)
     .post(OAUTH_AUTHORIZE_PATH, requireOwner(), decideConsent)
     .get(OAUTH_GRANTS_PATH, allowAnonymous(), showGrants)

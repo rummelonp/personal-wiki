@@ -45,18 +45,27 @@ interface RegisteredClient {
   client_name?: string;
 }
 
+// 登録は Content-Length を必須にする。fetch は付けるが、app.request に文字列を渡しても付かない
+function jsonHeaders(body: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "Content-Length": String(new TextEncoder().encode(body).byteLength),
+  };
+}
+
 async function register(request: Request, metadata: Record<string, unknown> = {}) {
+  const body = JSON.stringify({
+    redirect_uris: [CALLBACK],
+    client_name: "Claude",
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    ...metadata,
+  });
   const res = await request("/_auth/oauth/register", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      redirect_uris: [CALLBACK],
-      client_name: "Claude",
-      token_endpoint_auth_method: "none",
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-      ...metadata,
-    }),
+    headers: jsonHeaders(body),
+    body,
   });
   expect(res.status, await res.clone().text()).toBe(201);
   return res.json<RegisteredClient>();
@@ -249,10 +258,17 @@ describe("client の登録（DCR）", () => {
     expect(client.client_name).toBe("Claude");
   });
 
-  function postRegistration(request: Request, body: string) {
+  function postRegistration(
+    request: Request,
+    body: string,
+    headers: Record<string, string | null> = {},
+  ) {
+    const merged: Record<string, string | null> = { ...jsonHeaders(body), ...headers };
     return request("/_auth/oauth/register", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.fromEntries(
+        Object.entries(merged).filter((entry): entry is [string, string] => entry[1] !== null),
+      ),
       body,
     });
   }
@@ -290,6 +306,36 @@ describe("client の登録（DCR）", () => {
     await register(request, { redirect_uris: ["https://other.example/cb"] });
     await register(request, { redirect_uris: ["http://127.0.0.1:8765/callback", CALLBACK] });
     expect(await registeredClientCount()).toBe(2);
+  });
+
+  it("Content-Length が無い、上限を超える、申告と合わない登録は、ライブラリに渡す前に断る", async () => {
+    const { request } = setup();
+    const small = JSON.stringify({ redirect_uris: [CALLBACK], client_name: "x" });
+    const large = JSON.stringify({ redirect_uris: [CALLBACK], padding: "a".repeat(4096) });
+
+    const missing = await postRegistration(request, small, { "Content-Length": null });
+    expect(missing.status).toBe(411);
+    expect(await missing.json()).toMatchObject({ error: "invalid_request" });
+
+    const malformed = await postRegistration(request, small, { "Content-Length": "12abc" });
+    expect(malformed.status).toBe(400);
+
+    // 申告が上限を超えれば、本文が小さくても断る
+    const declaredLarge = await postRegistration(request, small, { "Content-Length": "4097" });
+    expect(declaredLarge.status).toBe(413);
+
+    // 申告を偽って大きな本文を送っても、読むのを上限で打ち切る
+    const lying = await postRegistration(request, large, { "Content-Length": "100" });
+    expect(lying.status).toBe(413);
+    const lyingAtLimit = await postRegistration(request, large, { "Content-Length": "4096" });
+    expect(lyingAtLimit.status).toBe(413);
+
+    const mismatch = await postRegistration(request, small, {
+      "Content-Length": String(small.length + 10),
+    });
+    expect(mismatch.status).toBe(400);
+
+    expect(await registeredClientCount()).toBe(0);
   });
 
   it("大きすぎる body と長すぎる client_name は断る", async () => {

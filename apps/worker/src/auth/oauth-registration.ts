@@ -2,13 +2,15 @@ import type {
   ClientRegistrationCallbackOptions,
   ClientRegistrationCallbackResult,
 } from "@cloudflare/workers-oauth-provider";
+import { readBounded } from "../attachments/read-bounded";
 import type { Bindings } from "../env";
 
 /*
  * client の登録（DCR）は匿名で呼べ、通れば KV に 1 回書き込む。KV の無料枠（1 日に書き込み 1,000 回）を
  * 使い切られると既存のコネクタのトークン更新まで止まるので、KV に書く前に次の順で断る。
  * 安く判定できるものから先に見て、断った登録は 1 日の回数に数えない。
- * 1. body の大きさと client_name の長さ
+ * 0. body の大きさ（boundRegistrationRequest。ライブラリに渡す前に断る）
+ * 1. client_name の長さ
  * 2. redirect URI が許可リストに無い
  * 3. その日（UTC）の登録数が上限に達した
  *
@@ -60,6 +62,46 @@ async function countRegistration(db: D1Database, day: string): Promise<boolean> 
   return row !== null;
 }
 
+function oauthError(error: string, description: string, status: number): Response {
+  return Response.json(
+    { error, error_description: description },
+    { status, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+/**
+ * 登録のリクエストを、ライブラリに渡す前に MAX_REGISTRATION_BODY_BYTES で断る。
+ * ライブラリ自身の上限は 1 MiB で、本文を JSON.parse した後に clientRegistrationCallback が呼ばれるので、
+ * そこで大きさを見ても、解析のコストは先に払われている。
+ * Content-Length を必須にして、申告より実際の本文が長い場合は読むのを途中でやめる。
+ * 通した本文は読み終えているので、同じ内容の新しい Request に詰め直して返す。
+ */
+export async function boundRegistrationRequest(request: Request): Promise<Request | Response> {
+  const declared = request.headers.get("Content-Length");
+  if (declared === null) {
+    return oauthError("invalid_request", "Content-Length が必要です", 411);
+  }
+  if (!/^[0-9]{1,16}$/.test(declared.trim())) {
+    return oauthError("invalid_request", "Content-Length が不正です", 400);
+  }
+  const tooLarge = () =>
+    oauthError(
+      "invalid_request",
+      `登録の JSON は ${MAX_REGISTRATION_BODY_BYTES} バイトまでです`,
+      413,
+    );
+  if (Number(declared) > MAX_REGISTRATION_BODY_BYTES) {
+    await request.body?.cancel().catch(() => undefined);
+    return tooLarge();
+  }
+  const bytes = await readBounded(request.body, MAX_REGISTRATION_BODY_BYTES);
+  if (bytes === null) return tooLarge();
+  if (bytes.byteLength !== Number(declared)) {
+    return oauthError("invalid_request", "Content-Length と本文の長さが一致しません", 400);
+  }
+  return new Request(request, { body: bytes });
+}
+
 /**
  * ライブラリの clientRegistrationCallback。clientMetadata はライブラリが検証した後の値ではなく
  * 生の JSON なので、型を確かめてから読む。
@@ -67,12 +109,7 @@ async function countRegistration(db: D1Database, day: string): Promise<boolean> 
 export function registrationGate(env: Bindings, now: () => number) {
   return async ({
     clientMetadata,
-    request,
   }: ClientRegistrationCallbackOptions): Promise<ClientRegistrationCallbackResult | undefined> => {
-    const size = (await request.arrayBuffer()).byteLength;
-    if (size > MAX_REGISTRATION_BODY_BYTES) {
-      return reject(`登録の JSON は ${MAX_REGISTRATION_BODY_BYTES} バイトまでです`, 413);
-    }
     const name = clientMetadata.client_name;
     if (typeof name === "string" && name.length > MAX_CLIENT_NAME_LENGTH) {
       return reject(`client_name は ${MAX_CLIENT_NAME_LENGTH} 文字までです`);
