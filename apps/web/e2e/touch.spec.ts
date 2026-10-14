@@ -273,8 +273,9 @@ test.describe("デスクトップの密度", () => {
   test.skip(({ isMobile }) => isMobile, "pointer: fine の端末だけ");
 
   test("タッチ向けに大きくした対象が、デスクトップでは従来の大きさのまま", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator(".entries .entry").first()).toBeVisible();
+    // 一覧の先頭は他の spec が作るタグなしのページで埋まることがあるので、タグで絞った一覧で chip を測る
+    await page.goto(`/?tag=${encodeURIComponent("メモ")}`);
+    await expect(page.locator(".entries .chip-link").first()).toBeVisible();
     const heights = await page.evaluate(() => {
       const h = (selector: string) =>
         document.querySelector(selector)?.getBoundingClientRect().height;
