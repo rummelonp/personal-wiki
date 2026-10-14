@@ -55,7 +55,12 @@ interface Edit {
 interface TagRange {
   readonly from: number;
   readonly to: number;
+  /** タグを含む段落か見出しの終わり。それらに含まれない（表のセルなど）なら null */
+  readonly blockEnd: number | null;
 }
+
+// 末尾のタグを判定する単位。抜粋で意味のある文章を持つ block に限り、表のセルは含めない
+const INLINE_BLOCK = /^(?:Paragraph|ATXHeading[1-6]|SetextHeading[12])$/;
 
 const COLLAPSIBLE_WHITESPACE = /\s+/g;
 const LEADING_FRONTMATTER_DELIMITER = /^---[ \t]*(?:\r?\n|$)/;
@@ -84,13 +89,14 @@ interface ExtractPlainTextOptions {
 }
 
 /**
- * Markdown の本文を、記法を除いた 1 行の plain text にする。ページ一覧や検索結果の抜粋に使う。
+ * Markdown の本文を、記法を除いた 1 行の plain text にする。検索結果の抜粋と全文検索の索引の元になる。
+ * 一覧の抜粋は行末のタグを除くので、extractPlainTextParts の textWithoutTrailingTags を使う。
  *
  * 構文木から記号の node を落とす。見出しの `#`・リストの記号・引用の `>`・task の checkbox・
  * 強調／取り消し／ハイライト／inline code の記号・code fence の行・水平線・コメント（`%%`、
  * `<!-- -->`）・block id・frontmatter・リンク参照の定義を除き、リンクは表示文字だけを残す。
  * 画像と embed（`![[...]]`）は丸ごと落とす。code の中身は落とさない（読み物の一部として残す）。
- * `#tag` は本文の語としてそのまま残す。
+ * `#tag` は本文の語としてそのまま残す（タグの語でも検索できるように）。
  *
  * WikiLink は Editor の簡略表示と同じ規則で、label があれば label、無ければ target を `#heading`
  * や `^blockId` も含めて書かれたまま出す。
@@ -105,14 +111,16 @@ export interface PlainTextParts {
   /** extractPlainText と同じ。`#tag` を語として残す */
   readonly text: string;
   /**
-   * text から、行の終わりに並ぶ `#tag` を除いたもの。一覧の抜粋はタグを別にチップで出すので、
-   * 抜粋に同じ語を重ねない。`今日は #メモ を書いた` のように文の途中にあるタグは文の一部なので残す。
+   * text から、段落や見出しの最後に並ぶ `#tag` と、タグだけの行の `#tag` を除いたもの。
+   * 一覧の抜粋はタグを別にチップで出すので、抜粋に同じ語を重ねない。
+   * `今日は #メモ を書いた` や `今日は #メモ\nを書いた` のように文の途中にあるタグと、
+   * `本文 #メモ。` のように後ろに文字が続くタグは、文の一部なので残す。
    * 全文検索の索引は text から作る（タグの語でも引けるように）。
    */
   readonly textWithoutTrailingTags: string;
 }
 
-/** 1 回の構文解析から、タグを残した text と末尾のタグを除いた text の両方を作る。 */
+/** 1 回の構文解析から、タグを残した text と、末尾のタグを除いた text の両方を作る。 */
 export function extractPlainTextParts(
   markdown: string,
   options: ExtractPlainTextOptions = {},
@@ -142,7 +150,7 @@ export function extractPlainTextParts(
   tree.iterate({
     enter(ref) {
       if (ref.name === tagNodes.tag) {
-        tagRanges.push({ from: ref.from, to: ref.to });
+        tagRanges.push({ from: ref.from, to: ref.to, blockEnd: inlineBlockEnd(ref.node) });
         return false;
       }
       const edit = editFor(ref.node, readable);
@@ -151,7 +159,7 @@ export function extractPlainTextParts(
       return false;
     },
   });
-  const trailingTags = trailingTagRanges(tagRanges, readable);
+  const trailingTags = trailingTagRanges(tagRanges, readable, edits);
 
   return {
     text: applyEdits(readable, edits),
@@ -175,17 +183,74 @@ function applyEdits(readable: string, edits: readonly Edit[]): string {
   return text.replace(COLLAPSIBLE_WHITESPACE, " ").trim();
 }
 
-/** 同じ行で、後ろに空白とタグしか続かないタグ。`#a #b` が行末に並ぶなら両方を返す。 */
-function trailingTagRanges(tags: readonly TagRange[], source: string): TagRange[] {
+function inlineBlockEnd(tag: SyntaxNode): number | null {
+  for (let node = tag.parent; node !== null; node = node.parent) {
+    if (INLINE_BLOCK.test(node.name)) return node.to;
+  }
+  return null;
+}
+
+/** JavaScript の `\s`（trim の空白）と同じ範囲か。 */
+const UNICODE_WHITESPACE = /\s/;
+const isWhitespace = (code: number) =>
+  code < 128 ? code <= 32 : UNICODE_WHITESPACE.test(String.fromCharCode(code));
+
+/**
+ * 抜粋から除くタグ。次のどちらかを満たす。
+ * - 段落か見出しの最後に並ぶ（後ろに続くのが、空白と、同じ条件で除くタグだけ）
+ * - タグだけの行にある（`段落。\n#a #b\n続き` のように、改行で区切られた行の途中でも）
+ *
+ * 後ろの判定では、edit で消える範囲（強調の記号、コメント、block id など）を空白として扱う。
+ * `今日は #メモ\nを書いた` の `#メモ` は、同じ段落の後ろに文字が続くので残す。
+ * `本文 #メモ。` も、タグの後ろに文字があるので残す。
+ *
+ * 範囲の判定は、空白でない文字の累積数を 1 回の走査で作って引くので、本文の長さに対して線形。
+ */
+function trailingTagRanges(
+  tags: readonly TagRange[],
+  source: string,
+  edits: readonly Edit[],
+): TagRange[] {
+  if (tags.length === 0) return [];
+
+  const ink = new Uint32Array(source.length + 1);
+  let editIndex = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    while (editIndex < edits.length && (edits[editIndex] as Edit).to <= i) editIndex += 1;
+    const edit = edits[editIndex];
+    const erased = edit !== undefined && edit.from <= i && edit.insert.trim() === "";
+    ink[i + 1] = (ink[i] as number) + (erased || isWhitespace(source.charCodeAt(i)) ? 0 : 1);
+  }
+  const inkBetween = (from: number, to: number) => (ink[to] as number) - (ink[from] as number);
+
+  const onlyTagsInLine: boolean[] = [];
+  for (let i = 0; i < tags.length; ) {
+    const first = tags[i] as TagRange;
+    const newline = source.indexOf("\n", first.to);
+    const lineEnd = newline === -1 ? source.length : newline;
+    const lineStart = first.from === 0 ? 0 : source.lastIndexOf("\n", first.from - 1) + 1;
+    let tagChars = 0;
+    let end = i;
+    while (end < tags.length && (tags[end] as TagRange).to <= lineEnd) {
+      const tag = tags[end] as TagRange;
+      tagChars += tag.to - tag.from;
+      end += 1;
+    }
+    const only = inkBetween(lineStart, lineEnd) === tagChars;
+    for (; i < end; i += 1) {
+      onlyTagsInLine.push(only);
+    }
+  }
+
   const trailing: TagRange[] = [];
-  // 後ろから見て、次のタグが同じ行の末尾のタグなら、そこまでの間が空白だけであればよい
+  // 後ろから見て、次のタグを除くなら、そこまでの間が空白だけであればよい
   let next: TagRange | null = null;
   for (let i = tags.length - 1; i >= 0; i -= 1) {
     const tag = tags[i] as TagRange;
-    const newline = source.indexOf("\n", tag.to);
-    const lineEnd = newline === -1 ? source.length : newline;
-    const limit = next !== null && next.from <= lineEnd ? next.from : lineEnd;
-    if (source.slice(tag.to, limit).trim() === "") {
+    const { blockEnd } = tag;
+    const limit =
+      next !== null && blockEnd !== null && next.from <= blockEnd ? next.from : blockEnd;
+    if (onlyTagsInLine[i] === true || (limit !== null && inkBetween(tag.to, limit) === 0)) {
       trailing.push(tag);
       next = tag;
     } else {

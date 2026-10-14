@@ -103,6 +103,18 @@ describe("GET /api/search", () => {
     expect(titles(await search(client, "(((("))).toEqual([]);
   });
 
+  it("title に一致するページがあっても、列指定や引用符を含む語を FTS の構文にしない", async () => {
+    const client = await buildClient();
+    await client.create("{title}:x", "本文");
+    await client.create('a"b 題', "本文");
+    await client.create('"""', "本文");
+    await client.create("x", "title:x の話");
+    expect(titles(await search(client, "{title}:x"))).toEqual(["{title}:x"]);
+    expect(titles(await search(client, 'a"b'))).toEqual(['a"b 題']);
+    expect(titles(await search(client, '"""'))).toEqual(['"""']);
+    expect(titles(await search(client, "title:x"))).toEqual(["x"]);
+  });
+
   it("1〜2 文字は LIKE で引き、% と _ をワイルドカードにしない", async () => {
     const client = await buildClient();
     await client.create("percent", "達成率は100%です");

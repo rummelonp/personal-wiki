@@ -331,6 +331,34 @@ describe("extractPlainTextParts", () => {
     expect(withoutTags("対応 #123")).toBe("対応 #123");
   });
 
+  it("drops tags followed only by syntax that the plain text erases", () => {
+    expect(withoutTags("本文 #tag %%c%%")).toBe("本文");
+    expect(withoutTags("本文 #tag <!-- c -->")).toBe("本文");
+    expect(withoutTags("本文 #tag ^abc123")).toBe("本文");
+    expect(withoutTags("本文 **#tag**")).toBe("本文");
+    expect(withoutTags("本文 #tag ![[img.png]]")).toBe("本文");
+  });
+
+  it("keeps a tag in the middle of a paragraph, before a soft break", () => {
+    expect(withoutTags("今日は #メモ\nを書いた")).toBe("今日は #メモ を書いた");
+    expect(withoutTags("- 今日は #メモ\n  を書いた #日記")).toBe("今日は #メモ を書いた");
+  });
+
+  it("drops the tags at the last line of a paragraph and tag-only lines in a paragraph", () => {
+    expect(withoutTags("段落。\n#a #b")).toBe("段落。");
+    expect(withoutTags("前の文\n#a #b\n続き")).toBe("前の文 続き");
+    expect(withoutTags("> 引用 #q\n\n- 項目 #i")).toBe("引用 項目");
+  });
+
+  it("keeps a tag followed by punctuation", () => {
+    expect(withoutTags("本文 #メモ。")).toBe("本文 #メモ。");
+    expect(withoutTags("本文 #メモ、 #使い方")).toBe("本文 #メモ、");
+  });
+
+  it("keeps tags in table cells", () => {
+    expect(withoutTags("| a | b |\n|---|---|\n| x #t | y |")).toBe("a b x #t y");
+  });
+
   it("returns the same text for a body without trailing tags", () => {
     const parts = extractPlainTextParts("## 振り返り\n- 準備 [[読書メモ]]");
     expect(parts.textWithoutTrailingTags).toBe(parts.text);
