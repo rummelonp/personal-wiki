@@ -18,6 +18,7 @@ import {
 } from "@personal-wiki/editor";
 import { extractBlockIds, findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { NOTICE_DOCK_RESIZE } from "./notice-dock";
 import type { PageFragment } from "./page-fragment";
 import { scrollBelowStickyHeader } from "./sticky-header";
 import type { WikiLinkSources } from "./wiki-links";
@@ -88,6 +89,7 @@ export interface BodyEditorProps {
 const NO_EMBED: PageEmbedContent = { kind: "unresolved" };
 
 const jumpKey = Symbol("jumpTo");
+const revealKey = Symbol("revealCaret");
 const settledKey = Symbol("whenSettled");
 
 /**
@@ -247,6 +249,22 @@ export function BodyEditor({
       editor.destroy();
       for (const resolve of waiters.splice(0)) resolve();
     };
+  }, []);
+
+  // 通知の台が出入りして覆う高さが変わったら、打っている行を台の上へスクロールで逃がす。
+  // 台の高さは scrollMargins が見る。selection と doc は変えず、変換中は落ち着くまで保留する
+  useEffect(() => {
+    const reveal = () => {
+      const editor = view.current;
+      if (editor === null || !editor.hasFocus) return;
+      dispatchWhenSettled(editor, revealKey, () =>
+        editor.dispatch({
+          effects: EditorView.scrollIntoView(editor.state.selection.main.head, { y: "nearest" }),
+        }),
+      );
+    };
+    document.addEventListener(NOTICE_DOCK_RESIZE, reveal);
+    return () => document.removeEventListener(NOTICE_DOCK_RESIZE, reveal);
   }, []);
 
   // 取得が終わって印や embed の内容が変わったら、装飾を組み直させる。変換中は editor が保留する

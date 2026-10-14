@@ -236,7 +236,7 @@ describe("HomeView の短い検索語", () => {
     for (const query of ["a", "ab", " ab　", "ｶﾞｷ"]) {
       await mountHome(query, false);
       expect(guidance(), query).toBe("3 文字以上で検索してください");
-      expect(container?.querySelector(".message-error"), query).toBeNull();
+      expect(container?.querySelector(".notice-error"), query).toBeNull();
       act(() => root?.unmount());
       container?.remove();
     }

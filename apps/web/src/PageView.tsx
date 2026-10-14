@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
 import { Loading } from "./Loading";
 import { NotFound } from "./NotFound";
+import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
@@ -88,7 +89,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       if (res.ok) setState({ status: "ready", page: res.value });
       else if (res.reason === "not_found") setState({ status: "not_found" });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
-      else setState({ status: "error", message: failureMessage(res, "取得できなかった") });
+      else setState({ status: "error", message: failureMessage(res, "取得できませんでした。") });
     });
     return () => {
       cancelled = true;
@@ -140,9 +141,9 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     case "error":
       return (
         <RailLayout rail={null}>
-          <p className="message message-error" role="alert">
-            {state.message}
-          </p>
+          <Notice inline tone="error" title="ページを取得できませんでした">
+            <p>{state.message}</p>
+          </Notice>
         </RailLayout>
       );
     case "new":

@@ -67,7 +67,7 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
       if (generation.current !== mine) return;
       if (res.ok) setState({ status: "ready", ...res.value, loadingMore: false });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
-      else setState({ status: "error", message: failureMessage(res, "取得できなかった") });
+      else setState({ status: "error", message: failureMessage(res, "取得できませんでした。") });
     });
   }, [query, tag, owner, setState]);
 

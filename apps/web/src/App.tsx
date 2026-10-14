@@ -15,6 +15,7 @@ import { LinkRewriteStatus } from "./LinkRewriteStatus";
 import { Loading } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
+import { Notice, NoticeDockProvider } from "./Notice";
 import { useNewPageRequest } from "./new-page";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { RailLayout } from "./Rail";
@@ -63,9 +64,9 @@ if (initialRoute.name === "page" || initialRoute.name === "title" || initialRout
 function PageViewLoadFailed() {
   return (
     <RailLayout rail={null}>
-      <p className="message message-error" role="alert">
-        画面を読み込めませんでした。再読み込みしてください。
-      </p>
+      <Notice inline tone="error" title="画面を読み込めませんでした">
+        <p>通信を確かめて、ページを再読み込みしてください。</p>
+      </Notice>
     </RailLayout>
   );
 }
@@ -157,61 +158,63 @@ export function App() {
   }, [ready, switcherOpen]);
 
   return (
-    <div className="app">
-      <Header
-        session={session}
-        onOpenSearch={() => setSwitcherOpen(true)}
-        loggingOut={loggingOut}
-        onLogout={() => void handleLogout()}
-      />
-      <main className="main">
-        {isOwner && <LinkRewriteStatus />}
-        {session.status === "loading" && <Loading />}
-        {session.status === "error" && (
-          <RailLayout rail={null}>
-            <p className="message message-error" role="alert">
-              ログインの状態を取得できませんでした。再読み込みしてください。
-            </p>
-          </RailLayout>
-        )}
-        {ready && route.name === "home" && (
-          <HomeView
-            // 一覧とタグは owner なら draft を含む。ログアウトの後に残さないよう取り直す
+    <NoticeDockProvider>
+      <div className="app">
+        <Header
+          session={session}
+          onOpenSearch={() => setSwitcherOpen(true)}
+          loggingOut={loggingOut}
+          onLogout={() => void handleLogout()}
+        />
+        <main className="main">
+          {isOwner && <LinkRewriteStatus />}
+          {session.status === "loading" && <Loading />}
+          {session.status === "error" && (
+            <RailLayout rail={null}>
+              <Notice inline tone="error" title="ログインの状態を取得できませんでした">
+                <p>通信を確かめて、ページを再読み込みしてください。</p>
+              </Notice>
+            </RailLayout>
+          )}
+          {ready && route.name === "home" && (
+            <HomeView
+              // 一覧とタグは owner なら draft を含む。ログアウトの後に残さないよう取り直す
+              key={isOwner ? "owner" : "reader"}
+              query={route.query}
+              tag={route.tag}
+              owner={isOwner}
+            />
+          )}
+          {ready && (route.name === "page" || route.name === "title" || route.name === "new") && (
+            <Suspense fallback={<Loading />}>
+              <PageView
+                // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す。
+                // `/?new` も同じ位置と key に置き、作れた後の `/p/<id>` で作り直さない
+                key={isOwner ? "owner" : "reader"}
+                target={
+                  route.name === "page"
+                    ? { by: "id", id: route.id }
+                    : route.name === "title"
+                      ? { by: "title", title: route.title }
+                      : { by: "new", ...newPage }
+                }
+                owner={isOwner}
+                attachments={session.me.features.attachments}
+              />
+            </Suspense>
+          )}
+          {ready && route.name === "unknown" && <NotFound />}
+        </main>
+        {ready && (
+          // 候補の一覧は owner と匿名で違う（draft を含むか）ので、ログイン状態が変わったら作り直す
+          <QuickSwitcher
             key={isOwner ? "owner" : "reader"}
-            query={route.query}
-            tag={route.tag}
+            open={switcherOpen}
+            onOpenChange={setSwitcherOpen}
             owner={isOwner}
           />
         )}
-        {ready && (route.name === "page" || route.name === "title" || route.name === "new") && (
-          <Suspense fallback={<Loading />}>
-            <PageView
-              // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す。
-              // `/?new` も同じ位置と key に置き、作れた後の `/p/<id>` で作り直さない
-              key={isOwner ? "owner" : "reader"}
-              target={
-                route.name === "page"
-                  ? { by: "id", id: route.id }
-                  : route.name === "title"
-                    ? { by: "title", title: route.title }
-                    : { by: "new", ...newPage }
-              }
-              owner={isOwner}
-              attachments={session.me.features.attachments}
-            />
-          </Suspense>
-        )}
-        {ready && route.name === "unknown" && <NotFound />}
-      </main>
-      {ready && (
-        // 候補の一覧は owner と匿名で違う（draft を含むか）ので、ログイン状態が変わったら作り直す
-        <QuickSwitcher
-          key={isOwner ? "owner" : "reader"}
-          open={switcherOpen}
-          onOpenChange={setSwitcherOpen}
-          owner={isOwner}
-        />
-      )}
-    </div>
+      </div>
+    </NoticeDockProvider>
   );
 }

@@ -149,25 +149,23 @@ a {
 /* 骨格 */
 
 /*
- * .main を残りの高さに伸ばし、その中の .rail-layout も伸ばす。リンクの書き換えの帯などが
- * 列の上に出ても、短いページでスクロールが出ない（高さの下限を calc で足し引きしない）
+ * .main を残りの高さに伸ばし、その中の .rail-layout も伸ばす。短いページでスクロールが出ない
+ * （高さの下限を calc で足し引きしない）
  */
 .app {
   display: flex;
   flex-direction: column;
   min-height: var(--viewport-min-height);
+  padding-bottom: var(
+    --notice-height,
+    0px
+  ); /* 通知の台の高さ。台が出ても最後の行を台の上まで上げられる */
 }
 
 .main {
   display: flex;
   flex: 1;
   flex-direction: column;
-}
-
-/* 本文の列より上に出す帯（リンクの書き換えの進み具合）。列の外なので、左端を列に合わせる */
-.main > .narrow {
-  max-width: var(--prose-width);
-  margin: var(--space-3) var(--gutter) var(--space-3) calc(var(--frame-start) + var(--gutter));
 }
 
 /*
@@ -535,26 +533,125 @@ a {
   gap: var(--space-2);
 }
 
-.message {
-  margin: var(--space-3) 0;
+/* 主な操作は塗らず、差し色の枠と文字で示す。塗りの強調は画面に 1 つ（ヘッダーの新規作成）まで */
+.button-main {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/*
+ * 通知。見出し（何が起きたか）、本文（理由と次の手）、操作の順に並べる。色は重大度で分け、
+ * 文字はどの色でも本文の色にして、読みやすさを地の色に左右させない。
+ * 台（.notice-dock）に出る通知は、本文の流れから外れて画面の下端に重なる。
+ */
+.notice {
+  display: grid;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border: var(--border-width) solid var(--color-border);
+  color: var(--color-fg);
+  background: var(--color-input);
+  border: var(--border-width) solid var(--color-border-strong);
   border-radius: var(--radius-md);
 }
 
-.message > p {
-  margin: 0 0 var(--space-2);
+.notice-warn {
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn-border);
 }
 
-.message-error {
-  color: var(--color-danger);
+.notice-error {
   background: var(--color-danger-bg);
   border-color: var(--color-danger);
 }
 
-.message-warn {
-  background: var(--color-warn-bg);
-  border-color: var(--color-warn-border);
+.notice-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-heading);
+  word-break: auto-phrase;
+  text-wrap: balance;
+}
+
+/* 見出しの先頭の点。重大度の色を、文字の色に頼らずに伝える */
+.notice-title .dot {
+  align-self: center;
+  color: var(--color-fg-muted);
+}
+
+.notice-warn .notice-title .dot {
+  color: var(--color-warn-border);
+}
+
+.notice-error .notice-title .dot {
+  color: var(--color-danger);
+}
+
+.notice-text {
+  font-size: var(--font-size-sm);
+  word-break: auto-phrase;
+  text-wrap: pretty;
+}
+
+.notice-text > :first-child {
+  margin-top: 0;
+}
+
+.notice-text > :last-child {
+  margin-bottom: 0;
+}
+
+.notice-text p {
+  margin: var(--space-2) 0;
+}
+
+/* 通知の中の操作は、長い文言でも折り返して枠に収める */
+.notice .button {
+  white-space: normal;
+  text-align: center;
+}
+
+.notice-details {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/*
+ * 通知の台。画面の下端（キーボードが出ている間はその上）に固定し、本文の流れに高さを取らない。
+ * title と本文は通知の出入りで動かず、本文のスクロールは台の高さを避ける（sticky-header.ts）。
+ * 文書の末尾には台の高さの余白を足し、最後の行も台の上までスクロールできるようにする。
+ */
+.notice-dock {
+  position: fixed;
+  right: 0;
+  bottom: var(--notice-inset, 0px);
+  left: 0;
+  z-index: var(--z-notice);
+  display: grid;
+  gap: var(--space-2);
+  max-width: calc(var(--prose-width) + 2 * var(--space-3));
+  max-height: calc(var(--notice-room, 100%) * 0.6);
+  /* 影が overflow で切れないよう、台の内側に余白を取り、その分だけ外へ出して通知の左端を本文の列に合わせる */
+  margin: 0 calc(var(--gutter) - var(--space-3)) 0
+    calc(var(--frame-start) + var(--gutter) - var(--space-3));
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+}
+
+.notice-dock:empty {
+  display: none;
+}
+
+.notice-dock > .notice {
+  pointer-events: auto;
+  box-shadow: var(--shadow-popover);
 }
 
 .link-rewrites-pages {
@@ -805,19 +902,8 @@ a {
 
 /* 衝突 */
 
-.conflict {
-  margin: var(--space-3) 0;
-  padding: var(--space-4);
-  background: var(--color-warn-bg);
-  border: var(--border-width) solid var(--color-warn-border);
-  border-radius: var(--radius-md);
-}
-
-.conflict-title {
-  margin: 0 0 var(--space-2);
-  font-family: var(--font-serif);
-  font-size: var(--font-size-lg);
-  letter-spacing: var(--letter-spacing-heading);
+.conflict-titles {
+  margin: 0;
 }
 
 .conflict-titles dt {
@@ -831,7 +917,7 @@ a {
 
 .diff {
   max-height: var(--diff-max-height);
-  margin: var(--space-3) 0;
+  margin: 0;
   overflow: auto;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -868,7 +954,7 @@ a {
 }
 
 .diff-legend {
-  margin: 0 0 var(--space-3);
+  margin: 0;
   font-size: var(--font-size-sm);
 }
 
@@ -1045,6 +1131,11 @@ a {
 
   .header {
     padding-inline-end: var(--gutter);
+  }
+
+  /* 通知の操作は行いっぱいに広げ、押しやすくする。入りきらなければ次の行に回る */
+  .notice .actions .button {
+    flex: 1 1 auto;
   }
 }
 

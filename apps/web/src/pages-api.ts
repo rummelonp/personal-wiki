@@ -69,17 +69,33 @@ export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
  */
 const KEEPALIVE_MAX_BYTES = 60_000;
 
+/*
+ * 画面に出す失敗の文は、何が起きたかと次の手を、です・ます調の完結した文で書く。
+ * 通信やサーバーの不調は、時間をおけば通ることがあるので再試行を勧める。入力の誤りは、直す点を示す。
+ */
+const RETRY_LATER = "時間をおいて、もう一度試してください。";
+const RELOAD = "ページを再読み込みしてから、もう一度試してください。";
+
 const ERROR_MESSAGES: Record<string, string> = {
-  invalid_title: "title が空か、空白だけになっている",
-  title_too_long: "title が長すぎる",
-  body_too_large: "本文が大きすぎて保存できない",
-  if_match_required: "版の指定が欠けている",
-  invalid_if_match: "版の指定が正しくない",
-  invalid_json: "リクエストの形が正しくない",
-  unknown_field: "リクエストの形が正しくない",
-  missing_field: "リクエストの形が正しくない",
-  invalid_field: "リクエストの形が正しくない",
+  invalid_title: "title が空か、空白だけになっています。title を入力してください。",
+  title_too_long: "title が長すぎます。短くしてください。",
+  body_too_large: "本文が大きすぎて保存できません。本文を短くするか、ページを分けてください。",
+  if_match_required: `版の指定が欠けています。${RELOAD}`,
+  invalid_if_match: `版の指定が正しくありません。${RELOAD}`,
+  invalid_json: `リクエストの形が正しくありません。${RELOAD}`,
+  unknown_field: `リクエストの形が正しくありません。${RELOAD}`,
+  missing_field: `リクエストの形が正しくありません。${RELOAD}`,
+  invalid_field: `リクエストの形が正しくありません。${RELOAD}`,
 };
+
+const FIELD_ERROR_CODES = new Set(["invalid_field", "missing_field", "unknown_field"]);
+
+/** サーバーが message も既知の code も返さなかったときの文。5xx は待てば通ることがあり、4xx は待っても変わらない。 */
+function statusMessage(status: number): string {
+  return status >= 500
+    ? `サーバーで問題が起きました（HTTP ${status}）。${RETRY_LATER}`
+    : `サーバーに受け付けられませんでした（HTTP ${status}）。${RELOAD}`;
+}
 
 async function readJson(res: Response): Promise<unknown> {
   try {
@@ -107,14 +123,20 @@ async function failureOf(res: Response): Promise<ApiFailure> {
     };
   }
   if (res.status === 409 && code === "title_conflict") {
-    return { ok: false, reason: "title_conflict", message: "同じ title のページがすでにある" };
+    return {
+      ok: false,
+      reason: "title_conflict",
+      message: "同じ title のページがすでにあります。",
+    };
   }
-  // サーバーの message は原因を具体的に書いている（検索語の誤りなど）ので、固定の文より優先する
-  const message =
-    (typeof body.message === "string" ? body.message : undefined) ??
-    ERROR_MESSAGES[code] ??
-    `サーバーが ${res.status} を返した`;
-  return { ok: false, reason: "error", message };
+  // 項目ごとの誤り（検索語の誤りなど）は、サーバーの message が原因を具体的に書いている。
+  // それ以外の code は、サーバーの message が API を使う側（エージェント）向けの常体なので、
+  // 画面の文体にそろえた固定の文を優先する
+  const serverMessage = typeof body.message === "string" ? body.message : undefined;
+  const message = FIELD_ERROR_CODES.has(code)
+    ? (serverMessage ?? ERROR_MESSAGES[code])
+    : (ERROR_MESSAGES[code] ?? serverMessage);
+  return { ok: false, reason: "error", message: message ?? statusMessage(res.status) };
 }
 
 function isPage(value: unknown): value is Page {
@@ -167,7 +189,7 @@ function isResolvedPage(value: unknown): value is ResolvedPage {
 const BAD_SHAPE: ApiFailure = {
   ok: false,
   reason: "error",
-  message: "サーバーの応答の形が想定と違う",
+  message: `サーバーの応答を読み取れませんでした。${RETRY_LATER}`,
 };
 
 /** 通信の失敗（オフラインなど）を ApiFailure にそろえる。 */
@@ -179,7 +201,11 @@ async function request(
   try {
     return await fetchFn(path, { credentials: "same-origin", cache: "no-store", ...init });
   } catch {
-    return { ok: false, reason: "error", message: "サーバーに接続できない" };
+    return {
+      ok: false,
+      reason: "error",
+      message: `サーバーに接続できません。通信を確かめて、もう一度試してください。`,
+    };
   }
 }
 

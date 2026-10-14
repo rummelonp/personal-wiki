@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import { Link } from "./Link";
 import { type LinkRewriteRunner, linkRewrites } from "./link-rewrites";
+import { Notice } from "./Notice";
 import { pageHref, pageHrefFor } from "./route";
 
 /** title の変更で他のページのリンクを書き換えている間の進み具合と、終わったあとの結果。 */
@@ -13,29 +14,52 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
   if (status === "running") {
     if (total === 0) return null;
     return (
-      <p className="narrow muted link-rewrites-progress" role="status">
-        他のページのリンクを書き換えています（{done}/{total}）
-      </p>
+      <Notice tone="info" role="status" title="他のページのリンクを書き換えています">
+        <p>
+          {done}/{total} ページを書き換えました。この画面を開いたままにしてください。
+        </p>
+      </Notice>
     );
   }
 
-  const close = (
-    <button type="button" className="button" onClick={() => runner.dismiss()}>
-      閉じる
-    </button>
-  );
   const publicCount = rewritten.filter((page) => page.visibility === "public").length;
+  const stoppedForAuth = stopReason === "auth";
+  const stoppedForError = stopReason === "error";
   return (
-    <section
-      className={`narrow message ${status === "stopped" || failed.length > 0 ? "message-warn" : ""}`}
+    <Notice
+      tone={status === "stopped" || failed.length > 0 ? "warn" : "info"}
       role={status === "stopped" ? "alert" : "status"}
+      title={
+        stoppedForAuth || stoppedForError
+          ? "他のページのリンクの書き換えを止めました"
+          : failed.length > 0
+            ? "書き換えられなかったリンクがあります"
+            : "他のページのリンクを書き換えました"
+      }
+      actions={
+        <>
+          {stoppedForAuth && (
+            <a className="button button-main" href={loginHref(window.location)}>
+              ログインし直す
+            </a>
+          )}
+          {stoppedForError && (
+            <button type="button" className="button button-main" onClick={() => runner.retry()}>
+              再試行
+            </button>
+          )}
+          <button type="button" className="button" onClick={() => runner.dismiss()}>
+            閉じる
+          </button>
+        </>
+      }
     >
-      {stopReason === "auth" && (
+      {stoppedForAuth && (
         <p>
-          書き込みを認められなかったので、他のページのリンクの書き換えを止めました。ログインが切れていれば、ログインし直してください。
+          書き込みを認められませんでした。ログインが切れていれば、ログインし直してから続けてください。
         </p>
       )}
-      {stopReason === "error" && <p>他のページのリンクの書き換えを続けられませんでした。</p>}
+      {stoppedForError && <p>通信を確かめて、再試行してください。</p>}
       {rewritten.length > 0 && (
         <details>
           <summary>
@@ -66,19 +90,6 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
           </ul>
         </>
       )}
-      <div className="actions">
-        {stopReason === "auth" && (
-          <a className="button button-primary" href={loginHref(window.location)}>
-            ログインし直す
-          </a>
-        )}
-        {stopReason === "error" && (
-          <button type="button" className="button button-primary" onClick={() => runner.retry()}>
-            再試行
-          </button>
-        )}
-        {close}
-      </div>
-    </section>
+    </Notice>
   );
 }

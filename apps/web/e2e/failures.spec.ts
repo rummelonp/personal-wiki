@@ -76,8 +76,10 @@ test("保存が 500 になると失敗の案内が出て、もう一度保存で
   );
   const typed = "、サーバーが落ちても残る";
   await typeAtBodyEnd(page, typed);
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました。" });
-  await expect(alert).toContainText("サーバーが 500 を返した");
+  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  await expect(alert).toContainText("サーバーで問題が起きました");
+  await expect(alert).toContainText("時間をおいて、もう一度試してください。");
+  await expect(alert).toContainText("入力した内容はこの画面に残り、この端末にも退避してあります。");
   await expect(saveState(page)).toHaveText("保存に失敗");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
@@ -97,8 +99,8 @@ test("オフラインで保存できないと失敗の案内が出て、戻っ�
   await context.setOffline(true);
   const typed = "、オフラインでも残る";
   await typeAtBodyEnd(page, typed);
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました。" });
-  await expect(alert).toContainText("サーバーに接続できない");
+  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  await expect(alert).toContainText("サーバーに接続できません");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
   await context.setOffline(false);
@@ -138,6 +140,11 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
   await page.unroute(pagePath);
+  // 上書きはサーバーの最新を置き換えるので、押す前に確かめる。断れば何も変わらない
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  await expect(conflict).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
   await conflict.getByRole("button", { name: "手元で上書き" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(conflict).toBeHidden();

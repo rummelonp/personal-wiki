@@ -181,6 +181,8 @@ const cursorOf = () => {
 };
 
 const main = () => container?.querySelector("main");
+// 通知は main の外の台に出るので、通知の文言は画面全体から探す
+const screenText = () => container?.textContent ?? "";
 const titleText = () => main()?.querySelector(".title-input .cm-content")?.textContent;
 const header = () => container?.querySelector("header");
 /** ヘッダーのボタンの名前。匿名には検索だけが出る。 */
@@ -622,18 +624,18 @@ describe("App の owner の画面", () => {
       vi.mocked(createPage).mockResolvedValue({
         ok: false,
         reason: "title_conflict",
-        message: "同じ title のページがすでにある",
+        message: "同じ title のページがすでにあります。",
       });
       await renderAt(titleUrl("まだ無い題"));
       await vi.waitFor(() => expect(main()?.textContent).toContain("まだ無い題"));
       vi.mocked(findPageByTitle).mockResolvedValue(ok(PUBLIC));
       clickCreateOnNotFound();
       await vi.waitFor(() =>
-        expect(main()?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(
+        expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(
           titleUrl(PUBLIC.title),
         ),
       );
-      expect(main()?.textContent).toContain("タイトルを変えて Enter を押すと、もう一度作ります。");
+      expect(screenText()).toContain("タイトルを変えて Enter を押すと、もう一度作ります。");
       expect(here()).toBe("/?new");
       expect(titleText()).toBe("まだ無い題");
     });
@@ -667,7 +669,7 @@ describe("App の owner の画面", () => {
       expect(bodyContent()).toBe(body);
       expect(body?.textContent).toBe("打ちかけ");
       expect(document.activeElement).toBe(titleContent());
-      expect(main()?.textContent).not.toContain("この端末に退避されています");
+      expect(screenText()).not.toContain("この端末に退避されています");
       await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
       expect(createPage).not.toHaveBeenCalled();
     });
@@ -683,7 +685,7 @@ describe("App の owner の画面", () => {
       expect(history.length).toBe(length);
       expect(bodyContent()).not.toBe(body);
       expect(document.activeElement).toBe(titleContent());
-      expect(main()?.textContent).not.toContain("この端末に退避されています");
+      expect(screenText()).not.toContain("この端末に退避されています");
     });
 
     it("内容のある作る前の画面からアプリ内のリンクで離れると、+ で開いた次の画面が復元を尋ねる", async () => {
@@ -695,7 +697,7 @@ describe("App の owner の画面", () => {
       await vi.waitFor(() => expect(main()?.querySelector(".title-input")).toBeNull());
       act(() => plus()?.click());
       expect(here()).toBe("/?new");
-      await vi.waitFor(() => expect(main()?.textContent).toContain("この端末に退避されています"));
+      await vi.waitFor(() => expect(screenText()).toContain("この端末に退避されています"));
       expect(createPage).not.toHaveBeenCalled();
     });
 
@@ -717,7 +719,7 @@ describe("App の owner の画面", () => {
       expect(here()).toBe("/?new");
       expect(titleText()).toBe("");
       expect(statusText()).toBe("タイトルを決めると保存します");
-      expect(main()?.textContent).not.toContain("この端末に退避されています");
+      expect(screenText()).not.toContain("この端末に退避されています");
       expect(newBackupKeys()).toEqual([]);
     });
 
@@ -920,10 +922,10 @@ describe("App のリンクの書き換えの再開", () => {
     serve("owner", [PUBLIC, DRAFT]);
     await renderAt("/");
     await vi.waitFor(() =>
-      expect(main()?.textContent).toContain("1 ページのリンクを新しい title に書き換えました"),
+      expect(screenText()).toContain("1 ページのリンクを新しい title に書き換えました"),
     );
     expect(stepLinkRewrites).toHaveBeenCalledTimes(2);
-    expect(main()?.textContent).toContain("うち公開 1 ページ");
+    expect(screenText()).toContain("うち公開 1 ページ");
   });
 
   it("残りが無ければ 1 回だけ呼び、何も出さない", async () => {

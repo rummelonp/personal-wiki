@@ -26,6 +26,7 @@ import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
+import { Notice } from "./Notice";
 import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
 import { PublishBar } from "./PublishBar";
@@ -83,12 +84,15 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
   gone: "ページがありません",
 };
 
-const FAILURE_LEADS: Record<FailedOp["kind"], string> = {
-  create: "作成できませんでした。",
-  save: "保存に失敗しました。",
-  visibility: "公開設定を変えられませんでした。",
-  delete: "削除できませんでした。",
+const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
+  create: "作成できませんでした",
+  save: "保存に失敗しました",
+  visibility: "公開設定を変えられませんでした",
+  delete: "削除できませんでした",
 };
+
+/** 保存や作成が失敗しても、打った内容は画面に残り、session が端末にも退避する（editor-session の stashIfDirty） */
+const KEPT_CONTENT = "入力した内容はこの画面に残り、この端末にも退避してあります。";
 
 function retryLabel(op: FailedOp): string {
   switch (op.kind) {
@@ -370,77 +374,98 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         </p>
 
         {state.pendingBackup !== null && (
-          <section className="message message-warn" role="alert">
+          <Notice
+            tone="warn"
+            title="前回、保存できなかった内容があります"
+            actions={
+              <>
+                <button
+                  type="button"
+                  className="button button-main"
+                  onClick={() => session.restoreBackup()}
+                >
+                  復元する
+                </button>
+                <button type="button" className="button" onClick={() => session.discardBackup()}>
+                  破棄する
+                </button>
+              </>
+            }
+          >
             <p>
               {state.pendingBackup.createFailed
                 ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に退避されています（`
                 : "保存できなかった内容が、この端末に退避されています（"}
-              {formatTime(state.pendingBackup.savedAt)}）。
+              {formatTime(state.pendingBackup.savedAt)}
+              ）。復元して続けるか、破棄してください。
             </p>
-            <div className="actions">
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => session.restoreBackup()}
-              >
-                復元する
-              </button>
-              <button type="button" className="button" onClick={() => session.discardBackup()}>
-                破棄する
-              </button>
-            </div>
-          </section>
+          </Notice>
         )}
 
         {state.authLost && (
-          <section className="message message-warn" role="alert">
+          <Notice
+            tone="warn"
+            title="ログインの期限が切れました"
+            actions={
+              <>
+                <a className="button button-main" href={loginHref(window.location)}>
+                  ログインし直す
+                </a>
+                <button type="button" className="button" onClick={() => void session.retry()}>
+                  ログインし直したので再試行
+                </button>
+              </>
+            }
+          >
             <p>
               {isDirty(state)
-                ? "ログインの期限が切れました。未保存の内容はこの端末に退避してあります。"
-                : "ログインの期限が切れました。未保存の変更はありません。"}
+                ? "未保存の内容はこの端末に退避してあります。ログインし直すと、続きから保存できます。"
+                : "未保存の変更はありません。ログインし直してください。"}
             </p>
-            <div className="actions">
-              <a className="button button-primary" href={loginHref(window.location)}>
-                ログインし直す
-              </a>
-              <button type="button" className="button" onClick={() => void session.retry()}>
-                ログインし直したので再試行
-              </button>
-            </div>
-          </section>
+          </Notice>
         )}
 
         {state.gone && (
-          <section className="message message-error" role="alert">
-            <p>このページはサーバーにありません（削除されました）。</p>
-            <a
-              className="button"
-              href={homeHref()}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate(homeHref());
-              }}
-            >
-              一覧へ戻る
-            </a>
-          </section>
+          <Notice
+            tone="error"
+            title="このページはサーバーにありません"
+            actions={
+              <a
+                className="button button-main"
+                href={homeHref()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(homeHref());
+                }}
+              >
+                一覧へ戻る
+              </a>
+            }
+          >
+            <p>別の場所で削除されたため、このページは編集できません。一覧へ戻ってください。</p>
+          </Notice>
         )}
 
         {state.error !== null && state.failedOp !== null && state.failedOp.kind !== "create" && (
-          <section className="message message-error" role="alert">
+          <Notice
+            tone="error"
+            title={FAILURE_TITLES[state.failedOp.kind]}
+            actions={
+              <button
+                type="button"
+                className="button button-main"
+                disabled={!idle}
+                onClick={() => void retryFailed(state.failedOp)}
+              >
+                {retryLabel(state.failedOp)}
+              </button>
+            }
+          >
             <p>
-              {FAILURE_LEADS[state.failedOp.kind]}
               {state.error}
+              {state.failedOp.kind === "save" && isDirty(state) && KEPT_CONTENT}
             </p>
-            <button
-              type="button"
-              className="button"
-              disabled={!idle}
-              onClick={() => void retryFailed(state.failedOp)}
-            >
-              {retryLabel(state.failedOp)}
-            </button>
-          </section>
+          </Notice>
         )}
 
         {state.conflict !== null && (
@@ -453,60 +478,80 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           />
         )}
 
-        {linkNotice !== null && (
-          <section className="message message-warn" role="alert">
-            {linkNotice.kind === "error" ? (
-              <p>リンク先を調べられませんでした。通信を確かめて、もう一度クリックしてください。</p>
-            ) : (
-              <p>「{linkNotice.title}」のページはまだありません。</p>
-            )}
-            <div className="actions">
-              {linkNotice.kind === "missing" && (
-                <button
-                  type="button"
-                  className="button button-primary"
-                  // このページの未保存の変更は、離れるときの leave が送る
-                  onClick={() => openNewPage({ title: linkNotice.title })}
-                >
-                  作成して開く
+        {linkNotice !== null &&
+          (linkNotice.kind === "error" ? (
+            <Notice
+              tone="warn"
+              title="リンク先を調べられませんでした"
+              actions={
+                <button type="button" className="button" onClick={() => setLinkNotice(null)}>
+                  閉じる
                 </button>
-              )}
-              <button type="button" className="button" onClick={() => setLinkNotice(null)}>
-                閉じる
-              </button>
-            </div>
-          </section>
-        )}
+              }
+            >
+              <p>通信を確かめて、もう一度クリックしてください。</p>
+            </Notice>
+          ) : (
+            <Notice
+              tone="info"
+              title={`「${linkNotice.title}」のページはまだありません`}
+              actions={
+                <>
+                  <button
+                    type="button"
+                    className="button button-main"
+                    // このページの未保存の変更は、離れるときの leave が送る
+                    onClick={() => openNewPage({ title: linkNotice.title })}
+                  >
+                    作成して開く
+                  </button>
+                  <button type="button" className="button" onClick={() => setLinkNotice(null)}>
+                    閉じる
+                  </button>
+                </>
+              }
+            >
+              <p>作成して開くと、この title の新しいページに移ります。</p>
+            </Notice>
+          ))}
 
         {unsafeTitle !== null && unsafeTitle === savedTitle && (
-          <section className="message message-warn" role="alert">
-            <p>この title はリンクに書けないので、他のページのリンクは自動では書き換わらない。</p>
-            <div className="actions">
+          <Notice
+            tone="warn"
+            title="他のページのリンクは自動では書き換わりません"
+            actions={
               <button type="button" className="button" onClick={() => setUnsafeTitle(null)}>
                 閉じる
               </button>
-            </div>
-          </section>
+            }
+          >
+            <p>この title はリンクに書けないので、旧 title へのリンクは手で直してください。</p>
+          </Notice>
         )}
 
         {uploadNotices.length > 0 && (
-          <section className="message message-warn" role="alert">
+          <Notice
+            tone="warn"
+            title="画像を添付できませんでした"
+            actions={
+              <>
+                {uploadNotices.some(
+                  ({ kind }) => kind === "unauthorized" || kind === "forbidden",
+                ) && (
+                  <a className="button button-main" href={loginHref(window.location)}>
+                    ログインし直す
+                  </a>
+                )}
+                <button type="button" className="button" onClick={() => setUploadNotices([])}>
+                  閉じる
+                </button>
+              </>
+            }
+          >
             {uploadNotices.map(({ message }) => (
               <p key={message}>{message}</p>
             ))}
-            <div className="actions">
-              {uploadNotices.some(
-                ({ kind }) => kind === "unauthorized" || kind === "forbidden",
-              ) && (
-                <a className="button button-primary" href={loginHref(window.location)}>
-                  ログインし直す
-                </a>
-              )}
-              <button type="button" className="button" onClick={() => setUploadNotices([])}>
-                閉じる
-              </button>
-            </div>
-          </section>
+          </Notice>
         )}
 
         <TitleEditor
@@ -520,12 +565,23 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           onBlur={() => void session.commitTitle()}
         />
         {state.error !== null && state.failedOp?.kind === "create" && (
-          // 作成は title の確定で起きるので、失敗は title のすぐ下で知らせる
-          <section className="message message-error" role="alert">
-            <p>
-              {FAILURE_LEADS.create}
-              {state.error}
-            </p>
+          <Notice
+            tone="error"
+            title={FAILURE_TITLES.create}
+            actions={
+              state.failedOp.titleTaken ? undefined : (
+                <button
+                  type="button"
+                  className="button button-main"
+                  disabled={!idle}
+                  onClick={() => void retryFailed(state.failedOp)}
+                >
+                  {retryLabel(state.failedOp)}
+                </button>
+              )
+            }
+          >
+            <p>{state.error}</p>
             {state.failedOp.titleTaken ? (
               <p>
                 タイトルを変えて Enter を押すと、もう一度作ります。
@@ -537,18 +593,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 )}
               </p>
             ) : (
-              <div className="actions">
-                <button
-                  type="button"
-                  className="button"
-                  disabled={!idle}
-                  onClick={() => void retryFailed(state.failedOp)}
-                >
-                  {retryLabel(state.failedOp)}
-                </button>
-              </div>
+              <p>{KEPT_CONTENT}</p>
             )}
-          </section>
+          </Notice>
         )}
         <PublishBar
           visibility={savedVisibility}

@@ -7,6 +7,7 @@ import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
+import { Notice } from "./Notice";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import type { Page } from "./pages-api";
@@ -122,18 +123,25 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
     <RailLayout rail={rail}>
       <article className="note">
         {linkNotice !== null && (
-          <section className="message message-warn" role="alert">
-            <p>
-              {linkNotice.kind === "error"
-                ? "リンク先を調べられませんでした。通信を確かめて、もう一度クリックしてください。"
-                : `「${linkNotice.title}」のページはありません。`}
-            </p>
-            <div className="actions">
+          <Notice
+            tone="warn"
+            title={
+              linkNotice.kind === "error"
+                ? "リンク先を調べられませんでした"
+                : `「${linkNotice.title}」のページはありません`
+            }
+            actions={
               <button type="button" className="button" onClick={() => setLinkNotice(null)}>
                 閉じる
               </button>
-            </div>
-          </section>
+            }
+          >
+            <p>
+              {linkNotice.kind === "error"
+                ? "通信を確かめて、もう一度クリックしてください。"
+                : "リンク先のページは、まだ作られていないか、公開されていません。"}
+            </p>
+          </Notice>
         )}
         <h1 className="note-title">{page.title}</h1>
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />

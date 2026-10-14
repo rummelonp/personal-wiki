@@ -161,7 +161,7 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     expect(query(".save-state").textContent).toContain("保存に失敗");
     within();
     // 失敗は、余白の文字だけでなく、本文の上の通知でも伝える
-    expect(query(".message-error, .message-warn")).toBeTruthy();
+    expect(query(".notice-error, .notice-warn")).toBeTruthy();
     const probe = document.createElement("span");
     probe.style.color = "var(--color-danger)";
     query(".note").append(probe);

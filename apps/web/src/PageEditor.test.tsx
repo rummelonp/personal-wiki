@@ -712,7 +712,7 @@ describe("まだ作っていないページ（page が null）", () => {
     act(() => typeAtEnd(view(), "残る本文"));
     typeTitle("題");
     pressEnter(false);
-    await vi.waitFor(() => expect(container?.textContent).toContain("作成できませんでした。"));
+    await vi.waitFor(() => expect(container?.textContent).toContain("作成できませんでした"));
     expect(container?.querySelector("[role='status']")?.textContent).toBe("作成に失敗");
     const keys = newBackupKeys();
     expect(keys).toHaveLength(1);
@@ -848,7 +848,7 @@ describe("添付の貼り付けと表示", () => {
     await flushAsync();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(v.state.doc.toString()).toBe("本文");
-    expect(container?.querySelector(".message-warn")).toBeNull();
+    expect(container?.querySelector(".notice-warn")).toBeNull();
   });
 
   const svg = () =>

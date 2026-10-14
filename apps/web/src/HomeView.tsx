@@ -2,6 +2,7 @@ import { useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
+import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
 import { homeHref, tagHref } from "./route";
@@ -75,9 +76,9 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
           />
         )}
         {state.status === "error" && (
-          <p className="message message-error" role="alert">
-            {state.message}
-          </p>
+          <Notice inline tone="error" title="一覧を取得できませんでした">
+            <p>{state.message}</p>
+          </Notice>
         )}
         {state.status === "ready" && state.entries.length === 0 && searching && (
           <EmptyState

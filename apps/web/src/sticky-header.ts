@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { noticeDockHeight } from "./notice-dock";
 
 /**
  * ヘッダーの下端の位置（viewport の上端から）。ヘッダーは画面の上端に残るので、本文のスクロール先は
@@ -10,9 +11,11 @@ export function stickyHeaderBottom(): number {
 }
 
 /**
- * 見出しへの移動やカーソル行のスクロールで、対象がヘッダーの下に隠れないようにする。
+ * 見出しへの移動やカーソル行のスクロールで、対象がヘッダーの下と、画面の下端に重なる通知の台の
+ * 上に隠れないようにする。通知は本文を動かさず重なるので、打っている行はスクロールで逃がす。
  * CodeMirror は CSS の scroll-padding を読まず、この facet だけを見る。
  */
 export const scrollBelowStickyHeader = EditorView.scrollMargins.of(() => ({
   top: stickyHeaderBottom(),
+  bottom: noticeDockHeight(),
 }));

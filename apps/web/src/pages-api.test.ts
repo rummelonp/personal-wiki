@@ -141,6 +141,31 @@ describe("失敗の分類", () => {
     expect(await getPage(ID, odd.fetchFn)).toMatchObject({ ok: false, reason: "error" });
   });
 
+  it("5xx と通信の失敗は、画面向けの文で次の手を伝える", async () => {
+    const server = failing(500, { error: "internal" });
+    expect(await getPage(ID, server.fetchFn)).toMatchObject({
+      ok: false,
+      message: "サーバーで問題が起きました（HTTP 500）。時間をおいて、もう一度試してください。",
+    });
+    const offline = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    expect(await getPage(ID, offline)).toMatchObject({
+      message: "サーバーに接続できません。通信を確かめて、もう一度試してください。",
+    });
+  });
+
+  it("既知の code は、サーバーの常体の message より画面の文体の固定の文を使う", async () => {
+    const { fetchFn } = failing(400, {
+      error: "body_too_large",
+      message: "本文が大きすぎる",
+    });
+    expect(await updatePage(ID, 1, { title: "a", body: "" }, {}, fetchFn)).toMatchObject({
+      ok: false,
+      message: "本文が大きすぎて保存できません。本文を短くするか、ページを分けてください。",
+    });
+  });
+
   it("サーバーの message を表示用に使う", async () => {
     const { fetchFn } = failing(400, { error: "invalid_field", field: "q", message: "検索語が空" });
     expect(await searchPages("a", fetchFn)).toMatchObject({ ok: false, message: "検索語が空" });

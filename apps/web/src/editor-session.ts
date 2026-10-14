@@ -452,7 +452,7 @@ export class EditorSession {
       this.set({ authLost: true });
     } else {
       this.set({
-        error: failureMessage(res, "作成できなかった"),
+        error: failureMessage(res, "ページを作れませんでした。"),
         failedOp: {
           kind: "create",
           titleTaken: res.reason === "title_conflict",
@@ -696,7 +696,7 @@ export class EditorSession {
         else if (latest.reason === "not_found") this.set({ gone: true });
         else
           this.set({
-            error: `版が合わず、最新を取得できなかった（${failureMessage(latest, "通信の失敗")}）`,
+            error: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
             failedOp: op,
           });
         if (stash) this.stashIfDirty();
@@ -705,6 +705,8 @@ export class EditorSession {
       case "title_conflict":
       case "error":
         this.set({ error: res.message, failedOp: op });
+        // 画面を閉じたり離れたりする前に、手元の内容を端末に残す。ログイン切れや衝突の失敗と同じ
+        if (stash) this.stashIfDirty();
         return;
     }
   }

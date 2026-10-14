@@ -383,6 +383,17 @@ describe("ログイン切れ", () => {
     expect(api.updatePage).toHaveBeenCalledTimes(1);
   });
 
+  it("保存が 5xx で失敗しても、未保存の内容を退避する", async () => {
+    const { session, api, backup } = setup();
+    api.updatePage = vi.fn(
+      async () => ({ ok: false, reason: "error", message: "サーバーで問題が起きました" }) as const,
+    );
+    session.edit({ title: "題", body: "手元" });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(saveStatusOf(session.getState())).toBe("error");
+    expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
+  });
+
   it("ログイン切れの間の入力は、離脱すれば待たずに退避する", async () => {
     const { session, api, backup } = setup();
     api.updatePage = async () => ({ ok: false, reason: "unauthorized" });
