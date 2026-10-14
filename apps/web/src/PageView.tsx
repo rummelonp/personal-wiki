@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
 import { Loading } from "./Loading";
 import { NotFound } from "./NotFound";
@@ -15,7 +15,7 @@ import {
   type PageSummary,
 } from "./pages-api";
 import { RailLayout } from "./Rail";
-import { navigate, pageHrefFor } from "./route";
+import { navigate, pageHrefFor, parseRoute } from "./route";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScrollAfterMount } from "./scroll-restore";
 
@@ -27,6 +27,19 @@ export type PageTarget =
   | { by: "id"; id: string }
   | { by: "title"; title: string }
   | { by: "new"; serial: number; title: string };
+
+/** 今のアドレスバーが target と同じページを指すか */
+function locationTargets(target: PageTarget): boolean {
+  const route = parseRoute(window.location.pathname, window.location.search);
+  switch (target.by) {
+    case "id":
+      return route.name === "page" && route.id === target.id;
+    case "title":
+      return route.name === "title" && route.title === target.title;
+    case "new":
+      return route.name === "new";
+  }
+}
 
 type State =
   | { status: "loading" }
@@ -73,6 +86,11 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       : target.by === "title"
         ? `title:${target.title}`
         : `new:${target.serial}`;
+  /** 最後に描いた target。子の effect は描いた後に動くので、その時点の target と URL を突き合わせる */
+  const shownTarget = useRef(target);
+  useLayoutEffect(() => {
+    shownTarget.current = target;
+  });
   useRestoreScrollAfterMount(state.status === "ready");
 
   // effect で切り替えると、編集の画面の mount が開く操作の後になる
@@ -115,6 +133,11 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   }, [state.status]);
 
   const show = useCallback((page: Pick<PageSummary, "id" | "title" | "visibility">) => {
+    // 子が表示を伝える effect は、開いた直後の戻るでアドレスバーが前の画面へ移った後に遅れて届くことがある。
+    // そのまま置き換えると、戻った先の履歴のエントリをこのページの URL で上書きし、前の画面へ戻れなくなる
+    if (window.location.pathname !== shownPath.current && !locationTargets(shownTarget.current)) {
+      return;
+    }
     const path = pageHrefFor(page);
     shownPath.current = path;
     setDocumentTitle(page.title);
