@@ -1200,6 +1200,10 @@ a {
   color: var(--color-fg-muted);
 }
 
+.switcher-pending:not(.skeleton-painted) {
+  visibility: hidden;
+}
+
 .switcher-body > :not(.switcher-list) {
   flex: none;
 }

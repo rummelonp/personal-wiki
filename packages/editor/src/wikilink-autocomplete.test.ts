@@ -9,7 +9,7 @@ import { EditorView, runScopeHandlers } from "@codemirror/view";
 import type { LinkTargets } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "./create-editor";
-import { createMemoryPageIndex } from "./page-index";
+import { createMemoryPageIndex, type PageIndex } from "./page-index";
 import { type LinkTargetSource, wikiLinkAutocomplete } from "./wikilink-autocomplete";
 
 let view: EditorView | null = null;
@@ -25,6 +25,7 @@ afterEach(() => {
 function mount(
   doc = "",
   linkTargets?: LinkTargetSource,
+  index?: PageIndex,
 ): { view: EditorView; transactions: () => number } {
   let transactions = 0;
   host = document.createElement("div");
@@ -32,9 +33,11 @@ function mount(
   view = createEditor(host, {
     doc,
     ...(linkTargets ? { linkTargets } : {}),
-    pageIndex: createMemoryPageIndex([{ id: "p1", title: "Code" }], {
-      normalize: (text) => text.toLowerCase(),
-    }),
+    pageIndex:
+      index ??
+      createMemoryPageIndex([{ id: "p1", title: "Code" }], {
+        normalize: (text) => text.toLowerCase(),
+      }),
     extensions: EditorView.updateListener.of((update) => {
       transactions += update.transactions.length;
     }),
@@ -79,6 +82,28 @@ describe("the create option", () => {
     await typeQuery(v, "Zeta");
     expect(labels(v)).toEqual(["「Zeta」を作成"]);
     expect(host?.querySelector(".cm-tooltip-autocomplete li")?.textContent).toBe("「Zeta」を作成");
+  });
+
+  it("is not offered until the index has finished its first load", async () => {
+    let settled = false;
+    const loaded = createMemoryPageIndex([{ id: "p1", title: "Code" }], {
+      normalize: (text) => text.toLowerCase(),
+    });
+    // 取得前は候補が空で、「作成」を出すと既にあるページを無いと見せてしまう
+    const index: PageIndex = {
+      search: (query) => (settled ? loaded.search(query) : []),
+      settled: () => settled,
+    };
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Code");
+    expect(labels(v)).toEqual([]);
+    expect(completionStatus(v.state)).toBeNull();
+
+    settled = true;
+    await typeQuery(v, "Code");
+    expect(labels(v)).toEqual(["Code"]);
+    await typeQuery(v, "Zeta");
+    expect(labels(v)).toEqual(["「Zeta」を作成"]);
   });
 
   it("is not offered for a blank query or a heading or block reference", async () => {

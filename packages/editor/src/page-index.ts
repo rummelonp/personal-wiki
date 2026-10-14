@@ -18,6 +18,12 @@ export interface PageCandidate {
  */
 export interface PageIndex {
   search(query: string): PageCandidate[];
+  /**
+   * 候補を取る 1 回目が済んだか（成功でも失敗でもよい）。false の間の「候補なし」は、
+   * 無いのではなくまだ取れていないので、補完は「作成」の候補を出さない。
+   * 全件を最初から持つ索引は実装しなくてよい（済んでいる扱い）。
+   */
+  settled?(): boolean;
 }
 
 export interface MemoryPageIndexOptions {

@@ -1,6 +1,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLoadingDelay } from "./Loading";
 import { ANONYMOUS_TITLE_INDEX_MAX_REQUESTS, TITLE_INDEX_MAX_REQUESTS } from "./link-sources";
 import { openNewPage } from "./new-page";
 import { type ApiResult, listPageTitles } from "./pages-api";
@@ -374,5 +375,75 @@ describe("QuickSwitcher の日本語入力", () => {
     typeText("ほげふ");
     press("Enter");
     expect(new URLSearchParams(location.search).get("q")).toBe("ほげふ");
+  });
+});
+
+describe("QuickSwitcher の候補の取得中", () => {
+  let deliver: (value: ApiResult<{ pages: typeof RECENT; nextCursor: null }>) => void = () => {};
+  const status = () =>
+    [...(container?.querySelectorAll("[role='status']") ?? [])].map((e) => e.textContent);
+  const pending = () => container?.querySelector<HTMLElement>(".switcher-pending");
+
+  async function openPending(owner: boolean) {
+    vi.mocked(listPageTitles).mockReturnValue(
+      new Promise((resolve) => {
+        deliver = resolve as never;
+      }),
+    );
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () => mounted.render(<Harness owner={owner} />));
+  }
+
+  it("owner には、取得が済むまで「作成」を出さず、済んだら出す", async () => {
+    await openPending(true);
+    typeText("新しい語");
+    expect(container?.querySelector("[data-row-kind='create']")).toBeNull();
+    expect(status()).toContain("読み込み中…");
+
+    await act(async () => deliver(ok({ pages: RECENT, nextCursor: null })));
+    expect(container?.querySelector("[data-row-kind='create']")).not.toBeNull();
+    expect(pending()).toBeNull();
+  });
+
+  it("匿名には、取得が済むまで「一致するページはありません」を出さず、済んだら出す", async () => {
+    await openPending(false);
+    typeText("新しい語");
+    expect(container?.textContent).not.toContain("タイトルが一致するページはありません。");
+
+    await act(async () => deliver(ok({ pages: RECENT, nextCursor: null })));
+    expect(container?.textContent).toContain("タイトルが一致するページはありません。");
+  });
+
+  it("取得に失敗しても、済んだ扱いで「作成」を出す", async () => {
+    await openPending(true);
+    typeText("新しい語");
+    await act(async () =>
+      deliver({ ok: false, reason: "error", message: "失敗" } as unknown as ApiResult<never>),
+    );
+    expect(container?.querySelector("[data-row-kind='create']")).not.toBeNull();
+  });
+
+  it("「候補を読み込み中…」の文字は、遅れの後に見せる", async () => {
+    const restore = setLoadingDelay(0);
+    try {
+      await openPending(true);
+      expect(pending()?.classList.contains("skeleton-painted")).toBe(true);
+      expect(pending()?.textContent).toBe("候補を読み込み中…");
+    } finally {
+      restore();
+    }
+  });
+
+  it("遅れの間は、文字を隠したまま場所を取る", async () => {
+    const restore = setLoadingDelay(60_000);
+    try {
+      await openPending(true);
+      expect(pending()?.classList.contains("skeleton-painted")).toBe(false);
+    } finally {
+      restore();
+    }
   });
 });

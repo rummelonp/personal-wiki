@@ -4,6 +4,7 @@ import type { PageCandidate } from "@personal-wiki/editor";
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { highlightMatches } from "./highlight";
 import { PlusIcon, SearchIcon } from "./icons";
+import { LoadingStatus, useSkeletonPainted } from "./Loading";
 import {
   ANONYMOUS_TITLE_INDEX_MAX_REQUESTS,
   createTitleIndex,
@@ -94,6 +95,25 @@ export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps)
   );
 }
 
+/**
+ * 候補の取得中の案内。行は場所を取っておき、取得が遅いときだけ文字を見せる。
+ * 取得が済む前の「一致なし」や「作成」を見せないので、待っていることはここで伝える。
+ */
+function PendingCandidates() {
+  const painted = useSkeletonPainted();
+  return (
+    <>
+      <LoadingStatus />
+      <p
+        className={`switcher-heading switcher-pending${painted ? " skeleton-painted" : ""}`}
+        aria-hidden="true"
+      >
+        候補を読み込み中…
+      </p>
+    </>
+  );
+}
+
 function SwitcherBody({
   index,
   owner,
@@ -125,6 +145,8 @@ function SwitcherBody({
     };
   }, [index]);
 
+  // 1 回目の取得が済むまでの「候補なし」は、無いのではなく取れていないだけ
+  const settled = index.settled();
   const trimmed = query.trim();
   // 候補には文字が飛び飛びに当たるものもある。強調するのは、空白で区切った語がそのまま含まれる箇所だけ
   const terms = trimmed.split(/\s+/);
@@ -138,7 +160,8 @@ function SwitcherBody({
   const pageRows = candidates.map((candidate): Row => ({ kind: "page", candidate }));
   const contentSearchRows: Row[] =
     trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
-  const createRows: Row[] = trimmed !== "" && owner && !hasExactTitle ? [{ kind: "create" }] : [];
+  const createRows: Row[] =
+    trimmed !== "" && owner && !hasExactTitle && settled ? [{ kind: "create" }] : [];
   const rows: Row[] = hasExactTitle
     ? [...pageRows, ...contentSearchRows]
     : [...contentSearchRows, ...pageRows, ...createRows];
@@ -227,13 +250,16 @@ function SwitcherBody({
       )}
       {/* listbox の子は option だけにするので、候補が無いことと本文から検索できないことの案内は
           外に置く。owner には「作成」と「本文から検索」の行が同じことを伝える */}
-      {trimmed !== "" && !owner && (candidates.length === 0 || contentSearchTooShort) && (
-        <p className="switcher-heading" role="status">
-          {candidates.length === 0 && "タイトルが一致するページはありません。"}
-          {contentSearchTooShort &&
-            `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
-        </p>
-      )}
+      {!settled && <PendingCandidates />}
+      {trimmed !== "" &&
+        !owner &&
+        ((candidates.length === 0 && settled) || contentSearchTooShort) && (
+          <p className="switcher-heading" role="status">
+            {candidates.length === 0 && settled && "タイトルが一致するページはありません。"}
+            {contentSearchTooShort &&
+              `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
+          </p>
+        )}
       <div
         id={listboxId}
         role="listbox"

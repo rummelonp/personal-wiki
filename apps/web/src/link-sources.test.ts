@@ -40,6 +40,50 @@ describe("createTitleIndex", () => {
     expect(index.search("note")).toEqual([{ id: "1", title: "Ｎｏｔｅ" }]);
   });
 
+  it("1 回目の取得が済むまで settled は false で、成功でも失敗でも済んだら true になる", async () => {
+    let release: () => void = () => {};
+    const ok = createTitleIndex(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return listOk([summary("1", "Note")]);
+    });
+    const refreshing = ok.refresh();
+    expect(ok.settled()).toBe(false);
+    release();
+    await refreshing;
+    expect(ok.settled()).toBe(true);
+
+    const thrown = createTitleIndex(async () => {
+      throw new Error("network");
+    });
+    expect(thrown.settled()).toBe(false);
+    await thrown.refresh();
+    expect(thrown.settled()).toBe(true);
+
+    const rejected = createTitleIndex(
+      async () => ({ ok: false, reason: "error", message: "失敗" }) as ApiResult<never>,
+    );
+    await rejected.refresh();
+    expect(rejected.settled()).toBe(true);
+  });
+
+  it("後から始まった refresh に追い越された refresh は、settled にしない", async () => {
+    const releases: (() => void)[] = [];
+    const index = createTitleIndex(async () => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return listOk([summary("1", "Note")]);
+    });
+    const first = index.refresh();
+    const second = index.refresh();
+    releases[0]?.();
+    await first;
+    expect(index.settled()).toBe(false);
+    releases[1]?.();
+    await second;
+    expect(index.settled()).toBe(true);
+  });
+
   it("cursor を辿り、上限の回数で止める", async () => {
     const list = vi.fn<ListTitles>(async (cursor) =>
       listOk([summary(cursor ?? "0", `p${cursor ?? "0"}`)], `${Number(cursor ?? 0) + 1}`),

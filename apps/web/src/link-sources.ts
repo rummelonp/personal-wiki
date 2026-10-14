@@ -14,6 +14,8 @@ export interface TitleIndex extends PageIndex {
    * 前の候補を残す。
    */
   refresh(): Promise<void>;
+  /** 1 回目の refresh が済んだか。一度 true になったら戻らない。 */
+  settled(): boolean;
 }
 
 export type ListTitles = (cursor: string | null) => Promise<ApiResult<PageList<PageSummary>>>;
@@ -44,25 +46,32 @@ export function createTitleIndex(
   let current = build([]);
   // 遅れて終わった古い取り直しで、新しい候補を上書きしない
   let generation = 0;
+  let settled = false;
 
   return {
     search: (query) => current.search(query),
+    settled: () => settled,
     async refresh() {
       const mine = ++generation;
-      const pages: PageCandidate[] = [];
-      let cursor: string | null = null;
-      for (let i = 0; i < maxRequests; i++) {
-        let res: ApiResult<PageList<PageSummary>>;
-        try {
-          res = await list(cursor);
-        } catch {
-          return;
+      try {
+        const pages: PageCandidate[] = [];
+        let cursor: string | null = null;
+        for (let i = 0; i < maxRequests; i++) {
+          let res: ApiResult<PageList<PageSummary>>;
+          try {
+            res = await list(cursor);
+          } catch {
+            return;
+          }
+          if (mine !== generation || !res.ok) return;
+          pages.push(...res.value.pages.map(({ id, title }) => ({ id, title })));
+          current = build(pages);
+          cursor = res.value.nextCursor;
+          if (cursor === null) return;
         }
-        if (mine !== generation || !res.ok) return;
-        pages.push(...res.value.pages.map(({ id, title }) => ({ id, title })));
-        current = build(pages);
-        cursor = res.value.nextCursor;
-        if (cursor === null) return;
+      } finally {
+        // 後から始まった refresh に追い越されたものは済ませない。その refresh が最後に済ませる
+        if (mine === generation) settled = true;
       }
     },
   };
