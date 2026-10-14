@@ -1,4 +1,9 @@
-import { foldForSearch, foldTitle, TRIGRAM_MIN_CHARS } from "@personal-wiki/domain";
+import {
+  foldForSearch,
+  foldTitle,
+  normalizeTitleKey,
+  TRIGRAM_MIN_CHARS,
+} from "@personal-wiki/domain";
 import type { ReadableVisibility } from "../auth/principal";
 import { publicOnlyFlag, type Visibility } from "./store";
 
@@ -330,6 +335,44 @@ export async function listBacklinks(
     )
     .bind(
       pageId,
+      cursor?.updatedAt ?? null,
+      cursor?.id ?? null,
+      limit + 1,
+      publicOnlyFlag(readable),
+    )
+    .all<SummaryRow>();
+  return pageOf(results, limit, toSummary);
+}
+
+/**
+ * title で書かれた links を持つ、削除されていないページを更新日時の降順で返す。並びと cursor は
+ * listBacklinks と同じ。title が title_key にできなければ null。
+ * まだ無いページ（と匿名から見た draft）の画面で使う。target_page_id もリンク先の有無も見ないので、
+ * 匿名には、リンク先が draft でも無くても同じ public のリンク元が返る。
+ * リンク先のページがあれば、そのページ自身を title_key で除く（自分へのリンクを含めない）。
+ */
+export async function listBacklinksByTitle(
+  db: D1Database,
+  title: string,
+  {
+    limit,
+    cursor,
+    readable,
+  }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
+): Promise<PageList | null> {
+  const key = normalizeTitleKey(title);
+  if (!key.ok) return null;
+  const { results } = await db
+    .prepare(
+      `SELECT p.id, p.title, p.visibility, p.updated_at
+       FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
+       WHERE l.target_title_key = ?1 AND p.title_key <> ?1 AND p.deleted_at IS NULL
+         AND (?5 = 0 OR p.visibility = 'public')
+         AND (?2 IS NULL OR p.updated_at < ?2 OR (p.updated_at = ?2 AND p.id < ?3))
+       ORDER BY p.updated_at DESC, p.id DESC LIMIT ?4`,
+    )
+    .bind(
+      key.value,
       cursor?.updatedAt ?? null,
       cursor?.id ?? null,
       limit + 1,

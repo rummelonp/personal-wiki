@@ -24,6 +24,7 @@ import {
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
   listBacklinks,
+  listBacklinksByTitle,
   listPageTitles,
   listRecentPages,
   listTagCounts,
@@ -292,6 +293,21 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         );
         if (page === null) return c.notFound();
         return pageResponse(c, page);
+      })
+      // まだ無いページの画面が、その title へのリンク元を出すのに使う。リンク先の有無で応答を変えず、
+      // 匿名には draft の title でも存在しない title でも同じ public のリンク元を返す。
+      // `/api/pages/:id/backlinks` より前に登録する。後ろだと "by-title" を id として先に 404 にする
+      .get("/api/pages/by-title/backlinks", allowAnonymousRead(), async (c) => {
+        const title = c.req.query("title");
+        if (title === undefined) return errorResponse(c, 400, "missing_field", { field: "title" });
+        const paging = readPaging(c);
+        if (!paging.ok) return paging.response;
+        const list = await listBacklinksByTitle(c.env.DB, title, {
+          ...paging.value,
+          readable: readableVisibilityOf(c.get("principal")),
+        });
+        if (list === null) return errorResponse(c, 400, "invalid_field", { field: "title" });
+        return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })
       // wikilink の解決に使う。応答は入力と同じ順・同じ件数で、解決できない title は page が null。
       // 匿名には draft も null で返し、存在しない title と区別させない。`/api/pages/:id` より前に登録する

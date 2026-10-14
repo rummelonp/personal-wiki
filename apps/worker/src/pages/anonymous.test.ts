@@ -200,6 +200,42 @@ describe("匿名の読み取り", () => {
     expect(ids(draftBacklinks.pages)).toEqual([open.id]);
   });
 
+  it("title での backlink は、draft の title と存在しない title で同じ応答になり、public のリンク元だけを返す", async () => {
+    const { anonymous, open, linker, create, setVisibility } = await seed();
+    const ids = (pages: Listed[]) => pages.map((page) => page.id);
+    // draft のリンク元。owner には見え、匿名には出ない
+    await create("Draft Linker", "[[Hidden Plan]] [[Missing Page]] [[Open Note]]");
+    // public のリンク元を足し、Hidden Plan と Missing Page の両方を指させる
+    const both = await setVisibility(
+      await create("Both", "[[hidden plan]] [[missing page]]"),
+      "public",
+    );
+    const read = async (title: string) => {
+      const res = await anonymous(
+        `/api/pages/by-title/backlinks?title=${encodeURIComponent(title)}`,
+      );
+      return {
+        status: res.status,
+        headers: Object.fromEntries(res.headers),
+        body: await res.text(),
+      };
+    };
+    const draftTitle = await read("Hidden Plan");
+    const missingTitle = await read("Missing Page");
+    expect(draftTitle).toEqual(missingTitle);
+    expect(draftTitle.status).toBe(200);
+    expect(JSON.parse(draftTitle.body)).toEqual({
+      pages: [
+        { id: both.id, title: "Both", visibility: "public", updatedAt: both.updatedAt },
+        { id: open.id, title: "Open Note", visibility: "public", updatedAt: open.updatedAt },
+      ],
+      nextCursor: null,
+    });
+    // public のページ自身は除き、draft のリンク元（Hidden Plan、Draft Linker）は出さない
+    const openTitle = JSON.parse((await read("open note")).body) as { pages: Listed[] };
+    expect(ids(openTitle.pages)).toEqual([linker.id]);
+  });
+
   it("検索語が NFKC の後で 3 文字に満たなければ 400 で拒み、3 文字からは検索する", async () => {
     const { anonymous, asOwner, open, draft } = await seed();
     const ids = (pages: Listed[]) => pages.map((page) => page.id);
@@ -324,7 +360,7 @@ describe("匿名の読み取り", () => {
 });
 
 describe("検証できないセッション cookie", () => {
-  /** ページの読み取りの 8 つのルートを 1 つずつ呼ぶパス。 */
+  /** ページの読み取りの 9 つのルートを 1 つずつ呼ぶパス。 */
   function readPaths(open: PageJson): string[] {
     return [
       `/api/pages/by-title?title=${encodeURIComponent("Open Note")}`,
@@ -335,6 +371,7 @@ describe("検証できないセッション cookie", () => {
       `/api/search?q=${encodeURIComponent("Open")}`,
       `/api/pages/${open.id}`,
       `/api/pages/${open.id}/backlinks`,
+      `/api/pages/by-title/backlinks?title=${encodeURIComponent("Open Note")}`,
     ];
   }
 
@@ -452,6 +489,8 @@ describe("匿名向けの応答の総当たり", () => {
     const { draft, open, linker, gone } = pages;
     const title = (value: string) => `/api/pages/by-title?title=${encodeURIComponent(value)}`;
     const search = (q: string) => `/api/search?q=${encodeURIComponent(q)}`;
+    const titleBacklinks = (value: string) =>
+      `/api/pages/by-title/backlinks?title=${encodeURIComponent(value)}`;
     const resolve = (...titles: string[]) =>
       `/api/pages/resolve?${titles.map((t) => `title=${encodeURIComponent(t)}`).join("&")}`;
     return {
@@ -514,6 +553,14 @@ describe("匿名向けの応答の総当たり", () => {
         `/api/pages/${gone.id}/backlinks`,
       ],
       // 何も保存していないので、どれも 404。参照のある添付の配信は attachments/attachments.test.ts で確かめる
+      "GET /api/pages/by-title/backlinks": [
+        titleBacklinks("Open Note"),
+        titleBacklinks("Hidden Plan"),
+        titleBacklinks("hidden plan"),
+        titleBacklinks("Missing Page"),
+        titleBacklinks("Gone"),
+        "/api/pages/by-title/backlinks",
+      ],
       "GET /api/pages/:id/attachments/:name": [
         `/api/pages/${open.id}/attachments/AAAAAAAAAAAAAAAAAAAAAA.png`,
         `/api/pages/${draft.id}/attachments/AAAAAAAAAAAAAAAAAAAAAA.png`,
@@ -596,7 +643,7 @@ describe("匿名向けの応答の総当たり", () => {
 
 describe("owner と token の読み取りは変わらない", () => {
   it("owner は draft を title、一覧、タグ、検索、backlink で見られ、応答は private, no-store", async () => {
-    const { asOwner, draft, open, linker } = await seed();
+    const { asOwner, create, draft, open, linker } = await seed();
     const byTitle = await asOwner(`/api/pages/by-title?title=${encodeURIComponent("Hidden Plan")}`);
     expect(byTitle.status).toBe(200);
     expect(byTitle.headers.get("Cache-Control")).toBe("private, no-store");
@@ -620,6 +667,25 @@ describe("owner と token の読み取りは変わらない", () => {
       pages: Listed[];
     }>();
     expect(backlinks.pages.map((page) => page.id)).toEqual([linker.id, draft.id]);
+    // title での backlink も draft のリンク元を含め、リンク先が draft でも無くても引ける
+    for (const [title, expected] of [
+      ["Open Note", [linker.id, draft.id]],
+      ["Hidden Plan", [open.id]],
+      ["Missing Page", [open.id]],
+    ] as const) {
+      const res = await asOwner(`/api/pages/by-title/backlinks?title=${encodeURIComponent(title)}`);
+      expect(res.headers.get("Cache-Control"), title).toBe("private, no-store");
+      const list = await res.json<{ pages: Listed[] }>();
+      expect(
+        list.pages.map((page) => page.id),
+        title,
+      ).toEqual(expected);
+    }
+    const draftLinker = await create("Draft Linker", "[[Missing Page]]");
+    const missing = await (
+      await asOwner(`/api/pages/by-title/backlinks?title=${encodeURIComponent("missing page")}`)
+    ).json<{ pages: Listed[] }>();
+    expect(missing.pages.map((page) => page.id)).toEqual([draftLinker.id, open.id]);
   });
 
   it("read の token は draft を title と一覧で見られる", async () => {

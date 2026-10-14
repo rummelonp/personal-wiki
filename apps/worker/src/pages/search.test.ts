@@ -613,3 +613,103 @@ describe("GET /api/pages/:id/backlinks", () => {
     expect((await backlinks(reader, page.id)).status).toBe(200);
   });
 });
+
+async function backlinksByTitle(
+  client: Awaited<ReturnType<typeof buildClient>>,
+  title: string,
+  query = "",
+) {
+  return client.request(`/api/pages/by-title/backlinks?title=${encodeURIComponent(title)}${query}`);
+}
+
+async function backlinkTitlesByTitle(
+  client: Awaited<ReturnType<typeof buildClient>>,
+  title: string,
+) {
+  const res = await backlinksByTitle(client, title);
+  expect(res.status).toBe(200);
+  return titles((await res.json<{ pages: Hit[] }>()).pages);
+}
+
+describe("GET /api/pages/by-title/backlinks", () => {
+  it("まだ無い title へのリンク元を、更新の新しい順に返す", async () => {
+    const client = await buildClient();
+    const first = await client.create("first", "[[Ruby]]");
+    client.clock.now += 1000;
+    const second = await client.create("second", "前置き [[Ruby]] 後ろ");
+    await client.create("unrelated", "[[Python]]");
+    const res = await backlinksByTitle(client, "Ruby");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      pages: [
+        { id: second.id, title: "second", visibility: "draft", updatedAt: T0 + 1000 },
+        { id: first.id, title: "first", visibility: "draft", updatedAt: T0 },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it("title は title_key の規則（大文字小文字、全角半角、前後と連続の空白）で引く", async () => {
+    const client = await buildClient();
+    await client.create("lower", "[[ruby  on rails]]");
+    client.clock.now += 1000;
+    await client.create("wide", "[[ＲＵＢＹ ON RAILS]]");
+    for (const title of ["Ruby on Rails", " RUBY  ON  RAILS ", "ｒｕｂｙ on rails"]) {
+      expect(await backlinkTitlesByTitle(client, title), title).toEqual(["wide", "lower"]);
+    }
+  });
+
+  it("リンク先のページがあれば、そのページ自身は含めない", async () => {
+    const client = await buildClient();
+    await client.create("Target", "[[Target]] 自分へのリンク");
+    await client.create("source", "[[target]]");
+    expect(await backlinkTitlesByTitle(client, "TARGET")).toEqual(["source"]);
+  });
+
+  it("リンク元を削除すると外れる", async () => {
+    const client = await buildClient();
+    const source = await client.create("source", "[[Ruby]]");
+    await client.request(`/api/pages/${source.id}`, {
+      method: "DELETE",
+      headers: { "If-Match": '"1"' },
+    });
+    expect(await backlinkTitlesByTitle(client, "Ruby")).toEqual([]);
+  });
+
+  it("cursor でページングし、title が無いか空なら 400", async () => {
+    const client = await buildClient();
+    for (let i = 0; i < 3; i++) {
+      client.clock.now += 1000;
+      await client.create(`s${i}`, "[[Ruby]]");
+    }
+    const first = await (await backlinksByTitle(client, "Ruby", "&limit=2")).json<{
+      pages: Hit[];
+      nextCursor: string;
+    }>();
+    expect(titles(first.pages)).toEqual(["s2", "s1"]);
+    const second = await (
+      await backlinksByTitle(client, "Ruby", `&limit=2&cursor=${first.nextCursor}`)
+    ).json<{ pages: Hit[]; nextCursor: string | null }>();
+    expect(titles(second.pages)).toEqual(["s0"]);
+    expect(second.nextCursor).toBeNull();
+    expect((await backlinksByTitle(client, "Ruby", "&cursor=bad")).status).toBe(400);
+    expect((await backlinksByTitle(client, "Ruby", "&limit=101")).status).toBe(400);
+    const missing = await client.request("/api/pages/by-title/backlinks");
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({ error: "missing_field", field: "title" });
+    const blank = await backlinksByTitle(client, "  ");
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: "invalid_field", field: "title" });
+  });
+
+  it("token が無ければ匿名として 200、read の token でも引ける", async () => {
+    const client = await buildClient();
+    await client.create("x", "[[Ruby]]");
+    const anonymous = await withoutToken(
+      `/api/pages/by-title/backlinks?title=${encodeURIComponent("Ruby")}`,
+    );
+    expect(anonymous.status).toBe(200);
+    const reader = await buildClient({ scopes: "read", name: "reader" });
+    expect(await backlinkTitlesByTitle(reader, "Ruby")).toEqual(["x"]);
+  });
+});
