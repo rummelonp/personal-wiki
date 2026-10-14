@@ -391,6 +391,11 @@ describe("PageEditor の wikilink", () => {
       );
       expect(container?.querySelector(".note")?.getAttribute("aria-busy")).toBe("true");
       expect(container?.textContent).toContain("「無い」を開いています…");
+      // 押し直しても、問い合わせを最初からやり直さない
+      expect(resolvePages).toHaveBeenCalledTimes(2);
+      clickLink("無い");
+      await flushAsync();
+      expect(resolvePages).toHaveBeenCalledTimes(2);
 
       await act(async () => answer(ok([null])));
       await vi.waitFor(() =>

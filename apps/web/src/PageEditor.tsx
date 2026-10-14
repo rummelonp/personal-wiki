@@ -260,6 +260,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   });
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
+  /** 問い合わせ中の link（target と見出し）。同じ link の押し直しで、問い合わせを最初からやり直さない */
+  const linkClickKey = useRef<string | null>(null);
   /** 行き先を調べている wikilink の target。遅い回線でも押したことが分かるよう、画面を薄くする */
   const [linkPending, setLinkPending] = useState<string | null>(null);
   const leaving = useDelayedWhile(linkPending !== null);
@@ -309,17 +311,22 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       // 同じページの見出しと block。ページを調べず、位置だけ移る
       setLinkPending(null);
       linkClick.current?.abort();
+      linkClickKey.current = null;
       setLinkNotice(null);
       goTo(hashOfLink(link));
       return;
     }
+    const key = `${link.target}${hashOfLink(link)}`;
+    if (linkClickKey.current === key) return;
     linkClick.current?.abort();
     const controller = new AbortController();
     linkClick.current = controller;
+    linkClickKey.current = key;
     setLinkNotice(null);
     setLinkPending(link.target);
     const found = await links.lookup(link.target, controller.signal);
     if (controller.signal.aborted) return;
+    linkClickKey.current = null;
     setLinkPending(null);
     if (found.kind === "found") {
       const hash = hashOfLink(link);

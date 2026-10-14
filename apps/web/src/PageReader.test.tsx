@@ -210,6 +210,13 @@ describe("PageReader", () => {
       );
       expect(container?.querySelector(".note")?.getAttribute("aria-busy")).toBe("true");
       expect(container?.textContent).toContain("「無い」を開いています…");
+      // 押し直しても、問い合わせを最初からやり直さない
+      const asked = () =>
+        vi.mocked(findPageByTitle).mock.calls.length + vi.mocked(resolvePages).mock.calls.length;
+      const before = asked();
+      clickLink("無い");
+      await flushAsync();
+      expect(asked()).toBe(before);
 
       await act(async () => answer({ ok: false, reason: "not_found" }));
       await vi.waitFor(() =>

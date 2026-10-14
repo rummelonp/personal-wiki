@@ -753,19 +753,19 @@ a {
 }
 
 /* 条件を変えて取り直している間の前の一覧。取得が遅いときだけ薄くする */
-/* wikilink の行き先を調べている間。押したことが分かるよう、離れる画面を薄くする */
-.note-leaving {
-  cursor: progress;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
-
 .entries-stale {
   transition: opacity 0.2s;
 }
 
 .entries-stale.skeleton-painted {
   opacity: 0.5;
+}
+
+/* wikilink の行き先を調べている間。押したことが分かるよう、離れる画面を薄くする */
+.note-leaving {
+  cursor: progress;
+  opacity: 0.5;
+  transition: opacity 0.2s;
 }
 
 @media (prefers-reduced-motion: reduce) {
