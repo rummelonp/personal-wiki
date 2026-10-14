@@ -97,6 +97,9 @@ export function registerAuthRoutes(app: Hono<AppEnv>, { now, accessVerifier }: A
       return c.redirect(safeReturnUrl(c.req.query("return"), new URL(c.req.url).origin), 302);
     })
     .post("/_auth/logout", allowAnonymous(), (c) => {
+      // allowAnonymous はセッションを要らないという宣言で、CSRF の検査は外れない。cookie 付きの POST は
+      // rejectCrossSiteCookieWrites が同一オリジンの JSON に限る（owner.test.ts に他 origin からの 403 の
+      // 検査がある）。cookie が無い呼び出しは消すものが無く、副作用も無い
       deleteCookie(c, SESSION_COOKIE_NAME, SESSION_COOKIE_ATTRIBUTES);
       c.header("Cache-Control", "no-store");
       return c.body(null, 204);
