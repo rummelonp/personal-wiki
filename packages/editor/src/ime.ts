@@ -1,5 +1,5 @@
 import { Facet, StateEffect } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { type EditorView, ViewPlugin } from "@codemirror/view";
 
 /*
  * IME 不変条件。packages/editor のコメント（「IME 不変条件 N」）とテスト名（「IME invariant N」）が
@@ -42,24 +42,65 @@ export const compositionSettled = StateEffect.define<null>();
 /** `compositionend` を受けてから、`compositionSettled` を dispatch するまでの view */
 const settling = new WeakSet<EditorView>();
 
+const settleMeasureKey = Symbol("compositionSettled");
+
 /**
- * `compositionend` の後に `compositionSettled` を 1 回 dispatch する。
- * CodeMirror は確定分の DOM 変更を microtask で flush するので、setTimeout でその後ろへ回す。
- * 連続入力で次の composition がすでに始まっていれば何もしない（その composition の終了時に送る）。
+ * `compositionend` の後、確定分の DOM 変更を CodeMirror が読み終えてから `compositionSettled` を
+ * 1 回 dispatch する。連続入力で次の composition がすでに始まっていれば何もしない（その composition の
+ * 終了時に送る）。
+ *
+ * 確定分を読む時期はブラウザで違う。iOS Safari は確定の間際に文字列をいったん消して入れ直すので、
+ * CodeMirror はその DOM 変更を次の frame まで読まない。setTimeout はその frame より先に来ることがあり、
+ * そこで dispatch すると、未読の DOM 変更と確定後の選択が捨てられ、古い選択（確定前の文字列全体）が
+ * DOM に書き戻される。続けて打つと、その選択ごと確定文字列が置き換わる。
+ * そこで measure の後ろへ回す。@codemirror/view の measure は、frame から走るときは read の前に
+ * 保留中の DOM 変更を読む。measure の中では dispatch できないので、dispatch は microtask へ送る。
+ * ただし、frame の前に `posAtCoords` などの読み取りが measure を同期に走らせると、その measure は
+ * DOM 変更を読まないので、settle が遅れた flush より先に走りうる。
+ *
+ * ページが非表示の間は frame が止まるので、settle も保留した外からの dispatch も表示に戻るまで待つ。
+ * 非表示の間だけ frame を待たずに settle する逃げ道は作らない。iOS の遅れた flush も frame 待ちで、
+ * その前に settle すると同じように未読の DOM 変更を捨てうる。
+ * そのため、settle を待つ処理（web の `whenSettled`）の後ろに並んだ保存も、表示に戻るまで送られない。
  */
-export const compositionSettledNotifier = EditorView.domEventHandlers({
-  compositionend(_event, view) {
-    settling.add(view);
-    setTimeout(() => {
+export const compositionSettledNotifier = ViewPlugin.fromClass(
+  class {
+    private destroyed = false;
+
+    constructor(private readonly view: EditorView) {}
+
+    compositionEnded(): void {
+      settling.add(this.view);
+      this.view.requestMeasure({
+        key: settleMeasureKey,
+        read: () => null,
+        write: () => queueMicrotask(() => this.settle()),
+      });
+    }
+
+    private settle(): void {
+      if (this.destroyed) return;
       // 次の composition の間は isComposing が保留を担う。ここで外しておかないと、その
       // composition の終わりが DOM の compositionend を伴わない場合（Safari）に残り続ける。
-      settling.delete(view);
-      if (isComposing(view)) return;
-      view.dispatch({ effects: compositionSettled.of(null) });
-    }, 0);
-    return false;
+      settling.delete(this.view);
+      if (isComposing(this.view)) return;
+      this.view.dispatch({ effects: compositionSettled.of(null) });
+    }
+
+    destroy(): void {
+      this.destroyed = true;
+      settling.delete(this.view);
+    }
   },
-});
+  {
+    eventHandlers: {
+      compositionend() {
+        this.compositionEnded();
+        return false;
+      },
+    },
+  },
+);
 
 export type ImeEventKind =
   | "compositionstart"
@@ -110,10 +151,10 @@ export function isComposing(view: EditorView): boolean {
  * 来る dispatch はこの間ずっと控える。
  *
  * `compositionend` の直後は `isComposing` が false に戻るが、確定文字列の DOM 変更はまだ
- * 読まれていない（CodeMirror が microtask で読む）。その前に dispatch すると、
- * `EditorView.update` が未読の DOM 変更を読まずに片付けて描き直すので、確定文字列が消える。
- * fetch の応答のような別の task からの呼び出しはこの間に入り込めないが、`compositionend` の
- * handler など同じ task から同期に呼ばれる場合に備える。
+ * 読まれていないことがある（CodeMirror が microtask で読む。iOS Safari では次の frame まで遅れる）。
+ * その前に dispatch すると、`EditorView.update` が未読の DOM 変更を読まずに片付けて描き直すので、
+ * 確定文字列や確定後の選択が消える。読むまでの間には fetch の応答やタイマーのような別の task も
+ * 入り込むので、`compositionend` の handler など同じ task からの呼び出しに限らず控える。
  */
 export function isCompositionUnsettled(view: EditorView): boolean {
   return isComposing(view) || settling.has(view);

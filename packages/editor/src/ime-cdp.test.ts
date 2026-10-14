@@ -394,6 +394,107 @@ describe("IME invariants 3 and 4 ([[ completion)", () => {
   });
 });
 
+describe("settling after a delayed DOM flush (iOS Safari)", () => {
+  /** `requestAnimationFrame` の callback を溜め、`release` まで走らせない */
+  function holdAnimationFrames(): { release: () => void } {
+    const original = { request: window.requestAnimationFrame, cancel: window.cancelAnimationFrame };
+    const held = new Map<number, FrameRequestCallback>();
+    // 溜める前に本物の rAF で予約された id と重ならない値から振る。重ならない id の取り消しは本物へ渡す
+    let next = 1_000_000_000;
+    window.requestAnimationFrame = (callback) => {
+      held.set(next, callback);
+      return next++;
+    };
+    window.cancelAnimationFrame = (id) => {
+      if (!held.delete(id)) original.cancel.call(window, id);
+    };
+    return {
+      release() {
+        // 溜めた callback が次の frame を頼むことがあるので、空になるまで回す
+        while (held.size > 0) {
+          const [id, callback] = held.entries().next().value as [number, FrameRequestCallback];
+          held.delete(id);
+          callback(performance.now());
+        }
+        window.requestAnimationFrame = original.request;
+        window.cancelAnimationFrame = original.cancel;
+      },
+    };
+  }
+
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+  const macrotask = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const domSelectionCollapsed = () => document.getSelection()?.isCollapsed;
+
+  /**
+   * `[[` を変換して確定する。確定分の DOM 変更は、iOS と同じく次の frame まで読ませない。
+   * `measureFirst` なら、遅らせた flush より前に measure の frame を予約しておく
+   */
+  async function commitWithDelayedFlush(v: EditorView, measureFirst: boolean): Promise<void> {
+    // iOS は変換中の文字列（marked text）全体を DOM の選択にする
+    await cdp().send("Input.imeSetComposition", { text: "[[", selectionStart: 0, selectionEnd: 2 });
+    expect(domSelectionCollapsed()).toBe(false);
+    expect(v.state.selection.main).toMatchObject({ from: 1, to: 3 });
+    // compose の transaction が頼んだ measure を先に済ませる。溜めた後に残っていると、その measure が
+    // 遅らせた flush を片付けてしまい、どちらの順で予約したかを選べない
+    await nextFrame();
+    log = [];
+
+    const frames = holdAnimationFrames();
+    try {
+      // 待つ間に measure が本物の rAF で予約し直されていると、溜められずに次の frame で走ってしまう。
+      // 座標の読み取りは、予約済みの measure をその場で済ませて予約を取り消す
+      v.coordsAtPos(0);
+      if (measureFirst) v.requestMeasure();
+      // iOS は確定の直前に変換中の文字列を消してから入れ直し、CodeMirror はその DOM の変更を
+      // 次の frame まで読まない（@codemirror/view 6.43.12 の DOMObserver の MutationObserver の
+      // callback、`browser.ios && view.composing` の分岐の flushSoon）。Chromium はこの分岐に
+      // 入らないので、同じ遅れを白箱で作る
+      // biome-ignore lint/suspicious/noExplicitAny: CodeMirror の内部の DOMObserver を直接呼ぶ
+      (v as any).observer.flushSoon();
+      await commit("[[");
+      await macrotask();
+      // 遅れた flush がまだ確定後の選択（DOM では折りたたまれている）を読んでおらず、settle もまだ。
+      // 修正前はここで settle し、古い選択（[[ 全体）を DOM に書き戻していた
+      expect(v.state.selection.main).toMatchObject({ from: 1, to: 3 });
+      expect(domSelectionCollapsed()).toBe(true);
+      expect(isCompositionUnsettled(v)).toBe(true);
+    } finally {
+      frames.release();
+    }
+    await settled(v);
+  }
+
+  /** 確定後の選択を flush が読んでから、settle の transaction が来た */
+  function expectSettledAfterFlush(): void {
+    // 遅れた flush は確定後の選択を compose の入力として入れ、settle は空の transaction（effect）
+    expect(kindsOf(afterComposition(), "transaction")).toEqual(["input.type.compose", "effect"]);
+  }
+
+  async function expectCommittedBracketsKept(v: EditorView): Promise<void> {
+    expect(v.state.doc.toString()).toBe("前[[");
+    expect(v.state.selection.main).toMatchObject({ from: 3, to: 3 });
+    expect(domSelectionCollapsed()).toBe(true);
+    await commit("こ");
+    expect(v.state.doc.toString()).toBe("前[[こ");
+  }
+
+  it("keeps the committed [[ when the DOM flush is held until the next frame", async () => {
+    const v = mount("前");
+    await commitWithDelayedFlush(v, false);
+    expectSettledAfterFlush();
+    await expectCommittedBracketsKept(v);
+  });
+
+  // measure の forceFlush が遅れた flush を取り消して先に読む順でも、settle はその後になる
+  it("keeps the committed [[ when a measure frame was requested before the delayed flush", async () => {
+    const v = mount("前");
+    await commitWithDelayedFlush(v, true);
+    expectSettledAfterFlush();
+    await expectCommittedBracketsKept(v);
+  });
+});
+
 describe("page embed inside a conversion", () => {
   it("rebuilds the nested body on invalidate without breaking the outer conversion", async () => {
     const content: PageEmbedContent = { kind: "resolved", title: "Note", text: "[[なし]] へ" };

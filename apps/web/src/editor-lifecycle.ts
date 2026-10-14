@@ -16,7 +16,9 @@ export interface VisibilitySource extends EventTarget {
  *
  * hidden で leave() を呼ぶのは、モバイルのブラウザがバックグラウンドのタブを pagehide や
  * beforeunload を発火せずに破棄することがあるため。hidden が離脱前に確実に届く最後の機会になる。
- * leave() は退避してから keepalive で送るので、送信が間に合わなくても内容は残る。
+ * leave() は同期で退避してから keepalive の送信を保存の列に並べるので、送信が間に合わなくても内容は残る。
+ * 列の前で IME の変換が落ち着くのを待つ処理があると、非表示の間は frame が止まって落ち着かないので、
+ * 送信は表示に戻るまで待つ（packages/editor の ime.ts の compositionSettledNotifier）。
  */
 export function bindLifecycle(
   session: LifecycleSession,

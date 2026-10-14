@@ -239,7 +239,7 @@ describe("revealBlockId", () => {
     }
   });
 
-  it("defers clearing the highlight while IME composition is active", () => {
+  it("defers clearing the highlight while IME composition is active", async () => {
     vi.useFakeTimers();
     try {
       const DOC = "Body paragraph ^target";
@@ -255,11 +255,10 @@ describe("revealBlockId", () => {
       expect(v.contentDOM.querySelector(".cm-block-ref-highlight")).not.toBeNull();
 
       v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
-      // compositionend 通知 → compositionSettled dispatch → setTimeout(0) 経由の
-      // setHighlight(null) dispatch、と setTimeout(0) が連鎖する。この環境の fake timer は
-      // advanceTimersByTime(0) を何度呼んでも、発火中の 0ms timer から新たに積まれた
-      // 0ms timer までは処理しない（チェーンを辿らない）ため、runAllTimers で消化する。
-      vi.runAllTimers();
+      // compositionend 通知 → measure の frame → microtask の compositionSettled dispatch →
+      // setTimeout(0) 経由の setHighlight(null) dispatch、と連鎖する。間に microtask を挟むので
+      // 同期の runAllTimers では辿りきれず、microtask も待つ runAllTimersAsync で消化する。
+      await vi.runAllTimersAsync();
       expect(v.contentDOM.querySelector(".cm-block-ref-highlight")).toBeNull();
     } finally {
       vi.useRealTimers();

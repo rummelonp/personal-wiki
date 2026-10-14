@@ -11,7 +11,7 @@ import {
 } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
 import { extractBlockIds, taskListNodes } from "@personal-wiki/markdown";
-import { compositionSettled, isComposing } from "./ime";
+import { compositionSettled, isComposing, isCompositionUnsettled } from "./ime";
 
 /** 構文木の parse が間に合わなかった場合、その場では諦めて既存の（不完全な）木で妥協する。 */
 const ENSURE_SYNTAX_TREE_TIMEOUT_MS = 100;
@@ -154,8 +154,8 @@ const HIGHLIGHT_DURATION_MS = 2000;
  * ハイライト中に他ページへ遷移して view が破棄された場合に破棄済みの view へ
  * dispatch してしまうため、plugin の destroy でタイマーを解除する。
  *
- * タイマー発火時に composition 中だと、確定前の文字列がある DOM へ dispatch してしまい
- * IME 不変条件 1（ime.ts）を破る。
+ * タイマー発火時に composition 中、または確定文字列を doc に読み込む前だと、dispatch が
+ * 確定前の文字列や未読の DOM 変更を壊し、IME 不変条件 1（ime.ts）を破る。
  * その場合は dispatch を見送り、`compositionSettled`（ime.ts、composition 終了を通知する
  * 空の transaction）を待って 1 回だけ flush する。
  */
@@ -178,7 +178,6 @@ const clearHighlightOnTimeout = ViewPlugin.fromClass(
             this.pendingClear = false;
             // ViewPlugin.update() の最中は view.dispatch を呼べない
             // （"Calls to EditorView.update are not allowed while an update is in progress"）。
-            // ime.ts の compositionSettledNotifier 自身も同じ理由で setTimeout(0) を使っている。
             this.settleTimer = setTimeout(
               () => update.view.dispatch({ effects: setHighlight.of(null) }),
               0,
@@ -189,7 +188,7 @@ const clearHighlightOnTimeout = ViewPlugin.fromClass(
     }
 
     clear(view: EditorView): void {
-      if (isComposing(view)) {
+      if (isCompositionUnsettled(view)) {
         this.pendingClear = true;
         return;
       }
