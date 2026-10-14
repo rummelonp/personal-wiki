@@ -32,7 +32,6 @@
   --color-danger: #b42318; /* 失敗、削除 */
   --color-danger-bg: #fef3f2; /* 失敗の通知の背景 */
   --color-warn-bg: #fffaeb; /* 注意の通知の背景（退避、ログイン切れ、衝突） */
-  --color-mark-bg: #fdeba0; /* 検索の一致箇所の地 */
   --color-warn-border: #d4a72c; /* 注意の通知の枠 */
   --color-ok: #1f7a52; /* 保存済みの点と文字（地に対し 4.5:1 以上） */
   --color-diff-add-bg: #e6f4ea; /* 差分: 手元だけにある行 */
@@ -41,6 +40,7 @@
   /* 色: チップ */
   --color-tag-bg: #eef0fb; /* タグのチップの背景 */
   --color-tag-fg: #3346c4; /* タグのチップの文字 */
+  --color-mark-bg: #d3d9f9; /* 検索の一致箇所の地。差し色の薄い色で、タグのチップより濃い。文字（--color-fg）とは 4.5:1 以上 */
   --color-draft-bg: #1b1e24; /* 選択中の公開設定の背景 */
   --color-draft-fg: #ffffff; /* 選択中の公開設定の文字 */
 
@@ -168,7 +168,6 @@
     --color-danger: #f97066;
     --color-danger-bg: #2a1512;
     --color-warn-bg: #2a2412;
-    --color-mark-bg: #5a4a14;
     --color-warn-border: #8a6d1a;
     --color-ok: #4cc38a;
     --color-diff-add-bg: #14281b;
@@ -176,6 +175,7 @@
 
     --color-tag-bg: #1d2133;
     --color-tag-fg: #a3adff;
+    --color-mark-bg: #343c75;
     --color-draft-bg: #e5e7eb;
     --color-draft-fg: #111317;
 
