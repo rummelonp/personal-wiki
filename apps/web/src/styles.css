@@ -944,10 +944,11 @@ a {
 
 /*
  * 320px 級の画面。ヘッダーの 3 つの操作が指で押せる大きさ（44px）になっても 1 行に収まるよう、
- * 左右の余白と操作どうしの間を詰める。操作は箱どうしが触れ合うだけで、重ならない。
+ * 左右の余白と、ロゴと操作の間、操作どうしの間を詰める。操作どうしは 4px 空ける。
  */
 @media (max-width: 22.5rem) {
   .header {
+    column-gap: var(--space-1);
     padding-inline: var(--space-3);
   }
 
@@ -970,13 +971,59 @@ a {
     min-height: var(--tap-size);
   }
 
+  /*
+   * ヘッダーの操作は箱を 44px にしつつ、塗りと枠は従来の大きさ（--header-control-visual）で止め、
+   * 残りは透明な border にする。上下の余白も詰めて、ヘッダーの高さを従来の 56px 前後に保つ。
+   * 枠は border でなく inset の影で描く（border は透明にして当たり判定の側に回すため）。
+   */
+  .header {
+    padding-block: calc(var(--space-3) / 2);
+  }
+
+  .header .button-compact {
+    --edge: var(--color-border-strong);
+    --inset: calc((var(--tap-size) - var(--header-control-visual)) / 2);
+
+    /* 角の丸みは border の内側（見える側）で測られるので、border の分を足して従来の丸みに保つ */
+    border-block: var(--inset) solid transparent;
+    border-radius: calc(var(--radius-md) + var(--inset));
+    border-inline-color: transparent;
+    background-clip: padding-box;
+    box-shadow: inset 0 0 0 var(--border-width) var(--edge);
+  }
+
+  .header .button-primary {
+    --edge: var(--color-accent);
+  }
+
+  .header .button-quiet {
+    --edge: transparent;
+  }
+
+  /*
+   * 一覧の行。title とタグは箱を 44px にし、字と見た目の間隔は PC と同じにする。
+   * 足した高さの分、下に続く抜粋とタグの行を負の margin で引き上げ、箱を抜粋の上に重ねる。
+   * 抜粋は押す対象ではない。重ねても title とタグが前に出るよう position を付け、押せる範囲は削らない。
+   * title とタグの箱どうしは重ねない。
+   */
   .entry {
+    --title-inset: calc((var(--tap-size) - var(--font-size-md) * var(--line-height)) / 2);
+
     padding-block: var(--space-2);
   }
 
-  /* 行の高さを足りない分だけ上下の padding で補い、title の字の大きさと位置は変えない */
   .entry-title {
-    padding-block: calc((var(--tap-size) - var(--font-size-md) * var(--line-height)) / 2);
+    position: relative;
+    min-width: var(--tap-size);
+    padding-block: var(--title-inset);
+  }
+
+  .entry-head + .entry-excerpt {
+    margin-top: calc(-1 * var(--title-inset));
+  }
+
+  .entry-excerpt:last-child {
+    margin-bottom: var(--space-2);
   }
 
   /*
@@ -984,19 +1031,30 @@ a {
    * 段が折り返しても、隣の段の当たり判定と重ならない。
    */
   .chips {
+    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
+    --pill-inset: calc((var(--tap-size) - var(--pill-height)) / 2);
+
     row-gap: 0;
   }
 
-  .chip-link {
-    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
+  .entry-excerpt + .chips {
+    margin-top: calc(-1 * var(--pill-inset));
+  }
 
+  /* 抜粋が無いときは、title の箱とタグの箱が触れ合うまで詰める */
+  .entry-head + .chips {
+    margin-top: calc(-1 * var(--space-1));
+  }
+
+  .chip-link {
+    position: relative;
     justify-content: center;
     min-width: var(--tap-size);
 
     /* border の太さは端末の画素に丸められて 44px に数 px 足りなくなるので、高さの下限でも押さえる */
     min-height: var(--tap-size);
     padding-block: var(--space-1);
-    border-block: calc((var(--tap-size) - var(--pill-height)) / 2) solid transparent;
+    border-block: var(--pill-inset) solid transparent;
     background-clip: padding-box;
   }
 
@@ -1019,5 +1077,13 @@ a {
   .segmented-option {
     min-width: var(--tap-size);
     min-height: var(--tap-size);
+  }
+}
+
+/* アイコンだけのヘッダーの操作は、見た目を従来の正方形にし、左右も透明な border で 44px に広げる */
+@media (pointer: coarse) and (max-width: 40rem) {
+  .header .header-new,
+  .header .header-logout {
+    border-inline-width: var(--inset);
   }
 }

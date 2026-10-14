@@ -13,6 +13,7 @@ function Icon({ children }: { children: ReactNode }) {
       stroke="currentColor"
       strokeWidth="1.5"
       strokeLinecap="round"
+      strokeLinejoin="round"
     >
       {children}
     </svg>

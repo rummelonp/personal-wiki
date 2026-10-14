@@ -23,7 +23,7 @@ const TARGETS = [
   ".outline-link",
   ".segmented-option",
   ".rail .button",
-  ".note .chip-link",
+  ".chips .chip-link",
 ];
 
 interface Box {
@@ -32,30 +32,40 @@ interface Box {
   y: number;
   width: number;
   height: number;
+  /** 画面に在ることを確かめたい selector（required）のうち、この要素が当てはまるもの。 */
+  matched: string[];
 }
 
-async function targetBoxes(page: Page): Promise<Box[]> {
-  return page.evaluate((selectors) => {
-    const seen = new Set<Element>();
-    const boxes: Box[] = [];
-    for (const element of document.querySelectorAll(selectors.join(","))) {
-      if (seen.has(element)) continue;
-      seen.add(element);
-      const rect = element.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-      const name = `${element.tagName.toLowerCase()}.${[...element.classList].join(".")} 「${(element.getAttribute("aria-label") ?? element.textContent ?? "").trim().slice(0, 20)}」`;
-      boxes.push({ name, x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-    }
-    return boxes;
-  }, TARGETS);
+async function targetBoxes(page: Page, required: string[]): Promise<Box[]> {
+  return page.evaluate(
+    ({ selectors, required }) => {
+      const boxes: Box[] = [];
+      for (const element of document.querySelectorAll(selectors.join(","))) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        const label = (element.getAttribute("aria-label") ?? element.textContent ?? "").trim();
+        boxes.push({
+          name: `${element.tagName.toLowerCase()}.${[...element.classList].join(".")} 「${label.slice(0, 20)}」`,
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          matched: required.filter((selector) => element.matches(selector)),
+        });
+      }
+      return boxes;
+    },
+    { selectors: TARGETS, required },
+  );
 }
 
-async function expectTapTargets(page: Page, required: string[]): Promise<void> {
+/** required は、画面に 1 つは在るはずの対象の selector（TARGETS のどれかに当てはまるもの）。 */
+async function expectTapTargets(page: Page, required: string[]): Promise<Box[]> {
   expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
-  const boxes = await targetBoxes(page);
+  const boxes = await targetBoxes(page, required);
   for (const selector of required) {
     expect(
-      boxes.some((b) => b.name.startsWith(selector)),
+      boxes.some((b) => b.matched.includes(selector)),
       `${selector} の対象が画面に無い`,
     ).toBe(true);
   }
@@ -73,6 +83,7 @@ async function expectTapTargets(page: Page, required: string[]): Promise<void> {
     }
   });
   expect(overlaps, "当たり判定が重なる対象").toEqual([]);
+  return boxes;
 }
 
 test.describe("タップ対象", () => {
@@ -84,13 +95,50 @@ test.describe("タップ対象", () => {
     await expect(page.locator(".entries .entry").first()).toBeVisible();
     await expect(page.locator(".rail .chip-link").first()).toBeVisible();
     await expectTapTargets(page, [
-      "a.brand",
-      "button.header-search",
-      "button.button.button-primary.button-compact.header-new",
-      "button.button.button-quiet.button-compact.header-logout",
-      "a.entry-title",
-      "a.chip.chip-link",
+      ".brand",
+      ".header-search",
+      ".header-new",
+      ".header-logout",
+      ".entry-title",
+      ".entries .chip-link",
+      ".rail .chip-link",
     ]);
+  });
+
+  test("一覧の行とヘッダーの見た目の寸法は、押す範囲を広げても間延びしない", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".entries .entry-excerpt").first()).toBeVisible();
+    const m = await page.evaluate(() => {
+      // 他のテストが作ったページは抜粋もタグも持たないので、両方を持つ行を選ぶ
+      const entry = document.querySelector(".entries .entry:has(.entry-excerpt):has(.chip-link)");
+      const box = (selector: string) => {
+        const element = entry?.querySelector(selector);
+        if (element === null || element === undefined) throw new Error(`${selector} が無い`);
+        return element.getBoundingClientRect();
+      };
+      const title = box(".entry-title");
+      const excerpt = box(".entry-excerpt");
+      const chip = box(".chip-link");
+      // 箱から押す範囲の余りを除いた、見える字と丸い背景の縁。1.7 は line-height、他は字の大きさと padding（px）
+      const titleTextBottom = title.bottom - (title.height - 16 * 1.7) / 2;
+      const pillTop = chip.top + (chip.height - (2 * 4 + 12 * 1.7)) / 2;
+      const hit = (x: number, y: number, selector: string) =>
+        document.elementFromPoint(x, y)?.closest(selector) != null;
+      return {
+        header: document.querySelector(".header")?.getBoundingClientRect().height ?? 0,
+        titleToExcerpt: excerpt.top - titleTextBottom,
+        excerptToPill: pillTop - excerpt.bottom,
+        titleBottomHit: hit(title.x + 10, title.bottom - 2, ".entry-title"),
+        chipTopHit: hit(chip.x + chip.width / 2, chip.top + 2, ".chip-link"),
+      };
+    });
+    expect(m.header, "ヘッダーの高さ（PC は 56px）").toBeLessThanOrEqual(60);
+    expect(m.titleToExcerpt, "title から抜粋までの見た目の間隔（PC は 4px）").toBeLessThanOrEqual(
+      6,
+    );
+    expect(m.excerptToPill, "抜粋からタグまでの見た目の間隔（PC は 4px）").toBeLessThanOrEqual(6);
+    expect(m.titleBottomHit, "抜粋に重ねても title の下端が押せる").toBe(true);
+    expect(m.chipTopHit, "抜粋に重ねてもタグの上端が押せる").toBe(true);
   });
 
   test("owner のページの編集（公開の切り替え、backlink、目次）", async ({ page, seedIds }) => {
@@ -98,18 +146,18 @@ test.describe("タップ対象", () => {
     await expect(page.locator(".title-input")).toHaveText(SEED.welcome);
     await expect(page.locator(".rail-list a").first()).toBeVisible();
     await expect(page.locator(".segmented-option").first()).toBeVisible();
-    await expectTapTargets(page, ["button.segmented-option", "a.brand"]);
+    await expectTapTargets(page, [".segmented-option", ".brand", ".rail-list a"]);
     await page.goto(`/p/${seedIds[SEED.server]}`);
     await expect(page.locator(".title-input")).toHaveText(SEED.server);
     await expect(page.locator(".rail-list a").first()).toBeVisible();
-    await expectTapTargets(page, ["a"]);
+    await expectTapTargets(page, [".rail-list a"]);
   });
 
   test("見出しの多いページの目次", async ({ page, seedIds }) => {
     await page.goto(`/p/${seedIds[SEED.longPage]}`);
     await expect(page.locator(".title-input")).toHaveText(SEED.longPage);
     await expect(page.locator(".outline-link").first()).toBeVisible();
-    await expectTapTargets(page, ["button.outline-link"]);
+    await expectTapTargets(page, [".outline-link"]);
   });
 
   test.describe("匿名", () => {
@@ -118,13 +166,13 @@ test.describe("タップ対象", () => {
     test("一覧と public のページ", async ({ page }) => {
       await page.goto("/");
       await expect(page.locator(".entries .entry").first()).toBeVisible();
-      await expectTapTargets(page, ["a.brand", "a.button.button-compact", "a.entry-title"]);
+      await expectTapTargets(page, [".brand", ".header .button-compact", ".entry-title"]);
       await page.goto(`/${encodeURIComponent(SEED.server)}`);
       await expect(page.getByRole("heading", { level: 1, name: SEED.server })).toBeVisible();
-      await expectTapTargets(page, ["a.brand"]);
+      await expectTapTargets(page, [".brand"]);
       await page.goto(`/${encodeURIComponent(SEED.manyTags)}`);
       await expect(page.getByRole("heading", { level: 1, name: SEED.manyTags })).toBeVisible();
-      await expectTapTargets(page, ["a.chip.chip-link"]);
+      await expectTapTargets(page, [".chips .chip-link"]);
     });
   });
 
@@ -139,7 +187,13 @@ test.describe("タップ対象", () => {
       await page.goto("/");
       await expect(page.locator(".entries .entry").first()).toBeVisible();
       await expectNoHorizontalScroll(page);
-      await expectTapTargets(page, ["a.brand"]);
+      await expectTapTargets(page, [".brand"]);
+      // 操作が右の余白（左と同じ 12px）を食わずに収まる
+      const edge = await page.evaluate(() => {
+        const last = [...document.querySelectorAll(".header-actions > *")].at(-1);
+        return last?.getBoundingClientRect().right ?? 0;
+      });
+      expect(edge, "ヘッダーの右端の操作の右端").toBeLessThanOrEqual(320 - 12 + 0.5);
       if (role === "owner") {
         await page.goto(`/p/${seedIds[SEED.server]}`);
         await expect(page.locator(".title-input")).toHaveText(SEED.server);
@@ -167,7 +221,8 @@ test.describe("デスクトップの密度", () => {
     });
     expect(heights.search).toBe(32);
     expect(heights.logout).toBe(32);
-    expect(heights.title).toBeLessThan(TAP);
-    expect(heights.chip).toBeLessThan(TAP);
+    // 行の高さは line-height（1.7）× 字の大きさ。タッチ向けの箱の拡大が PC に及んでいないことを見る
+    expect(heights.title).toBeCloseTo(16 * 1.7, 0);
+    expect(heights.chip).toBeCloseTo(12 * 1.7, 0);
   });
 });

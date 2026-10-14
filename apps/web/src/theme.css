@@ -100,6 +100,7 @@
   --rail-width: 14.375rem; /* ノートの右の情報レールの幅 */
   --control-height: 2.25rem; /* ボタンと 1 行の入力欄の高さ */
   --control-height-sm: 2rem; /* ヘッダーの操作の高さ */
+  --header-control-visual: 2rem; /* ヘッダーの操作の見た目の大きさ。タッチ端末では当たり判定が --tap-size に上がり、差は透明な border で埋める */
   --tap-size: 2.75rem; /* タッチ操作の当たり判定の下限（44px）。下の pointer: coarse が操作の高さに使う */
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
   --diff-max-height: 50vh; /* 衝突の差分の欄の高さの上限（超えるとスクロール） */
