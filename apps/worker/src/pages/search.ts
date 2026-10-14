@@ -67,7 +67,7 @@ export const LIST_MAX_LIMIT = 100;
  * 平均で数十バイト、上限の MAX_TITLE_BYTES（1024）でも 500 件の応答は 1MB 程度（JSON のエスケープで最大 2 倍になる分を含む）に収まる。
  * Worker の CPU（Workers Free は 1 リクエスト 10ms）を使うのは 500 件の JSON 化くらいで、
  * 抜粋とタグを引く LIST_MAX_LIMIT の一覧のように件数を絞る理由が無い。
- * 並べ替えは D1 が行い、読む行数は limit に関係なく全ページになる。
+ * 並びは pages_alive_updated の索引をたどるので、読む行数は limit（と、匿名なら読み飛ばす draft の数）で決まる。
  */
 export const TITLES_MAX_LIMIT = 500;
 export const SEARCH_DEFAULT_LIMIT = 20;
@@ -98,6 +98,15 @@ export function parseCursor(value: string): Cursor | null {
   const match = CURSOR_PATTERN.exec(value);
   if (match === null) return null;
   return { updatedAt: Number(match[1]), id: match[2] as string };
+}
+
+/**
+ * cursor より後ろ（並び (updated_at DESC, id DESC) で先）の行に絞る条件。?1 と ?2 に cursor を bind する。
+ * cursor が無いときは条件を足さない。`?1 IS NULL OR ...` の 1 本の SQL にすると、SQLite は bind する値を
+ * 見ずに計画を立てるので索引を範囲の検索に使えず、cursor の位置まで索引を先頭から読み飛ばす。
+ */
+function afterCursor(cursor: Cursor | null, alias: string): string {
+  return cursor === null ? "" : `AND (${alias}updated_at, ${alias}id) < (?1, ?2)`;
 }
 
 /** limit + 1 件取った行から、limit 件と続きの cursor を作る。 */
@@ -166,8 +175,7 @@ export function prepareTagFilter(raw: string): TagFilter {
  *
  * keyset のページングなので、走査中に更新されたページは先頭へ移り、後続のページでは返らない。
  * 差分の同期には使えず、先頭から取り直す。
- * pages に updated_at の索引は無く、全ページを走査して並べ替える。ページ数が数千を超えて
- * 読み取り行数が気になったら (updated_at, id) の部分索引を足す。保存ごとに書き込みが 1〜2 行増える。
+ * タグで絞らない一覧は pages_alive_updated の索引を新しい順にたどり、limit + 1 件で止まる。
  */
 export async function listRecentPages(
   db: D1Database,
@@ -188,7 +196,7 @@ export async function listRecentPages(
       `SELECT p.id, p.title, p.visibility, p.updated_at, e.excerpt
        FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE p.deleted_at IS NULL AND (?7 = 0 OR p.visibility = 'public')
-         AND (?1 IS NULL OR p.updated_at < ?1 OR (p.updated_at = ?1 AND p.id < ?2))
+         ${afterCursor(cursor, "p.")}
          AND (?4 IS NULL OR p.id IN (
            SELECT page_id FROM tags WHERE tag_key = ?4 OR (tag_key >= ?5 AND tag_key < ?6)))
        ORDER BY p.updated_at DESC, p.id DESC LIMIT ?3`,
@@ -239,7 +247,7 @@ export async function listPageTitles(
     .prepare(
       `SELECT id, title, visibility, updated_at FROM pages
        WHERE deleted_at IS NULL AND (?4 = 0 OR visibility = 'public')
-         AND (?1 IS NULL OR updated_at < ?1 OR (updated_at = ?1 AND id < ?2))
+         ${afterCursor(cursor, "")}
        ORDER BY updated_at DESC, id DESC LIMIT ?3`,
     )
     .bind(cursor?.updatedAt ?? null, cursor?.id ?? null, limit + 1, publicOnlyFlag(readable))
