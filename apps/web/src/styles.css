@@ -584,6 +584,15 @@ a {
 }
 
 /*
+ * 日本語は文節の切れ目で折り返し、最後の行に 1 文字だけ残る折り返しも避ける（対応しないブラウザは通常の折り返し）。
+ * 読み取りの画面の title と同じ指定にして、折り返す位置をそろえる
+ */
+.title-input .cm-line {
+  word-break: auto-phrase;
+  text-wrap: pretty;
+}
+
+/*
  * 読み取り専用の画面の title。編集の画面の title 欄と同じ位置と書体にそろえる。
  * 横の padding は CodeMirror の .cm-line の既定（左 6px、右 2px）と同じ値で、左端と折り返す幅を合わせる
  */
@@ -596,6 +605,8 @@ a {
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-heading);
   overflow-wrap: anywhere;
+  word-break: auto-phrase;
+  text-wrap: pretty;
   color: var(--color-fg);
   border-bottom: var(--border-width) solid transparent;
 }
