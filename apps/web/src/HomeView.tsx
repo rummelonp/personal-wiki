@@ -6,6 +6,7 @@ import { RailLayout } from "./Rail";
 import { homeHref, tagHref } from "./route";
 import { SearchBox } from "./SearchBox";
 import { SignInNotice } from "./SignInNotice";
+import { useRestoreScroll } from "./scroll-restore";
 import { TagsPanel, useTags } from "./TagsPanel";
 import { useEntryList } from "./useEntryList";
 
@@ -26,6 +27,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   const effectiveTag = searching ? "" : tag;
   const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
   const tags = useTags();
+  useRestoreScroll(state.status === "ready");
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
   const [creating, setCreating] = useState(false);
