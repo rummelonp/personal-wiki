@@ -99,4 +99,8 @@ test("一覧・title・タグ・検索・backlink の API が draft を返さな
     expect(text, path).not.toContain(DRAFT_MARKER);
     expect(text, path).not.toContain(seedIds[SEED.draftSecret]);
   }
+  // 空の応答でも上の検査は通るので、public のページが返ることも確かめる
+  for (const { path, text } of bodies.slice(0, 2)) {
+    expect(text, path).toContain(welcomeId);
+  }
 });

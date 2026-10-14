@@ -119,11 +119,17 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
   await page.route(pagePath, async (route) => {
     if (!isSave(route)) return route.fallback();
     external ??= api.updatePage(created, { body: `${FIRST_LINE}を別の場所で書き換えた` });
-    await external;
-    return route.fallback();
+    // 失敗はテストの本体で await して出す。handler の中で投げると、原因の書かれない失敗になる
+    const updated = await external.then(
+      () => true,
+      () => false,
+    );
+    return updated ? route.fallback() : route.abort();
   });
   const typed = "を手元で書き換えた";
   await typeAtBodyEnd(page, typed);
+  await expect.poll(() => external, "保存が送られない").toBeDefined();
+  await external;
   const conflict = page.getByRole("alert").filter({
     has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
   });

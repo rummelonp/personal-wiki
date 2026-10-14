@@ -150,10 +150,16 @@ const SCENES: Scene[] = [
       await page.route(`**/api/pages/${created.id}`, async (route) => {
         if (route.request().method() !== "PUT") return route.fallback();
         external ??= api.updatePage(created, { body: "共通の行\n別の場所で書き換えた二行目" });
-        await external;
-        return route.fallback();
+        // 失敗は下で await して出す。handler の中で投げると、原因の書かれない失敗になる
+        const updated = await external.then(
+          () => true,
+          () => false,
+        );
+        return updated ? route.fallback() : route.abort();
       });
       await typeAtBodyEnd(page, "を手元で書き換えた");
+      await expect.poll(() => external, "保存が送られない").toBeDefined();
+      await external;
       await expect(
         page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
       ).toBeVisible();
