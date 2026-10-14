@@ -1,18 +1,19 @@
 import type { ReactNode } from "react";
 
 interface RailLayoutProps {
-  /** 右の列の中身。null なら列を出さず、本文だけを中央に置く。 */
+  /** 右の列の中身。null なら欄を出さない（本文の列の位置は変えない）。 */
   rail: ReactNode | null;
   children: ReactNode;
 }
 
 /**
- * 「中央が本文や一覧、右が補助情報」の配置。トップとノートで共通に使う。
+ * 「中央が本文や一覧、右が補助情報」の配置。トップとノートに加え、読み込み中、404、空の状態など
+ * 欄の無い画面も、左端をそろえるためにこの列に入れる（rail を null にする）。
  * 狭い画面では右の列を本文の下に回す（CSS 側）。広い画面での固定も CSS が受け持つ（.rail-inner）。
  */
 export function RailLayout({ rail, children }: RailLayoutProps) {
   return (
-    <div className={rail === null ? "rail-layout rail-layout-single" : "rail-layout"}>
+    <div className="rail-layout">
       <div className="rail-main">{children}</div>
       {rail !== null && (
         <aside className="rail" aria-label="補助情報">

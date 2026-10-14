@@ -55,7 +55,8 @@ a {
 
 /*
  * ヘッダー: 線は引かず、余白で本文と分ける。スクロールしても上に残すので、本文が透けないよう
- * 背景を塗る。狭い幅でも 1 行に収める（検索と新規作成はアイコンだけにする。下の狭い画面の節）
+ * 背景を塗る。狭い幅でも 1 行に収める（検索と新規作成はアイコンだけにする。下の狭い画面の節）。
+ * 左の余白はロゴを本文の列の左端（下の .rail-main）に置く。右の余白は右の欄の中身の右端に合わせる
  */
 
 .header {
@@ -66,7 +67,8 @@ a {
   align-items: center;
   gap: var(--space-2) var(--space-4);
   min-height: var(--header-height);
-  padding: var(--header-padding-block) var(--space-5);
+  padding: var(--header-padding-block) calc(var(--frame-start) + var(--space-4))
+    var(--header-padding-block) calc(var(--frame-start) + var(--gutter));
   background: var(--color-bg);
 }
 
@@ -150,11 +152,10 @@ a {
   min-height: 100vh; /* token-ok: 画面全体の高さ。寸法の token でなく viewport の単位そのもの */
 }
 
-.narrow,
-.notice {
+/* 本文の列より上に出す帯（リンクの書き換えの進み具合）。列の外なので、左端を列に合わせる */
+.main > .narrow {
   max-width: var(--prose-width);
-  margin: 0 auto;
-  padding: var(--space-5) var(--space-4);
+  margin: var(--space-3) var(--gutter) var(--space-3) calc(var(--frame-start) + var(--gutter));
 }
 
 /*
@@ -162,15 +163,19 @@ a {
  * 右の列を畳む幅だけはここに直接書く（40rem 未満で本文の下に回す）。
  * 本文の列は一覧の幅（と左右の余白）で止め、広い画面では本文と右の列をひとまとまりで中央に置く。
  * 本文の列を 1fr にすると、右の列が画面の右端に離れて残り、左に空白が偏る。
+ *
+ * すべての画面（一覧、ページ、読み込み中、404、空の状態）はこの列に入れる。右の欄が無い画面も
+ * 同じ 2 列のままにして、列の左端を画面ごとに動かさない。
+ * 欄の区切り線は、内容が短くても画面の下端まで引く（高さの下限をヘッダーの下の残りにする）。
  */
 .rail-layout {
   display: grid;
-  grid-template-columns: minmax(0, calc(var(--list-width) + 2 * var(--space-6))) var(--rail-width);
+  grid-template-columns: minmax(0, var(--column-width)) var(--rail-width);
   justify-content: center;
-}
-
-.rail-layout-single {
-  grid-template-columns: minmax(0, 1fr);
+  min-height: calc(
+    100dvh -
+    var(--header-height)
+  ); /* token-ok: 画面全体の高さ。viewport の単位そのもの */
 }
 
 .rail-main {
@@ -178,7 +183,7 @@ a {
   --rail-main-padding-top: var(--space-4);
 
   min-width: 0;
-  padding: var(--rail-main-padding-top) clamp(var(--space-4), 5vw, var(--space-6)) var(--space-7); /* token-ok: 画面幅に比例して余白を増やす係数 */
+  padding: var(--rail-main-padding-top) var(--gutter) var(--space-7);
 }
 
 .rail {
@@ -442,7 +447,7 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-.chip-draft {
+.chip-public {
   padding: 0 var(--space-2);
   font-size: var(--font-size-xs);
   color: var(--color-fg-muted);
@@ -488,7 +493,7 @@ a {
   margin-left: var(--space-2);
 }
 
-.notice-title,
+.empty-title,
 .list-title {
   margin: 0 0 var(--space-4);
   font-family: var(--font-serif);
@@ -498,11 +503,37 @@ a {
   letter-spacing: var(--letter-spacing-heading);
 }
 
+/*
+ * 空の状態: 見出し、補足、次の動作を左端の線に載せて縦に並べる。見出しの上に差し色の短い線を引き、
+ * 素の文章と見分ける。画像は使わない
+ */
+.empty {
+  max-width: var(--prose-width);
+  padding-top: var(--space-5);
+}
+
+.empty::before {
+  display: block;
+  width: var(--space-5);
+  margin-bottom: var(--space-3);
+  content: "";
+  border-top: calc(var(--border-width) * 3) solid var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.empty-title {
+  margin-bottom: var(--space-2);
+}
+
+.empty-text {
+  margin: 0 0 var(--space-4);
+  color: var(--color-fg-muted);
+}
+
 /* トップ */
 
 .home {
   max-width: var(--list-width);
-  margin: 0 auto;
 }
 
 /* 検索結果の画面で、検索語を直す欄 */
@@ -581,7 +612,6 @@ a {
 .note {
   position: relative;
   max-width: var(--prose-width);
-  margin: 0 auto;
 }
 
 /*
@@ -617,9 +647,12 @@ a {
   color: var(--color-danger);
 }
 
-/* 左右の padding を持たせない。title と本文の文字の左端は、どちらも CodeMirror の行の padding で揃う */
+/*
+ * 編集欄と読み取りの title は、CodeMirror の行の左 padding の分だけ左へ出す。文字の左端が列の左端
+ * （一覧の行やロゴと同じ線）に載り、title と本文の文字の左端はどちらも行の padding で揃う
+ */
 .title-input {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-4) calc(-1 * var(--editor-line-inset));
   border-bottom: var(--border-width) solid transparent;
 }
 
@@ -659,8 +692,8 @@ a {
  * 横の padding は CodeMirror の .cm-line の既定（左 6px、右 2px）と同じ値で、左端と折り返す幅を合わせる
  */
 .note-title {
-  margin: 0 0 var(--space-4);
-  padding-inline: 6px 2px; /* token-ok: 上のコメントのとおり CodeMirror の既定値に合わせる */
+  margin: 0 0 var(--space-4) calc(-1 * var(--editor-line-inset));
+  padding-inline: var(--editor-line-inset) 2px; /* token-ok: 右の 2px は CodeMirror の .cm-line の既定値に合わせる */
   font-family: var(--font-serif);
   font-size: var(--font-size-title);
   font-weight: var(--font-weight-strong);
@@ -674,6 +707,10 @@ a {
 }
 
 /* 本文の書体と大きさは packages/editor が --ui-* のトークンから決める */
+.body-editor {
+  margin-inline-start: calc(-1 * var(--editor-line-inset));
+}
+
 .body-editor .cm-editor {
   min-height: var(--editor-min-height);
 }
@@ -902,6 +939,7 @@ a {
 @media (max-width: 40rem) {
   .rail-layout {
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
 
   .rail {
@@ -913,6 +951,7 @@ a {
   .rail-inner {
     position: static;
     max-height: none;
+    padding-inline: var(--gutter);
     overflow-y: visible;
   }
 
@@ -922,7 +961,7 @@ a {
   }
 
   .header {
-    padding-inline: var(--space-4);
+    padding-inline-end: var(--gutter);
   }
 }
 
@@ -977,12 +1016,12 @@ a {
 
 /*
  * 320px 級の画面。ヘッダーの 3 つの操作が指で押せる大きさ（44px）になっても 1 行に収まるよう、
- * 左右の余白と、ロゴと操作の間、操作どうしの間を詰める。操作どうしは 4px 空ける。
+ * ロゴと操作の間、操作どうしの間を詰める（左右の余白は theme.css の --gutter が詰める）。
+ * 操作どうしは 4px 空ける。
  */
 @media (max-width: 22.5rem) {
   .header {
     column-gap: var(--space-1);
-    padding-inline: var(--space-3);
   }
 
   .header-actions {
@@ -1050,7 +1089,7 @@ a {
   }
 
   /*
-   * 1〜2 文字の title でも横に 44px 押せるようにする。title の箱を広げると「下書き」の印が離れて
+   * 1〜2 文字の title でも横に 44px 押せるようにする。title の箱を広げると「公開」の印が離れて
    * 間が空くので、箱は字の幅のまま疑似要素で広げる。title は省略表示のため overflow: hidden で、
    * title を基準にすると疑似要素が切られるので、.entry-head を基準にする
    */

@@ -6,12 +6,19 @@ import { SEED } from "./support/seed";
 
 const entryLink = (title: string) => ({ name: title, exact: true });
 
-test("トップの一覧から開ける @smoke", async ({ page }) => {
+test("トップの一覧から開ける @smoke", async ({ page, api }, testInfo) => {
+  // 他のテストが draft を作り続けると seed の公開ページが先頭から外れるので、公開の行を自分で作る
+  await api.createPage({
+    title: uniqueTitle(testInfo, "公開の印"),
+    body: "本文",
+    visibility: "public",
+  });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "最近の更新" })).toBeVisible();
   // 並列に走る他のテストがページを作り、先頭に来るページが変わるので、どのページかは決め打ちしない。
-  // owner の一覧には draft も出る（作られたばかりのページは draft）。
-  await expect(page.locator(".entries .chip-draft").first()).toBeVisible();
+  // owner の一覧では公開の行にだけ印が付き、draft（作られたばかりのページ）には付かない。
+  await expect(page.locator(".entries .chip-public").first()).toBeVisible();
+  await expect(page.locator(".entries .entry:not(:has(.chip-public))").first()).toBeVisible();
   const first = page.locator(".entries .entry-title").first();
   const title = (await first.textContent()) ?? "";
   expect(title).not.toBe("");
@@ -74,7 +81,7 @@ test("quick switcher で語を打って Enter しても、ページは作られ�
 test("0 件の検索結果から、検索語の title で作れる", async ({ page }, testInfo) => {
   const title = uniqueTitle(testInfo, "0 件から作る");
   await page.goto(`/?q=${encodeURIComponent(title)}`);
-  await expect(page.getByText("一致するページがありません。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
   expect(await pageExists(page, title)).toBe(false);
   await page.getByRole("button", { name: `「${title}」を作成` }).click();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
@@ -105,7 +112,7 @@ test("quick switcher で ↓ を押して「作成」を選べば、キーボー
 
 test("一致しない検索は 0 件の案内を出す", async ({ page }) => {
   await page.goto(`/?q=${encodeURIComponent("どこにも無い語句")}`);
-  await expect(page.getByText("一致するページがありません。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
 });
 
 test("タグで絞り込める", async ({ page }) => {

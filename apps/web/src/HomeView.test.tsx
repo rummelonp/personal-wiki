@@ -47,11 +47,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function mountHome(query: string, owner: boolean) {
+async function mountHome(query: string, owner: boolean, tag = "") {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<HomeView query={query} tag="" owner={owner} />));
+  await act(async () => root?.render(<HomeView query={query} tag={tag} owner={owner} />));
 }
 
 async function renderHome(query: string, owner = true) {
@@ -149,6 +149,65 @@ describe("useEntryList の条件の切り替え", () => {
   });
 });
 
+describe("HomeView の公開の印", () => {
+  const rows = () => [...(container?.querySelectorAll(".entry") ?? [])];
+  const pages = [
+    summary("AAAAAAAAAAAAAAAAAAAAAA", "公開の行"),
+    { ...summary("BBBBBBBBBBBBBBBBBBBBBB", "まだ書きかけの行"), visibility: "draft" as const },
+  ];
+
+  it("owner の一覧では公開の行にだけ印を付け、draft の行には付けない", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages, nextCursor: null }));
+    await renderHome("", true);
+    expect(rows()[0]?.querySelector(".chip-public")?.textContent).toBe("公開");
+    expect(rows()[1]?.querySelector(".chip-public")).toBeNull();
+    expect(container?.textContent).not.toContain("下書き");
+  });
+
+  it("匿名の一覧は全行が公開なので、印を付けない", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [pages[0] as never], nextCursor: null }));
+    await renderHome("", false);
+    expect(container?.querySelector(".chip-public")).toBeNull();
+  });
+});
+
+describe("HomeView の空の状態", () => {
+  const empty = () => container?.querySelector(".empty");
+  const title = () => empty()?.querySelector(".empty-title")?.textContent;
+  const backLink = () => empty()?.querySelector<HTMLAnchorElement>("a.button");
+
+  it("検索 0 件は見出し、補足、一覧へ戻る導線を出す", async () => {
+    vi.mocked(searchPages).mockResolvedValue(ok([]));
+    await mountHome("無い語", false);
+    await vi.waitFor(() => expect(empty()).not.toBeNull());
+    expect(title()).toBe("一致するページがありません");
+    expect(empty()?.querySelector(".empty-text")?.textContent).not.toBe("");
+    expect(backLink()?.getAttribute("href")).toBe("/");
+  });
+
+  it("匿名の短い検索語は、文字数の案内と一覧へ戻る導線を出す", async () => {
+    await mountHome("ab", false);
+    expect(empty()?.getAttribute("role")).toBe("status");
+    expect(title()).toBe("3 文字以上で検索してください");
+    expect(empty()?.querySelector(".empty-text")?.textContent).not.toBe("");
+    expect(backLink()?.getAttribute("href")).toBe("/");
+  });
+
+  it("ページが 1 件も無いときと、タグに当たるページが無いときで見出しを分ける", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    await mountHome("", true);
+    await vi.waitFor(() => expect(empty()).not.toBeNull());
+    expect(title()).toBe("ページがまだありません");
+    act(() => root?.unmount());
+    container?.remove();
+
+    await mountHome("", true, "x");
+    await vi.waitFor(() => expect(empty()).not.toBeNull());
+    expect(title()).toBe("このタグのページがありません");
+    expect(backLink()?.getAttribute("href")).toBe("/");
+  });
+});
+
 describe("HomeView の更新日", () => {
   const DAY = 24 * 60 * 60 * 1000;
 
@@ -171,7 +230,7 @@ describe("HomeView の更新日", () => {
 });
 
 describe("HomeView の短い検索語", () => {
-  const guidance = () => container?.querySelector("[role='status']")?.textContent;
+  const guidance = () => container?.querySelector("[role='status'] .empty-title")?.textContent;
 
   it("匿名の 1〜2 文字（NFKC と前後の空白を畳んだ後）は検索を送らず、文字数を案内する", async () => {
     for (const query of ["a", "ab", " ab　", "ｶﾞｷ"]) {

@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { setDocumentTitle } from "./document-title";
+import { EmptyState } from "./EmptyState";
 import { Link } from "./Link";
 import { openNewPage } from "./new-page";
+import { RailLayout } from "./Rail";
 import { homeHref } from "./route";
 
 interface NotFoundProps {
@@ -23,31 +25,43 @@ export function NotFound({ creatableTitle }: NotFoundProps) {
   }, []);
   if (creatableTitle !== undefined) return <Creatable title={creatableTitle} />;
   return (
-    <section className="notice">
-      <h1 className="notice-title">ページが見つかりません</h1>
-      <p>
-        <Link href={homeHref()}>最近の更新へ戻る</Link>
-      </p>
-    </section>
+    <RailLayout rail={null}>
+      <EmptyState
+        level={1}
+        title="ページが見つかりません"
+        text="URL を確かめるか、一覧から探してください。"
+        actions={
+          <Link className="button" href={homeHref()}>
+            最近の更新へ戻る
+          </Link>
+        }
+      />
+    </RailLayout>
   );
 }
 
 function Creatable({ title }: { title: string }) {
   return (
-    <section className="notice">
-      <h1 className="notice-title">「{title}」はまだありません</h1>
-      <div className="actions">
-        <button
-          type="button"
-          className="button button-primary"
-          onClick={() => openNewPage({ title })}
-        >
-          このタイトルで作成
-        </button>
-        <Link className="button" href={homeHref()}>
-          最近の更新へ戻る
-        </Link>
-      </div>
-    </section>
+    <RailLayout rail={null}>
+      <EmptyState
+        level={1}
+        title={`「${title}」はまだありません`}
+        text="このタイトルで作成すると、下書きのページができます。"
+        actions={
+          <>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => openNewPage({ title })}
+            >
+              このタイトルで作成
+            </button>
+            <Link className="button" href={homeHref()}>
+              最近の更新へ戻る
+            </Link>
+          </>
+        }
+      />
+    </RailLayout>
   );
 }

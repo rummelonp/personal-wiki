@@ -1,5 +1,11 @@
 import type { Page } from "@playwright/test";
-import { bodyEditor, expect, expectNoHorizontalScroll, test } from "./support/fixtures";
+import {
+  bodyEditor,
+  expect,
+  expectNoHorizontalScroll,
+  test,
+  uniqueTitle,
+} from "./support/fixtures";
 import { DRAFT_MARKER, SEED } from "./support/seed";
 
 /*
@@ -36,14 +42,17 @@ test("public のページを title の URL で開き、リンクをたどれる 
   await expectNoHorizontalScroll(page);
 });
 
-test("トップの一覧とタグに draft が出ない @smoke", async ({ page }) => {
+test("トップの一覧とタグに draft が出ない @smoke", async ({ page, api }, testInfo) => {
+  // 他のテストが公開ページを作り続けると seed のページが一覧の先頭から外れるので、見るページを自分で作る
+  const title = uniqueTitle(testInfo, "匿名の一覧");
+  await api.createPage({ title, body: "本文", visibility: "public" });
   await page.goto("/");
   await expect(
-    page.locator(".entries").getByRole("link", { name: SEED.welcome, exact: true }),
+    page.locator(".entries").getByRole("link", { name: title, exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("complementary", { name: "補助情報" })).toContainText("database");
   await expectNoDraftTrace(page);
-  await expect(page.locator(".chip-draft")).toHaveCount(0);
+  await expect(page.locator(".chip-public")).toHaveCount(0);
   await expectNoHorizontalScroll(page);
 });
 
@@ -56,7 +65,7 @@ test("draft の title の URL は存在しないページと同じ表示にな�
 
 test("検索と quick switcher に draft が出ない", async ({ page }) => {
   await page.goto(`/?q=${DRAFT_MARKER}`);
-  await expect(page.getByText("一致するページがありません。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
   await expect(page.locator(".entries")).toHaveCount(0);
 
   await page.getByRole("button", { name: "ページを検索" }).click();
@@ -90,7 +99,7 @@ test("匿名の 2 文字では本文の検索を出さず、3 文字以上と案
 
 test("匿名の 0 件の検索結果には作成の導線が出ない", async ({ page }) => {
   await page.goto(`/?q=${encodeURIComponent("どこにも無い語句")}`);
-  await expect(page.getByText("一致するページがありません。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
   await expect(page.getByRole("button", { name: /を作成/ })).toHaveCount(0);
 });
 

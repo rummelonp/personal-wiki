@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, expectNoHorizontalScroll, test } from "./support/fixtures";
+import { expect, expectNoHorizontalScroll, test, uniqueTitle } from "./support/fixtures";
 import { SEED } from "./support/seed";
 
 /*
@@ -108,12 +108,24 @@ test.describe("タップ対象", () => {
     ]);
   });
 
-  test("一覧の行とヘッダーの見た目の寸法は、押す範囲を広げても間延びしない", async ({ page }) => {
+  test("一覧の行とヘッダーの見た目の寸法は、押す範囲を広げても間延びしない", async ({
+    page,
+    api,
+  }, testInfo) => {
+    // 他のテストが draft を作り続けると seed の公開ページが一覧の先頭から外れるので、行を自分で作る
+    await api.createPage({
+      title: uniqueTitle(testInfo, "寸法"),
+      body: "寸法の検査に使う抜粋の文章。 #寸法検査",
+      visibility: "public",
+    });
     await page.goto("/");
     await expect(page.locator(".entries .entry-excerpt").first()).toBeVisible();
     const m = await page.evaluate(() => {
-      // 他のテストが作ったページは抜粋もタグも持たないので、両方を持つ行を選ぶ
-      const entry = document.querySelector(".entries .entry:has(.entry-excerpt):has(.chip-link)");
+      // 他のテストが作ったページは抜粋もタグも持たないので、両方を持つ行を選ぶ。短い title のすぐ隣に
+      // 印が付くことも見るので、公開の印を持つ行にする
+      const entry = document.querySelector(
+        ".entries .entry:has(.entry-excerpt):has(.chip-link):has(.chip-public)",
+      );
       // 他のテストが作ったページが上に積もると画面の外へ押し出され、elementFromPoint が何も返さない
       entry?.scrollIntoView({ block: "center" });
       const box = (selector: string) => {
@@ -136,8 +148,11 @@ test.describe("タップ対象", () => {
         const text = link.textContent;
         link.textContent = "夜";
         const rect = link.getBoundingClientRect();
+        const badge = entry?.querySelector(".chip-public")?.getBoundingClientRect();
+        if (badge === undefined) throw new Error(".chip-public が無い");
         const result = {
           shortTitleWidth: rect.width,
+          badgeGap: badge.left - rect.right,
           shortTitleFarHit: hit(rect.x + 42, rect.y + rect.height / 2, ".entry-title"),
         };
         link.textContent = text;
@@ -160,6 +175,7 @@ test.describe("タップ対象", () => {
     expect(m.titleBottomHit, "抜粋に重ねても title の下端が押せる").toBe(true);
     expect(m.shortTitleWidth, "1 文字の title の箱は字の幅のまま").toBeLessThan(TAP / 2);
     expect(m.shortTitleFarHit, "1 文字の title でも左端から 42px の所が押せる").toBe(true);
+    expect(m.badgeGap, "1 文字の title と公開の印の間（PC は 12px）").toBeLessThanOrEqual(14);
     expect(m.chipTopHit, "抜粋に重ねてもタグの上端が押せる").toBe(true);
   });
 

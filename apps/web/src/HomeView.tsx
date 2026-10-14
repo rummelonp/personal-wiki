@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
 import { openNewPage } from "./new-page";
@@ -38,6 +39,12 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 
+  const backToRecent = (
+    <Link className="button" href={homeHref()}>
+      最近の更新へ戻る
+    </Link>
+  );
+
   const heading = searching
     ? `「${trimmed}」の検索結果`
     : tag !== ""
@@ -60,33 +67,68 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
         )}
         {state.status === "loading" && <p className="muted">読み込み中…</p>}
         {state.status === "query_too_short" && (
-          <p className="muted" role="status">{`${state.min} 文字以上で検索してください`}</p>
+          <EmptyState
+            role="status"
+            title={`${state.min} 文字以上で検索してください`}
+            text="ログインしていないときは、短い語で検索できません。上の欄で語を足してください。"
+            actions={backToRecent}
+          />
         )}
         {state.status === "error" && (
           <p className="message message-error" role="alert">
             {state.message}
           </p>
         )}
-        {state.status === "ready" && state.entries.length === 0 && (
-          <p className="muted">
-            {searching ? "一致するページがありません。" : "ページがまだありません。"}
-          </p>
+        {state.status === "ready" && state.entries.length === 0 && searching && (
+          <EmptyState
+            title="一致するページがありません"
+            text={
+              owner
+                ? `「${trimmed}」は title にも本文にも見つかりませんでした。語を変えるか、この語で作れます。`
+                : `「${trimmed}」は見つかりませんでした。上の欄で検索語を変えてください。`
+            }
+            actions={
+              <>
+                {/* 検索語の title で作る入口。匿名は作れないので出さない */}
+                {owner && (
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={() => openNewPage({ title: trimmed })}
+                  >
+                    {`「${trimmed}」を作成`}
+                  </button>
+                )}
+                {backToRecent}
+              </>
+            }
+          />
         )}
-        {/* 検索語の title で作る入口。匿名は作れないので出さない。作れなかったときは新規作成の画面が知らせる */}
-        {state.status === "ready" && state.entries.length === 0 && searching && owner && (
-          <div>
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => openNewPage({ title: trimmed })}
-            >
-              {`「${trimmed}」を作成`}
-            </button>
-          </div>
+        {state.status === "ready" && state.entries.length === 0 && !searching && tag !== "" && (
+          <EmptyState
+            title="このタグのページがありません"
+            text={`タグ「${tag}」が付いたページは見つかりませんでした。`}
+            actions={backToRecent}
+          />
+        )}
+        {state.status === "ready" && state.entries.length === 0 && !searching && tag === "" && (
+          <EmptyState
+            title="ページがまだありません"
+            text={
+              owner
+                ? "ヘッダーの「新規作成」から、最初のページを作れます。"
+                : "公開されているページが、ここに並びます。"
+            }
+          />
         )}
         {state.status === "ready" && state.entries.length > 0 && (
           <>
-            <EntryList entries={state.entries} now={now} highlight={searching ? trimmed : ""} />
+            <EntryList
+              entries={state.entries}
+              now={now}
+              highlight={searching ? trimmed : ""}
+              showVisibility={owner}
+            />
             {state.next !== null && (
               <button
                 type="button"

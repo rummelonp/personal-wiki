@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
+import { Loading } from "./Loading";
 import { NotFound } from "./NotFound";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
 import { failureMessage, findPageByTitle, getPage, type Page, type PageSummary } from "./pages-api";
+import { RailLayout } from "./Rail";
 import { navigate, pageHrefFor } from "./route";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScrollAfterMount } from "./scroll-restore";
@@ -126,7 +128,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   if (target.by === "new" && !owner) return <SignInNotice />;
   switch (state.status) {
     case "loading":
-      return <p className="narrow muted">読み込み中…</p>;
+      return <Loading />;
     case "unauthorized":
       return <SignInNotice expired />;
     case "not_found":
@@ -137,9 +139,11 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       );
     case "error":
       return (
-        <p className="message message-error" role="alert">
-          {state.message}
-        </p>
+        <RailLayout rail={null}>
+          <p className="message message-error" role="alert">
+            {state.message}
+          </p>
+        </RailLayout>
       );
     case "new":
       // owner が変わると key で作り直されるので、ここに来るのは owner だけ

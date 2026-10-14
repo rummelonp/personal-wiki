@@ -12,10 +12,12 @@ import { saveAllEditors } from "./editor-lifecycle";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
 import { LinkRewriteStatus } from "./LinkRewriteStatus";
+import { Loading } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
 import { useNewPageRequest } from "./new-page";
 import { QuickSwitcher } from "./QuickSwitcher";
+import { RailLayout } from "./Rail";
 import { parseRoute, useRoute } from "./route";
 import { isSwitcherShortcut } from "./shortcut";
 
@@ -60,9 +62,11 @@ if (initialRoute.name === "page" || initialRoute.name === "title" || initialRout
 
 function PageViewLoadFailed() {
   return (
-    <p className="message message-error" role="alert">
-      画面を読み込めませんでした。再読み込みしてください。
-    </p>
+    <RailLayout rail={null}>
+      <p className="message message-error" role="alert">
+        画面を読み込めませんでした。再読み込みしてください。
+      </p>
+    </RailLayout>
   );
 }
 
@@ -162,11 +166,13 @@ export function App() {
       />
       <main className="main">
         {isOwner && <LinkRewriteStatus />}
-        {session.status === "loading" && <p className="narrow muted">読み込み中…</p>}
+        {session.status === "loading" && <Loading />}
         {session.status === "error" && (
-          <p className="narrow message message-error" role="alert">
-            ログインの状態を取得できませんでした。再読み込みしてください。
-          </p>
+          <RailLayout rail={null}>
+            <p className="message message-error" role="alert">
+              ログインの状態を取得できませんでした。再読み込みしてください。
+            </p>
+          </RailLayout>
         )}
         {ready && route.name === "home" && (
           <HomeView
@@ -178,7 +184,7 @@ export function App() {
           />
         )}
         {ready && (route.name === "page" || route.name === "title" || route.name === "new") && (
-          <Suspense fallback={<p className="narrow muted">読み込み中…</p>}>
+          <Suspense fallback={<Loading />}>
             <PageView
               // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す。
               // `/?new` も同じ位置と key に置き、作れた後の `/p/<id>` で作り直さない

@@ -75,7 +75,7 @@ const SCENES: Scene[] = [
     role: "owner",
     async show({ page }) {
       await page.goto(`/?q=${encodeURIComponent("どこにも無い語句")}`);
-      await expect(page.getByText("一致するページがありません。")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
     },
   },
   {
