@@ -236,6 +236,42 @@ describe("QuickSwitcher の操作", () => {
     expect(dialog().open).toBe(true);
   });
 
+  it("既存のページを新しいタブで開く操作（修飾キー付きのクリック）では閉じない", async () => {
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じ title のページがすでにある",
+    });
+    vi.mocked(findPageByTitle).mockResolvedValue(ok({ id: "EEEEEEEEEEEEEEEEEEEEEE" } as Page));
+    await renderSwitcher(true);
+    typeText("メ");
+    for (let i = 0; i < options().length; i++) press("ArrowDown");
+    press("ArrowUp");
+    press("Enter");
+    await vi.waitFor(() => expect(container?.querySelector("[role='alert'] a")).not.toBeNull());
+    const link = container?.querySelector<HTMLAnchorElement>("[role='alert'] a");
+    const pathname = location.pathname;
+    // 修飾キー付きのクリックの既定動作（新しいタブ）で、テストの iframe ごと動かさない
+    const keepPage = (event: Event) => event.preventDefault();
+    document.addEventListener("click", keepPage);
+    try {
+      act(() => {
+        link?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }),
+        );
+      });
+    } finally {
+      document.removeEventListener("click", keepPage);
+    }
+    expect(dialog().open).toBe(true);
+    expect(location.pathname).toBe(pathname);
+    act(() => {
+      link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(dialog().open).toBe(false);
+    expect(location.pathname).toBe("/p/EEEEEEEEEEEEEEEEEEEEEE");
+  });
+
   it("Esc で閉じる", async () => {
     await renderSwitcher(true);
     press("Escape");
@@ -300,10 +336,34 @@ describe("QuickSwitcher の日本語入力", () => {
     expect(dialog().open).toBe(true);
   });
 
-  it("変換中に候補を出し直しても、入力欄の値は書き換えない", async () => {
+  it("変換の開始から確定までの間、入力欄の値は打った文字のままで、候補だけを出し直す", async () => {
     await renderSwitcher(true);
-    typeText("ほ");
-    typeText("ほげ");
+    const compose = (text: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      act(() => {
+        setter?.call(input(), text);
+        input().dispatchEvent(
+          new InputEvent("input", {
+            bubbles: true,
+            isComposing: true,
+            inputType: "insertCompositionText",
+          }),
+        );
+      });
+    };
+    act(() => {
+      input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    });
+    compose("ほ");
+    expect(input().value).toBe("ほ");
+    compose("ほげ");
+    expect(input().value).toBe("ほげ");
+    expect(options()).toContain("「ほげ」を本文から検索");
+    act(() => {
+      input().dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true, data: "ほげ" }),
+      );
+    });
     expect(input().value).toBe("ほげ");
     expect(options()).toContain("「ほげ」を本文から検索");
   });

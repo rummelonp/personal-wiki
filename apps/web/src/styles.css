@@ -695,7 +695,7 @@ a {
 
 .switcher {
   width: min(100% - var(--space-5), var(--switcher-width));
-  max-height: calc(100vh - var(--switcher-top) - var(--space-4));
+  max-height: calc(100dvh - var(--switcher-top) - var(--space-4));
   margin: var(--switcher-top) auto auto;
   padding: 0;
   overflow: hidden;
@@ -706,12 +706,20 @@ a {
   box-shadow: var(--shadow-popover);
 }
 
+/* 高さが足りないときは候補の列だけが縮んでスクロールし、入力欄と失敗の文とヒントは切れない */
+.switcher[open] {
+  display: flex;
+  flex-direction: column;
+}
+
 .switcher::backdrop {
   background: var(--color-backdrop);
 }
 
 .switcher-body {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   gap: var(--space-2);
   padding: var(--space-3);
 }
@@ -734,9 +742,15 @@ a {
   color: var(--color-fg-muted);
 }
 
+.switcher-body > :not(.switcher-list) {
+  flex: none;
+}
+
 .switcher-list {
   display: grid;
+  flex: 0 1 auto;
   gap: var(--space-1);
+  min-height: 0;
   max-height: var(--switcher-list-max-height);
   overflow-y: auto;
 }

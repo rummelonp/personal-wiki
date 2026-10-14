@@ -1,4 +1,4 @@
-import { Link } from "./Link";
+import { isPlainClick, Link } from "./Link";
 import { createPage, failureMessage, findPageByTitle } from "./pages-api";
 import { navigate, pageHref } from "./route";
 
@@ -36,7 +36,7 @@ export function CreateProblemMessage({
   onOpenExisting,
 }: {
   problem: CreateProblem;
-  /** 既存のページへ移る直前に呼ぶ。ダイアログを閉じるのに使う。 */
+  /** 既存のページへ移る直前に呼ぶ。ダイアログを閉じるのに使う。新しいタブで開く操作では呼ばない。 */
   onOpenExisting?: () => void;
 }) {
   return (
@@ -45,7 +45,12 @@ export function CreateProblemMessage({
       {problem.existingId !== null && (
         <>
           {" "}
-          <Link href={pageHref(problem.existingId)} onClick={onOpenExisting}>
+          <Link
+            href={pageHref(problem.existingId)}
+            onClick={(event) => {
+              if (isPlainClick(event)) onOpenExisting?.();
+            }}
+          >
             そのページを開く
           </Link>
         </>
