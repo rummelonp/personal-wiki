@@ -64,9 +64,12 @@ test("「さらに表示」で読み足した位置まで、戻るで戻る", as
   await expect.poll(() => page.locator(".entries .entry").count()).toBeGreaterThan(20);
   const loaded = await page.locator(".entries .entry").count();
 
-  const target = await page.evaluate(
-    () => document.documentElement.scrollHeight - window.innerHeight - 100,
-  );
+  // 狭い画面では一覧の下にタグの一覧が続き、戻った直後はまだ無いので、一覧の末尾が画面の下端に
+  // 来る位置を使う。ページの末尾を使うと、戻った直後の短いページでは届かない
+  const target = await page.evaluate(() => {
+    const bottom = document.querySelector(".entries")?.getBoundingClientRect().bottom ?? 0;
+    return Math.round(bottom + window.scrollY - window.innerHeight);
+  });
   expect(target, "最初の 20 件だけでは届かない位置").toBeGreaterThan(SCROLL);
   await page.evaluate((y) => window.scrollTo(0, y), target);
   await expect.poll(() => scrollY(page)).toBe(target);

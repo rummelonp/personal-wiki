@@ -21,6 +21,7 @@ const TARGETS = [
   ".rail .chip-link",
   ".rail-list a",
   ".outline-link",
+  ".toc > summary",
   ".segmented-option",
   ".rail .button",
   ".chips .chip-link",
@@ -175,8 +176,11 @@ test.describe("タップ対象", () => {
   test("見出しの多いページの目次", async ({ page, seedIds }) => {
     await page.goto(`/p/${seedIds[SEED.longPage]}`);
     await expect(page.locator(".title-input")).toHaveText(SEED.longPage);
-    await expect(page.locator(".outline-link").first()).toBeVisible();
-    await expectTapTargets(page, [".outline-link"]);
+    // 狭い画面の目次は title の下に畳んであるので、開いてから測る
+    const toc = page.locator("details.toc");
+    await toc.locator("summary").click();
+    await expect(toc.locator(".outline-link").first()).toBeVisible();
+    await expectTapTargets(page, [".toc > summary", ".toc .outline-link"]);
   });
 
   test.describe("匿名", () => {
