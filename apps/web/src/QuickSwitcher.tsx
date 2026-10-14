@@ -4,7 +4,7 @@ import type { PageCandidate } from "@personal-wiki/editor";
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { highlightMatches } from "./highlight";
 import { PlusIcon, SearchIcon } from "./icons";
-import { LoadingStatus, useSkeletonPainted } from "./Loading";
+import { useSkeletonPainted } from "./Loading";
 import {
   ANONYMOUS_TITLE_INDEX_MAX_REQUESTS,
   createTitleIndex,
@@ -103,7 +103,7 @@ function PendingCandidates() {
   const painted = useSkeletonPainted();
   return (
     <>
-      <LoadingStatus />
+      <span className="visually-hidden">候補を読み込み中…</span>
       <p
         className={`switcher-heading switcher-pending${painted ? " skeleton-painted" : ""}`}
         aria-hidden="true"
@@ -157,6 +157,7 @@ function SwitcherBody({
     candidates[0] !== undefined && foldTitle(candidates[0].title) === foldTitle(trimmed);
   const contentSearchTooShort =
     trimmed !== "" && !owner && searchQueryLength(trimmed) < ANONYMOUS_SEARCH_MIN_CHARS;
+  const noMatch = trimmed !== "" && !owner && settled && candidates.length === 0;
   const pageRows = candidates.map((candidate): Row => ({ kind: "page", candidate }));
   const contentSearchRows: Row[] =
     trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
@@ -250,16 +251,19 @@ function SwitcherBody({
       )}
       {/* listbox の子は option だけにするので、候補が無いことと本文から検索できないことの案内は
           外に置く。owner には「作成」と「本文から検索」の行が同じことを伝える */}
-      {!settled && <PendingCandidates />}
-      {trimmed !== "" &&
-        !owner &&
-        ((candidates.length === 0 && settled) || contentSearchTooShort) && (
-          <p className="switcher-heading" role="status">
-            {candidates.length === 0 && settled && "タイトルが一致するページはありません。"}
-            {contentSearchTooShort &&
-              `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
-          </p>
-        )}
+      {/* 案内の status は 1 つにまとめる。取得中と匿名の案内が同時に出ると、status が 2 つ並ぶため */}
+      {(!settled || noMatch || contentSearchTooShort) && (
+        <div role="status">
+          {!settled && <PendingCandidates />}
+          {(noMatch || contentSearchTooShort) && (
+            <p className="switcher-heading">
+              {noMatch && "タイトルが一致するページはありません。"}
+              {contentSearchTooShort &&
+                `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
+            </p>
+          )}
+        </div>
+      )}
       <div
         id={listboxId}
         role="listbox"

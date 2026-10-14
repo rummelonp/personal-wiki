@@ -401,7 +401,7 @@ describe("QuickSwitcher の候補の取得中", () => {
     await openPending(true);
     typeText("新しい語");
     expect(container?.querySelector("[data-row-kind='create']")).toBeNull();
-    expect(status()).toContain("読み込み中…");
+    expect(status()).toEqual([expect.stringContaining("候補を読み込み中…")]);
 
     await act(async () => deliver(ok({ pages: RECENT, nextCursor: null })));
     expect(container?.querySelector("[data-row-kind='create']")).not.toBeNull();
@@ -415,6 +415,12 @@ describe("QuickSwitcher の候補の取得中", () => {
 
     await act(async () => deliver(ok({ pages: RECENT, nextCursor: null })));
     expect(container?.textContent).toContain("タイトルが一致するページはありません。");
+  });
+
+  it("匿名が取得中に 3 文字未満を打っても、案内の status は 1 つにまとまる", async () => {
+    await openPending(false);
+    typeText("ほげ");
+    expect(status()).toEqual([expect.stringMatching(/候補を読み込み中…[\s\S]*3 文字以上/)]);
   });
 
   it("取得に失敗しても、済んだ扱いで「作成」を出す", async () => {
