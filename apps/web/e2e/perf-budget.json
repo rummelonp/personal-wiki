@@ -1,0 +1,12 @@
+{
+  "perf-chromium-desktop": {
+    "openToEditableMs": { "measured": 370.5, "budget": 750 },
+    "keystrokeToDisplayMs": { "measured": 12.8, "budget": 50 },
+    "saveToIndicatorMs": { "measured": 25.3, "budget": 60 }
+  },
+  "perf-webkit-iphone": {
+    "openToEditableMs": { "measured": 394, "budget": 790 },
+    "keystrokeToDisplayMs": { "measured": 13.5, "budget": 50 },
+    "saveToIndicatorMs": { "measured": 27, "budget": 60 }
+  }
+}
