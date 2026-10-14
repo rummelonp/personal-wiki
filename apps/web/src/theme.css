@@ -118,11 +118,14 @@
   --ui-color-accent: var(--color-accent);
   --ui-color-accent-soft: var(--color-tag-bg);
   --ui-color-on-accent: var(--color-accent-fg);
+  --ui-color-selected: var(--color-selected);
   --ui-color-danger: var(--color-danger);
   --ui-font-body: var(--font-sans);
   --ui-font-heading: var(--font-serif);
   --ui-font-mono: var(--font-mono);
   --ui-radius-sm: var(--radius-sm);
+  --ui-radius-md: var(--radius-md);
+  --ui-shadow-popover: var(--shadow-popover);
   /* --ui-space-* は置かない。editor の段階（6 が 1.5rem）とこのファイルの段階が揃っていないので、
      editor の既定値を使う */
 }

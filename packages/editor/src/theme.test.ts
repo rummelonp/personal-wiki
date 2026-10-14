@@ -163,7 +163,7 @@ describe("editor colors", () => {
     const background = resolve(content, "var(--ui-color-background)");
     const border = resolve(content, "var(--ui-color-border)");
     const accent = resolve(content, "var(--ui-color-accent)");
-    const onAccent = resolve(content, "var(--ui-color-on-accent)");
+    const selected = resolve(content, "var(--ui-color-selected)");
 
     v.focus();
     expect(toRgb(getComputedStyle(await queryDrawn(v, ".cm-cursor")).borderLeftColor)).toEqual(
@@ -179,8 +179,12 @@ describe("editor colors", () => {
       const option = query(v, ".cm-tooltip-autocomplete li[aria-selected]");
       expect(toRgb(getComputedStyle(tooltip).backgroundColor)).toEqual(background);
       expect(toRgb(getComputedStyle(tooltip).borderTopColor)).toEqual(border);
-      expect(toRgb(getComputedStyle(option).backgroundColor)).toEqual(accent);
-      expect(colorOf(option)).toEqual(onAccent);
+      // 選択行は quick switcher と同じく、地の色の変化と左の差し色の線で示す（差し色の地にしない）
+      expect(toRgb(getComputedStyle(option).backgroundColor)).toEqual(selected);
+      expect(colorOf(option)).toEqual(text);
+      expect(contrastRatio(text, selected)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      expect(getComputedStyle(option).boxShadow).toContain("inset");
+      expect(getComputedStyle(option).boxShadow).toContain(`rgb(${accent.join(", ")})`);
     } finally {
       tooltip.remove();
     }

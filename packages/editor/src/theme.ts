@@ -116,6 +116,11 @@ export const typographyTheme = EditorView.theme({
   ".cm-scroller": { fontFamily: "var(--ui-font-body)", fontSize: "16px", lineHeight: "1.75" },
 });
 
+const TOUCH_ROW_HEIGHT = "44px";
+// ホストが --ui-color-selected を渡さないときは、本文の色を地へ薄く混ぜて選択行の地にする
+const SELECTED_BACKGROUND =
+  "var(--ui-color-selected, color-mix(in srgb, var(--ui-color-text) 8%, var(--ui-color-background)))";
+
 /**
  * CodeMirror 自身が持つ色の上書き。本文の view と title 欄の両方に入れる。
  *
@@ -133,15 +138,49 @@ export const editorSurfaceTheme = EditorView.baseTheme({
     {
       background: "color-mix(in srgb, var(--ui-color-accent) 22%, var(--ui-color-background))",
     },
+  // 補完の窓の見た目は apps/web の quick switcher（枠、角丸、影、選択行の地と左の線、一致箇所の太字）に揃える。
+  // 選択行は差し色の地でなく地の色の変化と左の 1 本の線で示し、差し色は線の 1 色にとどめる。
   "&light .cm-tooltip.cm-tooltip": {
     border: "1px solid var(--ui-color-border)",
     backgroundColor: "var(--ui-color-background)",
     color: "var(--ui-color-text)",
+    borderRadius: "var(--ui-radius-md, 0.375rem)",
+    boxShadow: "var(--ui-shadow-popover, 0 8px 24px rgb(0 0 0 / 0.16))",
   },
   "&light .cm-tooltip-section:not(:first-child)": { borderTop: "1px solid var(--ui-color-border)" },
-  "&light .cm-tooltip-autocomplete.cm-tooltip-autocomplete ul li[aria-selected]": {
-    background: "var(--ui-color-accent)",
-    color: "var(--ui-color-on-accent)",
+  "&light .cm-tooltip.cm-tooltip-autocomplete > ul": {
+    fontFamily: "var(--ui-font-body)",
+    padding: "var(--ui-space-1, 0.25rem)",
+  },
+  "&light .cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    padding: "var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem)",
+    lineHeight: "1.5",
+    borderRadius: "var(--ui-radius-sm, 0.25rem)",
+  },
+  "&light .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    background: SELECTED_BACKGROUND,
+    color: "var(--ui-color-text)",
+    boxShadow: "inset 2px 0 0 var(--ui-color-accent)",
+  },
+  "&light .cm-tooltip-autocomplete .cm-completionMatchedText": {
+    textDecoration: "none",
+    fontWeight: "700",
+  },
+  "&light .cm-tooltip-autocomplete .cm-completionDetail": {
+    fontStyle: "normal",
+    color: "var(--ui-color-muted)",
+  },
+  // タッチ操作の端末は、行を指で外さず押せる高さ（44px）にする。caret の下が狭くても行が半分に
+  // 切れず読めるよう、窓の高さの上限も行数で決める。行の高さは padding でなく line-height で取り、
+  // `text-overflow: ellipsis` が効く block の行のまま文字を縦中央に置く。
+  // @media の中では style-mod が `&` を media の文に置き換えるので、`&light` を使えない。
+  "@media (pointer: coarse)": {
+    ".cm-tooltip.cm-tooltip-autocomplete > ul": { maxHeight: `calc(${TOUCH_ROW_HEIGHT} * 5.5)` },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+      paddingTop: "0",
+      paddingBottom: "0",
+      lineHeight: TOUCH_ROW_HEIGHT,
+    },
   },
 });
 

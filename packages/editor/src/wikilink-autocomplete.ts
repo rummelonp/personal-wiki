@@ -18,7 +18,7 @@ import {
   type StateEffect,
   type TransactionSpec,
 } from "@codemirror/state";
-import { type Command, type EditorView, keymap, ViewPlugin } from "@codemirror/view";
+import { type Command, type EditorView, keymap, tooltips, ViewPlugin } from "@codemirror/view";
 import { extractLinkTargets, type LinkTargets } from "@personal-wiki/markdown";
 import { compositionSettled, compositionSettledNotifier, isComposing } from "./ime";
 import type { PageCandidate, PageIndex } from "./page-index";
@@ -318,6 +318,33 @@ const restartAfterComposition = ViewPlugin.define((view) => ({
   },
 }));
 
+/**
+ * tooltip を置ける範囲。iOS のソフトキーボードは layout viewport を縮めず visual viewport だけを
+ * 縮めるので、既定の `documentElement.clientHeight` のままだと、キーボードに隠れる下側にも
+ * 余地があると見なされて候補が caret の下に開く。visual viewport の範囲を返せば、下が狭いとき
+ * CodeMirror が広い側（caret の上）へ開く。visual viewport の座標は layout viewport からの
+ * 位置（offsetTop / offsetLeft）で、tooltip の座標系（client 座標）と揃う。
+ */
+export function tooltipSpace(view: EditorView): {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+} {
+  const win = view.dom.ownerDocument.defaultView;
+  const viewport = win?.visualViewport;
+  if (viewport) {
+    return {
+      top: viewport.offsetTop,
+      bottom: viewport.offsetTop + viewport.height,
+      left: viewport.offsetLeft,
+      right: viewport.offsetLeft + viewport.width,
+    };
+  }
+  const root = view.dom.ownerDocument.documentElement;
+  return { top: 0, left: 0, bottom: root.clientHeight, right: root.clientWidth };
+}
+
 export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Extension {
   return [
     compositionSettledNotifier,
@@ -330,6 +357,7 @@ export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Exte
       activateOnTypingDelay: options.typingDelay ?? 0,
       icons: false,
     }),
+    tooltips({ tooltipSpace }),
     Prec.highest(keymap.of(imeSafeCompletionKeymap)),
   ];
 }

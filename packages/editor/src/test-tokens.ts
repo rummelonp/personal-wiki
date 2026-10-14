@@ -32,9 +32,12 @@ const TOKENS_CSS = `
   --ui-color-surface: color-mix(in srgb, var(--ui-color-text) 4%, var(--ui-color-background));
   --ui-color-border: color-mix(in srgb, var(--ui-color-text) 16%, var(--ui-color-background));
   --ui-color-accent-soft: color-mix(in srgb, var(--ui-color-accent) 12%, var(--ui-color-background));
+  --ui-color-selected: color-mix(in srgb, var(--ui-color-text) 6%, var(--ui-color-background));
   --ui-color-danger: var(--ui-light, #b3261e) var(--ui-dark, #ff8f87);
 
   --ui-radius-sm: 0.25rem;
+  --ui-radius-md: 0.5rem;
+  --ui-shadow-popover: 0 8px 24px rgb(0 0 0 / 0.16);
 
   /* 実際の書体名はホストの token が持つ。ここでは Editor が --ui-font-body/-heading と
      --ui-font-mono のどちらを当てているかを test で見分けられれば足りるので、区別できる名前だけを置く。 */
