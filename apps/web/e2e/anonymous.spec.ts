@@ -63,11 +63,17 @@ test("トップの一覧とタグに draft が出ない @smoke", async ({ page, 
   await expectNoHorizontalScroll(page);
 });
 
-test("draft の title の URL は存在しないページと同じ表示になる", async ({ page }) => {
-  await page.goto(titlePath(SEED.draftSecret));
-  await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
-  await page.goto(titlePath("本当に存在しないページ"));
-  await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+test("draft の title の URL は存在しないページと同じ空のページになる", async ({ page }) => {
+  const shown: string[] = [];
+  for (const title of [SEED.draftSecret, "本当に存在しないページ"]) {
+    await page.goto(titlePath(title));
+    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+    await expect(page.locator(".rail-section-links")).toContainText("ありません。");
+    await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
+    shown.push((await page.getByRole("main").innerText()).replaceAll(title, "<title>"));
+  }
+  expect(shown[1]).toBe(shown[0]);
+  expect(shown[0]).not.toContain("下書き");
 });
 
 test("検索と quick switcher に draft が出ない", async ({ page }) => {

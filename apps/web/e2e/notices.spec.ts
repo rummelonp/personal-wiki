@@ -344,7 +344,8 @@ test("未作成のリンクの通知も、本文を動かさず、塗りの主�
   page,
   api,
 }, testInfo) => {
-  const missing = uniqueTitle(testInfo, "未作成");
+  // title の URL にできる title は空のページへ移るので、予約語で始まる title で通知を出す
+  const missing = `p/${uniqueTitle(testInfo, "未作成")}`;
   const source = await api.createPage({
     title: uniqueTitle(testInfo, "リンク元"),
     body: `[[${missing}]]\n\n${BODY}`,

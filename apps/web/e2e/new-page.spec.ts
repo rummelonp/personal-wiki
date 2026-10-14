@@ -63,11 +63,12 @@ test("作る POST が遅くても、待つ間に打った本文は残り、本�
   await expectCreatedAndKept(page, title, body);
 });
 
-test("存在しないリンクの「作成して開く」から、すぐ打った最初の文字から残る", async ({
+test("title の URL にできないリンクの「作成して開く」から、すぐ打った最初の文字から残る", async ({
   page,
   api,
 }, testInfo) => {
-  const missing = uniqueTitle(testInfo, "リンク先");
+  // title の URL にできる title は空のページへ移るので、予約語で始まる title で通知を出す
+  const missing = `p/${uniqueTitle(testInfo, "リンク先")}`;
   const source = await api.createPage({
     title: uniqueTitle(testInfo, "リンク元"),
     body: `[[${missing}]]`,

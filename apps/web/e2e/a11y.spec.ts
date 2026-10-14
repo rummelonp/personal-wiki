@@ -138,7 +138,10 @@ test.describe("匿名", () => {
 
   test("存在しないページ", async ({ page }) => {
     await page.goto(`/${encodeURIComponent("本当に存在しないページ")}`);
-    await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "本当に存在しないページ" }),
+    ).toBeVisible();
+    await expect(page.locator(".rail-section-links")).toContainText("ありません。");
     await expectNoNewViolations(page, "存在しないページ");
   });
 });

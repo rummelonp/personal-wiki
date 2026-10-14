@@ -222,6 +222,12 @@ test.describe("匿名の本文の左端 @widths", () => {
       );
 
       await page.goto(`/${encodeURIComponent("本当に存在しないページ")}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "本当に存在しないページ" }),
+      ).toBeVisible();
+      await expectAligned(page, ".note-title", "空のページの title");
+
+      await page.goto("/p/00000000-0000-0000-0000-000000000000");
       await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
       await expectAligned(page, ".empty-title", "404");
 
