@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clearBodyFocusRequest } from "./body-focus";
 import { setDocumentTitle } from "./document-title";
 import { NotFound } from "./NotFound";
 import { PageEditor } from "./PageEditor";
@@ -40,6 +41,8 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   const [state, setState] = useState<State>({ status: "loading" });
   /** 表示中のページの正の URL のパス。アドレスバーがこれと同じなら、ルートが変わっても取り直さない */
   const shownPath = useRef<string | null>(null);
+  /** 取得の応答を待っている id。作成直後の focus の印を、編集の画面が受け取らずに終わったとき消すのに使う */
+  const pendingId = useRef<string | null>(null);
   const targetKey = target.by === "id" ? `id:${target.id}` : `title:${target.title}`;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表す
@@ -49,15 +52,30 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     let cancelled = false;
     setState({ status: "loading" });
     const request = target.by === "id" ? getPage(target.id) : findPageByTitle(target.title);
+    const id = target.by === "id" ? target.id : null;
+    pendingId.current = id;
     void request.then((res) => {
       if (cancelled) return;
-      if (res.ok) setState({ status: "ready", page: res.value });
-      else if (res.reason === "not_found") setState({ status: "not_found" });
+      pendingId.current = null;
+      if (res.ok) {
+        setState({ status: "ready", page: res.value });
+        return;
+      }
+      // 開けなかったページの印を残すと、後でそのページを開いたときに作成直後でなくても focus する
+      if (id !== null) clearBodyFocusRequest(id);
+      if (res.reason === "not_found") setState({ status: "not_found" });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
       else setState({ status: "error", message: failureMessage(res, "取得できなかった") });
     });
     return () => {
       cancelled = true;
+      if (id === null || pendingId.current !== id) return;
+      pendingId.current = null;
+      // 取得の途中で別のページや画面に移ったときの片付け。StrictMode は後片付けの直後に同じ id で
+      // effect を付け直すので、同じ tick の中では消さず、付け直されなかったときだけ消す
+      queueMicrotask(() => {
+        if (pendingId.current !== id) clearBodyFocusRequest(id);
+      });
     };
   }, [targetKey]);
 

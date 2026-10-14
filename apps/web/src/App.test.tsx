@@ -597,6 +597,54 @@ describe("App の owner の画面", () => {
     });
   });
 
+  describe("作成の直後に開けなかったページ", () => {
+    const created: Page = { ...DRAFT, id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ", body: "" };
+    const bodyHasFocus = () => document.activeElement === editorContent();
+    const create = async () => {
+      await renderAt(titleUrl(created.title));
+      await vi.waitFor(() => expect(main()?.textContent).toContain("まだありません"));
+      const button = [...(main()?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent === "このタイトルで作成",
+      );
+      act(() => button?.click());
+      await vi.waitFor(() => expect(location.pathname).toBe(`/p/${created.id}`));
+    };
+    /** 開けるようになったあと、別のページを挟んで開き直す */
+    const reopen = async () => {
+      vi.mocked(getPage).mockImplementation(async (id) =>
+        id === created.id ? ok(created) : id === DRAFT.id ? ok(DRAFT) : notFound,
+      );
+      act(() => navigate(`/p/${DRAFT.id}`));
+      await vi.waitFor(() => expect(titleText()).toBe(DRAFT.title));
+      act(() => navigate(`/p/${created.id}`));
+      await vi.waitFor(() => expect(titleText()).toBe(created.title));
+      await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+    };
+
+    it("取得に失敗したあと同じページを開き直しても、本文にフォーカスしない", async () => {
+      serve("owner", [PUBLIC, DRAFT]);
+      vi.mocked(createPage).mockResolvedValue(ok(created));
+      vi.mocked(getPage).mockImplementation(async (id) =>
+        id === created.id ? { ok: false, reason: "error", message: "失敗" } : notFound,
+      );
+      await create();
+      await vi.waitFor(() => expect(main()?.querySelector("[role='alert']")).not.toBeNull());
+      await reopen();
+      expect(bodyHasFocus()).toBe(false);
+    });
+
+    it("取得の途中で別のページへ移ったあと開き直しても、本文にフォーカスしない", async () => {
+      serve("owner", [PUBLIC, DRAFT]);
+      vi.mocked(createPage).mockResolvedValue(ok(created));
+      vi.mocked(getPage).mockImplementation((id) =>
+        id === created.id ? new Promise(() => {}) : Promise.resolve(ok(DRAFT)),
+      );
+      await create();
+      await reopen();
+      expect(bodyHasFocus()).toBe(false);
+    });
+  });
+
   it("title が重複して作れなかったら、理由を出して既存のページを開ける", async () => {
     serve("owner", [PUBLIC]);
     vi.mocked(createPage).mockResolvedValue({
