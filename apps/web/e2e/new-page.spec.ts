@@ -115,6 +115,23 @@ test("title が空のままでは Enter でも作らず、本文を打っても 
   await expect(bodyEditor(page)).toHaveText("title の無い本文");
 });
 
+test("内容のある /?new の + は title 欄へ移るだけで、離れた後の + は復元を尋ねる", async ({
+  page,
+}) => {
+  await openFromPlus(page);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.type("打ちかけの本文");
+  await page.getByRole("button", { name: "新規作成" }).click();
+  await expect(titleEditor(page)).toBeFocused();
+  await expect(page).toHaveURL(/\/\?new$/);
+  await expect(bodyEditor(page)).toHaveText("打ちかけの本文");
+
+  await page.getByRole("link", { name: "personal-wiki" }).click();
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await page.getByRole("button", { name: "新規作成" }).click();
+  await expect(page.getByText("この端末に退避されています", { exact: false })).toBeVisible();
+});
+
 test("title が重複して作れないと、打った内容を残して直し方を出し、title を直すと作れる", async ({
   page,
 }, testInfo) => {
