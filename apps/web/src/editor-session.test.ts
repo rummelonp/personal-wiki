@@ -1429,6 +1429,22 @@ describe("まだ作っていないページ", () => {
     expect(api.calls).toEqual(["create"]);
   });
 
+  it("空の title の確定は作成の応答待ちにせず、内容があれば作る前の内容を持つと答える", async () => {
+    const { session, api } = setupNew();
+    expect(session.holdsUncreatedContent()).toBe(false);
+    session.edit({ title: "", body: "本文" });
+    void session.commitTitle();
+    expect(session.holdsUncreatedContent()).toBe(true);
+    const release = deferredCreate(api);
+    session.editTitle("題");
+    const created = session.commitTitle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.holdsUncreatedContent()).toBe(false);
+    release();
+    await created;
+    expect(session.holdsUncreatedContent()).toBe(false);
+  });
+
   it("title を渡して始めたら、確定だけで作る", async () => {
     const { session, api, server } = setupNew({ title: "リンクの題" });
     await session.commitTitle();
@@ -1617,15 +1633,41 @@ describe("まだ作っていないページ", () => {
       expect(next.getState().pendingBackup).toBeNull();
     });
 
-    it("内容のある画面を閉じて次の画面を開くと、案内を出さずに始め、前の内容は退避に残る", async () => {
+    it("内容のある作る前の画面を閉じると、次の画面がその内容の復元を尋ねる", async () => {
       const { session, api, backup } = setupNew();
+      session.editTitle("前の題");
       session.edit({ title: "", body: "前の画面" });
       void session.detach();
       const next = newSession(backup, api);
       next.adoptPendingBackup();
+      expect(next.getState().pendingBackup).toMatchObject({ title: "前の題", body: "前の画面" });
+      expect(next.getState().pendingBackup?.createFailed).toBeUndefined();
+      expect(api.calls).toEqual([]);
+    });
+
+    it("unmount の後に mount し直した画面（StrictMode）の内容は、次の画面に出さない", async () => {
+      const { session, api, backup } = setupNew();
+      session.edit({ title: "", body: "戻った画面" });
+      void session.detach();
+      session.attach();
+      const next = newSession(backup, api);
+      next.adoptPendingBackup();
       expect(next.getState().pendingBackup).toBeNull();
-      expect(isReadOnly(next.getState())).toBe(false);
-      expect(newBackups(backup)).toEqual([expect.objectContaining({ body: "前の画面" })]);
+    });
+
+    it("作成の失敗を表示したまま閉じた画面の内容は、次の画面に作れなかった内容として出す", async () => {
+      const { session, api, backup } = setupNew();
+      api.createPage = async () => ({ ok: false, reason: "error", message: "接続できない" });
+      session.editTitle("作れない題");
+      await session.commitTitle();
+      expect(saveStatusOf(session.getState())).toBe("create-error");
+      void session.detach();
+      const next = newSession(backup, api);
+      next.adoptPendingBackup();
+      expect(next.getState().pendingBackup).toMatchObject({
+        title: "作れない題",
+        createFailed: true,
+      });
     });
 
     it("作成の応答を待つ画面を閉じて次の画面を開いても、作成中の内容は出さない", async () => {
@@ -1642,7 +1684,7 @@ describe("まだ作っていないページ", () => {
       await created;
     });
 
-    it("閉じた後に作成が失敗した内容は、次の画面の入力で消えず、その次の画面に作れなかった内容として出す", async () => {
+    it("閉じた後に作成が失敗した内容は、次の画面の入力で消えず、後の画面に作れなかった内容として出す", async () => {
       const { session, api, backup } = setupNew();
       const fail = deferredCreateFailure(api);
       session.editTitle("作れない題");
@@ -1656,13 +1698,22 @@ describe("まだ作っていないページ", () => {
       await created;
       await vi.advanceTimersByTimeAsync(1100);
       expect(newBackups(backup)).toHaveLength(2);
+      // 閉じた 2 つの画面の内容は、1 つずつ尋ねる
       void second.detach();
-      const third = newSession(backup, api);
-      third.adoptPendingBackup();
-      expect(third.getState().pendingBackup).toMatchObject({
-        title: "作れない題",
-        createFailed: true,
-      });
+      const asked = [];
+      for (let i = 0; i < 2; i++) {
+        const later = newSession(backup, api);
+        later.adoptPendingBackup();
+        asked.push(later.getState().pendingBackup);
+        later.discardBackup();
+        void later.detach();
+      }
+      expect(asked).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ title: "作れない題", createFailed: true }),
+          expect.objectContaining({ body: "次の画面の入力" }),
+        ]),
+      );
     });
 
     it("2 回の離脱の後に作成が失敗した内容を、次の画面で復元して作ると、作る前の退避は残らない", async () => {

@@ -59,9 +59,24 @@ export function markNewPageCreated(serial: number): void {
   createdSerial = serial;
 }
 
+/** 表示中の新規作成の画面が、title なしの開き直しを引き受けたら true を返す。 */
+type KeepScreen = () => boolean;
+let keepScreen: KeepScreen | null = null;
+
+/** 表示中の新規作成の画面として、title なしの開き直しを引き受ける関数を登録する。 */
+export function registerNewPageScreen(keep: KeepScreen): () => void {
+  keepScreen = keep;
+  return () => {
+    if (keepScreen === keep) keepScreen = null;
+  };
+}
+
 /**
  * 新規作成の画面を開く。title を渡すと本文に、渡さなければ title 欄にカーソルを置く。
  * `/?new` から開き直すときは履歴を置き換え、戻るで同じ `/?new` を何度もたどらせない。
+ *
+ * `/?new` で title なしに開き直すときは、表示中の画面が引き受ければ（内容があるとき）開き直さない。
+ * 開き直すと、閉じた画面の内容を次の画面が復元の案内に出し、title 欄にカーソルが入らない。
  *
  * クリックなどの操作の中で呼ぶこと。iOS の Safari は、操作の中で focus した入力欄にだけ
  * キーボードを出すので、flushSync で画面と editor の mount（autoFocus）までを
@@ -69,6 +84,7 @@ export function markNewPageCreated(serial: number): void {
  */
 export function openNewPage(options: { title?: string } = {}): void {
   const replace = onNewPageRoute();
+  if (replace && !options.title && keepScreen?.() === true) return;
   flushSync(() => {
     publish({ serial: current.serial + 1, title: options.title ?? "" });
     navigate(newPageHref, { replace });

@@ -26,7 +26,7 @@ import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
-import { openNewPage } from "./new-page";
+import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import {
@@ -189,6 +189,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const [focusTarget] = useState(() =>
     page === null ? (session.getState().draft.title === "" ? "title" : "body") : null,
   );
+
+  useEffect(() => {
+    if (!session.getState().uncreated) return;
+    return registerNewPageScreen(() => {
+      if (!session.holdsUncreatedContent()) return false;
+      titleEditor.current?.focus();
+      return true;
+    });
+  }, [session]);
 
   useEffect(() => {
     if (!uncreated) onShown?.({ id: pageId, title: savedTitle, visibility: savedVisibility });

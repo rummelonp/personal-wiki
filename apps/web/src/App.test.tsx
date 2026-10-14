@@ -97,7 +97,7 @@ afterEach(() => {
   root = null;
   container = null;
   vi.clearAllMocks();
-  // 作る前のページの退避は 1 つの key を共有するので、試験の間に持ち越さない
+  // 閉じた作る前の画面の退避は、次の新規作成の画面が復元を尋ねるので、試験の間に持ち越さない
   localStorage.clear();
   history.replaceState(null, "", startUrl);
 });
@@ -653,22 +653,49 @@ describe("App の owner の画面", () => {
     const newBackupKeys = () =>
       Object.keys(localStorage).filter((key) => key.startsWith("personal-wiki:draft:new:"));
 
-    it("/?new で + を押すと、履歴を置き換えて空の画面を開き、打ちかけの内容は尋ねずに端末に残す", async () => {
+    it("内容のある /?new で + を押すと、URL も画面も変えず、title 欄にフォーカスを移す", async () => {
       serveCreating();
       await renderAt("/");
       act(() => plus()?.click());
       const length = history.length;
+      const body = bodyContent();
       typeBody("打ちかけ");
+      act(() => body?.focus());
       act(() => plus()?.click());
       expect(here()).toBe("/?new");
       expect(history.length).toBe(length);
+      expect(bodyContent()).toBe(body);
+      expect(body?.textContent).toBe("打ちかけ");
       expect(document.activeElement).toBe(titleContent());
-      expect(bodyContent()?.textContent).toBe("");
       expect(main()?.textContent).not.toContain("この端末に退避されています");
-      expect(
-        newBackupKeys().map((key) => JSON.parse(localStorage.getItem(key) ?? "null")?.body),
-      ).toContain("打ちかけ");
       await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      expect(createPage).not.toHaveBeenCalled();
+    });
+
+    it("空の /?new で + を押すと、履歴を置き換えて新しい空の画面を開く", async () => {
+      serveCreating();
+      await renderAt("/");
+      act(() => plus()?.click());
+      const length = history.length;
+      const body = bodyContent();
+      act(() => plus()?.click());
+      expect(here()).toBe("/?new");
+      expect(history.length).toBe(length);
+      expect(bodyContent()).not.toBe(body);
+      expect(document.activeElement).toBe(titleContent());
+      expect(main()?.textContent).not.toContain("この端末に退避されています");
+    });
+
+    it("内容のある作る前の画面からアプリ内のリンクで離れると、+ で開いた次の画面が復元を尋ねる", async () => {
+      serveCreating();
+      await renderAt("/");
+      act(() => plus()?.click());
+      typeBody("打ちかけ");
+      act(() => navigate("/"));
+      await vi.waitFor(() => expect(main()?.querySelector(".title-input")).toBeNull());
+      act(() => plus()?.click());
+      expect(here()).toBe("/?new");
+      await vi.waitFor(() => expect(main()?.textContent).toContain("この端末に退避されています"));
       expect(createPage).not.toHaveBeenCalled();
     });
 

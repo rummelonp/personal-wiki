@@ -72,8 +72,8 @@ export const NEW_PAGE_BACKUP_PREFIX = "new:";
  * このタブのセッションが持つ、作る前の退避の key。次の新規作成の画面は、これを復元の案内に出さない。
  * 生きている画面や作成の応答を待つ画面の内容を、別の画面で復元してもう 1 つ作らないため。
  *
- * 外すのは、画面を閉じた後に作成が失敗したときだけで、その内容は次の新規作成の画面で復元を選ばせる。
- * 閉じた画面の、作ろうとしなかった内容はこのタブでは出さず、次に開いたタブ（再読み込みを含む）で出す。
+ * 画面を閉じたら外し、その内容は次の新規作成の画面で復元を選ばせる。ただし作成の応答を待つ間は
+ * 持ち続け、応答が失敗だったときに外す。待つ間に外すと、作れる内容を次の画面でもう 1 つ作れてしまう。
  * 別のタブの生きている画面の key はここに無いので、そちらの内容は案内に出る。
  */
 const heldNewKeys = new Set<string>();
@@ -413,8 +413,13 @@ export class EditorSession {
    */
   private create(): Promise<void> {
     if (this.creating !== null) return this.creating;
+    // 空の title の確定（本文へ移るときの blur など）を、作成の応答待ちにしない。待ちにすると、
+    // その間の + が内容のある画面を閉じてしまう
+    if (this.state.draft.title === "") return Promise.resolve();
     const run = this.enqueue(() => this.createNow()).finally(() => {
       this.creating = null;
+      // 待つ間に閉じた画面で作れなかった内容は、次の新規作成の画面で復元を選ばせる
+      if (this.closed && this.state.uncreated) heldNewKeys.delete(this.newKey);
     });
     this.creating = run;
     return run;
@@ -449,16 +454,14 @@ export class EditorSession {
       });
     }
     this.stashIfDirty();
-    // 閉じた画面では失敗を見せられないので、次の新規作成の画面で復元を選ばせる
-    if (this.closed) heldNewKeys.delete(this.newKey);
   }
 
   /**
    * 前の画面が残した作る前の退避を、復元か破棄を選ばせる案内に出す。mount の後に呼ぶ。
    * 描画の中（constructor）で読むと、前の画面が unmount で書く退避より先に読んでしまう。
    *
-   * 出すのは、このタブが持っていない key のもの（前のタブの寿命で残ったものと、閉じた後に作成が
-   * 失敗したもの。heldNewKeys を参照）。いくつもあれば新しいものから 1 つずつ出す。title を渡して
+   * 出すのは、このタブが持っていない key のもの（閉じた画面と前のタブが残したもの。heldNewKeys を
+   * 参照）。いくつもあれば新しいものから 1 つずつ出す。title を渡して
    * 開いた画面と、打ち始めた画面では出さない。その退避は次の素の新規作成の画面まで残る。
    */
   adoptPendingBackup(): void {
@@ -481,12 +484,25 @@ export class EditorSession {
   attach(): void {
     this.closed = false;
     this.left = false;
+    if (this.state.uncreated) heldNewKeys.add(this.newKey);
   }
 
-  /** 画面の unmount。離脱（leave）に加えて、作る前のページの退避の持ち主として閉じた印を付ける。 */
+  /**
+   * 画面の unmount。離脱（leave）に加えて、作る前のページの退避を手放し、次の新規作成の画面で
+   * 復元を選ばせる。作成の応答を待つ間は手放さず、作れなかったら応答の後に手放す。
+   */
   detach(): Promise<void> {
     this.closed = true;
-    return this.leave();
+    const left = this.leave();
+    if (this.state.uncreated && this.creating === null) heldNewKeys.delete(this.newKey);
+    return left;
+  }
+
+  /** 作る前の画面で、作成の応答を待っておらず、title か本文に内容がある。 */
+  holdsUncreatedContent(): boolean {
+    const { uncreated, draft, titleInput } = this.state;
+    if (!uncreated || this.creating !== null) return false;
+    return draft.title !== "" || draft.body !== "" || (titleInput ?? "") !== "";
   }
 
   /**

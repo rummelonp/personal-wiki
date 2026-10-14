@@ -14,6 +14,8 @@ export interface TitleEditorHandle {
    * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
    */
   whenSettled: () => Promise<void>;
+  /** 入力欄にカーソルを置く。選択範囲は前のまま。 */
+  focus: () => void;
 }
 
 export interface TitleEditorProps {
@@ -138,6 +140,9 @@ export function TitleEditor({
           for (const wake of waiters.splice(0)) wake();
         });
       });
+    },
+    focus() {
+      view.current?.focus();
     },
   }));
 
