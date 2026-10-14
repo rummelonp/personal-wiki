@@ -94,6 +94,16 @@ describe("navigate のスクロール", () => {
     expect(history.pushState).toHaveBeenCalledOnce();
   });
 
+  it("URL を更新してから先頭へ戻し、その後で通知する", () => {
+    const { scrollTo, dispatchEvent } = stubBrowser("/A");
+    navigate("/B");
+    const push = vi.mocked(history.pushState).mock.invocationCallOrder[0] as number;
+    const scroll = scrollTo.mock.invocationCallOrder[0] as number;
+    const notify = dispatchEvent.mock.invocationCallOrder[0] as number;
+    expect(push).toBeLessThan(scroll);
+    expect(scroll).toBeLessThan(notify);
+  });
+
   it("パスが同じでクエリだけ変わる遷移も、先頭へ戻す", () => {
     const { scrollTo } = stubBrowser("/?q=a");
     navigate("/?q=b");
