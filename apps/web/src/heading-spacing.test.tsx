@@ -26,7 +26,11 @@ const frame = () =>
   new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 /** ヘッダー（sticky）の下に本文を置く。読み取りの画面は readOnly、編集の画面は readOnly にしない */
-function mountBody(doc: string, readOnly: boolean, handle?: React.Ref<BodyEditorHandle>) {
+function mountBody(
+  doc: string,
+  readOnly: boolean,
+  handle: React.Ref<BodyEditorHandle> = createRef<BodyEditorHandle>(),
+) {
   const container = document.createElement("div");
   document.body.append(container);
   containers.push(container);
