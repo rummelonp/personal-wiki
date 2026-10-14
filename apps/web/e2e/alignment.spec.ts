@@ -1,5 +1,12 @@
 import type { Page, Route } from "@playwright/test";
-import { expect, test, uniqueTitle } from "./support/fixtures";
+import {
+  bodyEditor,
+  expect,
+  expectNoHorizontalScroll,
+  test,
+  typeAtBodyEnd,
+  uniqueTitle,
+} from "./support/fixtures";
 import { SEED } from "./support/seed";
 
 /*
@@ -137,32 +144,42 @@ test.describe("本文の左端 @widths", () => {
   });
 });
 
-test.describe("列の上の帯", () => {
-  test.use({ role: "anonymous" });
-
-  test("帯が出ても、短いページでスクロールが出ず、欄の線は画面の下端まで引かれる", async ({
-    page,
-    api,
-  }, testInfo) => {
-    const title = uniqueTitle(testInfo, "短いページ");
-    await api.createPage({ title, body: "短い本文", visibility: "public" });
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(`/${encodeURIComponent(title)}`);
-    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
-    // LinkRewriteStatus の帯と同じ位置と class。実際の帯は owner の書き換えの最中にしか出ない
-    await page.locator(".main").evaluate((main) => {
-      const band = document.createElement("p");
-      band.className = "narrow muted";
-      band.textContent = "他のページのリンクを書き換えています（1/2）";
-      main.prepend(band);
-    });
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
-    const rail = await page.locator(".rail").boundingBox();
-    expect(Math.abs((rail?.y ?? 0) + (rail?.height ?? 0) - 800)).toBeLessThan(1);
+test("短いページに通知の台が出ても、横スクロールは出ず、欄の線は台の上端まで引かれる", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "短いページ"),
+    body: "短い本文",
   });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`/p/${created.id}`);
+  await expect(bodyEditor(page)).toHaveText("短い本文");
+  await page.route(`**/api/pages/${created.id}`, (route) =>
+    route.request().method() === "PUT"
+      ? route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "internal" }),
+        })
+      : route.fallback(),
+  );
+  await typeAtBodyEnd(page, "、打った");
+  await expect(page.locator(".notice-dock").getByRole("alert")).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  // 台の高さの分だけ文書の末尾に余白が付くので縦には少しスクロールできるが、それ以上は伸びない。
+  // 台の高さの余白は .app の最低の高さに含まれるので、欄の線（rail）は台の上端まで引かれる
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const { overflow, railBottom, dockHeight } = await page.evaluate(() => {
+    const root = document.documentElement;
+    return {
+      overflow: root.scrollHeight - root.clientHeight,
+      railBottom: document.querySelector(".rail")?.getBoundingClientRect().bottom ?? 0,
+      dockHeight: document.querySelector(".notice-dock")?.getBoundingClientRect().height ?? 0,
+    };
+  });
+  expect(overflow, "台の高さより多く縦にスクロールできる").toBeLessThanOrEqual(dockHeight + 1);
+  expect(railBottom, "欄の線が台の上端まで届かない").toBeGreaterThanOrEqual(800 - dockHeight - 1);
 });
 
 test.describe("匿名の本文の左端 @widths", () => {
