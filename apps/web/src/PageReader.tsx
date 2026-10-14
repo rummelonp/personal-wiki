@@ -123,6 +123,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
     <RailLayout rail={rail}>
       <article className="note">
         {linkNotice !== null && (
+          // 読む人には作成できず、リンク先に進めない行き止まりなので warn。PageEditor の同じ通知は作成へ進める案内で info
           <Notice
             tone="warn"
             title={

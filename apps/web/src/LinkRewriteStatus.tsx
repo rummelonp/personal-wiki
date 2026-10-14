@@ -16,7 +16,8 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
     return (
       <Notice tone="info" role="status" title="他のページのリンクを書き換えています">
         <p>
-          {done}/{total} ページを書き換えました。この画面を開いたままにしてください。
+          {done}/{total}{" "}
+          ページを書き換えました。この画面を閉じても、残りは次に開いたときに続きから進みます。
         </p>
       </Notice>
     );

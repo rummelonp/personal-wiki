@@ -533,7 +533,7 @@ a {
   gap: var(--space-2);
 }
 
-/* 主な操作は塗らず、差し色の枠と文字で示す。塗りの強調は画面に 1 つ（ヘッダーの新規作成）まで */
+/* 主な操作は塗らず、差し色の枠と文字で示す。通知の中では塗らない（塗りの強調は画面の主操作の button-primary） */
 .button-main {
   color: var(--color-accent);
   border-color: var(--color-accent);
@@ -788,7 +788,7 @@ a {
 /*
  * 保存の状態は、ノートの右上の外、ヘッダーとの間の余白（.rail-main の上の padding）に出す。
  * 流れに行を取らないので、狭い幅でも title が下がらず、読み取りの画面と title の位置が揃う。
- * 失敗の状態は、本文の上に出る通知（.message）と赤字の両方で気づける。
+ * 失敗の状態は、画面の下端に出る通知（.notice-dock）と赤字の両方で気づける。
  */
 .save-state {
   position: absolute;

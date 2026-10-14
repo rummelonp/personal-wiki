@@ -498,6 +498,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
               <p>通信を確かめて、もう一度クリックしてください。</p>
             </Notice>
           ) : (
+            // 作成へ進める案内なので info。行き止まりになる PageReader の同じ通知は warn
             <Notice
               tone="info"
               title={`「${linkNotice.title}」のページはまだありません`}
@@ -570,6 +571,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           onCommit={() => void session.commitTitle()}
           onBlur={() => void session.commitTitle()}
         />
+        {/* 通知は台へ重なるので、JSX の位置は表示位置を決めない。作成は title の確定で起きるので、title の後に置く */}
         {state.error !== null && state.failedOp?.kind === "create" && (
           <Notice
             tone="error"
