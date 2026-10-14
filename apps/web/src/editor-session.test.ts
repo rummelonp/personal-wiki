@@ -290,6 +290,23 @@ describe("409 の衝突", () => {
   });
 });
 
+describe("externalBases", () => {
+  it("自分の保存では増えず、サーバーの版の取り込みと衝突の解決で増える", async () => {
+    const { session, server } = setup();
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    expect(session.getState().base.version).toBe(2);
+    expect(session.getState().externalBases).toBe(0);
+
+    server.page = { ...server.page, body: "他で更新", version: 3 };
+    session.edit({ title: "題", body: "さらに手元" });
+    await session.flush();
+    expect(session.getState().conflict).not.toBeNull();
+    session.takeServer();
+    expect(session.getState().externalBases).toBe(1);
+  });
+});
+
 describe("フォーカス復帰", () => {
   const server2 = () => page({ body: "他で更新", version: 2 });
 

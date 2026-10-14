@@ -114,6 +114,11 @@ export interface EditorState {
    * 他のページのリンクの書き換えを積むので、打っている途中の title で改名を繰り返さない。
    */
   titleInput: string | null;
+  /**
+   * 自分の保存以外で base が進んだ回数（他から入った版の取り込み、衝突の解決）。自分の保存でも
+   * base.version は進むので、画面が「他で内容が変わった」を version の変化から読めない
+   */
+  externalBases: number;
 }
 
 export type SaveStatus =
@@ -238,6 +243,7 @@ export class EditorSession {
         gone: false,
         pendingBackup: null,
         titleInput: null,
+        externalBases: 0,
       };
       return;
     }
@@ -259,6 +265,7 @@ export class EditorSession {
       gone: false,
       pendingBackup: differs ? saved : null,
       titleInput: null,
+      externalBases: 0,
     };
   }
 
@@ -594,7 +601,12 @@ export class EditorSession {
     // step は title を変えない。手元の確定済みで未保存の title はそのまま残す
     const body = rebaseOnLinkRewrite(base.body, server.body, draft.body);
     if (body === null) return false;
-    this.set({ base: server, draft: { title: draft.title, body }, ...NO_ERROR });
+    this.set({
+      base: server,
+      draft: { title: draft.title, body },
+      externalBases: this.state.externalBases + 1,
+      ...NO_ERROR,
+    });
     return true;
   }
 
@@ -632,6 +644,7 @@ export class EditorSession {
       base: server,
       draft: { title: server.title, body: server.body },
       titleInput: server.title === base.title || server.title === draft.title ? titleInput : null,
+      externalBases: this.state.externalBases + 1,
     });
     this.removeBackup(server.id);
   }
@@ -785,7 +798,11 @@ export class EditorSession {
     return this.enqueue(async () => {
       const { conflict } = this.state;
       if (conflict === null) return;
-      this.set({ base: conflict, conflict: null });
+      this.set({
+        base: conflict,
+        conflict: null,
+        externalBases: this.state.externalBases + 1,
+      });
       await this.saveIfDirty();
     });
   }
@@ -800,6 +817,7 @@ export class EditorSession {
       draft: { title: conflict.title, body: conflict.body },
       conflict: null,
       titleInput: null,
+      externalBases: this.state.externalBases + 1,
       ...NO_ERROR,
     });
     this.removeBackup(conflict.id);
