@@ -1,16 +1,8 @@
 import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor";
-import {
-  Fragment,
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
+import { highlightMatches } from "./highlight";
 import { PlusIcon, SearchIcon } from "./icons";
 import { createTitleIndex, type TitleIndex } from "./link-sources";
 import { listPageTitles } from "./pages-api";
@@ -104,6 +96,8 @@ function SwitcherBody({
   }, [index]);
 
   const trimmed = query.trim();
+  // 候補には文字が飛び飛びに当たるものもある。強調するのは、空白で区切った語がそのまま含まれる箇所だけ
+  const terms = trimmed.split(/\s+/);
   const candidates = index.search(trimmed);
   // 部分一致の候補があるだけで「作成」を隠すと、「メモ」を作れなくなる。完全一致が無いときに出す。
   // 完全一致は score が最上位なので、上限で切った候補の先頭に必ず入っている
@@ -243,7 +237,7 @@ function SwitcherBody({
           >
             {row.kind === "page" && (
               <span className="switcher-option-label">
-                {highlightTerms(row.candidate.title, trimmed)}
+                {highlightMatches(row.candidate.title, terms)}
               </span>
             )}
             {row.kind === "create" && (
@@ -270,16 +264,4 @@ function SwitcherBody({
       </p>
     </div>
   );
-}
-
-/** 打った語に当たる部分を `<mark>` で囲む。要素で組むので、title が HTML として解釈されることはない。 */
-function highlightTerms(text: string, query: string): ReactNode {
-  const terms = [...new Set(query.split(/\s+/).filter((term) => term !== ""))];
-  if (terms.length === 0) return text;
-  const pattern = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  // 括弧が 1 つだけの split は、奇数番目が一致した部分になる
-  return text.split(new RegExp(`(${pattern})`, "gi")).map((part, i) => {
-    const key = `${i}-${part}`;
-    return i % 2 === 1 ? <mark key={key}>{part}</mark> : <Fragment key={key}>{part}</Fragment>;
-  });
 }

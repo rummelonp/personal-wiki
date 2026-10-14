@@ -1,15 +1,28 @@
 import { formatRowTime } from "./format";
+import { highlightMatches } from "./highlight";
 import { Link } from "./Link";
 import type { ListedPage } from "./pages-api";
 import { pageHrefFor, tagHref } from "./route";
 
-/** 一覧の 1 行（タイトル、抜粋、更新日、タグ）。配置は持たず、並べ方は呼び出し側が決める。 */
-export function EntryRow({ entry, now }: { entry: ListedPage; now: number }) {
+/**
+ * 一覧の 1 行（タイトル、抜粋、更新日、タグ）。配置は持たず、並べ方は呼び出し側が決める。
+ * highlight は検索語で、title と抜粋のうち、検索 API が一致とみなす箇所（語全体の部分一致）を強調する。
+ */
+export function EntryRow({
+  entry,
+  now,
+  highlight = "",
+}: {
+  entry: ListedPage;
+  now: number;
+  highlight?: string;
+}) {
+  const needles = [highlight];
   return (
     <li className="entry">
       <div className="entry-head">
         <Link className="entry-title" href={pageHrefFor(entry)}>
-          {entry.title}
+          {highlightMatches(entry.title, needles)}
         </Link>
         {entry.visibility === "draft" && <span className="chip chip-draft">下書き</span>}
         <time className="entry-time" dateTime={new Date(entry.updatedAt).toISOString()}>
@@ -17,7 +30,7 @@ export function EntryRow({ entry, now }: { entry: ListedPage; now: number }) {
         </time>
       </div>
       {entry.excerpt !== undefined && entry.excerpt !== "" && (
-        <p className="entry-excerpt">{entry.excerpt}</p>
+        <p className="entry-excerpt">{highlightMatches(entry.excerpt, needles)}</p>
       )}
       {entry.tags.length > 0 && (
         <ul className="chips">
@@ -34,11 +47,19 @@ export function EntryRow({ entry, now }: { entry: ListedPage; now: number }) {
   );
 }
 
-export function EntryList({ entries, now }: { entries: ListedPage[]; now: number }) {
+export function EntryList({
+  entries,
+  now,
+  highlight = "",
+}: {
+  entries: ListedPage[];
+  now: number;
+  highlight?: string;
+}) {
   return (
     <ul className="entries">
       {entries.map((entry) => (
-        <EntryRow key={entry.id} entry={entry} now={now} />
+        <EntryRow key={entry.id} entry={entry} now={now} highlight={highlight} />
       ))}
     </ul>
   );

@@ -62,7 +62,7 @@ export function HomeView({ query, tag }: HomeViewProps) {
         )}
         {state.status === "ready" && state.entries.length > 0 && (
           <>
-            <EntryList entries={state.entries} now={now} />
+            <EntryList entries={state.entries} now={now} highlight={searching ? trimmed : ""} />
             {state.next !== null && (
               <button
                 type="button"

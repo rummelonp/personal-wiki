@@ -800,10 +800,22 @@ a {
 }
 
 /* 一致した箇所は地の色でなく太さで示す。選択行の地と重なっても読める */
-.switcher-option mark {
+.switcher-option mark,
+.entry mark {
   font-weight: var(--font-weight-strong);
   color: inherit;
   background: none;
+}
+
+/* 一覧の title は最初から太いので、太さの代わりに下線で示す */
+.entry-title mark {
+  text-decoration: underline;
+  text-decoration-thickness: 0.1em;
+  text-underline-offset: 0.2em;
+}
+
+.entry-excerpt mark {
+  color: var(--color-fg);
 }
 
 .switcher-hints {
