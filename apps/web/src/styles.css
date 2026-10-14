@@ -944,6 +944,11 @@ a {
   gap: var(--space-1);
 }
 
+.skeleton-links {
+  display: grid;
+  gap: var(--space-1);
+}
+
 .skeleton-rail-label {
   width: 40%;
 }

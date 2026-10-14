@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "./Link";
+import { LoadingStatus, useSkeletonPainted } from "./Loading";
 import { rememberTitle } from "./page-titles";
 import { listBacklinks, type PageSummary } from "./pages-api";
 import { RailSection } from "./Rail";
@@ -9,6 +10,21 @@ type State =
   | { status: "loading" }
   | { status: "ready"; pages: PageSummary[]; next: string | null; loadingMore: boolean }
   | { status: "error" };
+
+/** 取得中の 2 行の帯。リンクの行と同じ高さで場所を取り、取得が遅いときだけ描く。 */
+function PendingLinks() {
+  const painted = useSkeletonPainted();
+  return (
+    <div
+      className={painted ? "skeleton-links skeleton-painted" : "skeleton-links"}
+      aria-busy="true"
+    >
+      <LoadingStatus />
+      <span className="skeleton skeleton-text" aria-hidden="true" />
+      <span className="skeleton skeleton-text skeleton-rail-short" aria-hidden="true" />
+    </div>
+  );
+}
 
 /**
  * hideEmpty は、読み込み中とリンク元が 0 件のあいだ節ごと出さない。リンク元が無いことは読者にとって
@@ -66,7 +82,7 @@ export function Backlinks({ pageId, hideEmpty = false }: { pageId: string; hideE
 
   return (
     <RailSection title="このページへのリンク" className="rail-section-links">
-      {state.status === "loading" && <p className="muted">読み込み中…</p>}
+      {state.status === "loading" && <PendingLinks />}
       {state.status === "error" && <p className="muted">取得できませんでした。</p>}
       {state.status === "ready" && state.pages.length === 0 && (
         <p className="muted">ありません。</p>
