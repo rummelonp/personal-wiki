@@ -161,6 +161,8 @@ function titleKeymap(
   // 本文が無くても Enter は改行を入れない。composition 中の Enter は変換の確定なので IME に渡す
   const enter: Command = (view) => {
     if (imeOwnsKey(view)) return false;
+    // 空の title は保存できないので、打ち終えたとみなさず欄にとどめる
+    if (view.state.doc.toString().trim() === "") return true;
     // 本文へ移る前に呼ぶ。移った先の focus が先に動くと、onCommit が起こす描画の更新が
     // 本文の focus を奪い返しうる
     onCommit?.();
