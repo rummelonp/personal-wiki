@@ -590,6 +590,48 @@ describe("ログイン切れ", () => {
         const { session } = setup({ backup, server: page({ body: "[[新]] 本文", version: 3 }) });
         expect(session.getState().pendingBackup).toMatchObject({ body: "[[別]] 本文" });
       });
+
+      it("他の書き手が同じ title に改名しただけなら、手元のリンクの付け替えを残す", async () => {
+        const backup = await closedWithUnsaved(
+          { title: "新題", body: "[[題]] 本文 [[乙]]" },
+          page({ body: "[[題]] 本文 [[甲]]" }),
+        );
+        const { session } = setup({
+          backup,
+          server: page({ title: "新題", body: "[[新題]] 本文 [[甲]]", version: 3 }),
+        });
+        expect(session.getState().pendingBackup).toMatchObject({ body: "[[題]] 本文 [[乙]]" });
+      });
+
+      it("同じリンクの別の箇所を他の書き手が付け替えただけなら、手元の付け替えを残す", async () => {
+        const backup = await closedWithUnsaved(
+          { title: "題", body: "[[乙]] 本文 [[甲]]" },
+          page({ body: "[[甲]] 本文 [[甲]]" }),
+        );
+        const { session } = setup({
+          backup,
+          server: page({ body: "[[甲]] 本文 [[丙]]", version: 3 }),
+        });
+        expect(session.getState().pendingBackup).toMatchObject({ body: "[[乙]] 本文 [[甲]]" });
+      });
+
+      it("同じページを指す見出しのリンクに target を足しただけなら、残す", async () => {
+        const backup = await closedWithUnsaved(
+          { title: "題", body: "[[乙#h]] 本文" },
+          page({ body: "[[#h]] 本文" }),
+        );
+        const { session } = setup({ backup, server: page({ body: "[[丙#h]] 本文", version: 3 }) });
+        expect(session.getState().pendingBackup).toMatchObject({ body: "[[乙#h]] 本文" });
+      });
+
+      it("版が 1 つしか進んでいなければ（保存と step の 2 回が入っていない）、残す", async () => {
+        const backup = await closedWithUnsaved({ title: "題", body: "[[旧]] 本文 追記" });
+        const { session } = setup({
+          backup,
+          server: page({ body: "[[新]] 本文 追記", version: 2 }),
+        });
+        expect(session.getState().pendingBackup).toMatchObject({ body: "[[旧]] 本文 追記" });
+      });
     });
 
     it("base の欄が無い古い退避は、これまでどおり衝突にする", () => {

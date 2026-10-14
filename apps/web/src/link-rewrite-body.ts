@@ -1,5 +1,10 @@
 import { normalizeTitleKey } from "@personal-wiki/domain/title";
-import { extractDerived, extractWikiLinks, rewriteWikiLinkTargets } from "@personal-wiki/markdown";
+import {
+  extractDerived,
+  extractWikiLinks,
+  rewriteWikiLinkTargets,
+  wikiLinkTargetSpan,
+} from "@personal-wiki/markdown";
 
 /*
  * 本文の WikiLink の書き換えを、Worker の step（apps/worker/src/pages/link-rewrites.ts）と同じ規則で
@@ -73,27 +78,54 @@ export function rebaseOnLinkRewrite(base: string, server: string, draft: string)
 }
 
 /**
+ * 本文からリンクの target を除いた残り（地の文、label、見出しなど）。step も他の書き手の改名も
+ * target しか変えないので、ここが変わっていれば target の付け替えとは別の編集がある。
+ */
+function proseOf(body: string): string {
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const link of extractWikiLinks(body)) {
+    const contentFrom = link.from + 2;
+    const span = wikiLinkTargetSpan(body.slice(contentFrom, link.to - 2));
+    if (span === null) continue;
+    parts.push(body.slice(cursor, contentFrom + span.from));
+    cursor = contentFrom + span.to;
+  }
+  parts.push(body.slice(cursor));
+  // 区切りを文字で入れると、本文にその文字があるときに別の本文と同じになるので、配列のまま比べる
+  return JSON.stringify(parts);
+}
+
+/**
  * 離脱で退避した内容（saved）が、離脱の保存（keepalive）で既にサーバーへ入り、その後 step がリンクを
  * 書き換えて server になったのか。真なら退避は保存済みなので、復元を選ばせず消してよい。
  * keepalive は応答を受け取れないので、保存が成立したかは手元で分からず、サーバーの内容から推す。
  * 判断に迷うときは false を返す（退避を消すと、保存されていない編集を黙って失うため）。
  *
- * - server の本文が saved の本文へのリンクの書き換えだけで説明できなければ false。
- * - title を変えて退避し、server がその title なら true。title と本文は 1 回の保存で入るので、
- *   title が入っていれば本文も入っている。自ページの `[[旧 title]]` は改名の保存の後に step が書き換える。
- * - title が同じなら、本文だけでは保存の成否が分からない。server の本文が保存前の本文（baseBody）から
- *   書き換えだけで説明できるなら、保存されていなくても同じ見た目になるので false。
- *   手元の編集がリンクの付け替えだけだった場合に、その編集を失わないため。
+ * 書き手は自分だけではない（別の端末、MCP のエージェント）。title とリンクの target は他の書き手の
+ * 改名と step でも変わるので、保存の証拠にしない。証拠にするのは次のどちらかだけ。
+ * - 手元の本文の地の文（proseOf）が保存前と違い、server の地の文がそれと一致する。同じ地の文を
+ *   他の書き手が偶然書いた場合だけ誤る。
+ * - 手元の本文が保存前のまま（title だけの変更）で、server がその title。誰が改名したのでも、
+ *   本文に失う編集が無い。
+ * 保存のあとに step が書けば版は 2 つ以上進むので、それに満たなければ調べずに false にする。
  */
 export function savedBeforeLeaving(
-  saved: { title: string; body: string; baseTitle?: string; baseBody?: string },
-  server: { title: string; body: string },
+  saved: {
+    title: string;
+    body: string;
+    baseVersion: number;
+    baseTitle?: string;
+    baseBody?: string;
+  },
+  server: { title: string; body: string; version: number },
 ): boolean {
   const { baseTitle, baseBody } = saved;
   if (baseTitle === undefined || baseBody === undefined || server.title !== saved.title) {
     return false;
   }
+  if (server.version - saved.baseVersion < 2) return false;
   if (saved.body !== server.body && renamesBetween(saved.body, server.body) === null) return false;
-  if (saved.title !== baseTitle) return true;
-  return server.body !== baseBody && renamesBetween(baseBody, server.body) === null;
+  if (saved.body === baseBody) return saved.title !== baseTitle;
+  return proseOf(saved.body) !== proseOf(baseBody);
 }
