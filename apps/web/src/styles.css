@@ -168,8 +168,11 @@ a {
 }
 
 .rail-main {
+  /* 保存の状態（.save-state）が、この上の余白に収まる高さ */
+  --rail-main-padding-top: var(--space-4);
+
   min-width: 0;
-  padding: var(--space-4) clamp(var(--space-4), 5vw, var(--space-6)) var(--space-7);
+  padding: var(--rail-main-padding-top) clamp(var(--space-4), 5vw, var(--space-6)) var(--space-7);
 }
 
 .rail {
@@ -515,17 +518,29 @@ a {
 /* ノート */
 
 .note {
+  position: relative;
   max-width: var(--prose-width);
   margin: 0 auto;
 }
 
+/*
+ * 保存の状態は、ノートの右上の外、ヘッダーとの間の余白（.rail-main の上の padding）に出す。
+ * 流れに行を取らないので、狭い幅でも title が下がらず、読み取りの画面と title の位置が揃う。
+ * 失敗の状態は、本文の上に出る通知（.message）と赤字の両方で気づける。
+ */
 .save-state {
+  position: absolute;
+  top: calc(-1 * var(--rail-main-padding-top, 0px));
+  right: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-  font-size: var(--font-size-sm);
+  gap: var(--space-1);
+  height: var(--rail-main-padding-top, 0px);
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1;
   color: var(--color-fg-muted);
+  white-space: nowrap;
 }
 
 .save-state-saved {
@@ -536,6 +551,7 @@ a {
 .save-state-conflict,
 .save-state-auth,
 .save-state-gone {
+  font-weight: var(--font-weight-medium);
   color: var(--color-danger);
 }
 
