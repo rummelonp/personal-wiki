@@ -5,7 +5,7 @@ import { SEED } from "./support/seed";
 /*
  * 指で押す端末（iPhone 幅の WebKit、pointer: coarse）で、主なタップ対象の当たり判定が 44px 以上であり、
  * 隣の対象と重ならないこと。デスクトップでは密度を変えないことも確かめる。
- * 当たり判定は要素の箱そのもの（疑似要素で広げていない）なので、箱の大きさで測る。
+ * 当たり判定は要素の箱で測る。一覧の title だけは横幅を疑似要素（::after）で広げるので、その幅も含める。
  */
 
 const TAP = 44;
@@ -43,12 +43,14 @@ async function targetBoxes(page: Page, required: string[]): Promise<Box[]> {
       for (const element of document.querySelectorAll(selectors.join(","))) {
         const rect = element.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) continue;
+        const after = getComputedStyle(element, "::after");
+        const afterWidth = after.position === "absolute" ? Number.parseFloat(after.width) : 0;
         const label = (element.getAttribute("aria-label") ?? element.textContent ?? "").trim();
         boxes.push({
           name: `${element.tagName.toLowerCase()}.${[...element.classList].join(".")} 「${label.slice(0, 20)}」`,
           x: rect.x,
           y: rect.y,
-          width: rect.width,
+          width: Math.max(rect.width, afterWidth),
           height: rect.height,
           matched: required.filter((selector) => element.matches(selector)),
         });
@@ -124,11 +126,26 @@ test.describe("タップ対象", () => {
       const pillTop = chip.top + (chip.height - (2 * 4 + 12 * 1.7)) / 2;
       const hit = (x: number, y: number, selector: string) =>
         document.elementFromPoint(x, y)?.closest(selector) != null;
+      // 1 文字の title でも横に 44px 押せ、title の箱は字の幅のままで、隣の印との間が開かない
+      const shortTitle = () => {
+        const link = entry?.querySelector<HTMLElement>(".entry-title");
+        if (link === null || link === undefined) throw new Error(".entry-title が無い");
+        const text = link.textContent;
+        link.textContent = "夜";
+        const rect = link.getBoundingClientRect();
+        const result = {
+          shortTitleWidth: rect.width,
+          shortTitleFarHit: hit(rect.x + 42, rect.y + rect.height / 2, ".entry-title"),
+        };
+        link.textContent = text;
+        return result;
+      };
       return {
         header: document.querySelector(".header")?.getBoundingClientRect().height ?? 0,
         titleToExcerpt: excerpt.top - titleTextBottom,
         excerptToPill: pillTop - excerpt.bottom,
         titleBottomHit: hit(title.x + 10, title.bottom - 2, ".entry-title"),
+        ...shortTitle(),
         chipTopHit: hit(chip.x + chip.width / 2, chip.top + 2, ".chip-link"),
       };
     });
@@ -138,6 +155,8 @@ test.describe("タップ対象", () => {
     );
     expect(m.excerptToPill, "抜粋からタグまでの見た目の間隔（PC は 4px）").toBeLessThanOrEqual(6);
     expect(m.titleBottomHit, "抜粋に重ねても title の下端が押せる").toBe(true);
+    expect(m.shortTitleWidth, "1 文字の title の箱は字の幅のまま").toBeLessThan(TAP / 2);
+    expect(m.shortTitleFarHit, "1 文字の title でも左端から 42px の所が押せる").toBe(true);
     expect(m.chipTopHit, "抜粋に重ねてもタグの上端が押せる").toBe(true);
   });
 

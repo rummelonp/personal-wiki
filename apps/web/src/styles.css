@@ -1012,10 +1012,25 @@ a {
     padding-block: var(--space-2);
   }
 
-  .entry-title {
+  .entry-head {
     position: relative;
-    min-width: var(--tap-size);
+  }
+
+  .entry-title {
     padding-block: var(--title-inset);
+  }
+
+  /*
+   * 1〜2 文字の title でも横に 44px 押せるようにする。title の箱を広げると「下書き」の印が離れて
+   * 間が空くので、箱は字の幅のまま疑似要素で広げる。title は省略表示のため overflow: hidden で、
+   * title を基準にすると疑似要素が切られるので、.entry-head を基準にする
+   */
+  .entry-title::after {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: var(--tap-size);
+    content: "";
   }
 
   .entry-head + .entry-excerpt {
