@@ -39,8 +39,8 @@ describe("titlePath", () => {
     }
   });
 
-  it("Static Assets が先に応答する index.html と index は null", () => {
-    for (const title of ["index", "Index", "index.html", "INDEX.HTML", "index/x"]) {
+  it("Static Assets が先に応答する index.html、index、robots.txt は null", () => {
+    for (const title of ["index", "Index", "index.html", "INDEX.HTML", "index/x", "robots.txt"]) {
       expect(titlePath(title)).toBeNull();
     }
   });

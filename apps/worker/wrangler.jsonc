@@ -28,10 +28,11 @@
   // Worker が index.html を返す（src/spa.ts）。未定義の /api や /mcp、fetch に SPA の HTML を返さないため。
   // not_found_handling を none にして、無い `/assets/*` には index.html でなく本文の無い 404 を返させる
   // （この 404 は Worker を通らない）。
+  // robots.txt はクローラーが頻繁に取りに来るので、Worker の日次の上限を消費させないよう直接返す。
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/*", "!/assets/*"],
+    "run_worker_first": ["/*", "!/assets/*", "!/robots.txt"],
     "not_found_handling": "none"
   }
 }

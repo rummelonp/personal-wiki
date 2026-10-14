@@ -32,6 +32,7 @@ export const RESERVED_TITLE_SEGMENTS: readonly string[] = [
   "p",
   "index",
   "index.html",
+  "robots.txt",
 ];
 
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
