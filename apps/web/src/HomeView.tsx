@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
-import { LoadingStatus, SkeletonEntries } from "./Loading";
+import { LoadingMoreRows, LoadingStatus, SkeletonEntries, useSkeletonPainted } from "./Loading";
 import { listHeading } from "./list-heading";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
@@ -12,12 +12,39 @@ import { SearchBox } from "./SearchBox";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScroll } from "./scroll-restore";
 import { TagsPanel, useTags } from "./TagsPanel";
-import { useEntryList } from "./useEntryList";
+import { type PreviousList, useEntryList } from "./useEntryList";
 
 interface HomeViewProps {
   query: string;
   tag: string;
   owner: boolean;
+}
+
+/**
+ * 条件を変えて取り直している間の、前の一覧。縮めずに残し、取得が遅いときだけ薄くする。
+ * 前の条件の結果なので、新しい検索語での強調はしない。
+ */
+function PreviousEntries({
+  previous,
+  now,
+  showVisibility,
+}: {
+  previous: PreviousList;
+  now: number;
+  showVisibility: boolean;
+}) {
+  const painted = useSkeletonPainted();
+  return (
+    <>
+      <LoadingStatus />
+      <EntryList
+        entries={previous.entries}
+        now={now}
+        showVisibility={showVisibility}
+        className={painted ? "entries-stale skeleton-painted" : "entries-stale"}
+      />
+    </>
+  );
 }
 
 /**
@@ -52,7 +79,12 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
 
   return (
     <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
-      <div className="home" aria-busy={state.status === "loading" || undefined}>
+      <div
+        className="home"
+        aria-busy={
+          state.status === "loading" || (state.status === "ready" && state.loadingMore) || undefined
+        }
+      >
         {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
         {searching && <SearchBox query={trimmed} />}
         <h1 className="list-title">{heading}</h1>
@@ -64,11 +96,14 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             <Link href={homeHref(trimmed)}>タグを外す</Link>
           </p>
         )}
-        {state.status === "loading" && (
+        {state.status === "loading" && state.previous === undefined && (
           <>
             <LoadingStatus />
             <SkeletonEntries />
           </>
+        )}
+        {state.status === "loading" && state.previous !== undefined && (
+          <PreviousEntries previous={state.previous} now={now} showVisibility={owner} />
         )}
         {state.status === "query_too_short" && (
           <EmptyState
@@ -140,17 +175,21 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
               now={now}
               highlight={searching ? trimmed : ""}
               showVisibility={owner}
-            />
+            >
+              {state.loadingMore && <LoadingMoreRows />}
+            </EntryList>
             {state.next !== null && (
+              // 文字を変えるとボタンの幅が動くので、読み込み中も同じ文字にして、状態は disabled と一覧の末尾の帯で伝える
               <button
                 type="button"
                 className="button"
                 onClick={loadMore}
                 disabled={state.loadingMore}
               >
-                {state.loadingMore ? "読み込み中…" : "さらに表示"}
+                さらに表示
               </button>
             )}
+            {state.loadingMore && <LoadingStatus />}
           </>
         )}
       </div>

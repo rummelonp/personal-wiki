@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomeView } from "./HomeView";
+import { setLoadingDelay } from "./Loading";
 import { openNewPage } from "./new-page";
 import { type ApiResult, listRecent, listTags, searchPages } from "./pages-api";
 import { useEntryList } from "./useEntryList";
@@ -160,6 +161,106 @@ describe("useEntryList の条件の切り替え", () => {
     await vi.waitFor(() => expect(seen.at(-1)).toEqual({ tag: "", status: "ready" }));
     await act(async () => root?.render(<Probe tag="x" />));
     expect(seen.filter((s) => s.tag === "x").map((s) => s.status)).not.toContain("ready");
+  });
+});
+
+describe("条件を変えて取り直している間の一覧", () => {
+  const prev = [summary("AAAAAAAAAAAAAAAAAAAAAA", "前の一覧")];
+
+  async function mountProbe() {
+    const seen: { tag: string; status: string; previous: string[] | undefined }[] = [];
+    function Probe({ tag }: { tag: string }) {
+      const { state } = useEntryList({ query: "", tag, owner: true });
+      seen.push({
+        tag,
+        status: state.status,
+        previous:
+          state.status === "loading" ? state.previous?.entries.map((e) => e.title) : undefined,
+      });
+      return null;
+    }
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<Probe tag="" />));
+    await vi.waitFor(() => expect(seen.at(-1)?.status).toBe("ready"));
+    await act(async () => root?.render(<Probe tag="x" />));
+    return seen;
+  }
+
+  it("status は loading のまま、前の一覧を previous に持つ", async () => {
+    vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: prev, nextCursor: null }));
+    vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+    const seen = await mountProbe();
+    const afterChange = seen.filter((s) => s.tag === "x");
+    // 条件が変わった描画と、取り直しを始めた描画の両方で、前の一覧が残る
+    expect(afterChange.length).toBeGreaterThan(0);
+    for (const s of afterChange) {
+      expect(s.status).toBe("loading");
+      expect(s.previous).toEqual(["前の一覧"]);
+    }
+  });
+
+  it("前の一覧が空なら previous は持たず、帯を出す", async () => {
+    vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: [], nextCursor: null }));
+    vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+    const seen = await mountProbe();
+    expect(seen.filter((s) => s.tag === "x").every((s) => s.previous === undefined)).toBe(true);
+  });
+
+  it("HomeView は前の行を残して aria-busy にし、届いたら新しい行に替える", async () => {
+    const restore = setLoadingDelay(0);
+    try {
+      let deliver: (v: ApiResult<{ pages: never[]; nextCursor: null }>) => void = () => {};
+      vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: prev, nextCursor: null }));
+      vi.mocked(listRecent).mockReturnValueOnce(
+        new Promise((resolve) => {
+          deliver = resolve as never;
+        }),
+      );
+      await mountHome("", true);
+      await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+      await act(async () => root?.render(<HomeView query="" tag="x" owner={true} />));
+      expect(container?.querySelector(".home")?.getAttribute("aria-busy")).toBe("true");
+      expect(container?.querySelector(".entries-stale .entry-title")?.textContent).toBe("前の一覧");
+      expect(container?.querySelector(".entries-stale.skeleton-painted")).not.toBeNull();
+      expect(container?.querySelector(".skeleton-entries")).toBeNull();
+
+      await act(async () =>
+        deliver(
+          ok({
+            pages: [summary("BBBBBBBBBBBBBBBBBBBBBB", "新しい一覧")] as never,
+            nextCursor: null,
+          }),
+        ),
+      );
+      expect(container?.querySelector(".entries-stale")).toBeNull();
+      expect(container?.querySelector(".entries .entry-title")?.textContent).toBe("新しい一覧");
+      expect(container?.querySelector(".home")?.getAttribute("aria-busy")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("「さらに表示」は読み込み中も同じ文字で disabled のまま、末尾に帯の行を足す", async () => {
+    const restore = setLoadingDelay(0);
+    try {
+      vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: prev, nextCursor: "c1" }));
+      vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+      await mountHome("", true);
+      await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+      const button = () => container?.querySelector<HTMLButtonElement>("button.button");
+      expect(button()?.textContent).toBe("さらに表示");
+      await act(async () => button()?.click());
+      expect(button()?.textContent).toBe("さらに表示");
+      expect(button()?.disabled).toBe(true);
+      expect(container?.querySelectorAll(".entries .skeleton-entry").length).toBeGreaterThanOrEqual(
+        2,
+      );
+      expect(container?.querySelectorAll(".entries .entry").length).toBe(1);
+    } finally {
+      restore();
+    }
   });
 });
 

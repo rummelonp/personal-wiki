@@ -747,6 +747,21 @@ a {
   list-style: none;
 }
 
+/* 条件を変えて取り直している間の前の一覧。取得が遅いときだけ薄くする */
+.entries-stale {
+  transition: opacity 0.2s;
+}
+
+.entries-stale.skeleton-painted {
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entries-stale {
+    transition: none;
+  }
+}
+
 .entry,
 .skeleton-entry {
   display: grid;

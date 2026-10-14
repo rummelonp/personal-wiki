@@ -3,8 +3,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { failureMessage, type ListedPage, LOAD_FAILED, listRecent, searchPages } from "./pages-api";
 import { restoreCount } from "./scroll-restore";
 
+/** 条件が変わる前の一覧。取り直しの間、表示だけに使う（status は loading のまま） */
+export interface PreviousList {
+  entries: ListedPage[];
+  next: string | null;
+}
+
 export type ListState =
-  | { status: "loading" }
+  /**
+   * previous は、条件が変わって取り直している間の前の一覧。status を ready にしないのは、
+   * 戻るの復元が「前の画面が残っている」と取り違えて位置を戻さなくなるため。
+   */
+  | { status: "loading"; previous?: PreviousList | undefined }
   | { status: "ready"; entries: ListedPage[]; next: string | null; loadingMore: boolean }
   | { status: "unauthorized" }
   | { status: "error"; message: string }
@@ -34,6 +44,13 @@ function restoreLimit(): { limit?: number } {
   return count === undefined ? {} : { limit: Math.min(Math.max(count, 1), RESTORE_MAX_LIMIT) };
 }
 
+function previousOf(state: ListState): PreviousList | undefined {
+  if (state.status === "ready") {
+    return state.entries.length > 0 ? { entries: state.entries, next: state.next } : undefined;
+  }
+  return state.status === "loading" ? state.previous : undefined;
+}
+
 /** 一覧のデータだけを扱う。見せ方（行、配置）は持たない。 */
 export function useEntryList({ query, tag, owner }: EntryListSource) {
   const key = `${owner}\n${tag}\n${query}`;
@@ -43,7 +60,8 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
   });
   // 条件が変わった描画で前の条件の一覧を ready のまま返すと、戻るの復元が「前の画面が残っている」と
   // 取り違えて位置を戻さない（タグの一覧へ移ってすぐ戻ったとき）。取り直しの effect を待たずに loading とする
-  const state: ListState = held.key === key ? held.state : { status: "loading" };
+  const state: ListState =
+    held.key === key ? held.state : { status: "loading", previous: previousOf(held.state) };
   const setState = useCallback((next: ListState) => setHeld({ key, state: next }), [key]);
   // 条件が変わった後に遅れて届いた応答で、表示を上書きしない
   const generation = useRef(0);
@@ -54,7 +72,11 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
       setState({ status: "query_too_short", min: ANONYMOUS_SEARCH_MIN_CHARS });
       return;
     }
-    setState({ status: "loading" });
+    // 取り直しの間も前の一覧を持ち越す。待っている間に一覧が 1 行に縮まないようにする
+    setHeld((current) => ({
+      key,
+      state: { status: "loading", previous: previousOf(current.state) },
+    }));
     const load =
       query !== ""
         ? searchPages(query).then((res) =>
@@ -73,7 +95,7 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
         setState({ status: "invalid_query", message: res.message });
       else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
     });
-  }, [query, tag, owner, setState]);
+  }, [query, tag, owner, key, setState]);
 
   const loadMore = useCallback(async () => {
     if (state.status !== "ready" || state.next === null || state.loadingMore) return;

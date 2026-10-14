@@ -64,7 +64,7 @@ test("「さらに表示」で読み足した位置まで、戻るで戻る", as
   await page.goto(`/?tag=${encodeURIComponent("メモ")}`);
   await expect(page.locator(".entries .entry").first()).toBeVisible();
   await page.getByRole("button", { name: "さらに表示" }).click();
-  // 読み込み中はボタンの名前が変わるので、ボタンの消失ではなく件数で読み足しの完了を待つ
+  // 読み込み中もボタンは同じ名前で残る（disabled）ので、ボタンではなく件数で読み足しの完了を待つ
   await expect.poll(() => page.locator(".entries .entry").count()).toBeGreaterThan(20);
   const loaded = await page.locator(".entries .entry").count();
 

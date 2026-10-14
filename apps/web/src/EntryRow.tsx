@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { formatRowTime } from "./format";
 import { highlightMatches } from "./highlight";
 import { Link } from "./Link";
@@ -66,14 +67,19 @@ export function EntryList({
   now,
   highlight = "",
   showVisibility = false,
+  className,
+  children,
 }: {
   entries: ListedPage[];
   now: number;
   highlight?: string;
   showVisibility?: boolean;
+  className?: string | undefined;
+  /** 行の後ろに足す要素（読み込み中の帯の行など） */
+  children?: ReactNode;
 }) {
   return (
-    <ul className="entries">
+    <ul className={className === undefined ? "entries" : `entries ${className}`}>
       {entries.map((entry) => (
         <EntryRow
           key={entry.id}
@@ -83,6 +89,7 @@ export function EntryList({
           showVisibility={showVisibility}
         />
       ))}
+      {children}
     </ul>
   );
 }

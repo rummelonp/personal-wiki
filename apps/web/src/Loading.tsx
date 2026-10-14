@@ -90,10 +90,20 @@ export function SkeletonEntries({ count = 5 }: { count?: number }) {
 }
 
 /** 実際の一覧（ul.entries）の末尾に足す行の帯。 */
-export function SkeletonEntryRows({ count }: { count: number }) {
+export function SkeletonEntryRows({
+  count,
+  painted = false,
+}: {
+  count: number;
+  painted?: boolean;
+}) {
   return Array.from({ length: count }, (_, i) => (
-    // biome-ignore lint/suspicious/noArrayIndexKey: 並びの変わらない飾りの行
-    <li className="skeleton-entry" key={i}>
+    <li
+      className={painted ? "skeleton-entry skeleton-painted" : "skeleton-entry"}
+      aria-hidden={painted || undefined}
+      // biome-ignore lint/suspicious/noArrayIndexKey: 並びの変わらない飾りの行
+      key={i}
+    >
       <div className="skeleton-entry-head">
         <span className="skeleton skeleton-text skeleton-entry-title" />
         <span className="skeleton skeleton-text skeleton-entry-time" />
@@ -104,6 +114,13 @@ export function SkeletonEntryRows({ count }: { count: number }) {
       </div>
     </li>
   ));
+}
+
+/** 「さらに表示」の読み込み中に、実際の一覧の末尾へ足す帯の行。遅れの間は何も足さない（ボタンを動かさない）。 */
+export function LoadingMoreRows({ count = 3 }: { count?: number }) {
+  const painted = useSkeletonPainted();
+  if (!painted) return null;
+  return <SkeletonEntryRows count={count} painted />;
 }
 
 /** 一覧の画面全体の帯。heading が分かっていれば文字で出す。 */
