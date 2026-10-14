@@ -34,7 +34,15 @@ function restoreLimit(): { limit?: number } {
 
 /** 一覧のデータだけを扱う。見せ方（行、配置）は持たない。 */
 export function useEntryList({ query, tag, owner }: EntryListSource) {
-  const [state, setState] = useState<ListState>({ status: "loading" });
+  const key = `${owner}\n${tag}\n${query}`;
+  const [held, setHeld] = useState<{ key: string; state: ListState }>({
+    key,
+    state: { status: "loading" },
+  });
+  // 条件が変わった描画で前の条件の一覧を ready のまま返すと、戻るの復元が「前の画面が残っている」と
+  // 取り違えて位置を戻さない（タグの一覧へ移ってすぐ戻ったとき）。取り直しの effect を待たずに loading とする
+  const state: ListState = held.key === key ? held.state : { status: "loading" };
+  const setState = useCallback((next: ListState) => setHeld({ key, state: next }), [key]);
   // 条件が変わった後に遅れて届いた応答で、表示を上書きしない
   const generation = useRef(0);
 
@@ -61,7 +69,7 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
       else setState({ status: "error", message: failureMessage(res, "取得できなかった") });
     });
-  }, [query, tag, owner]);
+  }, [query, tag, owner, setState]);
 
   const loadMore = useCallback(async () => {
     if (state.status !== "ready" || state.next === null || state.loadingMore) return;
@@ -80,7 +88,7 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
     } else {
       setState({ status: "ready", entries, next, loadingMore: false });
     }
-  }, [state, tag]);
+  }, [state, tag, setState]);
 
   return { state, loadMore };
 }

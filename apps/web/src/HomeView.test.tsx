@@ -10,6 +10,7 @@ import {
   type Page,
   searchPages,
 } from "./pages-api";
+import { useEntryList } from "./useEntryList";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -129,6 +130,27 @@ describe("HomeView の強調", () => {
     await renderHome("");
     expect(container?.querySelector(".entry-title")?.textContent).toBe("Hono のメモ");
     expect(container?.querySelector("mark")).toBeNull();
+  });
+});
+
+describe("useEntryList の条件の切り替え", () => {
+  it("タグを変えた最初の描画で、前の条件の一覧を ready のまま返さない", async () => {
+    vi.mocked(listRecent).mockResolvedValueOnce(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "前の一覧")], nextCursor: null }),
+    );
+    vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+    const seen: { tag: string; status: string }[] = [];
+    function Probe({ tag }: { tag: string }) {
+      seen.push({ tag, status: useEntryList({ query: "", tag, owner: true }).state.status });
+      return null;
+    }
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<Probe tag="" />));
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual({ tag: "", status: "ready" }));
+    await act(async () => root?.render(<Probe tag="x" />));
+    expect(seen.filter((s) => s.tag === "x").map((s) => s.status)).not.toContain("ready");
   });
 });
 
