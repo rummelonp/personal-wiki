@@ -4,7 +4,12 @@ import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 
 import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
 import { highlightMatches } from "./highlight";
 import { PlusIcon, SearchIcon } from "./icons";
-import { createTitleIndex, type TitleIndex } from "./link-sources";
+import {
+  ANONYMOUS_TITLE_INDEX_MAX_REQUESTS,
+  createTitleIndex,
+  TITLE_INDEX_MAX_REQUESTS,
+  type TitleIndex,
+} from "./link-sources";
 import { listPageTitles } from "./pages-api";
 import { homeHref, navigate, pageHref } from "./route";
 
@@ -40,7 +45,13 @@ interface QuickSwitcherProps {
 export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   // 前に開いたときの候補を残して開いた直後から出し、開くたびに取り直した一覧へ差し替える
-  const index = useMemo(() => createTitleIndex(listPageTitles), []);
+  const index = useMemo(
+    () =>
+      createTitleIndex(listPageTitles, {
+        maxRequests: owner ? TITLE_INDEX_MAX_REQUESTS : ANONYMOUS_TITLE_INDEX_MAX_REQUESTS,
+      }),
+    [owner],
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;

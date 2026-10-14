@@ -53,6 +53,14 @@ describe("createTitleIndex", () => {
     expect(index.search("p3")).toContainEqual({ id: "3", title: "p3" });
   });
 
+  it("maxRequests で回数の上限を変えられ、続きがあってもそこで止める", async () => {
+    const list = vi.fn<ListTitles>(async () => listOk([summary("0", "p0")], "next"));
+    const index = createTitleIndex(list, { maxRequests: 1 });
+    await index.refresh();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(index.search("p0")).toEqual([{ id: "0", title: "p0" }]);
+  });
+
   it("1 回目で失敗したら前の候補を残し、reject しない", async () => {
     let fail = false;
     const index = createTitleIndex(async () => {

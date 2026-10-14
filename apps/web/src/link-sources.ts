@@ -25,10 +25,20 @@ export type ListTitles = (cursor: string | null) => Promise<ApiResult<PageList<P
 export const TITLE_INDEX_MAX_REQUESTS = 4;
 
 /**
+ * 匿名の閲覧者の候補に読む一覧の回数の上限。匿名は quick switcher を開くたびに取り直し、
+ * 1 回の要求で D1 を 500 行あまり読む（最近の更新の 1 回は 100 行ほど）。誰でも開ける入口で
+ * 読み取りの無料枠を減らしにくくするため、最近の公開 500 件より古いページを候補から落とす。
+ */
+export const ANONYMOUS_TITLE_INDEX_MAX_REQUESTS = 1;
+
+/**
  * `[[` の title の候補。エディタは作ったときに渡された PageIndex を使い続けるので、
  * 取り直した一覧はこのオブジェクトの中で差し替える。
  */
-export function createTitleIndex(list: ListTitles): TitleIndex {
+export function createTitleIndex(
+  list: ListTitles,
+  { maxRequests = TITLE_INDEX_MAX_REQUESTS }: { maxRequests?: number } = {},
+): TitleIndex {
   const build = (pages: readonly PageCandidate[]) =>
     createMemoryPageIndex(pages, { normalize: foldTitle });
   let current = build([]);
@@ -41,7 +51,7 @@ export function createTitleIndex(list: ListTitles): TitleIndex {
       const mine = ++generation;
       const pages: PageCandidate[] = [];
       let cursor: string | null = null;
-      for (let i = 0; i < TITLE_INDEX_MAX_REQUESTS; i++) {
+      for (let i = 0; i < maxRequests; i++) {
         let res: ApiResult<PageList<PageSummary>>;
         try {
           res = await list(cursor);

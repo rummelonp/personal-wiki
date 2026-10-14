@@ -1,6 +1,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ANONYMOUS_TITLE_INDEX_MAX_REQUESTS, TITLE_INDEX_MAX_REQUESTS } from "./link-sources";
 import {
   type ApiResult,
   createPage,
@@ -153,6 +154,20 @@ describe("QuickSwitcher の候補", () => {
     await renderSwitcher(true);
     typeText("  ほげ  ");
     expect(options()).toEqual(["「ほげ」を作成", "「ほげ」を本文から検索"]);
+  });
+
+  it("title の一覧は、匿名には続きがあっても 1 回だけ読み、owner には上限の回数まで読む", async () => {
+    vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: RECENT, nextCursor: "next" }));
+    await renderSwitcher(false);
+    // 続きの要求が出るなら、この間に出る
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(listPageTitles).toHaveBeenCalledTimes(ANONYMOUS_TITLE_INDEX_MAX_REQUESTS);
+    act(() => root?.unmount());
+    container?.remove();
+    vi.mocked(listPageTitles).mockClear();
+
+    await renderSwitcher(true);
+    await vi.waitFor(() => expect(listPageTitles).toHaveBeenCalledTimes(TITLE_INDEX_MAX_REQUESTS));
   });
 });
 
