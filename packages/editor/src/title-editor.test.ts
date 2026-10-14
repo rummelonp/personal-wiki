@@ -165,7 +165,7 @@ describe("createTitleEditor", () => {
 
   // CodeMirror が compositionend の直後に捨てる Safari の Enter は Chromium では作れないので、
   // その窓の外で届いた keyCode 229 の Enter を、実際の keydown として流して確かめる
-  test("an Enter keydown with keyCode 229 after the composition is left to the IME", () => {
+  test("an Enter keydown with keyCode 229 outside any composition is left to the IME", () => {
     const bodyView = mount((parent) => createEditor(parent, { doc: "一行目" }));
     let commits = 0;
     const titleView = mount((parent) =>
