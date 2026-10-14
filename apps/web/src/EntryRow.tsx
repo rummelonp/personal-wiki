@@ -17,12 +17,14 @@ export function EntryRow({
   now: number;
   highlight?: string;
 }) {
-  const needles = [highlight];
+  // API は語の空白を畳まずに探すが、返す抜粋は空白の並びを 1 つの空白にしてあるので、抜粋の側だけ語も畳む
+  const excerptNeedles = [highlight.replace(/\s+/g, " ")];
+  const titleNeedles = [highlight];
   return (
     <li className="entry">
       <div className="entry-head">
         <Link className="entry-title" href={pageHrefFor(entry)}>
-          {highlightMatches(entry.title, needles)}
+          {highlightMatches(entry.title, titleNeedles)}
         </Link>
         {entry.visibility === "draft" && <span className="chip chip-draft">下書き</span>}
         <time className="entry-time" dateTime={new Date(entry.updatedAt).toISOString()}>
@@ -30,7 +32,7 @@ export function EntryRow({
         </time>
       </div>
       {entry.excerpt !== undefined && entry.excerpt !== "" && (
-        <p className="entry-excerpt">{highlightMatches(entry.excerpt, needles)}</p>
+        <p className="entry-excerpt">{highlightMatches(entry.excerpt, excerptNeedles)}</p>
       )}
       {entry.tags.length > 0 && (
         <ul className="chips">
