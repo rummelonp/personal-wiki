@@ -12,7 +12,17 @@ export default defineConfig({
         plugins: [
           cloudflareTest({
             wrangler: { configPath: "./wrangler.jsonc" },
-            miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+            miniflare: {
+              bindings: {
+                TEST_MIGRATIONS: migrations,
+                // wrangler の設定を読むと手元の .dev.vars も入り、owner のログインの有無で結果が
+                // 変わる。空で上書きして owner の経路を閉じた状態に揃え、要るテストは自分で渡す。
+                ACCESS_TEAM_DOMAIN: "",
+                ACCESS_AUD: "",
+                OWNER_EMAILS: "",
+                SESSION_SECRET: "",
+              },
+            },
           }),
         ],
         test: {
