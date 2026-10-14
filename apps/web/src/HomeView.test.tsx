@@ -154,6 +154,27 @@ describe("useEntryList の条件の切り替え", () => {
   });
 });
 
+describe("HomeView の更新日", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("今日の更新は時刻だけ、それ以外は日付を出す", async () => {
+    const now = Date.now();
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({
+        pages: [
+          { ...summary("AAAAAAAAAAAAAAAAAAAAAA", "今日"), updatedAt: now },
+          { ...summary("BBBBBBBBBBBBBBBBBBBBBB", "去年以前"), updatedAt: now - 800 * DAY },
+        ],
+        nextCursor: null,
+      }),
+    );
+    await renderHome("");
+    const times = [...(container?.querySelectorAll(".entry-time") ?? [])].map((t) => t.textContent);
+    expect(times[0]).toMatch(/^\d{2}:\d{2}$/);
+    expect(times[1]).toMatch(/^\d{4}\/\d{1,2}\/\d{1,2}$/);
+  });
+});
+
 describe("HomeView の短い検索語", () => {
   const guidance = () => container?.querySelector("[role='status']")?.textContent;
 
