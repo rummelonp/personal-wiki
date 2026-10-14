@@ -237,56 +237,40 @@ describe("見出しの上の余白", () => {
   });
 });
 
-describe("見出しの下の余白", () => {
-  const heightOf = (view: EditorView, lineNumber: number) =>
-    lineElement(view, lineNumber).getBoundingClientRect().height;
-  const bodyLine = (view: EditorView) => heightOf(view, 1);
+describe("見出しの前後の余白", () => {
+  const topOf = (view: EditorView, lineNumber: number) =>
+    lineElement(view, lineNumber).getBoundingClientRect().top;
 
-  it("見出しの直後の空行は、本文 1 行より低く詰める", async () => {
+  it("見出しの上の余白は、下の余白より広い", async () => {
     const view = mount((parent) => createEditor(parent, { doc: "前\n\n## 見出し\n\n- 項目" }));
     await nextFrame();
-    expect(heightOf(view, 4)).toBeLessThan(bodyLine(view) / 4);
-    // CodeMirror が持つ高さも DOM と合う（ずれるとクリック位置とスクロールがずれる）
-    const block = view.lineBlockAt(view.state.doc.line(4).from);
-    expect(Math.round(block.height)).toBe(Math.round(heightOf(view, 4)));
-  });
-
-  it("見出しから続きの文字までの間を、本文 1 行の半分ほどにする", async () => {
-    const view = mount((parent) => createEditor(parent, { doc: "前\n\n## 見出し\n\n- 項目" }));
-    await nextFrame();
-    const heading = lineElement(view, 3).getBoundingClientRect();
+    const heading = lineElement(view, 3);
+    // 見出しの上の余白は行の padding なので、行の上端でなく padding の下から測る
+    const above =
+      heading.getBoundingClientRect().top +
+      Number.parseFloat(getComputedStyle(heading).paddingTop) -
+      lineElement(view, 1).getBoundingClientRect().bottom;
     const item = view.coordsAtPos(view.state.doc.line(5).from + 2);
     if (!item) throw new Error("項目の位置が測れない");
-    const gap = item.top - heading.bottom;
-    expect(gap).toBeLessThanOrEqual(bodyLine(view) * 0.6);
-    expect(gap).toBeGreaterThan(0);
+    const below = item.top - heading.getBoundingClientRect().bottom;
+    expect(above).toBeGreaterThan(below);
   });
 
-  it("見出しの上の空行と、見出しの直後でない空行は詰めない", async () => {
-    const view = mount((parent) => createEditor(parent, { doc: "前\n\n## 見出し\n本文\n\n次" }));
+  it("カーソルが見出しの直後の空行に出入りしても、下の行の位置が変わらない", async () => {
+    const view = mount((parent) => createEditor(parent, { doc: "前\n\n## 見出し\n\n本文" }));
     await nextFrame();
-    expect(heightOf(view, 2)).toBeCloseTo(bodyLine(view), 1);
-    expect(heightOf(view, 5)).toBeCloseTo(bodyLine(view), 1);
-  });
-
-  it("見出しの直後に空行が続くときは、最初の 1 行だけ詰める", async () => {
-    const view = mount((parent) => createEditor(parent, { doc: "## 見出し\n\n\n本文" }));
-    await nextFrame();
-    expect(heightOf(view, 2)).toBeLessThan(bodyLine(view) / 4);
-    expect(heightOf(view, 3)).toBeCloseTo(bodyLine(view), 1);
-  });
-
-  it("カーソルが空行に入ると本文 1 行の高さに戻り、出ると詰め直す", async () => {
-    const view = mount((parent) => createEditor(parent, { doc: "## 見出し\n\n本文" }));
-    await nextFrame();
-    const blank = view.state.doc.line(2).from;
-    const collapsed = heightOf(view, 2);
+    const before = [1, 2, 3, 4, 5].map((n) => topOf(view, n));
     view.focus();
-    view.dispatch({ selection: EditorSelection.cursor(blank) });
+    view.dispatch({ selection: EditorSelection.cursor(view.state.doc.line(4).from) });
     await nextFrame();
-    expect(heightOf(view, 2)).toBeCloseTo(bodyLine(view), 1);
+    expect([1, 2, 3, 4, 5].map((n) => topOf(view, n))).toEqual(before);
     view.dispatch({ selection: EditorSelection.cursor(view.state.doc.length) });
     await nextFrame();
-    expect(heightOf(view, 2)).toBeCloseTo(collapsed, 1);
+    expect([1, 2, 3, 4, 5].map((n) => topOf(view, n))).toEqual(before);
+    // CodeMirror が持つ高さも DOM と合う（ずれるとクリック位置とスクロールがずれる）
+    const block = view.lineBlockAt(view.state.doc.line(4).from);
+    expect(Math.round(block.height)).toBe(
+      Math.round(lineElement(view, 4).getBoundingClientRect().height),
+    );
   });
 });

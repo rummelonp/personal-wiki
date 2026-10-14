@@ -65,21 +65,7 @@ const lineOf = (view: EditorView, number: number) => {
 describe.each([
   ["読み取りの画面", true],
   ["編集の画面", false],
-])("見出しの下の余白（%s、375px）", (_, readOnly) => {
-  it.each([
-    ["空行を挟む", "前の段落\n\n## 見出し\n\n- 項目 1\n- 項目 2", 5],
-    ["空行を挟まない", "前の段落\n\n## 見出し\n- 項目 1\n- 項目 2", 4],
-  ])("見出しから続きの文字までの間は、本文 1 行の半分ほど（%s）", async (_, doc, itemLine) => {
-    await browserPage.viewport(375, 800);
-    const { view } = mountBody(doc, readOnly);
-    await frame();
-    const heading = lineOf(view, 3).getBoundingClientRect();
-    const item = lineOf(view, itemLine).getBoundingClientRect();
-    const bodyLine = lineOf(view, 1).getBoundingClientRect().height;
-    // 続きの行の上端までの距離（行内の余白を含む）。以前は空行を挟むと本文 2 行分近く空いていた
-    expect(item.top - heading.bottom).toBeLessThanOrEqual(bodyLine * 0.6);
-  });
-
+])("見出しの前後の余白（%s、375px）", (_, readOnly) => {
   it("見出しの上は、本文の段落の間より広い", async () => {
     await browserPage.viewport(375, 800);
     const { view } = mountBody("前の段落\n\n## 見出し\n\n本文\n\n次の段落", readOnly);
@@ -93,6 +79,20 @@ describe.each([
     const between =
       lineOf(view, 7).getBoundingClientRect().top - lineOf(view, 5).getBoundingClientRect().bottom;
     expect(above).toBeGreaterThan(between);
+  });
+
+  it("見出しの上は、下の余白より広い", async () => {
+    await browserPage.viewport(375, 800);
+    const { view } = mountBody("前の段落\n## 見出し\n- 項目 1", readOnly);
+    await frame();
+    const heading = lineOf(view, 2);
+    const above =
+      heading.getBoundingClientRect().top +
+      Number.parseFloat(getComputedStyle(heading).paddingTop) -
+      lineOf(view, 1).getBoundingClientRect().bottom;
+    const below =
+      lineOf(view, 3).getBoundingClientRect().top - heading.getBoundingClientRect().bottom;
+    expect(above).toBeGreaterThan(below);
   });
 });
 

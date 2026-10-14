@@ -246,14 +246,6 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-line.cm-lp-heading.cm-lp-heading-leading, .cm-line.cm-lp-heading.cm-lp-heading-continued": {
     paddingTop: "0",
   },
-  // 見出しの直後の空行は、本文 1 行分のまま残すと見出しと続きの間が離れすぎる（見出しの下は、
-  // 上より狭くして続きに寄せる）。行の高さだけを詰め、文書には触れない。装飾でなく CSS の selector で
-  // 決めるのは、空行の出入りで decoration を組み直さない（IME 不変条件 1）ため。
-  // 空行は `<br>` だけを持つ。カーソルのある行（`cm-active-line`）は、打つ文字が潰れないよう元の高さに戻す。
-  // 上の空行は詰めない。見出しの上は、本文の段落の間より広くして節の区切りにする。
-  ".cm-line.cm-lp-heading + .cm-line:not(.cm-active-line):has(> br:only-child)": {
-    lineHeight: "0.25",
-  },
   // ぶら下げインデント。`--cm-lp-list-indent` は行頭から本文の始まりまでの幅（list-indent.ts）。
   // padding を広げて負の text-indent で 1 行目を戻す形にしないのは、タブ位置が padding の内側の端
   // （折り返した行の始まり）を起点に並ぶため。行頭の記号の前後にタブがあると本文の始まりがその格子に
