@@ -1,0 +1,156 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  installScrollRestore,
+  rememberScroll,
+  restoreCount,
+  stateForReplace,
+  useRestoreScroll,
+} from "./scroll-restore";
+
+/*
+ * 履歴のエントリは本物の history に書く。戻る・進む（popstate）は、移った先のエントリの state を
+ * replaceState で置いてから popstate を投げて再現する（ブラウザは移った時点で history.state が
+ * 移った先のものになる）。
+ */
+
+interface Entry {
+  search: string;
+  y?: number;
+  count?: number;
+}
+
+const stateOf = (entry: Entry) =>
+  entry.y === undefined ? null : { scroll: { y: entry.y, count: entry.count } };
+
+function popTo(entry: Entry): void {
+  history.replaceState(stateOf(entry), "", entry.search);
+  window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+}
+
+function List({ ready, count = 0 }: { ready: boolean; count?: number }) {
+  useRestoreScroll(ready, count);
+  return null;
+}
+
+let container: HTMLDivElement;
+let root: Root;
+let filler: HTMLDivElement;
+
+beforeAll(() => {
+  installScrollRestore();
+});
+
+beforeEach(() => {
+  filler = document.createElement("div");
+  filler.style.height = "5000px";
+  document.body.append(filler);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  history.replaceState(null, "", "?t=start");
+  window.scrollTo(0, 0);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  filler.remove();
+  // 残った復元の対象を捨てる
+  popTo({ search: "?t=start" });
+});
+
+const mount = (ready: boolean, count?: number) =>
+  act(() => root.render(<List ready={ready} {...(count === undefined ? {} : { count })} />));
+
+describe("履歴のエントリごとの位置", () => {
+  it("履歴に積む遷移の直前に、今のエントリへ位置と件数を書く", () => {
+    mount(true, 40);
+    window.scrollTo(0, 300);
+    rememberScroll();
+    expect(history.state).toEqual({ scroll: { y: 300, count: 40 } });
+  });
+
+  it("戻る・進むで離れるときは、スクロールが止まった後の位置が書いてある", async () => {
+    window.scrollTo(0, 250);
+    await vi.waitFor(() => expect(history.state?.scroll?.y).toBe(250), { timeout: 2000 });
+  });
+
+  it("戻ったエントリの一覧が描かれたとき、そのエントリの位置へ戻す", () => {
+    popTo({ search: "?t=a", y: 400, count: 40 });
+    expect(restoreCount()).toBe(40);
+    mount(false);
+    expect(window.scrollY).toBe(0);
+    mount(true, 40);
+    expect(window.scrollY).toBe(400);
+    // 使い切る。次に同じ URL を開き直しても戻さない
+    expect(restoreCount()).toBeUndefined();
+  });
+
+  it("同じ URL が履歴に 2 回あっても、エントリごとの位置へ戻す（戻る・進むの連鎖）", () => {
+    const first: Entry = { search: "?t=same", y: 100, count: 20 };
+    const second: Entry = { search: "?t=same", y: 700, count: 60 };
+    for (const [entry, expected] of [
+      [first, 100],
+      [second, 700],
+      [first, 100],
+    ] as const) {
+      popTo(entry);
+      expect(restoreCount()).toBe(entry.count);
+      mount(false);
+      window.scrollTo(0, 0);
+      mount(true, entry.count);
+      expect(window.scrollY).toBe(expected);
+    }
+  });
+
+  it("リンクのクリック（履歴に積む遷移）の後は、待っていた復元をしない", () => {
+    popTo({ search: "?t=a", y: 400 });
+    rememberScroll();
+    history.pushState(null, "", "?t=a");
+    mount(true);
+    expect(window.scrollY).toBe(0);
+    expect(restoreCount()).toBeUndefined();
+  });
+
+  it("別のエントリの一覧には適用しない", () => {
+    popTo({ search: "?t=a", y: 400, count: 40 });
+    history.replaceState(null, "", "?t=b");
+    expect(restoreCount()).toBeUndefined();
+    mount(true, 20);
+    expect(window.scrollY).toBe(0);
+  });
+
+  it("位置のない（初めて開いた）エントリには何もしない", () => {
+    popTo({ search: "?t=fresh" });
+    mount(true, 20);
+    expect(window.scrollY).toBe(0);
+    expect(restoreCount()).toBeUndefined();
+  });
+
+  it("再読み込みのあと、history.state の位置から戻す", () => {
+    history.replaceState(stateOf({ search: "?t=reload", y: 333, count: 30 }), "", "?t=reload");
+    // 起動時の installScrollRestore を、再読み込みの後の起動として呼び直す
+    installScrollRestore();
+    expect(restoreCount()).toBe(30);
+    mount(true, 30);
+    expect(window.scrollY).toBe(333);
+  });
+});
+
+describe("stateForReplace", () => {
+  it("パスもクエリも同じ置き換えでは、位置を引き継ぐ", () => {
+    history.replaceState({ scroll: { y: 10 }, other: 1 }, "", "?t=x");
+    expect(stateForReplace("?t=x#h")).toEqual({ scroll: { y: 10 }, other: 1 });
+  });
+
+  it("URL が変わる置き換えでは、位置だけを捨てる", () => {
+    history.replaceState({ scroll: { y: 10 }, other: 1 }, "", "?t=x");
+    expect(stateForReplace("?t=y")).toEqual({ other: 1 });
+  });
+
+  it("state が無ければ null のまま", () => {
+    expect(stateForReplace("?t=y")).toBeNull();
+  });
+});

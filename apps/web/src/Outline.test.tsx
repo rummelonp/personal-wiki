@@ -40,6 +40,38 @@ describe("InlineOutline", () => {
   });
 });
 
+describe("InlineOutline の focus", () => {
+  it("畳んだ後、focus が失われていれば summary に戻す", async () => {
+    act(() =>
+      root.render(<InlineOutline items={[item(0), item(10), item(20)]} onJump={vi.fn()} />),
+    );
+    const details = container.querySelector("details.toc") as HTMLDetailsElement;
+    details.open = true;
+    const target = [...details.querySelectorAll("button")].find(
+      (b) => b.textContent === "見出し 10",
+    ) as HTMLButtonElement;
+    target.focus();
+    act(() => target.click());
+    await vi.waitFor(() => expect(document.activeElement).toBe(details.querySelector("summary")));
+  });
+
+  it("移った先が focus を取っていれば、summary には戻さない", async () => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    act(() =>
+      root.render(
+        <InlineOutline items={[item(0), item(10), item(20)]} onJump={() => input.focus()} />,
+      ),
+    );
+    const details = container.querySelector("details.toc") as HTMLDetailsElement;
+    details.open = true;
+    act(() => details.querySelectorAll("button")[1]?.click());
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    expect(document.activeElement).toBe(input);
+    input.remove();
+  });
+});
+
 describe("Outline（右の列）", () => {
   it("見出しが 1 つでも出し、無ければ出さない", () => {
     act(() => root.render(<Outline items={[item(0)]} onJump={vi.fn()} />));

@@ -3,7 +3,7 @@ import type { OutlineItem } from "./heading-outline";
 import { RailSection } from "./Rail";
 
 /** 見出しがこの数に満たないページでは、本文の前の目次を出さない。数行のページでは目次が本文より目立つ。 */
-export const INLINE_OUTLINE_MIN_ITEMS = 3;
+const INLINE_OUTLINE_MIN_ITEMS = 3;
 
 interface OutlineProps {
   items: OutlineItem[];
@@ -46,16 +46,28 @@ export function Outline({ items, onJump }: OutlineProps) {
 export function InlineOutline({ items, onJump }: OutlineProps) {
   const details = useRef<HTMLDetailsElement>(null);
   if (items.length < INLINE_OUTLINE_MIN_ITEMS) return null;
+
+  function jump(offset: number) {
+    const element = details.current;
+    if (element === null) return;
+    element.open = false;
+    onJump(offset);
+    // 押した見出しのボタンは畳んで見えなくなり、focus が失われて、キーボードの利用者が位置を失う。
+    // ブラウザが focus を外す前でも、畳んだ中のボタンに残っているものは失われたものとして扱う。
+    // 移った先の本文が focus を取っていればそれに任せ、取っていないときだけ summary に戻す。
+    // 戻すときにスクロールすると、移った先から目次へ引き戻される。
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active === null || active === document.body || element.contains(active)) {
+        element.querySelector("summary")?.focus({ preventScroll: true });
+      }
+    });
+  }
+
   return (
     <details ref={details} className="toc">
       <summary>目次</summary>
-      <OutlineList
-        items={items}
-        onJump={(offset) => {
-          if (details.current !== null) details.current.open = false;
-          onJump(offset);
-        }}
-      />
+      <OutlineList items={items} onJump={jump} />
     </details>
   );
 }

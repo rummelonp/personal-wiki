@@ -27,7 +27,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   const effectiveTag = searching ? "" : tag;
   const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
   const tags = useTags();
-  useRestoreScroll(state.status === "ready");
+  useRestoreScroll(state.status === "ready", state.status === "ready" ? state.entries.length : 0);
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
   const [creating, setCreating] = useState(false);

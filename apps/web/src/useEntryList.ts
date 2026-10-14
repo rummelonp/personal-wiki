@@ -1,6 +1,7 @@
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { failureMessage, type ListedPage, listRecent, searchPages } from "./pages-api";
+import { restoreCount } from "./scroll-restore";
 
 export type ListState =
   | { status: "loading" }
@@ -17,6 +18,18 @@ export interface EntryListSource {
   tag: string;
   /** false（匿名）なら、API が 400 で拒む短い検索語を送らない。 */
   owner: boolean;
+}
+
+/** Worker の `LIST_MAX_LIMIT`。戻るで「さらに表示」の分まで読み直すときの上限 */
+const RESTORE_MAX_LIMIT = 100;
+
+/**
+ * 戻る・進むで開いた一覧は、離れたときに読み込んでいた件数を最初の 1 回で読み直し、
+ * 「さらに表示」で読み足した位置まで戻れるようにする。上限（100 件）を超えて読み足していた分は戻れない。
+ */
+function restoreLimit(): { limit?: number } {
+  const count = restoreCount();
+  return count === undefined ? {} : { limit: Math.min(Math.max(count, 1), RESTORE_MAX_LIMIT) };
 }
 
 /** 一覧のデータだけを扱う。見せ方（行、配置）は持たない。 */
@@ -37,7 +50,7 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
         ? searchPages(query).then((res) =>
             res.ok ? { ...res, value: { entries: res.value, next: null } } : res,
           )
-        : listRecent(null, { tag }).then((res) =>
+        : listRecent(null, { tag, ...restoreLimit() }).then((res) =>
             res.ok
               ? { ...res, value: { entries: res.value.pages, next: res.value.nextCursor } }
               : res,

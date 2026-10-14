@@ -191,6 +191,7 @@ a {
  * 列の中身はヘッダーの下に固定する。列全体を固定するのは、目次だけを固定すると、下に続く区画が
  * スクロールで目次の裏に回って隠れるため。中身が画面より高いときは列の中でスクロールする。
  * 固定は stretch した grid item では効かないので、列（.rail）ではなく中身に付ける。
+ * 区切りの罫線は列に残し、固定した中身より下も全高に引く。
  */
 .rail-inner {
   position: sticky;
@@ -254,6 +255,12 @@ a {
   color: var(--color-accent);
 }
 
+/* 目次は overflow で切れる欄の中にあるので、focus の輪は外へはみ出さず内側に引く */
+.outline-link:focus-visible,
+.toc > summary:focus-visible {
+  outline-offset: calc(-2 * var(--border-width));
+}
+
 /* 長い目次が右の列を占めて、下の区画（リンク元、公開設定）を押し出さないよう、目次の中でスクロールする */
 .rail-section-outline .outline {
   max-height: var(--outline-max-height);
@@ -269,12 +276,28 @@ a {
   border-radius: var(--radius-md);
 }
 
+/* 開閉の印はブラウザごとに違う（Safari は ::-webkit-details-marker）ので消し、自前の印にそろえる */
 .toc > summary {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
+  list-style: none;
+}
+
+.toc > summary::-webkit-details-marker {
+  display: none;
+}
+
+.toc > summary::before {
+  content: "▸";
+  color: var(--color-fg-muted);
+}
+
+.toc[open] > summary::before {
+  content: "▾";
 }
 
 .toc .outline {

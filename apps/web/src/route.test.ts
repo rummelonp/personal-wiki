@@ -77,8 +77,8 @@ describe("navigate のスクロール", () => {
     };
     const scrollTo = vi.fn();
     const dispatchEvent = vi.fn();
-    vi.stubGlobal("window", { location, scrollTo, dispatchEvent });
-    vi.stubGlobal("history", { pushState: vi.fn(move), replaceState: vi.fn(move) });
+    vi.stubGlobal("window", { location, scrollTo, dispatchEvent, scrollY: 0 });
+    vi.stubGlobal("history", { state: null, pushState: vi.fn(move), replaceState: vi.fn(move) });
     return { scrollTo, dispatchEvent };
   }
 

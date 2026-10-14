@@ -90,6 +90,10 @@ for (const owner of [true, false]) {
       await toc.getByRole("button", { name: TARGET, exact: true }).click();
       await expect(toc).toHaveJSProperty("open", false);
       await expectHeadingBelowHeader(page, TARGET);
+      // 畳んだ目次の中のボタンが消えても、キーボードの利用者の focus は body に落ちない
+      await expect
+        .poll(() => page.evaluate(() => document.activeElement === document.body))
+        .toBe(false);
       await expectNoHorizontalScroll(page);
     });
 

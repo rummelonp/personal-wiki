@@ -1,6 +1,6 @@
 import { canonicalPagePath, pageIdPath, parsePagePath } from "@personal-wiki/domain/page-path";
 import { useSyncExternalStore } from "react";
-import { rememberScroll } from "./scroll-restore";
+import { rememberScroll, stateForReplace } from "./scroll-restore";
 
 /**
  * SPA のパスは `/`、`/p/<id>`、`/<title>` だけ。最上位のパスは title に使うので、`/search` や
@@ -46,12 +46,13 @@ const NAVIGATE_EVENT = "personal-wiki:navigate";
  * 読み込みと違い、前の画面のスクロール位置が残る（入力欄の focus でずれた位置も残り、移った先が
  * 先頭を通り過ぎて表示される）。hash だけの変化と置き換えは同じ画面の中の移動なので戻さない。
  * 戻る・進む（popstate）の位置はブラウザの復元に任せる。ただし一覧は取り直す間に短くなって復元が 0 に
- * 丸められるので、離れる直前の位置を覚えておき、一覧が描かれた後に自分で戻す（scroll-restore）。
+ * 丸められるので、離れる直前の位置を履歴のエントリに書き、一覧が描かれた後に自分で戻す
+ * （scroll-restore。その state を壊さないよう、置き換えでも state を引き継ぐ）。
  * hash が指す位置へは、移った先が描画された後に use-fragment-jump が動かす。
  */
 export function navigate(href: string, options: { replace?: boolean } = {}): void {
   if (options.replace === true) {
-    history.replaceState(null, "", href);
+    history.replaceState(stateForReplace(href), "", href);
   } else {
     const next = new URL(href, window.location.href);
     const moves =

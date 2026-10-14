@@ -8,9 +8,7 @@ interface RailLayoutProps {
 
 /**
  * 「中央が本文や一覧、右が補助情報」の配置。トップとノートで共通に使う。
- * 狭い画面では右の列を本文の下に回す（CSS 側）。広い画面では列をヘッダーの下に固定し、長いページでも
- * 目次などを見失わないようにする。固定するのは列の中身（.rail-inner）で、区切りの罫線は列（.rail）に
- * 残して全高に引く。
+ * 狭い画面では右の列を本文の下に回す（CSS 側）。広い画面での固定も CSS が受け持つ（.rail-inner）。
  */
 export function RailLayout({ rail, children }: RailLayoutProps) {
   return (
