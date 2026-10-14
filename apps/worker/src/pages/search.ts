@@ -1,6 +1,5 @@
-import { foldTitle } from "@personal-wiki/domain";
+import { foldForSearch, foldTitle, TRIGRAM_MIN_CHARS } from "@personal-wiki/domain";
 import type { ReadableVisibility } from "../auth/principal";
-import { foldForSearch } from "./derived";
 import { publicOnlyFlag, type Visibility } from "./store";
 
 /*
@@ -355,9 +354,6 @@ export function prepareSearchQuery(raw: string): SearchQuery {
   return { ok: true, query };
 }
 
-/** trigram は 3 文字未満の語を引けない（MATCH しても 0 件になる）ので、短い語は LIKE に回す。 */
-const TRIGRAM_MIN_CHARS = 3;
-
 interface FtsRow extends SummaryRow {
   excerpt: string;
 }
@@ -384,6 +380,7 @@ const compact = (text: string) => text.replace(/\s+/g, " ").trim();
  *   title の重み（本文の 4 倍）は、title に含むページどうしを title の一致の多さで並べる。同点は更新が新しい順。
  * - 2 文字以下: LIKE（`%`、`_`、`\` はエスケープ）。関連度が無いので、title に含むページを先に、
  *   その中と残りをそれぞれ更新が新しい順に返す。索引が使えず全ページを走査するが、一人用の wiki の規模では許容する。
+ *   匿名の短い語は REST が ANONYMOUS_SEARCH_MIN_CHARS で拒むので、ここで走査するのは owner と token の要求だけ。
  *   LIKE が畳む大文字小文字は ASCII だけで、MATCH（Unicode の大文字小文字を畳む）とは差がある。
  * 抜粋は本文から取る。title にだけ一致したときは本文の先頭になる。
  */

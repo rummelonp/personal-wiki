@@ -10,7 +10,8 @@
     "./attachment": "./src/attachment.ts",
     "./page-path": "./src/page-path.ts",
     "./title": "./src/title.ts",
-    "./result": "./src/result.ts"
+    "./result": "./src/result.ts",
+    "./search": "./src/search.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

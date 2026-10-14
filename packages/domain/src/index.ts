@@ -20,6 +20,12 @@ export {
 } from "./page-path";
 export { type Err, err, isErr, isOk, mapResult, type Ok, ok, type Result } from "./result";
 export {
+  ANONYMOUS_SEARCH_MIN_CHARS,
+  foldForSearch,
+  searchQueryLength,
+  TRIGRAM_MIN_CHARS,
+} from "./search";
+export {
   foldTitle,
   normalizeTitleKey,
   singleLineTitle,

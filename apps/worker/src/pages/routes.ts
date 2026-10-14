@@ -1,3 +1,4 @@
+import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain";
 import type { Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { allowAnonymousRead, requireOwner, requireScope } from "../auth/middleware";
@@ -348,13 +349,24 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
             message: SEARCH_QUERY_MESSAGES[query.reason],
           });
         }
+        const principal = c.get("principal");
+        if (
+          principal.kind === "anonymous" &&
+          searchQueryLength(query.query) < ANONYMOUS_SEARCH_MIN_CHARS
+        ) {
+          return errorResponse(c, 400, "query_too_short", {
+            field: "q",
+            min: ANONYMOUS_SEARCH_MIN_CHARS,
+            message: `検索語が短すぎる（ログインしていない検索は ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上）`,
+          });
+        }
         const limit = readLimit(c, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);
         if (!limit.ok) return limit.response;
         const results = await searchPages(
           c.env.DB,
           query.query,
           limit.value,
-          readableVisibilityOf(c.get("principal")),
+          readableVisibilityOf(principal),
         );
         return c.json({ results });
       })

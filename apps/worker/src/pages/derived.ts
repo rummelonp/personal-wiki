@@ -1,4 +1,4 @@
-import { isAttachmentName } from "@personal-wiki/domain";
+import { foldForSearch, isAttachmentName } from "@personal-wiki/domain";
 import { extractDerived } from "@personal-wiki/markdown";
 
 /** 派生テーブルに入れる値。可変長の links と tags は JSON 1 個にまとめ、D1 の bind 100 個の上限を避ける。 */
@@ -28,14 +28,6 @@ function excerptOf(plainText: string): string {
     end += char.length;
   }
   return plainText;
-}
-
-/**
- * pages_fts に入れる文字列と検索語に掛ける正規化。trigram は全角英数や半角カナを畳まないので、
- * 保存側と検索側で必ず同じ関数を通す。
- */
-export function foldForSearch(text: string): string {
-  return text.normalize("NFKC");
 }
 
 export function deriveValues(title: string, body: string): DerivedValues {

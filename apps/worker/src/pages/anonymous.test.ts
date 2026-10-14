@@ -179,7 +179,7 @@ describe("匿名の読み取り", () => {
 
     for (const [q, expected] of [
       ["zebrafish", []],
-      ["秘蔵", []],
+      ["秘蔵の", []],
       ["Hidden", [open.id]],
       ["kangaroo", [open.id]],
       ["ghostword", []],
@@ -198,6 +198,30 @@ describe("匿名の読み取り", () => {
       pages: Listed[];
     }>();
     expect(ids(draftBacklinks.pages)).toEqual([open.id]);
+  });
+
+  it("検索語が NFKC の後で 3 文字に満たなければ 400 で拒み、3 文字からは検索する", async () => {
+    const { anonymous, asOwner, open, draft } = await seed();
+    const ids = (pages: Listed[]) => pages.map((page) => page.id);
+    // `ｶﾞｷ` は NFKC で `ガキ` の 2 文字になり、`㌀` は `アパート` の 4 文字に開く
+    for (const q of ["k", "ka", " ka　", "公開", "ｶﾞｷ"]) {
+      const res = await anonymous(`/api/search?q=${encodeURIComponent(q)}`);
+      expect(res.status, q).toBe(400);
+      expect(await res.json(), q).toMatchObject({ error: "query_too_short", field: "q", min: 3 });
+    }
+    for (const [q, expected] of [
+      ["kan", [open.id]],
+      ["公開の", [open.id]],
+      ["㌀", []],
+    ] as const) {
+      const res = await anonymous(`/api/search?q=${encodeURIComponent(q)}`);
+      expect(res.status, q).toBe(200);
+      expect(ids((await res.json<{ results: Listed[] }>()).results), q).toEqual(expected);
+    }
+    // owner は短い語も探せる（read の token は下の「read の token は draft を…」で確かめる）
+    const owner = await asOwner(`/api/search?q=${encodeURIComponent("秘蔵")}`);
+    expect(owner.status).toBe(200);
+    expect(ids((await owner.json<{ results: Listed[] }>()).results)).toEqual([draft.id]);
   });
 
   it("一覧を 1 件ずつたどっても、cursor を含めて draft の id が出ない", async () => {
