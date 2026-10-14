@@ -10,7 +10,9 @@
 //   理由が空なら失敗にする。何も許可していない token-ok も失敗にする（直したあとに残るため）。
 //
 // 拾わないもの（見逃しを承知で外している）: url() と文字列の中身、時間（s、ms）、unitless の数値
-//   （line-height、font-weight、opacity）、packages/editor の CSS-in-JS。
+//   （line-height、font-weight、opacity）、packages/editor の CSS-in-JS、filter の drop-shadow() の色名、
+//   font 一括指定の引用符も generic family も無い書体名。
+// token-ok の許可は行単位なので、同じ行に並べた別の宣言にも及ぶ（biome の整形では 1 行に並ばない）。
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +22,7 @@ const DEFAULT_TARGET = join(ROOT, "apps/web/src");
 const THEME_FILE = "theme.css";
 
 const LENGTH_UNITS =
-  "px|rem|em|ex|ch|cap|ic|lh|rlh|vh|vw|vi|vb|vmin|vmax|svh|svw|lvh|lvw|dvh|dvw|dvi|dvb|cqw|cqh|cqi|cqb|cqmin|cqmax|cm|mm|q|in|pt|pc";
+  "px|rem|em|ex|ch|cap|ic|lh|rlh|rex|rch|rcap|ric|vh|vw|vi|vb|vmin|vmax|svh|svw|svi|svb|svmin|svmax|lvh|lvw|lvi|lvb|lvmin|lvmax|dvh|dvw|dvi|dvb|dvmin|dvmax|cqw|cqh|cqi|cqb|cqmin|cqmax|cm|mm|q|in|pt|pc";
 const LENGTH = new RegExp(
   `(?<![\\w.#-])[+-]?(\\d+\\.?\\d*|\\.\\d+)(${LENGTH_UNITS})(?![\\w%-])`,
   "gi",
@@ -158,7 +160,10 @@ function findHardcoded(property, value) {
   /** @type {{ offset: number, length: number, kind: string }[]} */
   const found = [];
   // 変数名（--color-red など）は検査の対象でない。fallback の値は残して検査する
-  const plain = value.replace(/--[\w-]+/g, (m) => " ".repeat(m.length));
+  // !important は値の一部ではないので外す（var() だけの値を直書きと見なさないため）
+  const plain = value
+    .replace(/--[\w-]+/g, (m) => " ".repeat(m.length))
+    .replace(/!\s*important\s*$/i, (m) => " ".repeat(m.length));
 
   for (const m of plain.matchAll(HEX))
     found.push({ offset: m.index, length: m[0].length, kind: "色" });
@@ -186,6 +191,7 @@ function findHardcoded(property, value) {
   }
 
   const lead = value.length - value.trimStart().length;
+  const whole = plain.trim().toLowerCase();
   const words = (/** @type {string} */ text) => text.replace(/[\s,]+/g, " ").trim();
   if (property === "font-family") {
     const rest = words(blankCalls(plain, "var"));
@@ -197,13 +203,11 @@ function findHardcoded(property, value) {
       found.push({ offset: lead, length: value.trim().length, kind: "font-family" });
     }
   } else if (property === "box-shadow" || property === "text-shadow") {
-    const v = value.trim().toLowerCase();
-    if (v !== "none" && !CSS_WIDE.has(v) && !/(?<![\w-])var\(/i.test(value)) {
+    if (whole !== "none" && !CSS_WIDE.has(whole) && !/(?<![\w-])var\(/i.test(value)) {
       found.push({ offset: lead, length: value.trim().length, kind: property });
     }
   } else if (property === "z-index") {
-    const v = value.trim().toLowerCase();
-    if (v !== "auto" && !CSS_WIDE.has(v) && !/(?<![\w-])var\(/i.test(value)) {
+    if (whole !== "auto" && !CSS_WIDE.has(whole) && !/(?<![\w-])var\(/i.test(value)) {
       found.push({ offset: lead, length: value.trim().length, kind: "z-index" });
     }
   }
@@ -214,7 +218,7 @@ function findHardcoded(property, value) {
  * @param {string} css
  * @returns {{ line: number, message: string }[]}
  */
-export function checkCss(css) {
+function checkCss(css) {
   const { masked, comments } = mask(css);
   const lineStarts = [0];
   for (let i = 0; i < css.length; i++) if (css[i] === "\n") lineStarts.push(i + 1);

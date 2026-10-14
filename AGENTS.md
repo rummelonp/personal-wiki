@@ -19,7 +19,7 @@ Node は 22 系、パッケージマネージャーは pnpm（バージョンは
 
 ```sh
 pnpm install
-pnpm lint          # biome check
+pnpm lint          # biome check と CSS の直書きの検査
 pnpm format        # biome check --write
 pnpm typecheck     # tsc --noEmit
 pnpm test          # vitest run
@@ -121,3 +121,4 @@ CI（`.github/workflows/ci.yml`）も同じ 3 つを実行する。
 
 - ドキュメントとコメントは日本語で書く。コメントはコードから自明でないこと（判断の理由、制約）だけを書く。
 - 秘密情報（`.dev.vars`、`.env*`、`apps/worker/deploy.env`）はコミットしない。
+- 見た目の値（色、長さ、font-family、影、z-index）は `apps/web/src/theme.css` の token に置き、部品の CSS は token だけを参照する。直書きが要る宣言は、同じ行の末尾に `/* token-ok: 理由 */` を書く。`pnpm lint` が検査する。

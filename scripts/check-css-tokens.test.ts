@@ -51,6 +51,10 @@ describe("check-css-tokens", () => {
       ["em", "text-underline-offset: 0.2em;", "0.2em"],
       ["vh", "min-height: 50vh;", "50vh"],
       ["dvh", "max-height: calc(100dvh - var(--space-4));", "100dvh"],
+      ["svmin", "width: 10svmin;", "10svmin"],
+      ["lvb", "height: 10lvb;", "10lvb"],
+      ["rch", "padding: 2rch;", "2rch"],
+      ["!important の付いた直書き", "padding: 12px !important;", "12px"],
       ["小数の先頭の 0 がない長さ", "margin: .5rem;", ".5rem"],
       ["負の長さ", "margin-top: -4px;", "-4px"],
       ["calc() の中の長さ", "width: calc(100% - 2px);", "2px"],
@@ -134,6 +138,10 @@ describe("check-css-tokens", () => {
       ["box-shadow: none", "box-shadow: none;"],
       ["z-index の token", "z-index: var(--z-header);"],
       ["z-index: auto", "z-index: auto;"],
+      [
+        "!important の付いた token だけの値",
+        "font-family: var(--font-sans) !important;\nz-index: auto !important;\nbox-shadow: none !important;",
+      ],
       ["token から作る色関数", "color: rgb(var(--color-rgb) / 50%);"],
       ["相対色", "color: rgb(from var(--color-fg) r g b / 50%);"],
       [
