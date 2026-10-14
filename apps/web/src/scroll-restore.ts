@@ -182,6 +182,8 @@ export function useRestoreScrollAfterMount(ready: boolean): void {
   useLayoutEffect(enter, []);
   useLayoutEffect(() => publish(ready, undefined), [ready]);
   useEffect(() => {
-    if (ready) restoreNow();
+    // 描いてからこの effect までに戻るで前の画面へ移っていたら、その画面の復元を使わずに残す。
+    // ここで使うと、短いページの画面で位置を戻した上、続けて描かれる一覧が件数も位置も戻せなくなる
+    if (ready && settledUrl === currentUrl()) restoreNow();
   }, [ready]);
 }

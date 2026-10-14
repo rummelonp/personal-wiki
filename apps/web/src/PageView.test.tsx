@@ -78,6 +78,14 @@ describe("PageView の URL の置き換え", () => {
     expect(location.pathname).toBe(`/${encodeURIComponent(PAGE.title)}`);
   });
 
+  it("置き換えた後に title が変わったら、新しい正の URL に置き換える", async () => {
+    const onShown = await openById();
+    act(() => onShown(PAGE));
+    // アドレスバーはもう開いた URL（/p/<id>）ではないが、自分が置き換えた URL なので追従する
+    act(() => onShown({ ...PAGE, title: "新しい題" }));
+    expect(location.pathname).toBe(`/${encodeURIComponent("新しい題")}`);
+  });
+
   it("表示を伝える前に戻るで一覧へ移っていたら、一覧の URL を置き換えない", async () => {
     const onShown = await openById();
     // 戻るの popstate を受けて描き直すより先に、子の effect が届いた状況

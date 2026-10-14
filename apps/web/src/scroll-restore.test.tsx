@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -208,6 +208,27 @@ describe("復元の待ち中", () => {
     expect(window.scrollY).toBe(0);
     act(() => root.render(<Page ready />));
     expect(window.scrollY).toBe(800);
+  });
+
+  it("ページを描いた直後の戻るでは、ページが戻した先の一覧の復元を使わない", () => {
+    history.replaceState(null, "", "?t=page");
+    // 戻るが、ページを描いた後で、ページの effect より先に届いた状況（後の兄弟の layout effect で投げる）
+    function BackRightAfterShown() {
+      useLayoutEffect(() => popTo({ search: "?t=list", y: 400, count: 40 }), []);
+      return null;
+    }
+    act(() =>
+      root.render(
+        <>
+          <Page ready />
+          <BackRightAfterShown />
+        </>,
+      ),
+    );
+    expect(window.scrollY).toBe(0);
+    expect(restoreCount()).toBe(40);
+    mount(true, 40);
+    expect(window.scrollY).toBe(400);
   });
 
   it("popstate で、離れる側の書き込みの待ちを捨てる（移った先のエントリを上書きしない）", () => {

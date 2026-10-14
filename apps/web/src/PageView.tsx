@@ -28,7 +28,10 @@ export type PageTarget =
   | { by: "title"; title: string }
   | { by: "new"; serial: number; title: string };
 
-/** 今のアドレスバーが target と同じページを指すか */
+/**
+ * 今のアドレスバーが target と同じページを指すか。新規作成は serial を見ない
+ * （開き直した新規作成の画面は key で作り直されるので、前の画面の表示は届かない）。
+ */
 function locationTargets(target: PageTarget): boolean {
   const route = parseRoute(window.location.pathname, window.location.search);
   switch (target.by) {
