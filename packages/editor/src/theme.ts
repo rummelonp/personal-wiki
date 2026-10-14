@@ -148,16 +148,18 @@ export const editorSurfaceTheme = EditorView.baseTheme({
     boxShadow: "var(--ui-shadow-popover, 0 8px 24px rgb(0 0 0 / 0.16))",
   },
   "&light .cm-tooltip-section:not(:first-child)": { borderTop: "1px solid var(--ui-color-border)" },
-  "&light .cm-tooltip.cm-tooltip-autocomplete > ul": {
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul": {
     fontFamily: "var(--ui-font-body)",
     padding: "var(--ui-space-1, 0.25rem)",
+    // autocomplete の `height: 100%` に padding が足されて、詰められた窓の枠からはみ出さないようにする
+    boxSizing: "border-box",
   },
-  "&light .cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li": {
     padding: "var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem)",
     lineHeight: "1.5",
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
   },
-  "&light .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li[aria-selected]": {
     background: SELECTED_BACKGROUND,
     color: "var(--ui-color-text)",
     boxShadow: "inset 2px 0 0 var(--ui-color-accent)",
@@ -170,13 +172,20 @@ export const editorSurfaceTheme = EditorView.baseTheme({
     fontStyle: "normal",
     color: "var(--ui-color-muted)",
   },
-  // タッチ操作の端末は、行を指で外さず押せる高さ（44px）にする。caret の下が狭くても行が半分に
-  // 切れず読めるよう、窓の高さの上限も行数で決める。行の高さは padding でなく line-height で取り、
-  // `text-overflow: ellipsis` が効く block の行のまま文字を縦中央に置く。
+  // muted は選択行の地の上で 4.5:1 を割る（ライト）ので、選択行の中だけ本文の色にする
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail":
+    { color: "var(--ui-color-text)" },
+  // タッチ操作の端末は、行を指で外さず押せる高さ（44px）にする。窓の高さの上限は 5.5 行にして、
+  // 半分見える行でスクロールできることを示す。caret の上下が狭くて窓が詰められるときは、
+  // CodeMirror が測った余地（spaceVert）が高さを決め、この上限より優先される。
+  // 行の高さは padding でなく line-height で取り、`text-overflow: ellipsis` が効く block の行のまま
+  // 文字を縦中央に置く。
   // @media の中では style-mod が `&` を media の文に置き換えるので、`&light` を使えない。
   "@media (pointer: coarse)": {
-    ".cm-tooltip.cm-tooltip-autocomplete > ul": { maxHeight: `calc(${TOUCH_ROW_HEIGHT} * 5.5)` },
-    ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul": {
+      maxHeight: `calc(${TOUCH_ROW_HEIGHT} * 5.5)`,
+    },
+    ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li": {
       paddingTop: "0",
       paddingBottom: "0",
       lineHeight: TOUCH_ROW_HEIGHT,

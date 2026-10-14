@@ -173,7 +173,8 @@ describe("editor colors", () => {
     // 本物の tooltip は候補が出たときだけ現れるので、同じ class の要素を view の中に置いて cascade を見る
     const tooltip = document.createElement("div");
     tooltip.className = "cm-tooltip cm-tooltip-autocomplete";
-    tooltip.innerHTML = '<ul><li aria-selected="true">候補</li></ul>';
+    tooltip.innerHTML =
+      '<ul><li aria-selected="true">候補<span class="cm-completionDetail">説明</span></li></ul>';
     v.dom.append(tooltip);
     try {
       const option = query(v, ".cm-tooltip-autocomplete li[aria-selected]");
@@ -183,6 +184,16 @@ describe("editor colors", () => {
       expect(toRgb(getComputedStyle(option).backgroundColor)).toEqual(selected);
       expect(colorOf(option)).toEqual(text);
       expect(contrastRatio(text, selected)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      // muted は選択行の地の上で 4.5:1 を割ることがあるので、選択行の中の detail は本文の色にする
+      const detail = query(v, ".cm-tooltip-autocomplete li[aria-selected] .cm-completionDetail");
+      expect(colorOf(detail)).toEqual(text);
+      expect(contrastRatio(colorOf(detail), selected)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      // autocomplete 自身の規則（等幅、border-box でない ul）でなく、こちらの規則が勝っている
+      const list = query(v, ".cm-tooltip-autocomplete > ul");
+      expect(getComputedStyle(list).fontFamily).toContain("editor-test-body");
+      expect(getComputedStyle(list).boxSizing).toBe("border-box");
+      // 行の余白も autocomplete の既定（左右 3px）でなくこちらの値
+      expect(Number.parseFloat(getComputedStyle(option).paddingLeft)).toBeGreaterThan(3);
       expect(getComputedStyle(option).boxShadow).toContain("inset");
       expect(getComputedStyle(option).boxShadow).toContain(`rgb(${accent.join(", ")})`);
     } finally {
