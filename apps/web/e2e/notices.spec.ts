@@ -169,12 +169,18 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
   await expectNoHorizontalScroll(page);
 
   // 続けて打っても、通知は動かず、行は隠れない
+  const failedAgain = page.waitForResponse(
+    (res) => res.request().method() === "PUT" && res.url().endsWith(`/api/pages/${created.id}`),
+  );
   await page.keyboard.type("さらに打つ");
   await expect
     .poll(async () => (await caretRect(page)).bottom)
     .toBeLessThanOrEqual((await boxOf(alert)).y + 0.5);
 
   // 通知が消えても、title と本文は動かない（スクロールは戻さないので、先頭までスクロールして比べる）
+  // 横取りを外すのは、打った分の自動保存が失敗で返ってから。外す時点で横取り中の要求を残さない
+  // （全体の実行で 1 度、送り直しが通信の失敗で終わった。原因は再現できず断定していない）
+  await failedAgain;
   await page.unroute(`**/api/pages/${created.id}`);
   await alert.getByRole("button", { name: "もう一度保存する" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
