@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test";
-import { expect, test } from "./support/fixtures";
+import { expect, test, uniqueTitle } from "./support/fixtures";
 import { SEED } from "./support/seed";
 
 /*
@@ -121,6 +121,34 @@ test.describe("本文の左端 @widths", () => {
       target.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
+  });
+});
+
+test.describe("列の上の帯", () => {
+  test.use({ role: "anonymous" });
+
+  test("帯が出ても、短いページでスクロールが出ず、欄の線は画面の下端まで引かれる", async ({
+    page,
+    api,
+  }, testInfo) => {
+    const title = uniqueTitle(testInfo, "短いページ");
+    await api.createPage({ title, body: "短い本文", visibility: "public" });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/${encodeURIComponent(title)}`);
+    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+    // LinkRewriteStatus の帯と同じ位置と class。実際の帯は owner の書き換えの最中にしか出ない
+    await page.locator(".main").evaluate((main) => {
+      const band = document.createElement("p");
+      band.className = "narrow muted";
+      band.textContent = "他のページのリンクを書き換えています（1/2）";
+      main.prepend(band);
+    });
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    const rail = await page.locator(".rail").boundingBox();
+    expect(Math.abs((rail?.y ?? 0) + (rail?.height ?? 0) - 800)).toBeLessThan(1);
   });
 });
 

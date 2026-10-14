@@ -148,8 +148,20 @@ a {
 
 /* 骨格 */
 
+/*
+ * .main を残りの高さに伸ばし、その中の .rail-layout も伸ばす。リンクの書き換えの帯などが
+ * 列の上に出ても、短いページでスクロールが出ない（高さの下限を calc で足し引きしない）
+ */
 .app {
-  min-height: 100vh; /* token-ok: 画面全体の高さ。寸法の token でなく viewport の単位そのもの */
+  display: flex;
+  flex-direction: column;
+  min-height: var(--viewport-min-height);
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
 }
 
 /* 本文の列より上に出す帯（リンクの書き換えの進み具合）。列の外なので、左端を列に合わせる */
@@ -166,16 +178,13 @@ a {
  *
  * すべての画面（一覧、ページ、読み込み中、404、空の状態）はこの列に入れる。右の欄が無い画面も
  * 同じ 2 列のままにして、列の左端を画面ごとに動かさない。
- * 欄の区切り線は、内容が短くても画面の下端まで引く（高さの下限をヘッダーの下の残りにする）。
+ * 欄の区切り線は、内容が短くても画面の下端まで引く（.app から伸ばして、ヘッダーの下の残りを埋める）。
  */
 .rail-layout {
   display: grid;
   grid-template-columns: minmax(0, var(--column-width)) var(--rail-width);
+  flex: 1;
   justify-content: center;
-  min-height: calc(
-    100dvh -
-    var(--header-height)
-  ); /* token-ok: 画面全体の高さ。viewport の単位そのもの */
 }
 
 .rail-main {
@@ -652,12 +661,21 @@ a {
  * （一覧の行やロゴと同じ線）に載り、title と本文の文字の左端はどちらも行の padding で揃う
  */
 .title-input {
+  position: relative;
   margin: 0 0 var(--space-4) calc(-1 * var(--editor-line-inset));
+  border-bottom: var(--border-width) solid transparent; /* 下線の分の高さを常に取り、hover で動かさない */
+}
+
+/* 下線は文字の左端（列の線）から引く。要素は行の padding の分だけ左に出ているので、その分を除く */
+.title-input::after {
+  position: absolute;
+  inset: auto 0 calc(-1 * var(--border-width)) var(--editor-line-inset);
+  content: "";
   border-bottom: var(--border-width) solid transparent;
 }
 
-.title-input:hover,
-.title-input:focus-within {
+.title-input:hover::after,
+.title-input:focus-within::after {
   border-bottom-color: var(--color-border);
 }
 
@@ -938,8 +956,8 @@ a {
 /* 狭い画面。同じ詳細度の基本の規則を上書きするので、ファイルの最後に置く */
 @media (max-width: 40rem) {
   .rail-layout {
+    flex: none;
     grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
   }
 
   .rail {

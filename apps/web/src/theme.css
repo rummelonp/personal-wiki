@@ -122,6 +122,7 @@
     2 *
     var(--header-padding-block)
   ); /* ヘッダーの高さ。操作の高さと余白から決め、その下に固定する要素（右の列）の位置もこれで決める */
+  --viewport-min-height: 100svh; /* 画面の最低の高さ。svh は iOS のツールバーが伸縮しても変わらないので、右の欄の区切り線の長さが動かない */
   --rail-max-height: calc(
     100dvh -
     var(--header-height)
