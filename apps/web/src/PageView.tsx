@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
 import { PageSkeleton } from "./Loading";
-import { NotFound } from "./NotFound";
+import { MissingPage, NotFound } from "./NotFound";
 import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
@@ -49,7 +49,8 @@ type State =
   | { status: "loading" }
   | { status: "ready"; page: Page }
   | { status: "new"; serial: number; title: string }
-  | { status: "not_found" }
+  /** settled は、title の URL の空のページで被リンクの最初の取得が済んだか */
+  | { status: "not_found"; settled: boolean }
   | { status: "unauthorized" }
   | { status: "error"; message: string };
 
@@ -95,7 +96,10 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   useLayoutEffect(() => {
     shownTarget.current = target;
   });
-  useRestoreScrollAfterMount(state.status === "ready");
+  // 空のページは被リンクが届くまで高さが決まらないので、届いてから戻す
+  useRestoreScrollAfterMount(
+    state.status === "ready" || (state.status === "not_found" && state.settled),
+  );
 
   // effect で切り替えると、編集の画面の mount が開く操作の後になる
   if (target.by === "new" && !(state.status === "new" && state.serial === target.serial)) {
@@ -116,7 +120,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     void request.then((res) => {
       if (cancelled) return;
       if (res.ok) setState({ status: "ready", page: res.value });
-      else if (res.reason === "not_found") setState({ status: "not_found" });
+      else if (res.reason === "not_found") setState({ status: "not_found", settled: false });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
       else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
     });
@@ -131,10 +135,18 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     if (newTargetSerial !== null) consumeNewPageTitle(newTargetSerial);
   }, [newTargetSerial]);
 
-  // ページを表示していない間は、前に開いたページの title を残さない。表示した後は onShown が決める
+  // ページを表示していない間は、前に開いたページの title を残さない。表示した後は onShown が決める。
+  // title の URL の空のページは、URL の title を出す
+  const missingTitle = state.status === "not_found" && target.by === "title" ? target.title : null;
   useEffect(() => {
-    if (state.status !== "ready") setDocumentTitle(null);
-  }, [state.status]);
+    if (state.status !== "ready") setDocumentTitle(missingTitle);
+  }, [state.status, missingTitle]);
+
+  const settleMissing = useCallback(() => {
+    setState((current) =>
+      current.status === "not_found" && !current.settled ? { ...current, settled: true } : current,
+    );
+  }, []);
 
   const show = useCallback((page: Pick<PageSummary, "id" | "title" | "visibility">) => {
     // 子が表示を伝える effect は、開いた直後の戻るでアドレスバーが前の画面へ移った後に遅れて届くことがある。
@@ -179,8 +191,8 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     case "unauthorized":
       return <SignInNotice expired />;
     case "not_found":
-      return owner && target.by === "title" ? (
-        <NotFound creatableTitle={target.title} />
+      return target.by === "title" ? (
+        <MissingPage title={target.title} owner={owner} onSettled={settleMissing} />
       ) : (
         <NotFound />
       );

@@ -480,6 +480,25 @@ export async function listBacklinks(
   );
 }
 
+/**
+ * title で書かれたリンクのリンク元。まだ無いページの画面で使う。匿名には、title が draft のページでも
+ * 無いページでも同じ public のリンク元が返る。
+ */
+export async function listBacklinksByTitle(
+  title: string,
+  cursor: string | null,
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<PageList>> {
+  const query = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+  return listResult(
+    await request(
+      fetchFn,
+      `/api/pages/by-title/backlinks?title=${encodeURIComponent(title)}${query}`,
+    ),
+    isSummary,
+  );
+}
+
 /** 検索語を直せば通る誤り。一覧の取得の失敗とは別に、入力を直す案内として見せる。 */
 export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string };
 

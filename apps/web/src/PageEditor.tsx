@@ -45,7 +45,7 @@ import {
   updatePage,
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { homeHref, navigate, pageHrefFor } from "./route";
+import { homeHref, missingPagePath, navigate, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
@@ -112,7 +112,10 @@ function retryLabel(op: FailedOp): string {
 /** 同時に出す添付の失敗の数。まとめて貼った画像が全部失敗しても、画面を埋めない */
 const MAX_UPLOAD_NOTICES = 5;
 
-/** 本文のリンクをクリックしても開けなかったときの案内。 */
+/**
+ * 本文のリンクをクリックしても開けなかったときの案内。無いページは title の URL の空のページへ移るので、
+ * missing は title の URL を作れない title（予約語、長すぎる title など）だけに出す。
+ */
 type LinkNotice = { kind: "missing"; title: string } | { kind: "error" };
 
 function useEditorSession(
@@ -337,7 +340,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         navigate(`${pageHrefFor(found.page)}${hash}`);
       }
     } else if (found.kind === "missing") {
-      setLinkNotice({ kind: "missing", title: link.target });
+      const path = missingPagePath(link.target);
+      if (path !== null) navigate(path);
+      else setLinkNotice({ kind: "missing", title: link.target });
     } else setLinkNotice({ kind: "error" });
   }
 
@@ -369,7 +374,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const rail = (
     <>
       <Outline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
-      {!uncreated && <Backlinks pageId={pageId} />}
+      {!uncreated && <Backlinks target={{ pageId }} />}
       {!uncreated && (
         <RailSection title="情報">
           <dl className="facts">

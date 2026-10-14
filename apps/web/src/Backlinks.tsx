@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "./Link";
 import { LoadingStatus, useSkeletonPainted } from "./Loading";
 import { rememberTitle } from "./page-titles";
-import { listBacklinks, type PageSummary } from "./pages-api";
+import { listBacklinks, listBacklinksByTitle, type PageSummary } from "./pages-api";
 import { RailSection } from "./Rail";
 import { pageHrefFor } from "./route";
 
@@ -27,17 +27,37 @@ function PendingLinks() {
 }
 
 /**
- * hideEmpty は、読み込み中とリンク元が 0 件のあいだ節ごと出さない。リンク元が無いことは読者にとって
- * 情報にならない。1 件以上あれば読み込みの後に節が現れ、取得に失敗したときは節を出して失敗を伝える。
- * owner には「ありません」を出し、リンクを張る手がかりにする。
+ * リンク先。ページがあれば id で引く（改題の後も付け替わったリンクを追う）。まだ無いページは
+ * リンクに書かれた title で引く。
  */
-export function Backlinks({ pageId, hideEmpty = false }: { pageId: string; hideEmpty?: boolean }) {
-  const [state, setState] = useState<State>({ status: "loading" });
+export type BacklinksTarget = { pageId: string } | { title: string };
 
+interface BacklinksProps {
+  target: BacklinksTarget;
+  /**
+   * 読み込み中とリンク元が 0 件のあいだ節ごと出さない。リンク元が無いことは読者にとって
+   * 情報にならない。1 件以上あれば読み込みの後に節が現れ、取得に失敗したときは節を出して失敗を伝える。
+   * owner には「ありません」を出し、リンクを張る手がかりにする。
+   */
+  hideEmpty?: boolean;
+  /** target ごとの最初の取得が済み（失敗も含む）、その結果を描いた後に呼ぶ。画面の高さが決まったことを伝える */
+  onSettled?: () => void;
+}
+
+const load = (target: BacklinksTarget, cursor: string | null) =>
+  "pageId" in target
+    ? listBacklinks(target.pageId, cursor)
+    : listBacklinksByTitle(target.title, cursor);
+
+export function Backlinks({ target, hideEmpty = false, onSettled }: BacklinksProps) {
+  const [state, setState] = useState<State>({ status: "loading" });
+  const targetKey = "pageId" in target ? `id:${target.pageId}` : `title:${target.title}`;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表す
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    void listBacklinks(pageId, null).then((res) => {
+    void load(target, null).then((res) => {
       if (cancelled) return;
       if (res.ok) {
         setState({
@@ -53,13 +73,22 @@ export function Backlinks({ pageId, hideEmpty = false }: { pageId: string; hideE
     return () => {
       cancelled = true;
     };
-  }, [pageId]);
+  }, [targetKey]);
+
+  const settledCallback = useRef(onSettled);
+  useEffect(() => {
+    settledCallback.current = onSettled;
+  });
+  const settled = state.status !== "loading";
+  useEffect(() => {
+    if (settled) settledCallback.current?.();
+  }, [settled]);
 
   async function loadMore() {
     if (state.status !== "ready" || state.next === null) return;
     const { pages, next } = state;
     setState({ ...state, loadingMore: true });
-    const res = await listBacklinks(pageId, next);
+    const res = await load(target, next);
     setState(
       res.ok
         ? {

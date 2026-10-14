@@ -356,12 +356,21 @@ describe("PageEditor の wikilink", () => {
     expect(document.querySelectorAll(".cm-wikilink-unresolved")).toHaveLength(0);
   });
 
-  it("無いページの link をクリックすると、作成の案内を出し、「作成して開く」で新規作成の画面へ移る", async () => {
+  it("無いページの link をクリックすると、案内を出さずに title の URL の空のページへ移る", async () => {
     vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
-    const { button } = renderPage({ ...PAGE, body: "[[無い]]" });
+    renderPage({ ...PAGE, body: "[[無い]]" });
     clickLink("無い");
+    await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
+    expect(container?.textContent).not.toContain("まだありません");
+    expect(createPage).not.toHaveBeenCalled();
+  });
+
+  it("title の URL にできない無いページの link は、作成の案内を出し、「作成して開く」で新規作成の画面へ移る", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
+    const { button } = renderPage({ ...PAGE, body: "[[api]]" });
+    clickLink("api");
     await vi.waitFor(() =>
-      expect(container?.textContent).toContain("「無い」のページはまだありません"),
+      expect(container?.textContent).toContain("「api」のページはまだありません"),
     );
     expect(location.pathname).toBe(new URL(startUrl).pathname);
 
@@ -398,9 +407,7 @@ describe("PageEditor の wikilink", () => {
       expect(resolvePages).toHaveBeenCalledTimes(2);
 
       await act(async () => answer(ok([null])));
-      await vi.waitFor(() =>
-        expect(container?.textContent).toContain("「無い」のページはまだありません"),
-      );
+      await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
       expect(container?.querySelector(".note-leaving")).toBeNull();
       expect(container?.textContent).not.toContain("を開いています…");
     } finally {

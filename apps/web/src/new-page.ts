@@ -74,6 +74,7 @@ export function registerNewPageScreen(keep: KeepScreen): () => void {
 /**
  * 新規作成の画面を開く。title を渡すと本文に、渡さなければ title 欄にカーソルを置く。
  * `/?new` から開き直すときは履歴を置き換え、戻るで同じ `/?new` を何度もたどらせない。
+ * replace を渡すと、今の画面の履歴を置き換える。作った後に戻ると、その画面の 1 つ前へ戻る。
  *
  * `/?new` で title なしに開き直すときは、表示中の画面が引き受ければ（内容があるとき）開き直さない。
  * 開き直すと、閉じた画面の内容を次の画面が復元の案内に出し、title 欄にカーソルが入らない。
@@ -82,8 +83,8 @@ export function registerNewPageScreen(keep: KeepScreen): () => void {
  * キーボードを出すので、flushSync で画面と editor の mount（autoFocus）までを
  * この呼び出しの中で済ませる。
  */
-export function openNewPage(options: { title?: string } = {}): void {
-  const replace = onNewPageRoute();
+export function openNewPage(options: { title?: string; replace?: boolean } = {}): void {
+  const replace = options.replace === true || onNewPageRoute();
   if (replace && !options.title && keepScreen?.() === true) return;
   flushSync(() => {
     publish({ serial: current.serial + 1, title: options.title ?? "" });

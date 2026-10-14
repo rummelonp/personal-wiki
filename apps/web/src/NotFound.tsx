@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Backlinks } from "./Backlinks";
 import { setDocumentTitle } from "./document-title";
 import { EmptyState } from "./EmptyState";
 import { Link } from "./Link";
@@ -6,24 +7,13 @@ import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
 import { homeHref } from "./route";
 
-interface NotFoundProps {
-  /**
-   * owner が URL の title を開いたときの、その title。渡すと作成の導線を出す。
-   * 匿名には渡さない。「ありません」と「見えません」を文で分けると、draft の存在を推測できる。
-   */
-  creatableTitle?: string;
-}
-
 /**
- * ページが無いときの表示。ページの URL の形でないパス、存在しないページ、匿名から見た draft の
- * title を同じ文で出す。匿名に draft の存在を推測させないよう、理由で文を分けない。
- * owner は draft も含めて全ページを読めるので、title の URL に限って「まだありません」と作成の導線を出す。
+ * ページの URL の形でないパスと、id の URL で見つからないページの表示。title の URL は MissingPage が受け持つ。
  */
-export function NotFound({ creatableTitle }: NotFoundProps) {
+export function NotFound() {
   useEffect(() => {
     setDocumentTitle(null);
   }, []);
-  if (creatableTitle !== undefined) return <Creatable title={creatableTitle} />;
   return (
     <RailLayout rail={null}>
       <EmptyState
@@ -40,28 +30,45 @@ export function NotFound({ creatableTitle }: NotFoundProps) {
   );
 }
 
-function Creatable({ title }: { title: string }) {
+interface MissingPageProps {
+  title: string;
+  /** owner なら作成の導線を出す */
+  owner: boolean;
+  /** 被リンクの最初の取得が済み、画面の高さが決まったときに呼ぶ */
+  onSettled: () => void;
+}
+
+/**
+ * title の URL で開いたページが無いときの、空のページ。title と、その title へリンクしているページを
+ * 通常のページと同じ位置に出し、リンク元から辿れるようにする。
+ * 匿名には draft の title も同じ画面と文で出す。「ありません」と「見えません」を文で分けると、
+ * draft の存在を推測できる。被リンクも API がどちらでも同じ public のリンク元を返す。
+ * owner は draft も含めて全ページを読めるので、「まだありません」と作成の導線を出す。
+ */
+export function MissingPage({ title, owner, onSettled }: MissingPageProps) {
   return (
-    <RailLayout rail={null}>
-      <EmptyState
-        level={1}
-        title={`「${title}」はまだありません`}
-        text="このタイトルで作成すると、下書きのページができます。"
-        actions={
+    // 空のページでは欄が本文の代わりになり、リンク元が 0 件であること自体が情報になるので、hideEmpty を渡さない
+    <RailLayout rail={<Backlinks target={{ title }} onSettled={onSettled} />}>
+      <section className="note">
+        <h1 className="note-title">{title}</h1>
+        {owner ? (
           <>
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => openNewPage({ title })}
-            >
-              このタイトルで作成
-            </button>
-            <Link className="button" href={homeHref()}>
-              最近の更新へ戻る
-            </Link>
+            <p className="empty-text">まだありません。作成すると下書きのページができます。</p>
+            <div className="actions">
+              <button
+                type="button"
+                className="button button-primary"
+                // 履歴に title の URL を残すと、作った後に戻ったとき作ったページが開き直され、戻るが空振りする
+                onClick={() => openNewPage({ title, replace: true })}
+              >
+                このタイトルで作成
+              </button>
+            </div>
           </>
-        }
-      />
+        ) : (
+          <p className="empty-text">まだ作られていないか、公開されていないページです。</p>
+        )}
+      </section>
     </RailLayout>
   );
 }

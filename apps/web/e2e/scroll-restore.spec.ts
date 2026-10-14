@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { bodyEditor, expect, test } from "./support/fixtures";
+import { bodyEditor, expect, test, uniqueTitle } from "./support/fixtures";
 import { SEED } from "./support/seed";
 
 /*
@@ -203,4 +203,34 @@ test("長いページから wikilink で別のページへ移って戻ると、�
   await expect(bodyEditor(page)).toBeVisible();
   await expect.poll(() => scrollY(page)).toBeGreaterThan(before - TOLERANCE);
   await expect.poll(() => scrollY(page)).toBeLessThan(before + TOLERANCE);
+});
+
+test("空のページのリンク元からページを開いて戻ると、リンク元が届いてから位置が戻る", async ({
+  page,
+  api,
+}, testInfo) => {
+  // リンク元は狭い画面で本文の下に並ぶ。最初の 1 回で取れる 20 件で、スクロールできる高さにする
+  await page.setViewportSize({ width: 375, height: 500 });
+  const missing = uniqueTitle(testInfo, "まだ無い題");
+  for (let i = 0; i < 20; i++) {
+    await api.createPage({ title: uniqueTitle(testInfo, `リンク元 ${i}`), body: `[[${missing}]]` });
+  }
+  const links = page.locator(".rail-section-links .rail-list a");
+  await page.goto(`/${encodeURIComponent(missing)}`);
+  await expect(links).toHaveCount(20);
+  const target = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight - 50,
+  );
+  expect(target, "リンク元でスクロールできる長さ").toBeGreaterThan(200);
+  await page.evaluate((y) => window.scrollTo(0, y), target);
+  await expect.poll(() => scrollY(page)).toBe(target);
+  const missingUrl = page.url();
+  await openVisibleEntry(page, ".rail-section-links .rail-list a");
+  await expect(page.locator(".title-input")).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(missingUrl);
+  await expect(links).toHaveCount(20);
+  await expect.poll(() => scrollY(page)).toBeGreaterThan(target - TOLERANCE);
+  await expect.poll(() => scrollY(page)).toBeLessThan(target + TOLERANCE);
 });

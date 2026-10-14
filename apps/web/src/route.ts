@@ -1,5 +1,11 @@
-import { canonicalPagePath, pageIdPath, parsePagePath } from "@personal-wiki/domain/page-path";
+import {
+  canonicalPagePath,
+  pageIdPath,
+  parsePagePath,
+  titlePath,
+} from "@personal-wiki/domain/page-path";
 import { useSyncExternalStore } from "react";
+import { canResolveTitle } from "./pages-api";
 import { rememberScroll, stateForReplace } from "./scroll-restore";
 
 /**
@@ -42,6 +48,14 @@ export const pageHref = pageIdPath;
  * Worker の canonical と同じ URL にし、匿名に渡る URL と履歴を 1 つにそろえる。
  */
 export const pageHrefFor = canonicalPagePath;
+
+/**
+ * まだ無いページへのリンクの行き先（title の URL の空のページ）。予約語と重なるなど title の URL に
+ * できない title と、長すぎて存在しえない（問い合わせられない）title は null。
+ */
+export function missingPagePath(title: string): string | null {
+  return canResolveTitle(title) ? titlePath(title) : null;
+}
 
 const NAVIGATE_EVENT = "personal-wiki:navigate";
 

@@ -4,6 +4,7 @@ import {
   deletePage,
   getPage,
   listBacklinks,
+  listBacklinksByTitle,
   listPageTitles,
   listRecent,
   listTags,
@@ -296,6 +297,27 @@ describe("一覧と検索", () => {
       }),
     );
     expect(await listBacklinks(ID, null, fetchFn)).toMatchObject({ ok: true });
+  });
+
+  it("title の被リンクは title と cursor をクエリで送る", async () => {
+    const { calls, fetchFn } = recorder(() =>
+      Response.json({
+        pages: [{ id: ID, title: "題", visibility: "public", updatedAt: 1 }],
+        nextCursor: "1.x",
+      }),
+    );
+    expect(await listBacklinksByTitle("a/b #c", null, fetchFn)).toEqual({
+      ok: true,
+      value: {
+        pages: [{ id: ID, title: "題", visibility: "public", updatedAt: 1 }],
+        nextCursor: "1.x",
+      },
+    });
+    expect(await listBacklinksByTitle("Ruby", "1.x", fetchFn)).toMatchObject({ ok: true });
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/pages/by-title/backlinks?title=a%2Fb%20%23c",
+      "/api/pages/by-title/backlinks?title=Ruby&cursor=1.x",
+    ]);
   });
 
   it("タグの一覧を読む", async () => {

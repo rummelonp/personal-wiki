@@ -3,11 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Backlinks } from "./Backlinks";
 import { setLoadingDelay } from "./Loading";
-import { type ApiResult, listBacklinks } from "./pages-api";
+import { type ApiResult, listBacklinks, listBacklinksByTitle } from "./pages-api";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
-  return { ...actual, listBacklinks: vi.fn() };
+  return { ...actual, listBacklinks: vi.fn(), listBacklinksByTitle: vi.fn() };
 });
 
 const ok = <T,>(value: T): ApiResult<T> => ({ ok: true, value });
@@ -39,7 +39,7 @@ async function mount(hideEmpty: boolean) {
   document.body.append(container);
   root = createRoot(container);
   await act(async () =>
-    root?.render(<Backlinks pageId="AAAAAAAAAAAAAAAAAAAAAA" hideEmpty={hideEmpty} />),
+    root?.render(<Backlinks target={{ pageId: "AAAAAAAAAAAAAAAAAAAAAA" }} hideEmpty={hideEmpty} />),
   );
 }
 
@@ -70,5 +70,36 @@ describe("Backlinks の取得中", () => {
       expect(container?.querySelector(".rail-list a")?.textContent).toBe("元"),
     );
     expect(container?.querySelector(".skeleton-links")).toBeNull();
+  });
+});
+
+describe("Backlinks の title での取得", () => {
+  async function mountTitle(onSettled: () => void) {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(<Backlinks target={{ title: "Ruby" }} onSettled={onSettled} />),
+    );
+  }
+
+  it("title で引き、届いた後に onSettled を 1 回呼び、0 件なら「ありません」と出す", async () => {
+    vi.mocked(listBacklinksByTitle).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    const onSettled = vi.fn();
+    await mountTitle(onSettled);
+    await vi.waitFor(() =>
+      expect(container?.querySelector(".muted")?.textContent).toBe("ありません。"),
+    );
+    expect(listBacklinksByTitle).toHaveBeenCalledWith("Ruby", null);
+    expect(listBacklinks).not.toHaveBeenCalled();
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it("取得中は onSettled を呼ばない", async () => {
+    vi.mocked(listBacklinksByTitle).mockReturnValue(new Promise(() => {}));
+    const onSettled = vi.fn();
+    await mountTitle(onSettled);
+    expect(container?.querySelector(".skeleton-links")).not.toBeNull();
+    expect(onSettled).not.toHaveBeenCalled();
   });
 });

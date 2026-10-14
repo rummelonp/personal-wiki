@@ -13,7 +13,7 @@ import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import type { Page } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { navigate, pageHrefFor, tagHref } from "./route";
+import { missingPagePath, navigate, pageHrefFor, tagHref } from "./route";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
@@ -29,7 +29,10 @@ interface PageReaderProps {
   onShown?: (page: Pick<Page, "id" | "title" | "visibility">) => void;
 }
 
-/** 本文のリンクをクリックしても開けなかったときの案内。 */
+/**
+ * 本文のリンクをクリックしても開けなかったときの案内。無いページは title の URL の空のページへ移るので、
+ * missing は title の URL を作れない title（予約語、長すぎる title など）だけに出す。
+ */
 type LinkNotice = { kind: "missing"; title: string } | { kind: "error" };
 
 /**
@@ -101,8 +104,11 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
       const hash = hashOfLink(link);
       if (found.page.id === page.id && hash !== "") goTo(hash);
       else navigate(`${pageHrefFor(found.page)}${hash}`);
-    } else if (found.kind === "missing") setLinkNotice({ kind: "missing", title: link.target });
-    else setLinkNotice({ kind: "error" });
+    } else if (found.kind === "missing") {
+      const path = missingPagePath(link.target);
+      if (path !== null) navigate(path);
+      else setLinkNotice({ kind: "missing", title: link.target });
+    } else setLinkNotice({ kind: "error" });
   }
 
   const rail = (
@@ -121,7 +127,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
           </ul>
         </RailSection>
       )}
-      <Backlinks pageId={page.id} hideEmpty />
+      <Backlinks target={{ pageId: page.id }} hideEmpty />
       <RailSection title="情報">
         <dl className="facts">
           <dt>更新</dt>

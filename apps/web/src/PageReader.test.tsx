@@ -219,9 +219,7 @@ describe("PageReader", () => {
       expect(asked()).toBe(before);
 
       await act(async () => answer({ ok: false, reason: "not_found" }));
-      await vi.waitFor(() =>
-        expect(container?.textContent).toContain("「無い」のページはありません"),
-      );
+      await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
       expect(container?.querySelector(".note-leaving")).toBeNull();
       expect(container?.textContent).not.toContain("を開いています…");
     } finally {
@@ -229,16 +227,45 @@ describe("PageReader", () => {
     }
   });
 
-  it("開けない link は「ページはありません」とだけ出し、作成の操作を出さない", async () => {
+  it("開けない link は、案内を出さずに title の URL の空のページへ移る", async () => {
     renderReader();
     await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
     await flushAsync();
     clickLink("無い");
-    await vi.waitFor(() =>
-      expect(container?.textContent).toContain("「無い」のページはありません"),
-    );
+    await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
+    expect(container?.textContent).not.toContain("ページはありません");
+    expect(createPage).not.toHaveBeenCalled();
+  });
+
+  it("title の URL にできない開けない link は「ページはありません」とだけ出し、作成の操作を出さない", async () => {
+    renderReader({ ...PAGE, body: "[[api]]" });
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+    await flushAsync();
+    clickLink("api");
+    await vi.waitFor(() => expect(container?.textContent).toContain("「api」のページはありません"));
     expect(container?.textContent).not.toContain("下書き");
     expect(buttonTexts()).toEqual(["閉じる"]);
+    expect(location.pathname).toBe(new URL(startUrl).pathname);
+    expect(createPage).not.toHaveBeenCalled();
+  });
+
+  it("見出し付きの開けない link は、見出しを捨てて title の URL の空のページへ移る", async () => {
+    renderReader({ ...PAGE, body: "[[無い#見出し]]" });
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+    await flushAsync();
+    clickLink("無い#見出し");
+    await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
+    expect(location.hash).toBe("");
+  });
+
+  it("保存できる長さを超える title への link は、空のページへ移らず「ページはありません」を出す", async () => {
+    const long = "あ".repeat(800);
+    renderReader({ ...PAGE, body: `[[${long}]]` });
+    await flushAsync();
+    clickLink(long);
+    await vi.waitFor(() =>
+      expect(container?.textContent).toContain(`「${long}」のページはありません`),
+    );
     expect(location.pathname).toBe(new URL(startUrl).pathname);
     expect(createPage).not.toHaveBeenCalled();
   });

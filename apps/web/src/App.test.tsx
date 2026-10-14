@@ -13,6 +13,7 @@ import {
   findPageByTitle,
   getPage,
   listBacklinks,
+  listBacklinksByTitle,
   listPageTitles,
   listRecent,
   listTags,
@@ -39,6 +40,7 @@ vi.mock("./pages-api", async (importOriginal) => {
     deletePage: vi.fn(),
     findPageByTitle: vi.fn(),
     listBacklinks: vi.fn(),
+    listBacklinksByTitle: vi.fn(),
     listPageTitles: vi.fn(),
     resolvePages: vi.fn(),
     createPage: vi.fn(),
@@ -81,6 +83,7 @@ let container: HTMLElement | null = null;
 
 beforeEach(() => {
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+  vi.mocked(listBacklinksByTitle).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
   vi.mocked(stepLinkRewrites).mockResolvedValue({
@@ -162,6 +165,15 @@ function serve(
   );
   vi.mocked(listTags).mockImplementation(async () =>
     ok(listed().map((page) => ({ tag: tagOf(page), count: 1 }))),
+  );
+  // リンク先の有無を見ず、読めるリンク元だけを返す
+  vi.mocked(listBacklinksByTitle).mockImplementation(async (title) =>
+    ok({
+      pages: listed()
+        .filter((page) => page.body.includes(`[[${title}]]`))
+        .map(({ id, title, visibility, updatedAt }) => ({ id, title, visibility, updatedAt })),
+      nextCursor: null,
+    }),
   );
 }
 
@@ -307,24 +319,66 @@ describe("App の匿名の画面", () => {
     expect(getPage).toHaveBeenCalledTimes(1);
   });
 
-  it("title で引いた draft と存在しないページで同じ 404 を出す", async () => {
-    serve("anonymous", [PUBLIC, DRAFT]);
+  it("title で引いた draft と存在しないページで同じ空のページを出し、public の被リンクだけを出す", async () => {
+    const linker: Page = {
+      ...PUBLIC,
+      id: "LLLLLLLLLLLLLLLLLLLLLL",
+      title: "リンク元",
+      body: `[[${DRAFT.title}]] [[存在しない題]]`,
+    };
+    const hiddenLinker: Page = {
+      ...DRAFT,
+      id: "HHHHHHHHHHHHHHHHHHHHHH",
+      title: "隠れたリンク元",
+      body: linker.body,
+    };
+    serve("anonymous", [PUBLIC, DRAFT, linker, hiddenLinker]);
     const shown: string[] = [];
-    for (const path of [
-      titleUrl(DRAFT.title),
-      titleUrl("存在しない題"),
-      "/p/ZZZZZZZZZZZZZZZZZZZZZZ",
-    ]) {
-      await renderAt(path);
-      await vi.waitFor(() => expect(main()?.textContent).toContain("ページが見つかりません"));
-      shown.push(main()?.innerHTML ?? "");
-      expect(document.title).toBe("personal-wiki");
+    for (const title of [DRAFT.title, "存在しない題"]) {
+      await renderAt(titleUrl(title));
+      await vi.waitFor(() =>
+        expect(main()?.querySelector(".rail-list")?.textContent).toBe(linker.title),
+      );
+      expect(main()?.querySelector("h1")?.textContent).toBe(title);
+      expect(main()?.querySelectorAll("button")).toHaveLength(0);
+      expect(document.title).toBe(`${title} - personal-wiki`);
+      shown.push((main()?.innerHTML ?? "").replaceAll(title, "<title>"));
       act(() => root?.unmount());
       container?.remove();
       root = null;
     }
     expect(new Set(shown).size).toBe(1);
     expect(shown[0]).not.toContain("下書き");
+    expect(shown[0]).not.toContain(hiddenLinker.title);
+  });
+
+  it("id の URL で見つからないページは「ページが見つかりません」を出す", async () => {
+    serve("anonymous", [PUBLIC, DRAFT]);
+    await renderAt("/p/ZZZZZZZZZZZZZZZZZZZZZZ");
+    await vi.waitFor(() => expect(main()?.textContent).toContain("ページが見つかりません"));
+    expect(document.title).toBe("personal-wiki");
+    expect(listBacklinksByTitle).not.toHaveBeenCalled();
+  });
+
+  it("無いページへの link を押すと空のページへ移り、そのリンク元から戻れる", async () => {
+    const linker: Page = { ...PUBLIC, body: "[[まだ無い題]]" };
+    serve("anonymous", [linker]);
+    await renderAt(titleUrl(linker.title));
+    const link = await vi.waitFor(() => {
+      const found = main()?.querySelector(".cm-wikilink");
+      expect(found?.textContent).toBe("まだ無い題");
+      return found as Element;
+    });
+    act(() => {
+      link.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+    await vi.waitFor(() => expect(location.pathname).toBe(titleUrl("まだ無い題")));
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(".rail-list")?.textContent).toBe(linker.title),
+    );
+    expect(main()?.querySelector("h1")?.textContent).toBe("まだ無い題");
   });
 
   it("quick switcher には公開ページの title だけが出て、打った title の「作成」の行は出ない", async () => {
@@ -572,11 +626,8 @@ describe("App の owner の画面", () => {
     it("存在しない title の画面で作成すると、その操作の中で本文にフォーカスして作る", async () => {
       serveCreating();
       await renderAt(titleUrl(created.title));
-      await vi.waitFor(() =>
-        expect(main()?.querySelector("h1")?.textContent).toBe(
-          `「${created.title}」はまだありません`,
-        ),
-      );
+      await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe(created.title));
+      expect(main()?.textContent).toContain("まだありません");
       clickCreateOnNotFound();
       expect(here()).toBe("/?new");
       expect(document.activeElement).toBe(bodyContent());
@@ -584,6 +635,19 @@ describe("App の owner の画面", () => {
       await createdShown();
       expect(createPage).toHaveBeenCalledWith({ title: created.title, body: "" });
       expect(document.activeElement).toBe(bodyContent());
+    });
+
+    it("空のページで作った後に戻ると、空のページを経ずにその前の画面へ戻る", async () => {
+      serveCreating();
+      await renderAt(`/p/${DRAFT.id}`);
+      await vi.waitFor(() => expect(titleText()).toBe(DRAFT.title));
+      act(() => navigate(titleUrl(created.title)));
+      await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe(created.title));
+      clickCreateOnNotFound();
+      await createdShown();
+      act(() => history.back());
+      await vi.waitFor(() => expect(here()).toBe(`/p/${DRAFT.id}`));
+      await vi.waitFor(() => expect(titleText()).toBe(DRAFT.title));
     });
 
     it("quick switcher の「作成」で作ると、閉じた後の本文にフォーカスがある", async () => {
@@ -781,6 +845,28 @@ describe("App の owner の画面", () => {
       expect(main()?.querySelector(".cm-editor")).toBeNull();
       expect(createPage).not.toHaveBeenCalled();
     });
+  });
+
+  it("owner の空のページは、draft を含むリンク元と作成の導線を出す", async () => {
+    const linker: Page = { ...PUBLIC, id: "LLLLLLLLLLLLLLLLLLLLLL", body: "[[まだ無い題]]" };
+    const draftLinker: Page = {
+      ...DRAFT,
+      id: "HHHHHHHHHHHHHHHHHHHHHH",
+      title: "下書きのリンク元",
+      body: "[[まだ無い題]]",
+    };
+    serve("owner", [linker, draftLinker]);
+    await renderAt(titleUrl("まだ無い題"));
+    await vi.waitFor(() =>
+      expect(
+        [...(main()?.querySelectorAll(".rail-list a") ?? [])].map((a) => a.textContent).sort(),
+      ).toEqual([draftLinker.title, linker.title].sort()),
+    );
+    expect(main()?.querySelector("h1")?.textContent).toBe("まだ無い題");
+    expect(main()?.textContent).toContain("作成すると下書きのページができます");
+    expect([...(main()?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
+      "このタイトルで作成",
+    ]);
   });
 
   it("id の URL で見つからないときは、作成の導線を出さない", async () => {
