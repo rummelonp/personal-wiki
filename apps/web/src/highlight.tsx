@@ -1,3 +1,4 @@
+import { caseFold } from "@personal-wiki/domain/title";
 import { Fragment, type ReactNode } from "react";
 
 export interface TextSegment {
@@ -9,37 +10,47 @@ interface Unit {
   /** text の中の範囲（UTF-16） */
   start: number;
   end: number;
-  /** 検索と同じ NFKC に畳み、大文字小文字をそろえた文字列 */
+  /** NFKC に畳み、title の比較（foldTitle）と同じ case fold をかけた文字列 */
   folded: string;
 }
 
-/** 基底の文字とそれに続く結合文字を 1 つにする。NFKC で合成される組（か + 濁点など）を分けないため。 */
+const nfkc = (text: string) => text.normalize("NFKC");
+
+/**
+ * 前の文字と NFKC で合成される文字を、前の文字と 1 つにする（か + 結合濁点、半角の「ｶ」+「ﾞ」、分解された Hangul の字母）。
+ * 半角の濁点 U+FF9E は一般カテゴリが Lm で結合文字（\p{M}）に当たらないので、合成の有無で判定する。
+ * 分けると、畳んだ「が」の位置を元の文字の範囲に戻せず、強調が外れる。
+ */
 function unitsOf(text: string): Unit[] {
   const units: Unit[] = [];
   let offset = 0;
   for (const char of text) {
     const end = offset + char.length;
     const last = units.at(-1);
-    if (last !== undefined && /^\p{M}/u.test(char)) last.end = end;
-    else units.push({ start: offset, end, folded: "" });
+    if (
+      last !== undefined &&
+      nfkc(text.slice(last.start, end)) !== nfkc(text.slice(last.start, offset)) + nfkc(char)
+    ) {
+      last.end = end;
+    } else units.push({ start: offset, end, folded: "" });
     offset = end;
   }
   for (const unit of units) {
-    unit.folded = text.slice(unit.start, unit.end).normalize("NFKC").toLowerCase();
+    unit.folded = caseFold(nfkc(text.slice(unit.start, unit.end)));
   }
   return units;
 }
 
 /** 語は空白を含めて文字どおりに当てる。検索 API の trigram も、空白を含む語を 1 つの並びとして照合する。 */
 function foldNeedles(needles: readonly string[]): string[] {
-  return needles
-    .map((needle) => needle.normalize("NFKC").toLowerCase().trim())
-    .filter((needle) => needle !== "");
+  return needles.map((needle) => caseFold(nfkc(needle)).trim()).filter((needle) => needle !== "");
 }
 
 /**
  * text を、needles のどれかに当たる部分とそれ以外に分ける。
- * 検索 API と同じく、大文字小文字を区別せず、全角英数や半角カナは NFKC で畳んで比べる。
+ * 大文字小文字を区別せず、全角英数や半角カナは NFKC で畳んで比べる。
+ * case fold は title の比較（foldTitle）と同じ規則で、quick switcher の絞り込みと一致箇所がずれない。
+ * 検索 API は ß や ς を畳まないので、検索結果ではそれらの語だけ API の一致より広く塗ることがある。
  * 畳むと長さが変わる文字があるので、畳んだ文字列での位置を元の文字の範囲に戻して切る。
  */
 export function splitMatches(text: string, needles: readonly string[]): TextSegment[] {

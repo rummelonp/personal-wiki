@@ -39,6 +39,23 @@ describe("splitMatches", () => {
     expect(marked("がき", ["が"])).toEqual(["が"]);
   });
 
+  it("半角カナの濁点・半濁点を前の文字と分けず、全角の語にも半角の語にも当てる", () => {
+    expect(marked("ｶﾞｲﾄﾞ と ﾊﾟｰﾄ", ["ガイド"])).toEqual(["ｶﾞｲﾄﾞ"]);
+    expect(marked("ｶﾞｲﾄﾞ と ﾊﾟｰﾄ", ["パート"])).toEqual(["ﾊﾟｰﾄ"]);
+    expect(marked("ｶﾞｲﾄﾞ と ﾊﾟｰﾄ", ["ｶﾞｲﾄﾞ", "ﾊﾟｰﾄ"])).toEqual(["ｶﾞｲﾄﾞ", "ﾊﾟｰﾄ"]);
+    expect(marked("ﾊﾟｰﾄ", ["ﾊﾟ"])).toEqual(["ﾊﾟ"]);
+  });
+
+  it("分解された Hangul の字母を 1 文字として当てる", () => {
+    const decomposed = "\u1100\u1161"; // 가
+    expect(marked(`a${decomposed}b`, ["가"])).toEqual([decomposed]);
+    expect(marked("가", [decomposed])).toEqual(["가"]);
+  });
+
+  it("title の比較と同じ case fold で、語末の Σ や ß を当てる", () => {
+    expect(marked("ΑΣ と Straße", ["ασ", "strasse"])).toEqual(["ΑΣ", "Straße"]);
+  });
+
   it("空白を含む語は、空白を含めた並びとして当てる", () => {
     expect(marked("foo bar と foo と bar", ["foo bar"])).toEqual(["foo bar"]);
     expect(marked("foo  bar", ["foo bar"])).toEqual([]);
