@@ -26,8 +26,13 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   // 検索 API に tag の絞り込みは無いので、検索中は tag を一覧の取得にも強調にも使わない
   const effectiveTag = searching ? "" : tag;
   const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
-  const tags = useTags();
-  useRestoreScroll(state.status === "ready", state.status === "ready" ? state.entries.length : 0);
+  const { tags, settled: tagsSettled } = useTags();
+  // 狭い画面ではタグが一覧の下に続き、描かれる前は戻す位置に届かないので、タグが済むまで待つ
+  useRestoreScroll(
+    state.status === "ready",
+    state.status === "ready" ? state.entries.length : 0,
+    tagsSettled,
+  );
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
   const [creating, setCreating] = useState(false);

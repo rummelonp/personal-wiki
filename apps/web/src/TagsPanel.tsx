@@ -5,21 +5,25 @@ import { RailSection } from "./Rail";
 import { tagHref } from "./route";
 
 /**
- * タグの一覧。null は「出さない」を表す（読み込み中、または API がまだタグを返せない）。
+ * タグの一覧。tags が null は「出さない」を表す（読み込み中、または API がまだタグを返せない）。
  * 取得に失敗しても一覧の邪魔にならないよう、エラーは表に出さない。
+ * settled は取得の成否が決まったことを表す（失敗でも true）。画面の高さが決まるのを待つ側が使う。
  */
-export function useTags(): TagCount[] | null {
-  const [tags, setTags] = useState<TagCount[] | null>(null);
+export function useTags(): { tags: TagCount[] | null; settled: boolean } {
+  const [result, setResult] = useState<{ tags: TagCount[] | null; settled: boolean }>({
+    tags: null,
+    settled: false,
+  });
   useEffect(() => {
     let cancelled = false;
     void listTags().then((res) => {
-      if (!cancelled) setTags(res.ok ? res.value : null);
+      if (!cancelled) setResult({ tags: res.ok ? res.value : null, settled: true });
     });
     return () => {
       cancelled = true;
     };
   }, []);
-  return tags;
+  return result;
 }
 
 export function TagsPanel({ tags, active }: { tags: TagCount[]; active: string }) {

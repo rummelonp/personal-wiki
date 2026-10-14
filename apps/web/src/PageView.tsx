@@ -7,6 +7,7 @@ import { PageReader } from "./PageReader";
 import { failureMessage, findPageByTitle, getPage, type Page, type PageSummary } from "./pages-api";
 import { navigate, pageHrefFor } from "./route";
 import { SignInNotice } from "./SignInNotice";
+import { useRestoreScrollAfterMount } from "./scroll-restore";
 
 /** ページの URL が指すもの。`/p/<id>` は id、`/<title>` は title で引く。 */
 export type PageTarget = { by: "id"; id: string } | { by: "title"; title: string };
@@ -44,6 +45,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   /** 取得の応答を待っている id。作成直後の focus の印を、編集の画面が受け取らずに終わったとき消すのに使う */
   const pendingId = useRef<string | null>(null);
   const targetKey = target.by === "id" ? `id:${target.id}` : `title:${target.title}`;
+  useRestoreScrollAfterMount(state.status === "ready");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表す
   useEffect(() => {

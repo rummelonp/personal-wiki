@@ -54,7 +54,8 @@ export function InlineOutline({ items, onJump }: OutlineProps) {
     onJump(offset);
     // 押した見出しのボタンは畳んで見えなくなり、focus が失われて、キーボードの利用者が位置を失う。
     // ブラウザが focus を外す前でも、畳んだ中のボタンに残っているものは失われたものとして扱う。
-    // 移った先の本文が focus を取っていればそれに任せ、取っていないときだけ summary に戻す。
+    // jumpTo は focus を取らない契約なので、通常は summary に戻る。focus が目次の外の要素に在る
+    // （将来の jumpTo が取った、など）ときは、それを奪わない防御として条件を置いている。
     // 戻すときにスクロールすると、移った先から目次へ引き戻される。
     requestAnimationFrame(() => {
       const active = document.activeElement;

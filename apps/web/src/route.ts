@@ -45,9 +45,9 @@ const NAVIGATE_EVENT = "personal-wiki:navigate";
  * 履歴に積む遷移でパスかクエリが変わるときは、先頭までスクロールを戻す。SPA の遷移はブラウザの
  * 読み込みと違い、前の画面のスクロール位置が残る（入力欄の focus でずれた位置も残り、移った先が
  * 先頭を通り過ぎて表示される）。hash だけの変化と置き換えは同じ画面の中の移動なので戻さない。
- * 戻る・進む（popstate）の位置はブラウザの復元に任せる。ただし一覧は取り直す間に短くなって復元が 0 に
- * 丸められるので、離れる直前の位置を履歴のエントリに書き、一覧が描かれた後に自分で戻す
- * （scroll-restore。その state を壊さないよう、置き換えでも state を引き継ぐ）。
+ * 戻る・進む（popstate）の位置は、一覧とページが取り直す間に短くなってブラウザの復元が 0 に丸められるので、
+ * 離れる直前の位置を履歴のエントリに書き、描かれた後に自分で戻す（scroll-restore。その state を壊さない
+ * よう、置き換えでも state を引き継ぐ）。
  * hash が指す位置へは、移った先が描画された後に use-fragment-jump が動かす。
  */
 export function navigate(href: string, options: { replace?: boolean } = {}): void {

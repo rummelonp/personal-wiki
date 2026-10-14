@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "./support/fixtures";
+import { bodyEditor, expect, test } from "./support/fixtures";
+import { SEED } from "./support/seed";
 
 /*
  * 一覧（タグで絞った一覧を含む）を途中までスクロールしてページを開き、戻ったとき、スクロール位置が
@@ -11,19 +12,22 @@ const TOLERANCE = 40;
 
 const scrollY = (page: Page) => page.evaluate(() => Math.round(window.scrollY));
 
-/** 画面内に見えている最初の行のタイトルを、座標のクリックで開く（クリックによるスクロールを避ける）。 */
-async function openVisibleEntry(page: Page): Promise<void> {
-  const point = await page.evaluate(() => {
+/**
+ * 画面内に見えている最初の行のタイトル（selector で変えられる）を、座標のクリックで開く
+ * （クリックによるスクロールを避ける）。
+ */
+async function openVisibleEntry(page: Page, selector = ".entries .entry-title"): Promise<void> {
+  const point = await page.evaluate((selector) => {
     const headerBottom =
       document.querySelector("header.header")?.getBoundingClientRect().bottom ?? 0;
-    for (const link of document.querySelectorAll(".entries .entry-title")) {
+    for (const link of document.querySelectorAll(selector)) {
       const rect = link.getBoundingClientRect();
       if (rect.top > headerBottom && rect.bottom < window.innerHeight) {
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       }
     }
     return null;
-  });
+  }, selector);
   expect(point, "画面内に見えている行がある").not.toBeNull();
   const { x, y } = point as { x: number; y: number };
   await page.mouse.click(x, y);
@@ -64,18 +68,17 @@ test("「さらに表示」で読み足した位置まで、戻るで戻る", as
   await expect.poll(() => page.locator(".entries .entry").count()).toBeGreaterThan(20);
   const loaded = await page.locator(".entries .entry").count();
 
-  // 狭い画面では一覧の下にタグの一覧が続き、戻った直後はまだ無いので、一覧の末尾が画面の下端に
-  // 来る位置を使う。ページの末尾を使うと、戻った直後の短いページでは届かない
-  const target = await page.evaluate(() => {
-    const bottom = document.querySelector(".entries")?.getBoundingClientRect().bottom ?? 0;
-    return Math.round(bottom + window.scrollY - window.innerHeight);
-  });
+  // ページの末尾まで動かす。狭い画面では末尾がタグの一覧なので、戻った直後にタグが描かれるまで
+  // 位置に届かない。そこで押せるのは行でもタグでもよい
+  const target = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight - 100,
+  );
   expect(target, "最初の 20 件だけでは届かない位置").toBeGreaterThan(SCROLL);
   await page.evaluate((y) => window.scrollTo(0, y), target);
   await expect.poll(() => scrollY(page)).toBe(target);
   const listUrl = page.url();
-  await openVisibleEntry(page);
-  await expect(page.locator("h1.note-title, .title-input").first()).toBeVisible();
+  await openVisibleEntry(page, ".entries .entry-title, .rail .chip-link:not([aria-current])");
+  await expect(page).not.toHaveURL(listUrl);
 
   await page.goBack();
   await expect(page).toHaveURL(listUrl);
@@ -109,4 +112,59 @@ test("戻る・進む・戻るの連鎖と再読み込みのあとも、位置�
   await expect(page.locator(".entries .entry").first()).toBeVisible();
   await expect.poll(() => scrollY(page)).toBeGreaterThan(SCROLL - TOLERANCE);
   await expect.poll(() => scrollY(page)).toBeLessThan(SCROLL + TOLERANCE);
+});
+
+test("一覧からタグで別の一覧へ移って戻ると、元の一覧の位置が戻る", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await page.evaluate((y) => window.scrollTo(0, y), SCROLL);
+  await expect.poll(() => scrollY(page)).toBe(SCROLL);
+
+  // 狭い画面ではタグが一覧の下に在るので、押す位置まで動かしたあとの位置を戻り先として測る
+  const chip = page.locator(".rail .chip-link:not([aria-current])").first();
+  await chip.scrollIntoViewIfNeeded();
+  const before = await scrollY(page);
+  await chip.click();
+  await expect(page).toHaveURL(/\?tag=/);
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await expect.poll(() => scrollY(page)).toBeGreaterThan(before - TOLERANCE);
+  await expect.poll(() => scrollY(page)).toBeLessThan(before + TOLERANCE);
+});
+
+test("長いページから wikilink で別のページへ移って戻ると、元のページの位置が戻る", async ({
+  page,
+  seedIds,
+}) => {
+  await page.goto(`/p/${seedIds[SEED.longPage]}`);
+  await expect(bodyEditor(page).getByText("見出し 1", { exact: true })).toBeVisible();
+  await page.evaluate((y) => window.scrollTo(0, y), 3000);
+  await expect.poll(() => scrollY(page)).toBe(3000);
+
+  // CodeMirror は画面の近くの行だけを描き、動かすたびに描く行が変わる。Playwright が押す前にもう一度
+  // 動かすことがあるので、戻り先は押した瞬間の位置を測る
+  const clickedAt = page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        document.addEventListener("mousedown", () => resolve(Math.round(window.scrollY)), {
+          capture: true,
+          once: true,
+        });
+      }),
+  );
+  const pageUrl = page.url();
+  await page.locator(".cm-wikilink").first().click();
+  const before = await clickedAt;
+  expect(before, "ページの途中").toBeGreaterThan(1000);
+  await expect(page).not.toHaveURL(pageUrl);
+  await expect(page.locator("h1.note-title, .title-input").first()).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(pageUrl);
+  await expect(bodyEditor(page)).toBeVisible();
+  await expect.poll(() => scrollY(page)).toBeGreaterThan(before - TOLERANCE);
+  await expect.poll(() => scrollY(page)).toBeLessThan(before + TOLERANCE);
 });
