@@ -96,16 +96,23 @@ async function waitForHealthy(child: ChildProcess, log: () => string): Promise<v
   throw new Error(`wrangler dev が 60 秒以内に応答しなかった\n${log()}`);
 }
 
-export async function startStack(): Promise<Stack> {
-  if (await portInUse(E2E_PORT)) {
-    throw new Error(`ポート ${E2E_PORT} が使用中。前の E2E のサーバーが残っていないか確かめる`);
+async function waitForPortsClosed(ports: number[]): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const open = [];
+    for (const port of ports) if (await portInUse(port)) open.push(port);
+    if (open.length === 0) return;
+    if (Date.now() > deadline) {
+      throw new Error(`E2E のサーバーを止めたあともポート ${open.join(", ")} が使用中`);
+    }
+    await new Promise((done) => setTimeout(done, 100));
   }
-  // 繰り返し実行するときにビルドを省く（web のソースを変えていないときだけ使う）
-  if (process.env.E2E_SKIP_BUILD !== "1") {
-    await run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR });
-  }
+}
 
-  const dir = mkdtempSync(join(tmpdir(), "personal-wiki-e2e-"));
+/** 一時ディレクトリに設定と秘密を書き、migration を当てて wrangler dev を起動する。 */
+async function launch(
+  dir: string,
+): Promise<{ child: ChildProcess; sessionSecret: string; log: () => string }> {
   const sessionSecret = randomBytes(32).toString("base64");
   const config = writeConfig(dir);
   const envFile = writeSecrets(dir, sessionSecret);
@@ -140,27 +147,71 @@ export async function startStack(): Promise<Stack> {
       "--log-level",
       "warn",
     ],
-    { cwd: dir, env: { ...process.env, CI: "1" }, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: dir,
+      env: { ...process.env, CI: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    },
   );
   const append = (chunk: Buffer) => {
     output = (output + chunk.toString()).slice(-20_000);
   };
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
+  return { child, sessionSecret, log: () => output };
+}
+
+export async function startStack(): Promise<Stack> {
+  if (await portInUse(E2E_PORT)) {
+    throw new Error(`ポート ${E2E_PORT} が使用中。前の E2E のサーバーが残っていないか確かめる`);
+  }
+  // 繰り返し実行するときにビルドを省く（web のソースを変えていないときだけ使う）
+  if (process.env.E2E_SKIP_BUILD !== "1") {
+    await run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR });
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), "personal-wiki-e2e-"));
+  let launched: { child: ChildProcess; sessionSecret: string; log: () => string };
+  try {
+    launched = await launch(dir);
+  } catch (error) {
+    // secrets.env を含む一時ディレクトリを残さない
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+  const { child, sessionSecret, log } = launched;
+
+  // wrangler は workerd を子に持つので、プロセスグループ（detached で作った）ごと止める。
+  // wrangler だけを止めると workerd が残り、8790 と 9339 を握ったままになることがある
+  const signalGroup = (signal: NodeJS.Signals) => {
+    try {
+      if (child.pid !== undefined) process.kill(-child.pid, signal);
+    } catch {
+      // すでに終わっている
+    }
+  };
+  // teardown を通らずに終わったとき（中断など）も残さない
+  const killOnExit = () => signalGroup("SIGKILL");
+  process.once("exit", killOnExit);
 
   const stop = async () => {
-    if (child.exitCode === null) {
+    process.off("exit", killOnExit);
+    if (child.exitCode === null && child.signalCode === null) {
       const exited = new Promise((done) => child.once("exit", done));
-      child.kill("SIGTERM");
-      const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+      signalGroup("SIGTERM");
+      const timer = setTimeout(() => signalGroup("SIGKILL"), 5000);
       await exited;
       clearTimeout(timer);
     }
+    // 子の workerd は wrangler より後に終わることがある
+    signalGroup("SIGKILL");
     rmSync(dir, { recursive: true, force: true });
+    await waitForPortsClosed([E2E_PORT, INSPECTOR_PORT]);
   };
 
   try {
-    await waitForHealthy(child, () => output);
+    await waitForHealthy(child, log);
   } catch (error) {
     await stop();
     throw error;
