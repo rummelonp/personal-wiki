@@ -12,6 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { BodyEditor, type BodyEditorHandle, type BodyEditorProps } from "./BodyEditor";
+import { NOTICE_DOCK_RESIZE } from "./notice-dock";
 import type { WikiLinkSources } from "./wiki-links";
 
 beforeAll(() => {
@@ -355,6 +356,106 @@ describe("jumpTo", () => {
     expect(v.state.selection.main.head).toBe(0);
     v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
     await vi.waitFor(() => expect(v.state.selection.main.head).toBe(7));
+  });
+});
+
+describe("通知の台", () => {
+  const DOCK_HEIGHT = 200;
+  const body = Array.from({ length: 120 }, (_, i) => `行 ${i}`).join("\n\n");
+  let dock: HTMLElement | null = null;
+
+  beforeEach(() => {
+    window.scrollTo(0, 0);
+  });
+
+  afterEach(() => {
+    dock?.remove();
+    dock = null;
+    window.scrollTo(0, 0);
+  });
+
+  function showDock() {
+    dock = document.createElement("div");
+    dock.className = "notice-dock";
+    dock.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:${DOCK_HEIGHT}px`;
+    dock.append(document.createElement("div"));
+    document.body.append(dock);
+    document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
+  }
+
+  /** 画面の下端の近く（台が出れば覆う位置）に見えている行の先頭 */
+  function offsetNearBottom(v: EditorView): number {
+    const target = window.innerHeight - DOCK_HEIGHT / 2;
+    let found = -1;
+    for (let line = 1; line <= v.state.doc.lines; line++) {
+      const from = v.state.doc.line(line).from;
+      const top = v.coordsAtPos(from)?.top;
+      if (top !== undefined && top >= target) {
+        found = from;
+        break;
+      }
+    }
+    expect(found).toBeGreaterThanOrEqual(0);
+    return found;
+  }
+
+  it("見えているカーソルの行が台に覆われたら、台の上へ逃がす", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    act(() => v.focus());
+    const at = offsetNearBottom(v);
+    v.dispatch({ selection: { anchor: at } });
+    showDock();
+    await vi.waitFor(() => {
+      const bottom = v.coordsAtPos(at)?.bottom ?? Number.NaN;
+      expect(bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT);
+    });
+  });
+
+  it("画面の外にあるカーソルの所へは、上の方を読んでいる人を引き戻さない", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    act(() => v.focus());
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    window.scrollTo(0, 0);
+    showDock();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(window.scrollY).toBe(0);
+  });
+
+  it("台に覆われない行のカーソルは動かさない", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    act(() => v.focus());
+    v.dispatch({ selection: { anchor: 0 } });
+    showDock();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(window.scrollY).toBe(0);
+  });
+
+  it("focus が無ければ動かさない", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    v.dispatch({ selection: { anchor: offsetNearBottom(v) } });
+    showDock();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(window.scrollY).toBe(0);
+  });
+
+  it("変換中は落ち着くまで待ち、doc と selection は変えない", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    act(() => v.focus());
+    const at = offsetNearBottom(v);
+    v.dispatch({ selection: { anchor: at } });
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    showDock();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(window.scrollY).toBe(0);
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(window.scrollY).toBeGreaterThan(0));
+    expect(v.state.doc.toString()).toBe(body);
+    expect(v.state.selection.main.head).toBe(at);
   });
 });
 

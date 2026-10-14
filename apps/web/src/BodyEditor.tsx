@@ -18,7 +18,7 @@ import {
 } from "@personal-wiki/editor";
 import { extractBlockIds, findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { NOTICE_DOCK_RESIZE } from "./notice-dock";
+import { NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 import type { PageFragment } from "./page-fragment";
 import { scrollBelowStickyHeader } from "./sticky-header";
 import type { WikiLinkSources } from "./wiki-links";
@@ -100,6 +100,14 @@ const settledKey = Symbol("whenSettled");
  */
 function leaveEditing(editor: EditorView): void {
   if (editor.hasFocus) editor.contentDOM.blur();
+}
+
+/** カーソルの行が、画面に見えていて、通知の台に重なっているか。描画の外（coords が無い）なら false。 */
+function caretUnderNoticeDock(editor: EditorView): boolean {
+  const dock = noticeDockRect();
+  const caret = editor.coordsAtPos(editor.state.selection.main.head);
+  if (dock === null || caret === null) return false;
+  return caret.bottom > dock.top && caret.top < dock.bottom;
 }
 
 /**
@@ -251,17 +259,19 @@ export function BodyEditor({
     };
   }, []);
 
-  // 通知の台が出入りして覆う高さが変わったら、打っている行を台の上へスクロールで逃がす。
+  // 通知の台が本文を覆う範囲が変わったとき、見えているカーソルが台に覆われたなら、台の上へスクロールで
+  // 逃がす。上の方を読んでいる人を、画面の外のカーソルまで引き戻さないため、見えていない場合は動かさない。
   // 台の高さは scrollMargins が見る。selection と doc は変えず、変換中は落ち着くまで保留する
   useEffect(() => {
     const reveal = () => {
       const editor = view.current;
       if (editor === null || !editor.hasFocus) return;
-      dispatchWhenSettled(editor, revealKey, () =>
+      dispatchWhenSettled(editor, revealKey, () => {
+        if (!caretUnderNoticeDock(editor)) return;
         editor.dispatch({
           effects: EditorView.scrollIntoView(editor.state.selection.main.head, { y: "nearest" }),
-        }),
-      );
+        });
+      });
     };
     document.addEventListener(NOTICE_DOCK_RESIZE, reveal);
     return () => document.removeEventListener(NOTICE_DOCK_RESIZE, reveal);

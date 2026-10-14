@@ -5,14 +5,19 @@
  * 本文は動かさずに、台の高さだけ本文のスクロールの下の余白（scrollMargins）と文書の末尾の余白を取る。
  */
 
-/** 台の高さが変わったとき（通知の出入り、折り返しの変化）に document へ送るイベント。 */
+/** 台が本文を覆う範囲が変わったとき（通知の出入り、折り返しの変化、キーボードでの持ち上がり）に document へ送るイベント。 */
 export const NOTICE_DOCK_RESIZE = "notice-dock-resize";
+
+/** 台が覆っている範囲。通知が無ければ null。 */
+export function noticeDockRect(): DOMRect | null {
+  const dock = document.querySelector(".notice-dock");
+  if (dock === null || dock.childElementCount === 0) return null;
+  return dock.getBoundingClientRect();
+}
 
 /** 台が画面の下端から覆っている高さ。通知が無ければ 0。 */
 export function noticeDockHeight(): number {
-  const dock = document.querySelector(".notice-dock");
-  if (dock === null || dock.childElementCount === 0) return 0;
-  return dock.getBoundingClientRect().height;
+  return noticeDockRect()?.height ?? 0;
 }
 
 /**
@@ -24,6 +29,7 @@ export function noticeDockHeight(): number {
 function followVisualViewport(dock: HTMLElement): () => void {
   const viewport = window.visualViewport;
   if (viewport === null) return () => {};
+  let last: number | null = null;
   const update = () => {
     // ピンチで拡大している間は、visual viewport の下端と fixed の下端が対応しないので動かさない
     const inset =
@@ -32,6 +38,10 @@ function followVisualViewport(dock: HTMLElement): () => void {
         : Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
     dock.style.setProperty("--notice-inset", `${Math.round(inset)}px`);
     dock.style.setProperty("--notice-room", `${Math.round(viewport.height)}px`);
+    // 台が持ち上がると、高さが同じでも本文を覆う範囲が変わる。最初の設定は台が出る前なので知らせない
+    const rounded = Math.round(inset);
+    if (last !== null && rounded !== last) document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
+    last = rounded;
   };
   update();
   viewport.addEventListener("resize", update);
