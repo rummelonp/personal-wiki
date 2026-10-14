@@ -89,6 +89,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  restoreUserAgent?.();
+  restoreUserAgent = null;
   linkRewrites.stop();
   act(() => root?.unmount());
   container?.remove();
@@ -97,6 +99,19 @@ afterEach(() => {
   vi.clearAllMocks();
   history.replaceState(null, "", startUrl);
 });
+
+const MAC_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
+const LINUX_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36";
+let restoreUserAgent: (() => void) | null = null;
+
+/** navigator.userAgent を差し替える（Header と shortcut.ts は呼ぶたびに読む）。afterEach で戻す。 */
+function stubUserAgent(userAgent: string) {
+  restoreUserAgent ??= () => {
+    // 差し替えは navigator 自身の property なので、消せば prototype の実物に戻る
+    Reflect.deleteProperty(navigator, "userAgent");
+  };
+  Object.defineProperty(navigator, "userAgent", { value: userAgent, configurable: true });
+}
 
 const tagOf = (page: Page) => `${page.title}のタグ`;
 
@@ -128,6 +143,17 @@ function serve(
     const page = listed().find((p) => p.title === title);
     return page ? ok(page) : notFound;
   });
+  vi.mocked(listPageTitles).mockImplementation(async () =>
+    ok({
+      pages: listed().map(({ id, title, visibility, updatedAt }) => ({
+        id,
+        title,
+        visibility,
+        updatedAt,
+      })),
+      nextCursor: null,
+    }),
+  );
   vi.mocked(listRecent).mockImplementation(async () =>
     ok({ pages: listed().map((page) => ({ ...page, tags: [tagOf(page)] })), nextCursor: null }),
   );
@@ -160,6 +186,37 @@ const headerButtons = () =>
     .filter((b) => b.closest("dialog") === null)
     .map((b) => b.getAttribute("aria-label") ?? b.textContent);
 
+const switcher = () => container?.querySelector<HTMLDialogElement>("dialog.switcher");
+const switcherOptions = () =>
+  [...(switcher()?.querySelectorAll("[role='option']") ?? [])].map((o) => o.textContent);
+
+function editorContent(): HTMLElement {
+  const content = main()?.querySelector<HTMLElement>(".cm-content");
+  if (!content) throw new Error("エディタが無い");
+  return content;
+}
+
+/** quick switcher のキーを window へ（target を渡せばそこから bubble させて）送る。preventDefault されたら false。 */
+function pressShortcut(init: KeyboardEventInit, target: EventTarget = window): boolean {
+  let notPrevented = true;
+  act(() => {
+    notPrevented = target.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", bubbles: true, cancelable: true, ...init }),
+    );
+  });
+  return notPrevented;
+}
+
+/** 制御された input に値を入れる。React は native の value setter を通した input イベントだけを拾う。 */
+function typeInSwitcher(text: string) {
+  const input = switcher()?.querySelector<HTMLInputElement>("input[role='combobox']");
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  act(() => {
+    setter?.call(input, text);
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 describe("App の匿名の画面", () => {
   it("トップで公開ページの一覧と検索とタグを出し、owner の操作を出さない", async () => {
     serve("anonymous", [PUBLIC, DRAFT]);
@@ -170,7 +227,7 @@ describe("App の匿名の画面", () => {
     expect(main()?.textContent).toContain(tagOf(PUBLIC));
     expect(main()?.textContent).not.toContain(DRAFT.title);
     expect(main()?.querySelectorAll("button")).toHaveLength(0);
-    expect(headerButtons()).toEqual(["検索"]);
+    expect(headerButtons()).toEqual(["ページを検索"]);
     expect(header()?.textContent).not.toContain("新規作成");
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
   });
@@ -181,7 +238,7 @@ describe("App の匿名の画面", () => {
     await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("公開の題"));
     expect(main()?.querySelector(".title-input")).toBeNull();
     await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
-    expect(headerButtons()).toEqual(["検索"]);
+    expect(headerButtons()).toEqual(["ページを検索"]);
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
     expect(document.title).toBe("公開の題 - personal-wiki");
@@ -259,6 +316,21 @@ describe("App の匿名の画面", () => {
     }
     expect(new Set(shown).size).toBe(1);
     expect(shown[0]).not.toContain("下書き");
+  });
+
+  it("quick switcher には公開ページの title だけが出て、打った title の「作成」の行は出ない", async () => {
+    stubUserAgent(LINUX_UA);
+    serve("anonymous", [PUBLIC, DRAFT]);
+    await renderAt("/");
+    pressShortcut({ ctrlKey: true });
+    await vi.waitFor(() => expect(switcherOptions()).toContain(PUBLIC.title));
+    expect(switcherOptions()).not.toContain(DRAFT.title);
+    typeInSwitcher("新しい題");
+    await vi.waitFor(() =>
+      expect(switcher()?.querySelector("[data-row-kind='content-search']")).not.toBeNull(),
+    );
+    expect(switcher()?.querySelector("[data-row-kind='create']")).toBeNull();
+    expect(switcher()?.textContent).not.toContain("を作成");
   });
 
   it("予約語や形の合わないパスも同じ 404 を出す", async () => {
@@ -398,14 +470,19 @@ describe("App の owner の画面", () => {
   it("ヘッダーに検索と新規作成とログアウトを 1 行で並べ、ログイン中の表示は出さない", async () => {
     serve("owner", [PUBLIC]);
     await renderAt("/");
-    await vi.waitFor(() => expect(headerButtons()).toEqual(["検索", "新規作成", "ログアウト"]));
+    await vi.waitFor(() =>
+      expect(headerButtons()).toEqual(["ページを検索", "新規作成", "ログアウト"]),
+    );
     expect(header()?.textContent).not.toContain("ログイン中");
   });
 
   it("存在しない title を開くと、「まだありません」と作成の導線を出し、作ると編集の画面へ移る", async () => {
     serve("owner", [PUBLIC]);
-    const created: Page = { ...PUBLIC, id: "NNNNNNNNNNNNNNNNNNNNNN", title: "まだ無い題" };
+    const created: Page = { ...DRAFT, id: "NNNNNNNNNNNNNNNNNNNNNN", title: "まだ無い題" };
     vi.mocked(createPage).mockResolvedValue(ok(created));
+    vi.mocked(getPage).mockImplementation(async (id) =>
+      id === created.id ? ok(created) : notFound,
+    );
     await renderAt(titleUrl("まだ無い題"));
     await vi.waitFor(() =>
       expect(main()?.querySelector("h1")?.textContent).toBe("「まだ無い題」はまだありません"),
@@ -416,6 +493,8 @@ describe("App の owner の画面", () => {
     act(() => create?.click());
     await vi.waitFor(() => expect(location.pathname).toBe(`/p/${created.id}`));
     expect(createPage).toHaveBeenCalledWith({ title: "まだ無い題", body: "" });
+    await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
+    expect(main()?.querySelector<HTMLInputElement>(".title-input")?.value).toBe("まだ無い題");
   });
 
   it("title が重複して作れなかったら、理由を出して既存のページを開ける", async () => {
@@ -447,21 +526,109 @@ describe("App の owner の画面", () => {
   });
 
   it("検索のボタンと Ctrl+K で quick switcher を開き、Ctrl+K でもう一度押すと閉じる", async () => {
+    stubUserAgent(LINUX_UA);
     serve("owner", [PUBLIC]);
     await renderAt("/");
-    const switcher = () => container?.querySelector<HTMLDialogElement>("dialog.switcher");
     expect(switcher()?.open).toBe(false);
-    const search = header()?.querySelector<HTMLButtonElement>("button[aria-label='検索']");
+    const search = header()?.querySelector<HTMLButtonElement>("button[aria-label='ページを検索']");
+    expect(search?.getAttribute("aria-keyshortcuts")).toBe("Control+K");
+    expect(search?.querySelector("kbd")?.textContent).toBe("Ctrl K");
     act(() => search?.click());
     await vi.waitFor(() => expect(switcher()?.open).toBe(true));
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
-    });
+    pressShortcut({ ctrlKey: true });
     await vi.waitFor(() => expect(switcher()?.open).toBe(false));
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
-    });
+    pressShortcut({ ctrlKey: true });
     await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+  });
+
+  it("Mac では ⌘K だけで開き、Ctrl+K はエディタの行末削除に任せて開かない", async () => {
+    stubUserAgent(MAC_UA);
+    // 本文が空なら、Mac で Ctrl+K を CodeMirror が処理しても本文は変わらない（保存が走らない）
+    serve("owner", [{ ...DRAFT, body: "" }]);
+    await renderAt(titleUrl(DRAFT.title));
+    await vi.waitFor(() => expect(main()?.querySelector(".cm-content")).not.toBeNull());
+    const search = header()?.querySelector<HTMLButtonElement>("button[aria-label='ページを検索']");
+    expect(search?.getAttribute("aria-keyshortcuts")).toBe("Meta+K");
+    expect(search?.querySelector("kbd")?.textContent).toBe("⌘K");
+
+    const content = editorContent();
+    content.focus();
+    pressShortcut({ ctrlKey: true }, content);
+    expect(switcher()?.open).toBe(false);
+
+    pressShortcut({ metaKey: true }, content);
+    await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+  });
+
+  it("Mac 以外では Ctrl+K を編集部品の中からも受け、⌘K は受けない", async () => {
+    stubUserAgent(LINUX_UA);
+    // 本文が空なら、Mac で Ctrl+K を CodeMirror が処理しても本文は変わらない（保存が走らない）
+    serve("owner", [{ ...DRAFT, body: "" }]);
+    await renderAt(titleUrl(DRAFT.title));
+    await vi.waitFor(() => expect(main()?.querySelector(".cm-content")).not.toBeNull());
+    const content = editorContent();
+    content.focus();
+    pressShortcut({ metaKey: true }, content);
+    expect(switcher()?.open).toBe(false);
+    pressShortcut({ ctrlKey: true }, content);
+    await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+  });
+
+  it("先に処理されたキーと、押しっぱなしの繰り返しでは開閉しない", async () => {
+    stubUserAgent(LINUX_UA);
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    pressShortcut({ ctrlKey: true, repeat: true });
+    expect(switcher()?.open).toBe(false);
+
+    const claim = (event: Event) => event.preventDefault();
+    document.addEventListener("keydown", claim);
+    try {
+      pressShortcut({ ctrlKey: true }, document.body);
+    } finally {
+      document.removeEventListener("keydown", claim);
+    }
+    expect(switcher()?.open).toBe(false);
+  });
+
+  it("owner が開いた quick switcher には draft の title が出て、ログアウトして開き直すと出ない", async () => {
+    stubUserAgent(LINUX_UA);
+    serve("owner", [PUBLIC, DRAFT]);
+    await renderAt("/");
+    const openSwitcher = () =>
+      act(() =>
+        header()?.querySelector<HTMLButtonElement>("button[aria-label='ページを検索']")?.click(),
+      );
+    openSwitcher();
+    await vi.waitFor(() => expect(switcherOptions()).toContain(DRAFT.title));
+    pressShortcut({ ctrlKey: true });
+    await vi.waitFor(() => expect(switcher()?.open).toBe(false));
+
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    openSwitcher();
+    await vi.waitFor(() => expect(switcherOptions()).toContain(PUBLIC.title));
+    expect(switcherOptions()).not.toContain(DRAFT.title);
+    expect(switcher()?.textContent).not.toContain(DRAFT.title);
+  });
+
+  it("quick switcher で新しい title を打つと「作成」の行を出す", async () => {
+    stubUserAgent(LINUX_UA);
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    pressShortcut({ ctrlKey: true });
+    await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+    typeInSwitcher("新しい題");
+    await vi.waitFor(() =>
+      expect(switcher()?.querySelector("[data-row-kind='create']")?.textContent).toBe(
+        "「新しい題」を作成",
+      ),
+    );
   });
 
   it("見出しの fragment 付きの URL を開くと、編集の画面でも見出しにカーソルを置く", async () => {

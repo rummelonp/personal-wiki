@@ -9,6 +9,7 @@ import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { parseRoute, useRoute } from "./route";
+import { isSwitcherShortcut } from "./shortcut";
 
 // エディタ（CodeMirror）はページの画面でしか使わないので、トップと検索の初回の読み込みから外す。
 // 読み込みの失敗（デプロイで古い版の chunk が消えた後の遷移など）は、画面全体を壊さず再読み込みを促す
@@ -101,11 +102,11 @@ export function App() {
     if (canRewriteLinks) linkRewrites.start();
   }, [canRewriteLinks]);
 
-  // ⌘K / Ctrl+K で quick switcher を開閉する。ほかのダイアログ（新規作成）が開いている間は奪わない
+  // ⌘K（Mac）/ Ctrl+K で quick switcher を開閉する。ほかのダイアログ（新規作成）が開いている間は奪わない
   useEffect(() => {
     if (!ready) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      if (!isSwitcherShortcut(event)) return;
       if (!switcherOpen && document.querySelector("dialog[open]") !== null) return;
       event.preventDefault();
       setSwitcherOpen(!switcherOpen);

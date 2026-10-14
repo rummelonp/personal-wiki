@@ -4,6 +4,7 @@ import { PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
 import { NewPageDialog } from "./NewPageDialog";
 import { homeHref } from "./route";
+import { switcherShortcutKeys, switcherShortcutLabel } from "./shortcut";
 
 export type SessionState =
   | { status: "loading" }
@@ -17,10 +18,6 @@ interface HeaderProps {
   /** quick switcher を開く。検索の入口はこれだけで、検索語はそちらの入力欄で打つ。 */
   onOpenSearch: () => void;
 }
-
-const SHORTCUT_LABEL = /Mac|iPhone|iPad/.test(globalThis.navigator?.userAgent ?? "")
-  ? "⌘K"
-  : "Ctrl K";
 
 /**
  * 狭い幅でも 1 行に収める。検索は欄でなく開くだけのボタンにし（変換中の文字を別の入力欄へ
@@ -39,13 +36,13 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
         <button
           type="button"
           className="header-search"
-          aria-label="検索"
-          aria-keyshortcuts="Control+K Meta+K"
+          aria-label="ページを検索"
+          aria-keyshortcuts={switcherShortcutKeys()}
           onClick={onOpenSearch}
         >
           <SearchIcon />
           <span className="header-search-text">ページを検索</span>
-          <kbd className="header-search-key">{SHORTCUT_LABEL}</kbd>
+          <kbd className="header-search-key">{switcherShortcutLabel()}</kbd>
         </button>
       )}
       <div className="header-actions">
