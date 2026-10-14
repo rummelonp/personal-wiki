@@ -6,6 +6,7 @@ import { setLoadingDelay } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites-api";
 import { PageEditor } from "./PageEditor";
+import { recallTitle } from "./page-titles";
 import {
   type ApiResult,
   createPage,
@@ -312,6 +313,22 @@ describe("PageEditor の wikilink", () => {
     renderPage({ ...PAGE, body: "[[別]]" });
     clickLink("別");
     await vi.waitFor(() => expect(location.pathname).toBe("/p/BBBBBBBBBBBBBBBBBBBBBB"));
+  });
+
+  it("link で別ページへ移る前に、行き先の title を覚えさせる", async () => {
+    vi.mocked(resolvePages).mockImplementation(async (titles) =>
+      ok(
+        titles.map((title) => ({
+          id: "BBBBBBBBBBBBBBBBBBBBBB",
+          title,
+          visibility: "draft" as const,
+        })),
+      ),
+    );
+    renderPage({ ...PAGE, body: "[[別]]" });
+    clickLink("別");
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/BBBBBBBBBBBBBBBBBBBBBB"));
+    expect(recallTitle("BBBBBBBBBBBBBBBBBBBBBB")).toBe("別");
   });
 
   it("存在しない title だけに未解決の印を付ける", async () => {

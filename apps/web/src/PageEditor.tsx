@@ -31,6 +31,7 @@ import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
 import { PublishBar } from "./PublishBar";
 import { hashOfLink } from "./page-fragment";
+import { rememberTitle } from "./page-titles";
 import {
   createPage,
   deletePage,
@@ -316,7 +317,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (found.kind === "found") {
       const hash = hashOfLink(link);
       if (found.page.id === pageId && hash !== "") goTo(hash);
-      else navigate(`${pageHrefFor(found.page)}${hash}`);
+      else {
+        // 行き先の読み込み中の画面で、title を帯ではなく文字で出せるようにする
+        rememberTitle(found.page.id, found.page.title);
+        navigate(`${pageHrefFor(found.page)}${hash}`);
+      }
     } else if (found.kind === "missing") {
       setLinkNotice({ kind: "missing", title: link.target });
     } else setLinkNotice({ kind: "error" });
