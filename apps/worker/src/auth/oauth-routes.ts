@@ -110,9 +110,7 @@ async function showConsent(c: Context<AppEnv>, now: () => number): Promise<Respo
     }
     // describeConsent を先に呼ぶ。client の参照に失敗したとき、KV に同意の記録を残さないため
     const consent = await oauth.describeConsent(request);
-    // CIMD の client は登録でなく取得の時刻になるので、登録した client にだけ出す
-    const registeredAt =
-      consent.clientDomain === undefined ? await registrationTimeOf(oauth, consent.clientId) : null;
+    const registeredAt = await registrationTimeOf(oauth, consent);
     const { handle, headers } = await oauth.beginConsent(request);
     headers.set("Content-Type", "text/html; charset=utf-8");
     headers.set("Content-Security-Policy", consentPagePolicy(consent.redirectUri));
@@ -123,14 +121,24 @@ async function showConsent(c: Context<AppEnv>, now: () => number): Promise<Respo
   }
 }
 
-/** client の登録時刻（epoch ミリ秒）。記録が無い、読めないときは null */
-async function registrationTimeOf(
-  oauth: ReturnType<typeof helpersOf>,
-  clientId: string,
+/** Date が表せる範囲（epoch ミリ秒）。範囲外の値は toISOString が RangeError を投げる */
+const MAX_DATE_MS = 8.64e15;
+
+/**
+ * client の登録時刻（epoch ミリ秒）。記録が無い、読めない、Date で表せないときは null で、
+ * 同意画面は登録の行を出さない。CIMD の client の registrationDate は登録でなく取得の時刻なので、
+ * 登録した client にだけ返す。
+ */
+export async function registrationTimeOf(
+  oauth: Pick<ReturnType<typeof helpersOf>, "lookupClient">,
+  consent: Pick<ConsentDescription, "clientId" | "clientDomain">,
 ): Promise<number | null> {
+  if (consent.clientDomain !== undefined) return null;
   try {
-    const seconds = (await oauth.lookupClient(clientId))?.registrationDate;
-    return typeof seconds === "number" ? seconds * 1000 : null;
+    const seconds: unknown = (await oauth.lookupClient(consent.clientId))?.registrationDate;
+    if (typeof seconds !== "number" || !Number.isFinite(seconds)) return null;
+    const ms = seconds * 1000;
+    return Math.abs(ms) <= MAX_DATE_MS ? ms : null;
   } catch {
     return null;
   }
@@ -400,7 +408,7 @@ function truncate(value: string, length: number): string {
  * client 名、redirect URI、scope は client が登録時に決める値なので、すべてエスケープする。
  * 権限の既定は、要求に関わらず read にする。write は owner が選んだときだけ許す。
  */
-function consentPage(
+export function consentPage(
   consent: ConsentDescription,
   handle: string,
   { registeredAt, now }: { registeredAt: number | null; now: number },
@@ -415,7 +423,7 @@ function consentPage(
     registeredAt === null
       ? ""
       : `<dt>登録</dt>
-<dd>${escapeHtml(describeRegistration(registeredAt, now))}<br><small>いま接続を始めたなら、登録は数分前のはずです。</small></dd>
+<dd>${escapeHtml(describeRegistration(registeredAt, now))}<br><small>新しく接続を追加したなら、登録は直近のはずです。切れた接続をつなぎ直したなら、以前の登録が使われて古い日時になります。どちらの場合も、日時だけでは自分が始めた接続かどうかは分かりません。</small></dd>
 `;
   return pageHtml(
     "接続の許可",

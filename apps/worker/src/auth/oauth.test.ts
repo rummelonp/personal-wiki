@@ -6,7 +6,7 @@ import { fakeJwks, generateSigningKey, ownerCookie, ownerEnv, signAccessJwt } fr
 import { T0 } from "../test/pages";
 import { insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
-import { describeRegistration } from "./oauth-routes";
+import { consentPage, describeRegistration, registrationTimeOf } from "./oauth-routes";
 import { oauthServerFor } from "./oauth-server";
 import { safeReturnUrl } from "./routes";
 
@@ -985,5 +985,61 @@ describe("describeRegistration", () => {
     expect(describeRegistration(registeredAt, registeredAt - 5 * minute)).toBe(
       "1 分以内（2026-10-01 12:34 UTC）",
     );
+  });
+});
+
+describe("同意画面の登録の行", () => {
+  const consent = {
+    clientId: "c1",
+    clientName: "Claude",
+    redirectUri: CALLBACK,
+    redirectHost: "claude.ai",
+    redirectIsLoopback: false,
+    scope: ["read"],
+  };
+  const lookingUp = (registrationDate: unknown) => ({
+    lookupClient: async () => ({ registrationDate }) as never,
+  });
+
+  it("登録の時刻を読めたときだけ返す", async () => {
+    expect(await registrationTimeOf(lookingUp(1_790_000_000), consent)).toBe(1_790_000_000_000);
+  });
+
+  it("記録が無い、lookup が失敗する、値が数でない、Date で表せないときは null にする", async () => {
+    const failing = {
+      lookupClient: async () => {
+        throw new Error("kv unavailable");
+      },
+    };
+    const missing = { lookupClient: async () => null };
+    for (const oauth of [
+      failing,
+      missing,
+      lookingUp(undefined),
+      lookingUp("1790000000"),
+      lookingUp(Number.NaN),
+      lookingUp(Number.POSITIVE_INFINITY),
+      lookingUp(1e13),
+    ]) {
+      expect(await registrationTimeOf(oauth, consent)).toBeNull();
+    }
+  });
+
+  it("CIMD の client（clientDomain がある）は、時刻を読めても null にする", async () => {
+    const cimd = { ...consent, clientDomain: "client.example" };
+    expect(await registrationTimeOf(lookingUp(1_790_000_000), cimd)).toBeNull();
+  });
+
+  it("registeredAt が null なら登録の行を出さず、あれば出す", () => {
+    const without = consentPage(consent, "h", { registeredAt: null, now: T0 });
+    expect(without).not.toContain("<dt>登録</dt>");
+    expect(without).toContain("<dt>要求された権限</dt>");
+    const withRow = consentPage(consent, "h", {
+      registeredAt: T0 - 35 * 24 * 60 * 60_000,
+      now: T0,
+    });
+    expect(withRow).toContain("<dt>登録</dt>");
+    expect(withRow).toContain("35 日前");
+    expect(withRow).toContain("切れた接続をつなぎ直したなら");
   });
 });
