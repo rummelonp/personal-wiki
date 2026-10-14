@@ -31,6 +31,7 @@ E2E は `pnpm test` に含めず、別に実行する。web を build し、一�
 初回は `pnpm --filter @personal-wiki/web exec playwright install chromium webkit firefox` でブラウザを入れる。
 E2E の build は `apps/web/dist` を上書きするので、8787 で動かしている開発の `wrangler dev` の画面もその版に変わる。
 web のソースを前の build から変えていなければ、`E2E_SKIP_BUILD=1 pnpm e2e` で build を省ける。
+E2E のポートは既定で 8790（inspector は 9339）。別の worktree の E2E と同時に流すときは `E2E_PORT=8800 pnpm e2e` のように変える。
 
 ```sh
 pnpm e2e                    # apps/web/e2e のテスト。結果は apps/web/e2e-output/（gitignore 済み）

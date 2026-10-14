@@ -17,10 +17,16 @@ const run = promisify(execFile);
 const WEB_DIR = resolve(import.meta.dirname, "../..");
 const WORKER_DIR = resolve(WEB_DIR, "../worker");
 
-/** 開発で使う 5173（vite）と 8787（wrangler dev）を避ける。 */
-export const E2E_PORT = 8790;
-/** wrangler dev の既定の 9229 は開発中の wrangler dev が使うので、別の値に固定する。 */
-const INSPECTOR_PORT = 9339;
+/**
+ * 開発で使う 5173（vite）と 8787（wrangler dev）を避ける。別の worktree の E2E と同時に流すときは
+ * E2E_PORT で変える。
+ */
+export const E2E_PORT = Number(process.env.E2E_PORT ?? 8790);
+/**
+ * wrangler dev の既定の 9229 は開発中の wrangler dev が使うので避ける。E2E_PORT を変えたときに
+ * 重ならないよう、E2E_PORT からの差で決める（既定は 9339）。
+ */
+const INSPECTOR_PORT = E2E_PORT + 549;
 export const E2E_ORIGIN = `http://localhost:${E2E_PORT}`;
 export const OWNER_EMAIL = "owner@example.test";
 
