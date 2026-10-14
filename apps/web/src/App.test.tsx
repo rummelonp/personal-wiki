@@ -191,8 +191,10 @@ const switcher = () => container?.querySelector<HTMLDialogElement>("dialog.switc
 const switcherOptions = () =>
   [...(switcher()?.querySelectorAll("[role='option']") ?? [])].map((o) => o.textContent);
 
+const BODY_CONTENT = ".cm-content[aria-label='本文']";
+
 function editorContent(): HTMLElement {
-  const content = main()?.querySelector<HTMLElement>(".cm-content");
+  const content = main()?.querySelector<HTMLElement>(BODY_CONTENT);
   if (!content) throw new Error("エディタが無い");
   return content;
 }
@@ -495,7 +497,7 @@ describe("App の owner の画面", () => {
     await vi.waitFor(() => expect(location.pathname).toBe(`/p/${created.id}`));
     expect(createPage).toHaveBeenCalledWith({ title: "まだ無い題", body: "" });
     await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
-    expect(main()?.querySelector<HTMLInputElement>(".title-input")?.value).toBe("まだ無い題");
+    expect(titleText()).toBe("まだ無い題");
   });
 
   it("title が重複して作れなかったら、理由を出して既存のページを開ける", async () => {
@@ -547,7 +549,7 @@ describe("App の owner の画面", () => {
     // 本文が空なら、Mac で Ctrl+K を CodeMirror が処理しても本文は変わらない（保存が走らない）
     serve("owner", [{ ...DRAFT, body: "" }]);
     await renderAt(titleUrl(DRAFT.title));
-    await vi.waitFor(() => expect(main()?.querySelector(".cm-content")).not.toBeNull());
+    await vi.waitFor(() => expect(main()?.querySelector(BODY_CONTENT)).not.toBeNull());
     const search = header()?.querySelector<HTMLButtonElement>("button[aria-label='ページを検索']");
     expect(search?.getAttribute("aria-keyshortcuts")).toBe("Meta+K");
     expect(search?.querySelector("kbd")?.textContent).toBe("⌘K");
@@ -563,10 +565,12 @@ describe("App の owner の画面", () => {
 
   it("Mac 以外では Ctrl+K を編集部品の中からも受け、⌘K は受けない", async () => {
     stubUserAgent(LINUX_UA);
-    // 本文が空なら、Mac で Ctrl+K を CodeMirror が処理しても本文は変わらない（保存が走らない）
+    // 本文が空なら、Mac で Ctrl+K を CodeMirror が処理しても本文は変わらない（保存が走らない）。
+    // CodeMirror は UA でなく navigator.platform で Mac を見分けるので、Mac で走らせると UA を
+    // 差し替えても行末削除が先に動く。空でない title の欄から送ると title を消して preventDefault する
     serve("owner", [{ ...DRAFT, body: "" }]);
     await renderAt(titleUrl(DRAFT.title));
-    await vi.waitFor(() => expect(main()?.querySelector(".cm-content")).not.toBeNull());
+    await vi.waitFor(() => expect(main()?.querySelector(BODY_CONTENT)).not.toBeNull());
     const content = editorContent();
     content.focus();
     pressShortcut({ metaKey: true }, content);
