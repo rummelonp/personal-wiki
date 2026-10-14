@@ -258,7 +258,7 @@ describe("App の匿名の画面", () => {
     await vi.waitFor(() => expect(document.title).toBe("公開の題 - personal-wiki"));
     vi.mocked(findPageByTitle).mockReturnValue(new Promise(() => {}));
     act(() => navigate(titleUrl("次の題")));
-    await vi.waitFor(() => expect(main()?.textContent).toContain("読み込み中"));
+    await vi.waitFor(() => expect(main()?.querySelector("[aria-busy='true']")).not.toBeNull());
     expect(document.title).toBe("personal-wiki");
   });
 

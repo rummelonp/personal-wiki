@@ -16,6 +16,7 @@
   --color-input: #f1f2f5; /* 検索欄、本文の編集欄、コードの背景 */
   --color-selected: #eaecf0; /* 一覧の行にカーソルを置いたとき、押下状態のボタン */
   --color-backdrop: rgb(0 0 0 / 0.4); /* ダイアログの背後 */
+  --color-skeleton: #e8eaef; /* 読み込み中の帯。地（--color-bg）に対し、入力欄の地より差をつける */
 
   /* 色: 文字と線 */
   --color-fg: #1b1e24; /* 本文の文字 */
@@ -92,6 +93,7 @@
   --prose-width: 40em; /* 本文の幅 */
   --list-width: 42.5rem; /* トップの一覧の幅 */
   --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
+  --header-skeleton-width: 6rem; /* ログイン状態が分かるまで、ヘッダーの右に場所を空ける 1 つ分の幅。owner の操作 2 つの幅に近づける */
   --switcher-width: 34rem; /* quick switcher の幅 */
   --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
@@ -173,6 +175,7 @@
     --color-surface: #15181d;
     --color-input: #1a1d23;
     --color-selected: #20242c;
+    --color-skeleton: #292e38;
     --color-backdrop: rgb(0 0 0 / 0.6);
 
     --color-fg: #e5e7eb;

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
+import { LoadingStatus, SkeletonEntries } from "./Loading";
+import { listHeading } from "./list-heading";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
@@ -46,15 +48,11 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
     </Link>
   );
 
-  const heading = searching
-    ? `「${trimmed}」の検索結果`
-    : tag !== ""
-      ? `タグ「${tag}」`
-      : "最近の更新";
+  const heading = listHeading(trimmed, tag);
 
   return (
     <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
-      <div className="home">
+      <div className="home" aria-busy={state.status === "loading" || undefined}>
         {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
         {searching && <SearchBox query={trimmed} />}
         <h1 className="list-title">{heading}</h1>
@@ -66,7 +64,12 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             <Link href={homeHref(trimmed)}>タグを外す</Link>
           </p>
         )}
-        {state.status === "loading" && <p className="muted">読み込み中…</p>}
+        {state.status === "loading" && (
+          <>
+            <LoadingStatus />
+            <SkeletonEntries />
+          </>
+        )}
         {state.status === "query_too_short" && (
           <EmptyState
             role="status"

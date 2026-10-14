@@ -12,7 +12,7 @@ import { saveAllEditors } from "./editor-lifecycle";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
 import { LinkRewriteStatus } from "./LinkRewriteStatus";
-import { Loading } from "./Loading";
+import { RouteSkeleton } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
 import { Notice, NoticeDockProvider } from "./Notice";
@@ -168,7 +168,7 @@ export function App() {
         />
         <main className="main">
           {isOwner && <LinkRewriteStatus />}
-          {session.status === "loading" && <Loading />}
+          {session.status === "loading" && <RouteSkeleton route={route} />}
           {session.status === "error" && (
             <RailLayout rail={null}>
               <Notice inline tone="error" title="ログインの状態を取得できませんでした">
@@ -186,7 +186,7 @@ export function App() {
             />
           )}
           {ready && (route.name === "page" || route.name === "title" || route.name === "new") && (
-            <Suspense fallback={<Loading />}>
+            <Suspense fallback={<RouteSkeleton route={route} />}>
               <PageView
                 // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す。
                 // `/?new` も同じ位置と key に置き、作れた後の `/p/<id>` で作り直さない

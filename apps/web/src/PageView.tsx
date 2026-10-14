@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
-import { Loading } from "./Loading";
+import { PageSkeleton } from "./Loading";
 import { NotFound } from "./NotFound";
 import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
@@ -162,7 +162,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   if (target.by === "new" && !owner) return <SignInNotice />;
   switch (state.status) {
     case "loading":
-      return <Loading />;
+      return <PageSkeleton />;
     case "unauthorized":
       return <SignInNotice expired />;
     case "not_found":

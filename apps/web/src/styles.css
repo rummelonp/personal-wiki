@@ -103,8 +103,12 @@ a {
   cursor: pointer;
 }
 
-.header-search:hover {
+.header-search:hover:not(:disabled) {
   background: var(--color-selected);
+}
+
+.header-search:disabled {
+  cursor: default;
 }
 
 .header-search-text {
@@ -135,6 +139,18 @@ a {
 
 .header-new {
   gap: var(--space-1);
+}
+
+/* ログイン状態が分かるまで右の操作の場所を空ける。帯は遅れて描く（下の「読み込み中」の節） */
+.header-pending {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.header-skeleton {
+  width: var(--header-skeleton-width);
+  height: var(--header-control-visual);
+  border-radius: var(--radius-md);
 }
 
 /* ログアウトの絵は狭い画面だけで使う（広い画面は文言を出す。下の狭い画面の節） */
@@ -723,20 +739,24 @@ a {
   border-radius: var(--radius-md);
 }
 
-.entries {
+/* skeleton-* は読み込み中の帯。実際の一覧の行（.entries .entry）と取り違えられないよう別の名前にして、見た目だけ揃える */
+.entries,
+.skeleton-entries {
   margin: 0 0 var(--space-4);
   padding: 0;
   list-style: none;
 }
 
-.entry {
+.entry,
+.skeleton-entry {
   display: grid;
   gap: var(--space-1);
   padding: var(--space-4) 0;
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
-.entry-head {
+.entry-head,
+.skeleton-entry-head {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
@@ -776,6 +796,145 @@ a {
   color: var(--color-fg-muted);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+/*
+ * 読み込み中: 最終の配置と同じ形の帯。帯の場所は初めから取り、描くのは遅れてから
+ * （親に skeleton-painted が付いたとき。遅れの長さは Loading.tsx が持つ）。
+ * 文字の行の帯は、本物の 1 行と同じ高さを取る（行の高さ = 帯 + 上下の余白）。
+ */
+.skeleton {
+  visibility: hidden;
+  background: var(--color-skeleton);
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-painted .skeleton {
+  visibility: visible;
+  animation: skeleton-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-painted .skeleton {
+    animation: none;
+  }
+}
+
+.skeleton-text {
+  --skeleton-leading: var(--line-height);
+
+  display: block;
+  height: 0.75em; /* token-ok: 帯の太さは、行の文字の大きさに比例させる */
+  margin-block: calc(
+    (var(--skeleton-leading) - 0.75) /
+    2 *
+    1em
+  ); /* token-ok: 同上。上下の余白で、本物の 1 行の高さに合わせる */
+}
+
+.skeleton-heading {
+  --skeleton-leading: var(--line-height-tight);
+
+  width: 40%;
+}
+
+.skeleton-entry-title {
+  width: 52%;
+  font-size: var(--font-size-md);
+}
+
+.skeleton-entry:nth-child(even) .skeleton-entry-title {
+  width: 38%;
+}
+
+.skeleton-entry-time {
+  flex: none;
+  width: 12%;
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+}
+
+.skeleton-entry-excerpt {
+  font-size: var(--font-size-sm);
+}
+
+.skeleton-entry-excerpt .skeleton-text {
+  width: 90%;
+}
+
+.skeleton-entry-excerpt .skeleton-text:last-child {
+  width: 55%;
+}
+
+.skeleton-title {
+  --skeleton-leading: var(--line-height-tight);
+
+  width: 55%;
+}
+
+/* title の下の、公開の状態と操作の行 */
+.skeleton-meta {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: var(--control-height);
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-dot {
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: 50%;
+}
+
+.skeleton-body {
+  --skeleton-leading: var(--line-height-prose);
+
+  display: grid;
+}
+
+.skeleton-body .skeleton-text {
+  --skeleton-leading: var(--line-height-prose);
+}
+
+.skeleton-body .skeleton-text:nth-child(2) {
+  width: 94%;
+}
+
+.skeleton-body .skeleton-text:nth-child(3) {
+  width: 97%;
+}
+
+.skeleton-body .skeleton-text:nth-child(4) {
+  width: 86%;
+}
+
+.skeleton-body .skeleton-text:nth-child(5) {
+  width: 58%;
+}
+
+.skeleton-rail {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.skeleton-rail-section {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.skeleton-rail-label {
+  width: 40%;
+}
+
+.skeleton-rail-short {
+  width: 65%;
 }
 
 /* ノート */
@@ -1174,6 +1333,10 @@ a {
   .header-logout {
     width: var(--control-height-sm);
     padding: 0;
+  }
+
+  .header-skeleton {
+    width: var(--control-height-sm);
   }
 
   .toc {

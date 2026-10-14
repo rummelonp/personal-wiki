@@ -1,6 +1,7 @@
 import { loginHref, type Me } from "./api";
 import { LogoutIcon, PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
+import { useSkeletonPainted } from "./Loading";
 import { openNewPage } from "./new-page";
 import { homeHref } from "./route";
 import { switcherShortcutKeys, switcherShortcutLabel } from "./shortcut";
@@ -18,6 +19,20 @@ interface HeaderProps {
   onOpenSearch: () => void;
 }
 
+/** ログイン状態が分かるまで、右の操作の場所を空ける。owner と匿名のどちらかは分からないので、owner の 2 つ分の幅を取る。 */
+function ActionsPlaceholder() {
+  const painted = useSkeletonPainted();
+  return (
+    <span
+      className={painted ? "header-pending skeleton-painted" : "header-pending"}
+      aria-hidden="true"
+    >
+      <span className="skeleton header-skeleton" />
+      <span className="skeleton header-skeleton" />
+    </span>
+  );
+}
+
 /**
  * 狭い幅でも 1 行に収める。検索は欄でなく開くだけのボタンにし（変換中の文字を別の入力欄へ
  * 移さないため）、狭い幅では虫眼鏡だけにする。ラベルを隠す幅の切り替えは CSS が持つ。
@@ -31,10 +46,12 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
       <Link className="brand" href={homeHref()}>
         personal-wiki
       </Link>
-      {session.status === "ready" && (
+      {session.status !== "error" && (
         <button
           type="button"
           className="header-search"
+          // ログイン状態が分かる前は、候補の取得も始められない
+          disabled={session.status === "loading"}
           aria-label="ページを検索"
           aria-keyshortcuts={switcherShortcutKeys()}
           onClick={onOpenSearch}
@@ -56,7 +73,7 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
             <span className="header-new-label">新規作成</span>
           </button>
         )}
-        {session.status === "loading" && <span className="muted">確認中…</span>}
+        {session.status === "loading" && <ActionsPlaceholder />}
         {session.status === "error" && <span className="muted">状態を取得できませんでした</span>}
         {isOwner && (
           <button

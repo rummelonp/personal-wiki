@@ -1,0 +1,89 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ListSkeleton, PageSkeleton, setLoadingDelay } from "./Loading";
+
+let root: Root | null = null;
+let container: HTMLElement | null = null;
+let restoreDelay: (() => void) | null = null;
+
+beforeAll(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  act(() => root?.unmount());
+  container?.remove();
+  root = null;
+  container = null;
+  restoreDelay?.();
+  restoreDelay = null;
+});
+
+function mount(element: React.ReactNode) {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  act(() => root?.render(element));
+}
+
+const painted = () => container?.querySelector(".skeleton-painted .skeleton") !== null;
+const busy = () => container?.querySelector("[aria-busy='true']") !== null;
+const status = () => container?.querySelector("[role='status']")?.textContent;
+
+describe("読み込み中の帯", () => {
+  it("遅れの間は帯を描かず、取得中であることと「読み込み中…」は最初から伝える", () => {
+    vi.useFakeTimers();
+    mount(<PageSkeleton />);
+    expect(busy()).toBe(true);
+    expect(status()).toBe("読み込み中…");
+    expect(painted()).toBe(false);
+
+    act(() => vi.advanceTimersByTime(249));
+    expect(painted()).toBe(false);
+    act(() => vi.advanceTimersByTime(1));
+    expect(painted()).toBe(true);
+  });
+
+  it("遅れを 0 にすると、最初の描画から帯を描く", () => {
+    restoreDelay = setLoadingDelay(0);
+    mount(<ListSkeleton />);
+    expect(painted()).toBe(true);
+  });
+
+  it("遅れの前に取り除けば、帯を描かない", () => {
+    vi.useFakeTimers();
+    mount(<ListSkeleton />);
+    act(() => vi.advanceTimersByTime(100));
+    act(() => root?.render(<p>届いた</p>));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(painted()).toBe(false);
+  });
+
+  it("帯を描いた後に別の帯へ差し替わっても、遅れを数え直さない", () => {
+    vi.useFakeTimers();
+    mount(<ListSkeleton />);
+    act(() => vi.advanceTimersByTime(250));
+    expect(painted()).toBe(true);
+    act(() => root?.render(<PageSkeleton />));
+    expect(painted()).toBe(true);
+  });
+
+  it("待ちが終わった後の次の待ちは、遅れを数え直す", () => {
+    vi.useFakeTimers();
+    mount(<ListSkeleton />);
+    act(() => vi.advanceTimersByTime(250));
+    act(() => root?.render(<p>届いた</p>));
+    act(() => vi.advanceTimersByTime(10));
+    act(() => root?.render(<PageSkeleton />));
+    expect(painted()).toBe(false);
+  });
+
+  it("title が分かっていれば、帯でなく文字で出す", () => {
+    restoreDelay = setLoadingDelay(0);
+    mount(<PageSkeleton title="行き先の題" />);
+    expect(container?.querySelector(".note-title")?.textContent).toBe("行き先の題");
+    expect(container?.querySelector(".note-title .skeleton")).toBeNull();
+  });
+});

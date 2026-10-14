@@ -13,6 +13,7 @@ import { SEED } from "./support/seed";
  * 画面ごとに本文の左端がそろうこと。ヘッダーのロゴを基準に、一覧の行、ページの title と本文、
  * 読み込み中、404、空の状態の文字の左端が、3 つの幅で同じ x になることを測る。
  * 左端は最初の文字の箱（Range）で測る。要素の箱で測ると、編集欄の内側の padding の分がずれて見える。
+ * 文字の無い読み込み中の帯（スケルトン）だけは、要素の箱の左端で測る。
  */
 
 const WIDTHS = [375, 768, 1280];
@@ -36,16 +37,29 @@ async function textLeft(page: Page, selector: string): Promise<number> {
     });
 }
 
+/** selector に一致する最初の要素の、箱の左端。文字の無い帯を測る。 */
+async function boxLeft(page: Page, selector: string): Promise<number> {
+  return page
+    .locator(selector)
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().left);
+}
+
 const brandLeft = (page: Page) => textLeft(page, ".brand");
 
 /*
- * 測り直しを待つ。起動時の「読み込み中…」は画面ごとの「読み込み中…」に差し替わるので、
+ * 測り直しを待つ。起動時の帯は画面ごとの帯に差し替わるので、
  * 要素を見つけてから測るまでの間に外れると、外れた要素の箱（0）を測ってしまう。
  */
-async function expectAligned(page: Page, selector: string, label: string): Promise<void> {
+async function expectAligned(
+  page: Page,
+  selector: string,
+  label: string,
+  left: (page: Page, selector: string) => Promise<number> = textLeft,
+): Promise<void> {
   const width = page.viewportSize()?.width;
   await expect
-    .poll(async () => Math.abs((await textLeft(page, selector)) - (await brandLeft(page))), {
+    .poll(async () => Math.abs((await left(page, selector)) - (await brandLeft(page))), {
       message: `${width}px の ${label}がロゴとずれている（値はロゴとの差）`,
     })
     .toBeLessThan(TOLERANCE);
@@ -115,13 +129,15 @@ test.describe("本文の左端 @widths", () => {
   });
 
   test("owner の読み込み中", async ({ page, seedIds }) => {
+    // 帯は遅れて描く。描かれるまで（visible になるまで）待ってから、最初の帯の箱の左端を測る
+    const firstBand = page.locator(".main .skeleton").first();
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
 
       const me = await holdResponses(page, (url) => url.pathname === "/api/me");
       await page.goto("/", { waitUntil: "commit" });
-      await expect(page.getByText("読み込み中…").first()).toBeVisible();
-      await expectAligned(page, ".main :text('読み込み中…')", "起動時の読み込み中");
+      await expect(firstBand).toBeVisible();
+      await expectAligned(page, ".main .skeleton", "起動時の読み込み中", boxLeft);
       me.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });
 
@@ -129,8 +145,8 @@ test.describe("本文の左端 @widths", () => {
       await expect(page.locator(".entries .entry").first()).toBeVisible();
       const list = await holdResponses(page, (url) => url.pathname === "/api/search");
       await page.goto("/?q=x", { waitUntil: "commit" });
-      await expect(page.locator(".main").getByText("読み込み中…")).toBeVisible();
-      await expectAligned(page, ".main .muted", "一覧の読み込み中");
+      await expect(firstBand).toBeVisible();
+      await expectAligned(page, ".main .skeleton", "一覧の読み込み中", boxLeft);
       list.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });
 
@@ -139,8 +155,8 @@ test.describe("本文の左端 @widths", () => {
         (url) => url.pathname === `/api/pages/${seedIds[SEED.server]}`,
       );
       await page.goto(`/p/${seedIds[SEED.server]}`, { waitUntil: "commit" });
-      await expect(page.locator(".main").getByText("読み込み中…")).toBeVisible();
-      await expectAligned(page, ".main .muted", "ページの読み込み中");
+      await expect(firstBand).toBeVisible();
+      await expectAligned(page, ".main .skeleton", "ページの読み込み中", boxLeft);
       target.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
