@@ -193,6 +193,14 @@ export const editorSurfaceTheme = EditorView.baseTheme({
   },
 });
 
+/**
+ * 行・inline の「面」の地。選択範囲の地は本文の下の層（`.cm-selectionLayer`）に描かれるので、
+ * 不透明な地はその上の選択を隠す。選択が透けるよう、本文の色を透明へ薄く混ぜた半透明の地にする。
+ * 4% は `--ui-color-surface` を「本文の色を地へ 4% 混ぜた色」とみなした値で、エディタ面の上では
+ * surface 色とほぼ同じ見え方になる（ホストの surface が大きく外れると地の見え方がずれる）。
+ */
+const SURFACE_SHADE = "color-mix(in srgb, var(--ui-color-text) 4%, transparent)";
+
 /** CodeMirror の `.cm-line` の既定の左 padding。本文の文字はこの分だけ content の左端から離れる */
 export const LINE_PADDING_LEFT = "6px";
 
@@ -280,11 +288,10 @@ export const livePreviewTheme = EditorView.baseTheme({
     ".cm-line.cm-lp-code-first": { borderTop: "1px solid CanvasText" },
     ".cm-line.cm-lp-code-last": { borderBottom: "1px solid CanvasText" },
   },
-  // callout の中の code block は `cm-lp-code` と `cm-lp-callout` の両方が同じ行に付く。不透明な
-  // surface 色をそのまま当てると callout の 0.08 の地（`.cm-lp-callout` 側）を完全に潰すので、
-  // 単独のときだけ surface 色を足す。callout 側の地は残る。
+  // callout の中の code block は `cm-lp-code` と `cm-lp-callout` の両方が同じ行に付く。同じ要素の地は
+  // 重ならず一方が他方を上書きし、callout の地（`.cm-lp-callout` 側）が消えるので、単独のときだけ足す。
   ".cm-line.cm-lp-code:not(.cm-lp-callout)": {
-    backgroundColor: "var(--ui-color-surface)",
+    backgroundColor: SURFACE_SHADE,
   },
   // 行間は本文（1.75）より詰める。見出しは短く、本文の行間のままだと文字の上下に余白が付きすぎる
   ".cm-lp-heading": { fontWeight: "700", lineHeight: "1.4" },
@@ -315,11 +322,11 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-lp-strong": { fontWeight: "700" },
   ".cm-lp-em": { fontStyle: "italic" },
   ".cm-lp-strike": { textDecoration: "line-through" },
-  // 蛍光ペンの地。透かさず地に混ぜるのは、重なった行の装飾（callout の地）で濃さが変わらないようにするため
+  // 蛍光ペンの地。選択範囲が透けるよう半透明にする（重なった行の装飾の上では、その地が少し混ざる）
   ".cm-lp-highlight": {
     backgroundColor: byScheme(
-      "color-mix(in srgb, #ffd000 40%, var(--ui-color-background))",
-      "color-mix(in srgb, #ffd000 26%, var(--ui-color-background))",
+      "color-mix(in srgb, #ffd000 40%, transparent)",
+      "color-mix(in srgb, #ffd000 26%, transparent)",
     ),
   },
   // 背景は code block の行と同じ surface 色。文字色は変えないので、code block と同じ組み合わせで読める。
@@ -327,7 +334,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   // 外側の mark と内側の span で書体が食い違うと、padding の幅が本文の書体で測られてずれる。
   ".cm-lp-inline-code": {
     fontFamily: "var(--ui-font-mono, ui-monospace, monospace)",
-    backgroundColor: "var(--ui-color-surface)",
+    backgroundColor: SURFACE_SHADE,
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0.1em 0.25em",
   },
@@ -347,7 +354,7 @@ export const livePreviewTheme = EditorView.baseTheme({
     border: "1px solid var(--ui-color-border)",
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0.25em 0.6em",
-    backgroundColor: "var(--ui-color-surface)",
+    backgroundColor: SURFACE_SHADE,
     cursor: "pointer",
     fontSize: "0.875em",
   },
@@ -356,7 +363,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   // 明暗どちらの地でも読める状態を `.cm-lp-code` と同じ組み合わせに揃える。
   // 地の左端はコードブロックと同じく本文の文字の左端に揃える（`.cm-lp-code` のコメント参照）。
   ".cm-line.cm-frontmatter-source": {
-    backgroundColor: "var(--ui-color-surface)",
+    backgroundColor: SURFACE_SHADE,
     fontFamily: "var(--ui-font-mono, ui-monospace, monospace)",
     marginLeft: LINE_PADDING_LEFT,
     paddingLeft: `calc(0.75em - ${LINE_PADDING_LEFT})`,
@@ -411,7 +418,7 @@ export const livePreviewTheme = EditorView.baseTheme({
     boxSizing: "border-box",
   },
   ".cm-block-ref-highlight": {
-    backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 24%, var(--ui-color-background))",
+    backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 24%, transparent)",
   },
   ".cm-lp-hr": {
     display: "inline-block",
@@ -479,7 +486,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-lp-table-cell.cm-lp-table-header": {
     borderTop: "1px solid var(--ui-color-border)",
     borderBottomWidth: "2px",
-    backgroundColor: "var(--ui-color-surface)",
+    backgroundColor: SURFACE_SHADE,
   },
   // pipe は幅 0 の inline-block にして、セルどうしを隙間なく並べる。`|` の字幅が残るとセルの線が
   // そこで途切れ、区切りの左右で余白も字幅の分だけ食い違う。高さはセルと同じ行の高さになる。

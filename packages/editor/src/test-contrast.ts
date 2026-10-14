@@ -47,6 +47,16 @@ export function over(color: string, backdrop: Rgb): Rgb {
   return [r ?? 0, g ?? 0, b ?? 0];
 }
 
+/** 8bit の RGB を比べる。合成と色空間の変換の丸めで 1〜2 ずれうるので、各チャンネルの差を許す */
+export function expectNear(actual: Rgb, expected: Rgb, tolerance = 2): void {
+  for (const [index, channel] of actual.entries()) {
+    expect(
+      Math.abs(channel - (expected[index] ?? 0)),
+      `${actual.join(",")} is not near ${expected.join(",")}`,
+    ).toBeLessThanOrEqual(tolerance);
+  }
+}
+
 function relativeLuminance([r, g, b]: Rgb): number {
   const linear = (channel: number) => {
     const c = channel / 255;

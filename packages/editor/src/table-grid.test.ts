@@ -1,7 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 import { createEditor } from "./create-editor";
-import { resolve, toRgb } from "./test-contrast";
+import { expectNear, over, resolve } from "./test-contrast";
 
 /** 表の rendered 表示の見た目（罫線、見出し行の地、`|` の不可視）。描画の有無と列の揃えは table.test.ts */
 
@@ -110,8 +110,10 @@ describe("table grid", () => {
     const v = mount();
     const [header, , first] = tableLines(v);
     const surface = resolve(v.contentDOM, "var(--ui-color-surface)");
+    const background = resolve(v.contentDOM, "var(--ui-color-background)");
+    // 選択範囲を透かすため地は半透明。エディタ面に重ねた色が surface 色になる
     for (const cell of rowCells(header)) {
-      expect(toRgb(getComputedStyle(cell).backgroundColor)).toEqual(surface);
+      expectNear(over(getComputedStyle(cell).backgroundColor, background), surface);
     }
     for (const cell of rowCells(first)) {
       expect(getComputedStyle(cell).backgroundColor).toBe("rgba(0, 0, 0, 0)");

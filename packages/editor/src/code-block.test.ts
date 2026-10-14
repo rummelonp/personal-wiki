@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cdp, page } from "vitest/browser";
 import { CODE_END_LABEL, CODE_START_LABEL } from "./code-block";
 import { createEditor } from "./create-editor";
-import { resolve, toRgb } from "./test-contrast";
+import { expectNear, over, resolve } from "./test-contrast";
 
 let view: EditorView | null = null;
 let host: HTMLElement | null = null;
@@ -53,12 +53,17 @@ describe("code block decoration", () => {
     expect(codeLines(v)).toHaveLength(3);
   });
 
-  it("adds a background resolving to --ui-color-surface", () => {
+  // 地は選択範囲を透かすため半透明。エディタ面に重ねた色が surface 色になる
+  it("adds a translucent background that looks like --ui-color-surface on the editor background", () => {
     const v = mount("```\ncode\n```");
     const line = codeLines(v)[0];
     if (!line) throw new Error("code line is not rendered");
-    const surface = resolve(v.contentDOM, "var(--ui-color-surface)");
-    expect(toRgb(getComputedStyle(line).backgroundColor)).toEqual(surface);
+    const background = getComputedStyle(line).backgroundColor;
+    expect(background).not.toBe("rgba(0, 0, 0, 0)");
+    expectNear(
+      over(background, resolve(v.contentDOM, "var(--ui-color-background)")),
+      resolve(v.contentDOM, "var(--ui-color-surface)"),
+    );
   });
 
   it("adds left padding wider than a plain body line", () => {

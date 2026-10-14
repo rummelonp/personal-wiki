@@ -1,9 +1,9 @@
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cdp } from "vitest/browser";
 import { createEditor } from "./create-editor";
-import { resolve, toRgb } from "./test-contrast";
+import { over, resolve, toRgb } from "./test-contrast";
+import { screenshotReader } from "./test-screenshot";
 
 let view: EditorView | null = null;
 let host: HTMLElement | null = null;
@@ -14,25 +14,6 @@ afterEach(() => {
   view = null;
   host = null;
 });
-
-/** 実際に描かれた画面を撮り、CSS の座標で 1 点の色を読む道具 */
-async function screenshotReader() {
-  const { data } = (await cdp().send("Page.captureScreenshot", { format: "png" })) as {
-    data: string;
-  };
-  const bitmap = await createImageBitmap(
-    await (await fetch(`data:image/png;base64,${data}`)).blob(),
-  );
-  const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("canvas 2d context is unavailable");
-  context.drawImage(bitmap, 0, 0);
-  const scale = bitmap.width / innerWidth;
-  return (x: number, y: number): number[] =>
-    [...context.getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data].slice(0, 3);
-}
 
 function expectColor(actual: number[], expected: readonly number[]) {
   // 色空間の変換と合成のときの丸めで 1〜2 ずれうる
@@ -68,6 +49,8 @@ async function sample(from: number, to: number) {
   return {
     selected,
     surface,
+    // 地は半透明なので、選択の層（本文の下）の上に地が重なった色が画面に出る
+    selectedOnSurface: over(getComputedStyle(lines[1] as Element).backgroundColor, selected),
     background: resolve(view.contentDOM, "var(--ui-color-background)"),
     gap,
     topGap: pixel(x, first.top + gap / 2),
@@ -80,23 +63,29 @@ async function sample(from: number, to: number) {
 }
 
 describe("selection across a code block", () => {
-  it("shows the selection in the gaps around the block while the opaque background hides it", async () => {
-    // 選択の層は本文の下に描かれるので、不透明な地の行では隠れ、地の外の隙間（透明な border）にだけ見える。
-    // 前後の行も選択されていれば、隙間の色はその行と同じで帯が途切れずに続く。
+  it("shows the selection through the translucent background, and in the gaps around the block", async () => {
+    // 選択の層は本文の下に描かれるので、地が半透明でないと隠れる。地は半透明にして、地の上でも選択の色に
+    // 地が重なった色で見せる。地の外の隙間（透明な border）は、前後の行も選択されていれば同じ選択の色で、
+    // 帯が途切れずに続く。
     const r = await sample(1, DOC.length - 1);
     expect(r.gap).toBeGreaterThan(0);
     expect(r.selected).not.toEqual(r.surface);
     expectColor(r.topGap, r.selected);
     expectColor(r.bottomGap, r.selected);
-    expectColor(r.body, r.surface);
+    expectColor(r.body, r.selectedOnSurface);
+    expect(r.body).not.toEqual([...r.surface]);
     expectColor(r.above, r.selected);
     expectColor(r.below, r.selected);
   });
 
+  it("leaves the block on its own background when nothing in it is selected", async () => {
+    const r = await sample(0, 1);
+    expectColor(r.body, r.surface);
+  });
+
   it("shows only a strip under the block when the selection ends at the start of the next line", async () => {
-    // 閉じフェンスの行頭から次の行頭まで（3 回クリックや Shift+↓ で行を選んだ形）では、選ぶのは地の中の行だけで
-    // 隠れる。それでも、その行の選択の矩形が隙間の上半分に食い込み、選ばれていない次の行の上に細い帯だけが見える。
-    // 根本の原因は、ブロックの中の選択が見えないこと（直したらこのテストも改める）
+    // 閉じフェンスの行頭から次の行頭まで（3 回クリックや Shift+↓ で行を選んだ形）では、選ぶのは地の中の行だけ。
+    // その行の選択の矩形が隙間の上半分に食い込み、選ばれていない次の行の上に細い帯が見える。
     const close = DOC.indexOf("```\n\n");
     const r = await sample(close, close + 4);
     expectColor(r.bottomGapTop, r.selected);

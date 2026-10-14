@@ -123,12 +123,13 @@ const activeLineDecoration = Decoration.line({ class: "cm-active-line" });
 const activeLineTheme = EditorView.baseTheme({
   // accent をごく薄く混ぜる。本文と地のコントラスト（`focus.test.ts` が測る 4.5:1）を
   // 落とさない濃さにする。
+  // 地は半透明にする。選択範囲の地は行より下の層に描かれるので、不透明にすると行の中の選択が隠れる。
   // `.cm-line` と重ねずクラス 1 つで書いてあるのは、callout の行の地（`.cm-line.cm-lp-callout`）に
   // 負けるようにするためである。行の種類を示す地のほうが、カーソルの居場所より情報量が多い。
   // class 名を CodeMirror の `highlightActiveLine` と同じ `cm-activeLine` にしないのは、
   // あれの base theme（水色の地）まで当たってしまうため。
   ".cm-active-line": {
-    backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 7%, var(--ui-color-background))",
+    backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 7%, transparent)",
   },
   // 地の左端を本文の文字の左端に揃える。行の箱は content の左端から始まるので、そのままでは地が
   // 既定の左 padding の分（6px）だけ文字の左へはみ出す。コードブロックの地は margin で箱ごと寄せるが

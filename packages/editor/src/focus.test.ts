@@ -3,7 +3,7 @@ import type { EditorView, ViewUpdate } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { createEditor } from "./create-editor";
-import { colorOf, contrastRatio, MIN_CONTRAST, resolve, toRgb } from "./test-contrast";
+import { colorOf, contrastRatio, MIN_CONTRAST, over, resolve, toRgb } from "./test-contrast";
 import { resetScheme, setScheme } from "./test-tokens";
 import { createTitleEditor } from "./title-editor";
 
@@ -228,7 +228,11 @@ describe("カーソル行の地", () => {
 
     const line = view.contentDOM.querySelector(".cm-active-line");
     if (!line) throw new Error("active line is not rendered");
-    const background = toRgb(getComputedStyle(line).backgroundColor);
+    // 地は半透明（選択範囲を透かすため）なので、エディタ面に重ねた色で測る
+    const background = over(
+      getComputedStyle(line).backgroundColor,
+      resolve(view.contentDOM, "var(--ui-color-background)"),
+    );
     expect(contrastRatio(colorOf(view.contentDOM), background)).toBeGreaterThanOrEqual(
       MIN_CONTRAST,
     );
