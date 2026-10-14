@@ -6,6 +6,7 @@ import { App } from "./App";
 import { fetchMe, logout } from "./api";
 import { linkRewrites } from "./link-rewrites";
 import { stepLinkRewrites } from "./link-rewrites-api";
+import { recallTitle, rememberTitle } from "./page-titles";
 import {
   type ApiResult,
   createPage,
@@ -453,6 +454,25 @@ describe("App の owner の画面", () => {
     await vi.waitFor(() => expect(logoutAgain()?.disabled).toBe(false));
     expect(logout).toHaveBeenCalledTimes(1);
     expect(main()?.querySelector("[role='alert']")).toBeNull();
+  });
+
+  it("ログアウトの応答が失敗しても匿名に移ったなら、覚えた draft の title を忘れる", async () => {
+    serve("owner", [PUBLIC, DRAFT]);
+    await renderAt("/");
+    rememberTitle(DRAFT.id, DRAFT.title);
+    vi.mocked(logout).mockRejectedValueOnce(new Error("応答が途中で切れた"));
+    vi.mocked(fetchMe).mockResolvedValue({
+      kind: "anonymous",
+      features: { attachments: false, linkRewrites: true },
+    });
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    expect(recallTitle(DRAFT.id)).toBeUndefined();
   });
 
   it("ログアウトに失敗して状態も取得できなければ、エラーの画面にする", async () => {
