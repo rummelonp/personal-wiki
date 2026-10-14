@@ -114,9 +114,6 @@ describe("createTitleEditor", () => {
     expect(commits).toBe(1);
   });
 
-  // IME 不変条件 3。CodeMirror は DOM の変更を読んだ後の変換中の keydown を keymap より前に捨てるので、
-  // 実際のキー入力ではこの guard に届かない。届くのは compositionstart の直後（まだ DOM の変更が無い）と、
-  // Safari で compositionend と keydown の順序が入れ替わったときなので、keymap を直接呼んで確かめる
   test("Enter on an empty or blank title stays in the title without committing", () => {
     for (const title of ["", "   "]) {
       const bodyView = mount((parent) => createEditor(parent, { doc: "一行目" }));
@@ -139,6 +136,9 @@ describe("createTitleEditor", () => {
     }
   });
 
+  // IME 不変条件 3。CodeMirror は DOM の変更を読んだ後の変換中の keydown を keymap より前に捨てるので、
+  // 実際のキー入力ではこの guard に届かない。届くのは compositionstart の直後（まだ DOM の変更が無い）と、
+  // Safari で compositionend と keydown の順序が入れ替わったときなので、keymap を直接呼んで確かめる
   test("Enter and ArrowDown leave the keys to the IME during composition", () => {
     const bodyView = mount((parent) => createEditor(parent, { doc: "一行目" }));
     let commits = 0;
