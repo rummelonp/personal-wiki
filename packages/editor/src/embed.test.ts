@@ -109,8 +109,41 @@ describe("image embed", () => {
     await vi.waitFor(() =>
       expect(embedOf(v, "image.png")?.hasAttribute("data-embed-compact")).toBe(true),
     );
-    // 行は文字の 1 行（28px）のまま。余白を足すと 28 + 2 * 15 になる
+    // 行は文字の 1 行（28px）のまま。余白（12px ずつ）を足すと 52px になる
     expect(img.closest(".cm-line")?.getBoundingClientRect().height).toBeLessThan(40);
+  });
+
+  it("does not add the margin to an image written inside a sentence", async () => {
+    const v = mount("前 ![[image.png|300x200]] 後");
+    const img = await loadedImg(v, "image.png");
+    const line = img.closest(".cm-line")?.getBoundingClientRect();
+    if (!line) throw new Error("行が無い");
+    expect(embedOf(v, "image.png")?.classList.contains("cm-embed-block")).toBe(false);
+    expect(line.height).toBeLessThan(200 + 12);
+  });
+
+  it("keeps the edit button inside the image, not over the margin below it", async () => {
+    const v = mount("前\n![[image.png|300x200]]\n後");
+    const img = await loadedImg(v, "image.png");
+    const button = embedOf(v, "image.png")?.querySelector<HTMLElement>(".cm-embed-edit");
+    if (!button) throw new Error("編集ボタンが無い");
+    const imgRect = img.getBoundingClientRect();
+    const rect = button.getBoundingClientRect();
+    expect(rect.top).toBeGreaterThanOrEqual(imgRect.top);
+    expect(rect.bottom).toBeLessThanOrEqual(imgRect.bottom);
+    expect(rect.right).toBeLessThanOrEqual(imgRect.right);
+  });
+
+  it("starts the source overlay at or above the image's top edge", async () => {
+    const v = mount("前\n![[image.png|300x200]]\n後");
+    const img = await loadedImg(v, "image.png");
+    placeCursor(v, "前\n![[image".length);
+    const overlay = v.contentDOM.querySelector<HTMLElement>(".cm-embed-source-overlay");
+    if (!overlay) throw new Error("source が重なっていない");
+    const imgRect = img.getBoundingClientRect();
+    const rect = overlay.getBoundingClientRect();
+    expect(rect.top).toBeLessThanOrEqual(imgRect.top);
+    expect(rect.bottom).toBeGreaterThan(imgRect.top);
   });
 
   it("reads the size written after \\| as in a table cell", async () => {

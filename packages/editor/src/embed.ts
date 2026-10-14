@@ -116,6 +116,11 @@ const TARGET_ATTR = "data-embed-target";
 const STATE_ATTR = "data-embed-state";
 /** 読み込んだ画像の描いた高さが 1 行以下のときに wrapper に付く */
 const COMPACT_ATTR = "data-embed-compact";
+/**
+ * 行にその embed しか無いとき（block の接頭辞と空白は除く）に wrapper に付く。上下の余白を取る目印。
+ * 文の中の embed は行を広げない。
+ */
+const BLOCK_CLASS = "cm-embed-block";
 
 function unresolvedElement(target: string): HTMLElement {
   const element = document.createElement("span");
@@ -174,6 +179,7 @@ class ImageEmbedWidget extends WidgetType {
     readonly target: string,
     readonly src: string | null,
     readonly label: ImageEmbedLabel,
+    readonly block: boolean,
   ) {
     super();
   }
@@ -185,6 +191,7 @@ class ImageEmbedWidget extends WidgetType {
       other instanceof ImageEmbedWidget &&
       other.target === this.target &&
       other.src === this.src &&
+      other.block === this.block &&
       sameLabel(other.label, this.label)
     );
   }
@@ -205,6 +212,7 @@ class ImageEmbedWidget extends WidgetType {
       return wrapper;
     }
 
+    if (this.block) wrapper.classList.add(BLOCK_CLASS);
     const img = document.createElement("img");
     img.alt = this.label.kind === "alt" ? this.label.text : this.target;
     // markdown image（`![alt](url)`）は任意の host の URL を描くので、読み込みリクエストで
@@ -236,6 +244,7 @@ class ImageEmbedWidget extends WidgetType {
     );
     img.addEventListener("error", () => {
       img.replaceWith(unresolvedElement(this.target));
+      wrapper.classList.remove(BLOCK_CLASS);
       view.requestMeasure();
     });
     img.src = this.src;
@@ -249,6 +258,7 @@ class VideoEmbedWidget extends WidgetType {
   constructor(
     readonly target: string,
     readonly src: string | null,
+    readonly block: boolean,
   ) {
     super();
   }
@@ -256,7 +266,10 @@ class VideoEmbedWidget extends WidgetType {
   // eq が true なら DOM を作り直さないので、カーソル移動で再生位置が失われない
   override eq(other: WidgetType): boolean {
     return (
-      other instanceof VideoEmbedWidget && other.target === this.target && other.src === this.src
+      other instanceof VideoEmbedWidget &&
+      other.target === this.target &&
+      other.src === this.src &&
+      other.block === this.block
     );
   }
 
@@ -276,6 +289,7 @@ class VideoEmbedWidget extends WidgetType {
       return wrapper;
     }
 
+    if (this.block) wrapper.classList.add(BLOCK_CLASS);
     const video = document.createElement("video");
     video.controls = true;
     // 本文を開いただけで動画本体を読み始めない。大きさと長さが分かれば足りる
@@ -285,6 +299,7 @@ class VideoEmbedWidget extends WidgetType {
     video.addEventListener("loadedmetadata", () => view.requestMeasure());
     video.addEventListener("error", () => {
       video.replaceWith(unresolvedElement(this.target));
+      wrapper.classList.remove(BLOCK_CLASS);
       view.requestMeasure();
     });
     video.src = this.src;
@@ -432,6 +447,7 @@ const sectionContents = new WeakMap<EditorView, SectionContents>();
 type MediaWidgetFactory = (
   parts: WikiLinkParts,
   resolveUrl: AttachmentUrlResolver | null,
+  block: boolean,
 ) => WidgetType;
 
 /**
@@ -439,15 +455,16 @@ type MediaWidgetFactory = (
  * `MediaEmbedKind` に種類を足すと、ここに widget が無い限り型検査で落ちる。
  */
 const mediaWidgetFactories: { readonly [K in MediaEmbedKind]: MediaWidgetFactory } = {
-  image: (parts, resolveUrl) =>
+  image: (parts, resolveUrl, block) =>
     new ImageEmbedWidget(
       parts.target,
       resolveUrl ? resolveUrl(parts.target) : null,
       parseImageEmbedLabel(parts.label),
+      block,
     ),
   // `|` より後ろは読まない。Obsidian の help は動画のサイズ指定を定めていない
-  video: (parts, resolveUrl) =>
-    new VideoEmbedWidget(parts.target, resolveUrl ? resolveUrl(parts.target) : null),
+  video: (parts, resolveUrl, block) =>
+    new VideoEmbedWidget(parts.target, resolveUrl ? resolveUrl(parts.target) : null, block),
 };
 
 /** widget を組んだときの記法の文字列（`!` から `]]` まで） */
@@ -627,11 +644,20 @@ function placeEmbed(
   atomic: Range<Decoration>[],
   from: number,
   to: number,
-  render: () => WidgetType,
+  render: (block: boolean) => WidgetType,
 ): void {
   const source = state.doc.sliceString(from, to);
+  const line = state.doc.lineAt(from);
+  // 見た目の 1 行目に来て（接頭辞と空白だけが前にある）、後ろにも文字が無い embed
+  const prefixOnly = onlyBlockPrefixBefore(
+    state.doc.sliceString(line.from, from),
+    tree,
+    line.from,
+    from,
+  );
+  const block = prefixOnly && state.doc.sliceString(to, line.to).trim() === "";
   const createWidget = (): WidgetType => {
-    const widget = render();
+    const widget = render(block);
     widgetSources.set(widget, source);
     return widget;
   };
@@ -659,10 +685,9 @@ function placeEmbed(
   // 重ねる記法は行の上端に置くので、行が折り返して embed が 2 行目以降の見た目の行に来ると、
   // widget でなく 1 行目の本文を覆う。見た目の 1 行目から始まる embed だけを重ね、それ以外は
   // 記法を流れに置いて widget を後ろに残す（高さは widget が保つ）。
-  const lineFrom = state.doc.lineAt(from).from;
-  if (onlyBlockPrefixBefore(state.doc.sliceString(lineFrom, from), tree, lineFrom, from)) {
+  if (prefixOnly) {
     decorations.push(sourceOverlay.range(from, to));
-    decorations.push(sourceOverlayLine.range(lineFrom));
+    decorations.push(sourceOverlayLine.range(line.from));
   } else {
     decorations.push(sourceInFlow.range(from, to));
   }
@@ -728,7 +753,7 @@ function build(
             atomic,
             node.from,
             node.to,
-            () => new ImageEmbedWidget(parts.url, src, label),
+            (block) => new ImageEmbedWidget(parts.url, src, label, block),
           );
           return false;
         }
@@ -744,7 +769,7 @@ function build(
         if (!parts) return false;
         const kind = embedKindOf(parts);
         if (kind === null || !expanded.has(kind)) return false;
-        let render: () => WidgetType;
+        let render: (block: boolean) => WidgetType;
         if (kind === "page") {
           // expanded に page が入るのは page を渡したときだけなので、ここで page は必ずある
           if (!page) return false;
@@ -755,7 +780,7 @@ function build(
               page,
             );
         } else {
-          render = () => mediaWidgetFactories[kind](parts, resolveUrl);
+          render = (block) => mediaWidgetFactories[kind](parts, resolveUrl, block);
         }
         placeEmbed(state, tree, previous, reveal, decorations, atomic, embedFrom, node.to, render);
         return false;
@@ -806,14 +831,20 @@ const embedTheme = EditorView.baseTheme({
   // `|300x200` で幅が行に収まらず縮んだときに、縦横比を崩さない
   ".cm-embed-image img": { maxWidth: "100%", objectFit: "contain", verticalAlign: "bottom" },
   ".cm-embed-video video": { maxWidth: "100%", verticalAlign: "bottom" },
-  // 前後の行と離す。margin は img と video 自身に付ける。inline の wrapper の上下の margin は効かず、
-  // 行の高さに数えられるのは inline の置換要素の margin だけのため。
-  // 1 行以下の画像（行の中の小さな絵）は、並ぶ文字の行を広げないよう除く。
-  // 動画は 1 行より背が低いことが無いので、除かない。
-  ".cm-embed-image:not([data-embed-compact]) img, .cm-embed-video video": {
-    marginTop: EMBED_GAP,
-    marginBottom: EMBED_GAP,
+  // 前後の行と離す。行にその embed しか無いとき（BLOCK_CLASS）だけ、wrapper を inline-block にして
+  // padding で余白を取る。inline の wrapper の上下の余白は行の高さに数えられず、img への margin だと
+  // 編集ボタンの基準（wrapper の上端と右端）が余白の分だけ画像からはみ出すため。
+  // 文の中の embed は行を広げない。block かどうかは widget を作る時点で決めるので、読み込み後に
+  // 行が伸び縮みしない。
+  ".cm-embed-block": {
+    display: "inline-block",
+    verticalAlign: "bottom",
+    maxWidth: "100%",
+    paddingTop: EMBED_GAP,
+    paddingBottom: EMBED_GAP,
   },
+  // 編集ボタンは画像の右上（余白の内側）に置く
+  ".cm-embed-block > .cm-embed-edit": { top: EMBED_GAP },
   // 未解決の WikiLink と同じ見せ方にそろえる（theme.ts の `.cm-wikilink-unresolved`）
   ".cm-embed-unresolved": {
     color: "var(--ui-color-muted)",
