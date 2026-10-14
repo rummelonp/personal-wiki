@@ -16,7 +16,7 @@ import {
   type UploadAttachment,
   type WikiLinkClick,
 } from "@personal-wiki/editor";
-import { findHeadingOffset } from "@personal-wiki/markdown";
+import { extractBlockIds, findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import type { PageFragment } from "./page-fragment";
 import { scrollBelowStickyHeader } from "./sticky-header";
@@ -93,7 +93,7 @@ const settledKey = Symbol("whenSettled");
 /**
  * focus を外す。リンクや目次から見出しへ移るのは読むためで、focus が残ると iOS のキーボードが
  * 画面の半分を隠し、カーソルの行の Live Preview の記号（`## `）も現れる。
- * 続けて編集するには、本文をクリックかタップする（デスクトップの Tab でも入れる）。
+ * 続けて編集するには、本文をクリックかタップする。
  * focus を残してカーソルだけ別の所に置く案は、画面の外にカーソルがあるまま打てるので採らなかった。
  */
 function leaveEditing(editor: EditorView): void {
@@ -286,7 +286,12 @@ export function BodyEditor({
       // 位置は動かす時点の本文で求める。変換が落ち着くまでに本文が変わっていても、その本文の位置に移る
       dispatchWhenSettled(editor, jumpKey, () => {
         if (fragment.kind === "block") {
-          if (revealBlockId(editor, fragment.id)) leaveEditing(editor);
+          // focus を持ったまま selection を動かすと、iOS が native のカーソルへスクロールして
+          // 中央への scroll を崩すので、見出しと同じく先に外す。見つからないリンクでは外さない
+          const id = fragment.id;
+          if (!extractBlockIds(editor.state.doc.toString()).some((ref) => ref.id === id)) return;
+          leaveEditing(editor);
+          revealBlockId(editor, id);
           return;
         }
         const offset = findHeadingOffset(editor.state.doc.toString(), fragment.heading);
