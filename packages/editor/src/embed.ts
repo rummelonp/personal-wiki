@@ -766,6 +766,8 @@ function build(
   return { decorations: Decoration.set(decorations, true), atomic: Decoration.set(atomic, true) };
 }
 
+const EMBED_GAP = "var(--ui-space-3, 0.75rem)";
+
 const embedTheme = EditorView.baseTheme({
   // 編集ボタン（.cm-embed-edit、position: absolute）の containing block を作る。resolved な
   // ページ embed だけは除く。本文に持つ nested EditorView の ResizeObserver が、この
@@ -804,6 +806,14 @@ const embedTheme = EditorView.baseTheme({
   // `|300x200` で幅が行に収まらず縮んだときに、縦横比を崩さない
   ".cm-embed-image img": { maxWidth: "100%", objectFit: "contain", verticalAlign: "bottom" },
   ".cm-embed-video video": { maxWidth: "100%", verticalAlign: "bottom" },
+  // 前後の行と離す。margin は img と video 自身に付ける。inline の wrapper の上下の margin は効かず、
+  // 行の高さに数えられるのは inline の置換要素の margin だけのため。
+  // 1 行以下の画像（行の中の小さな絵）は、並ぶ文字の行を広げないよう除く。
+  // 動画は 1 行より背が低いことが無いので、除かない。
+  ".cm-embed-image:not([data-embed-compact]) img, .cm-embed-video video": {
+    marginTop: EMBED_GAP,
+    marginBottom: EMBED_GAP,
+  },
   // 未解決の WikiLink と同じ見せ方にそろえる（theme.ts の `.cm-wikilink-unresolved`）
   ".cm-embed-unresolved": {
     color: "var(--ui-color-muted)",
@@ -819,6 +829,9 @@ const embedTheme = EditorView.baseTheme({
     verticalAlign: "top",
     borderLeft: "3px solid var(--ui-color-border)",
     paddingLeft: "0.75em",
+    // inline-block の margin は行の高さに数えられる
+    marginTop: EMBED_GAP,
+    marginBottom: EMBED_GAP,
   },
   // タイトルと編集ボタンを並べる行。本文（nested EditorView）を含む resolved の widget 自身には
   // position: absolute の子孫を作らない（下のコメント）ので、ボタンはこの行の中に流し込む。

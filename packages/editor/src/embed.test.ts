@@ -93,6 +93,26 @@ describe("image embed", () => {
     expect(img.getBoundingClientRect().height).toBe(300);
   });
 
+  it("leaves room above and below, so the image does not touch the lines around it", async () => {
+    const v = mount("前\n![[image.png|300x200]]\n後");
+    const img = await loadedImg(v, "image.png");
+    const line = img.closest(".cm-line")?.getBoundingClientRect();
+    const rect = img.getBoundingClientRect();
+    if (!line) throw new Error("行が無い");
+    expect(rect.top - line.top).toBeGreaterThanOrEqual(10);
+    expect(line.bottom - rect.bottom).toBeGreaterThanOrEqual(10);
+  });
+
+  it("does not widen the line around an image that is no taller than a line", async () => {
+    const v = mount("前 ![[image.png|10]] 後");
+    const img = await loadedImg(v, "image.png");
+    await vi.waitFor(() =>
+      expect(embedOf(v, "image.png")?.hasAttribute("data-embed-compact")).toBe(true),
+    );
+    // 行は文字の 1 行（28px）のまま。余白を足すと 28 + 2 * 15 になる
+    expect(img.closest(".cm-line")?.getBoundingClientRect().height).toBeLessThan(40);
+  });
+
   it("reads the size written after \\| as in a table cell", async () => {
     const v = mount("![[image.png\\|300]]");
     const img = imgOf(v, "image.png") as HTMLImageElement;
@@ -751,6 +771,18 @@ describe("page embed", () => {
     // 本文も同じ live preview で描くので、記法は隠れる
     expect(bodyOf(v, "Note")?.textContent).toBe("埋め込まれた 本文");
     expect(v.state.doc.toString()).toBe("前\n![[Note]]\n後");
+  });
+
+  it("leaves room above and below the expanded body", () => {
+    const v = mount("前\n![[Note]]\n後", {
+      resolvePageEmbed: () => resolved("Note", "埋め込まれた本文"),
+    });
+    const embed = embedOf(v, "Note");
+    const line = embed?.closest(".cm-line")?.getBoundingClientRect();
+    const rect = embed?.getBoundingClientRect();
+    if (!line || !rect) throw new Error("行が無い");
+    expect(rect.top - line.top).toBeGreaterThanOrEqual(10);
+    expect(line.bottom - rect.bottom).toBeGreaterThanOrEqual(10);
   });
 
   it("asks the host by the target, not by the label", () => {
