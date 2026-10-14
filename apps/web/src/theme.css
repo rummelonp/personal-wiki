@@ -57,6 +57,7 @@
   --font-size-chip: 0.75rem; /* タグのチップ */
   --font-size-base: 0.9375rem; /* 本文、操作 */
   --font-size-md: 1rem; /* 一覧のタイトル */
+  --font-size-input: 1rem; /* 入力欄。iOS が focus でページを拡大しない下限 */
   --font-size-lg: 1.25rem; /* 小見出し */
   --font-size-title: 2.125rem; /* ページ名 */
   --font-size-title-narrow: 1.75rem; /* 狭い画面でのページ名 */

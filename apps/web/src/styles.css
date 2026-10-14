@@ -772,6 +772,19 @@ a {
   border-radius: var(--radius-md);
 }
 
+/*
+ * iOS は font-size が 16px 未満の input に focus するとページを拡大し、拡大が残る。
+ * 本文の大きさ（--font-size-base）は変えず、タッチ操作の端末の入力欄だけを 16px にする。
+ * 3 つの入力欄の基本の規則より後ろに置き、同じ詳細度で上書きする。
+ */
+@media (pointer: coarse) {
+  .text-input,
+  .search-input,
+  .switcher-input {
+    font-size: var(--font-size-input);
+  }
+}
+
 .switcher-heading {
   margin: 0;
   padding: 0 var(--space-2);
