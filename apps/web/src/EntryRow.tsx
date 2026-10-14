@@ -1,6 +1,7 @@
 import { formatRowTime } from "./format";
 import { highlightMatches } from "./highlight";
 import { Link } from "./Link";
+import { rememberTitle } from "./page-titles";
 import type { ListedPage } from "./pages-api";
 import { pageHrefFor, tagHref } from "./route";
 
@@ -28,7 +29,11 @@ export function EntryRow({
   return (
     <li className="entry">
       <div className="entry-head">
-        <Link className="entry-title" href={pageHrefFor(entry)}>
+        <Link
+          className="entry-title"
+          href={pageHrefFor(entry)}
+          onClick={() => rememberTitle(entry.id, entry.title)}
+        >
           {highlightMatches(entry.title, titleNeedles)}
         </Link>
         {showVisibility && entry.visibility === "public" && (

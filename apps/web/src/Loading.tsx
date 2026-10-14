@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listHeading } from "./list-heading";
+import { recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
 
@@ -131,7 +132,7 @@ export function ListSkeleton({ heading }: { heading?: string }) {
  * ページの画面全体の帯。title が分かっていれば文字で出し、帯は本文の行だけにする
  * （title は読み込み後も同じ位置と書体で出るので、動かない）。
  */
-export function PageSkeleton({ title }: { title?: string }) {
+export function PageSkeleton({ title }: { title?: string | undefined }) {
   const painted = useSkeletonPainted();
   const rail = (
     <div className={`skeleton-rail ${paintedClass(painted) ?? ""}`} aria-hidden="true">
@@ -177,6 +178,7 @@ export function RouteSkeleton({ route }: { route: Route }) {
     case "title":
       return <PageSkeleton title={route.title} />;
     case "page":
+      return <PageSkeleton title={recallTitle(route.id)} />;
     case "new":
       return <PageSkeleton />;
     case "unknown":

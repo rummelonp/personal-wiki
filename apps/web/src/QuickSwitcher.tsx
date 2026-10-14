@@ -11,6 +11,7 @@ import {
   type TitleIndex,
 } from "./link-sources";
 import { openNewPage } from "./new-page";
+import { rememberTitle } from "./page-titles";
 import { listPageTitles } from "./pages-api";
 import { homeHref, navigate, pageHref } from "./route";
 
@@ -166,6 +167,7 @@ function SwitcherBody({
 
   function selectRow(row: Row) {
     if (row.kind === "page") {
+      rememberTitle(row.candidate.id, row.candidate.title);
       onClose();
       navigate(pageHref(row.candidate.id));
     } else if (row.kind === "content-search") {

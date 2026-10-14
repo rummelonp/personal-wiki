@@ -17,6 +17,7 @@ import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
 import { Notice, NoticeDockProvider } from "./Notice";
 import { useNewPageRequest } from "./new-page";
+import { forgetTitles } from "./page-titles";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { RailLayout } from "./Rail";
 import { parseRoute, useRoute } from "./route";
@@ -112,6 +113,7 @@ export function App() {
         if (me.kind === "owner" && me.features.linkRewrites) linkRewrites.start();
         return;
       }
+      forgetTitles();
       // features は環境の性質で、ログアウトでは変わらない
       setSession((current) => ({
         status: "ready",

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "./Link";
+import { rememberTitle } from "./page-titles";
 import { listBacklinks, type PageSummary } from "./pages-api";
 import { RailSection } from "./Rail";
 import { pageHrefFor } from "./route";
@@ -74,7 +75,9 @@ export function Backlinks({ pageId, hideEmpty = false }: { pageId: string; hideE
         <ul className="rail-list">
           {state.pages.map((page) => (
             <li key={page.id}>
-              <Link href={pageHrefFor(page)}>{page.title}</Link>
+              <Link href={pageHrefFor(page)} onClick={() => rememberTitle(page.id, page.title)}>
+                {page.title}
+              </Link>
             </li>
           ))}
         </ul>

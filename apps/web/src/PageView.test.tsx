@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageView } from "./PageView";
+import { forgetTitles, rememberTitle } from "./page-titles";
 import { type ApiResult, getPage, type Page } from "./pages-api";
 
 vi.mock("./pages-api", async (importOriginal) => {
@@ -92,5 +93,45 @@ describe("PageView の URL の置き換え", () => {
     history.replaceState(null, "", "/?tag=x");
     act(() => onShown(PAGE));
     expect(`${location.pathname}${location.search}`).toBe("/?tag=x");
+  });
+});
+
+describe("PageView の取得中の title", () => {
+  const noteTitle = () => container?.querySelector(".note-title")?.textContent;
+
+  async function render(target: Parameters<typeof PageView>[0]["target"]) {
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () =>
+      mounted.render(<PageView target={target} owner={false} attachments={false} />),
+    );
+  }
+
+  beforeEach(() => {
+    forgetTitles();
+    // 取得が終わらない間の画面を見る
+    vi.mocked(getPage).mockReturnValue(new Promise(() => {}));
+  });
+
+  it("id で開くとき、覚えていた title をスケルトンに文字で出す", async () => {
+    rememberTitle(PAGE.id, "覚えた題");
+    await render({ by: "id", id: PAGE.id });
+    expect(noteTitle()).toBe("覚えた題");
+    expect(container?.querySelector(".note[aria-busy='true']")).not.toBeNull();
+  });
+
+  it("id で開くとき、覚えていなければ title の帯を出す", async () => {
+    await render({ by: "id", id: PAGE.id });
+    expect(noteTitle()).toBe("");
+    expect(container?.querySelector(".note-title .skeleton")).not.toBeNull();
+  });
+
+  it("forgetTitles の後は、覚えていた title を出さない", async () => {
+    rememberTitle(PAGE.id, "覚えた題");
+    forgetTitles();
+    await render({ by: "id", id: PAGE.id });
+    expect(noteTitle()).toBe("");
   });
 });

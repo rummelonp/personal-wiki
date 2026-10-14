@@ -6,6 +6,7 @@ import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
+import { recallTitle, rememberTitle } from "./page-titles";
 import {
   failureMessage,
   findPageByTitle,
@@ -141,6 +142,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     if (window.location.pathname !== shownPath.current && !locationTargets(shownTarget.current)) {
       return;
     }
+    rememberTitle(page.id, page.title);
     const path = pageHrefFor(page);
     shownPath.current = path;
     setDocumentTitle(page.title);
@@ -162,7 +164,17 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   if (target.by === "new" && !owner) return <SignInNotice />;
   switch (state.status) {
     case "loading":
-      return <PageSkeleton />;
+      return (
+        <PageSkeleton
+          title={
+            target.by === "title"
+              ? target.title
+              : target.by === "id"
+                ? recallTitle(target.id)
+                : undefined
+          }
+        />
+      );
     case "unauthorized":
       return <SignInNotice expired />;
     case "not_found":
