@@ -123,6 +123,15 @@ function typeAtEnd(view: EditorView, text: string, userEvent = "input.type"): vo
 const flushAsync = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
 describe("PageEditor と本文のエディタ", () => {
+  it("リンク元が無いときも、owner には「このページへのリンク」の節と「ありません」を出す", async () => {
+    renderPage();
+    await vi.waitFor(() => expect(listBacklinks).toHaveBeenCalled());
+    await flushAsync();
+    const section = container?.querySelector(".rail-section-links");
+    expect(section?.textContent).toContain("このページへのリンク");
+    expect(section?.textContent).toContain("ありません");
+  });
+
   it("フォーカスが外れたら、入力した本文を保存する", async () => {
     const { view } = renderPage();
     view().focus();

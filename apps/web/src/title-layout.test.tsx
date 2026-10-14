@@ -92,6 +92,15 @@ function measure(article: HTMLElement) {
   };
 }
 
+/**
+ * 文字の左端は列の線（article の左端）に載る。2 つの要素は線から左へ --editor-line-inset だけ出して
+ * いるので、token と CodeMirror の行の padding の 2 重の値がずれると、ここで見つかる
+ */
+function expectOnColumnLine(m: ReturnType<typeof measure>) {
+  expect(Math.abs(m.titleLeft), "title").toBeLessThan(1);
+  expect(Math.abs(m.bodyLeft), "本文").toBeLessThan(1);
+}
+
 describe.each([
   ["広い画面", 1024],
   ["狭い画面", 375],
@@ -100,6 +109,8 @@ describe.each([
     await browserPage.viewport(width, 800);
     const reader = measure(mountNote("reader"));
     const editor = measure(mountNote("editor"));
+    expectOnColumnLine(reader);
+    expectOnColumnLine(editor);
     for (const key of Object.keys(reader) as (keyof typeof reader)[]) {
       expect(Math.abs(reader[key] - editor[key]), key).toBeLessThan(1);
     }

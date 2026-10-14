@@ -46,12 +46,19 @@ test("トップの一覧とタグに draft が出ない @smoke", async ({ page, 
   // 他のテストが公開ページを作り続けると seed のページが一覧の先頭から外れるので、見るページを自分で作る
   const title = uniqueTitle(testInfo, "匿名の一覧");
   await api.createPage({ title, body: "本文", visibility: "public" });
+  // 公開ページの直後に作る draft は、一覧の 1 ページ目に入る位置にある。seed の世代が押し出されても、
+  // 匿名の一覧とタグにこの draft の目印が出ないことを確かめられる
+  const draftTitle = uniqueTitle(testInfo, "匿名に出ない下書き");
+  const draftTag = `zqxdraft${Date.now().toString(36)}`;
+  await api.createPage({ title: draftTitle, body: `本文 #${draftTag}` });
   await page.goto("/");
   await expect(
     page.locator(".entries").getByRole("link", { name: title, exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("complementary", { name: "補助情報" })).toContainText("database");
   await expectNoDraftTrace(page);
+  await expect(page.locator(".entries")).not.toContainText(draftTitle);
+  await expect(page.getByRole("complementary", { name: "補助情報" })).not.toContainText(draftTag);
   await expect(page.locator(".chip-public")).toHaveCount(0);
   await expectNoHorizontalScroll(page);
 });
