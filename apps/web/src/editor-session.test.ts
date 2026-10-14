@@ -392,6 +392,12 @@ describe("ログイン切れ", () => {
     await vi.advanceTimersByTimeAsync(2100);
     expect(saveStatusOf(session.getState())).toBe("error");
     expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
+
+    // 保存できたら退避を消す。残ると、次に開いたとき保存済みの内容を復元するか尋ねてしまう
+    api.updatePage = fakeApi({ page: page() }).updatePage;
+    await session.retry();
+    expect(saveStatusOf(session.getState())).toBe("saved");
+    expect(backup.load(ID)).toBeNull();
   });
 
   it("ログイン切れの間の入力は、離脱すれば待たずに退避する", async () => {

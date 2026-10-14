@@ -105,7 +105,7 @@ async function typeAt(page: Page, lineIndex: number, text: string): Promise<void
   await page.keyboard.type(text);
 }
 
-async function expectNoticeStaysOnScreen(page: Page, _notice: Locator): Promise<void> {
+async function expectDockOnScreen(page: Page): Promise<void> {
   // 高い通知（衝突の差分）は台の中でスクロールするので、台の枠が画面に収まることを測る
   const box = await boxOf(dock(page));
   const viewport = page.viewportSize();
@@ -154,7 +154,7 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
   await expect(alert).toBeVisible();
   await expect(dock(page)).toContainText("時間をおいて、もう一度試してください。");
   await expectBodyNotShifted(page, before);
-  await expectNoticeStaysOnScreen(page, alert);
+  await expectDockOnScreen(page);
   await expectNoHorizontalScroll(page);
 
   // 通知が覆う高さを避けて、打っている行は見える位置に残る
@@ -206,7 +206,7 @@ test.describe("幅ごとの通知 @widths", () => {
       const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
       await expect(alert).toBeVisible();
       await expectBodyNotShifted(page, before);
-      await expectNoticeStaysOnScreen(page, alert);
+      await expectDockOnScreen(page);
       await expectNoHorizontalScroll(page);
       await page.unroute(`**/api/pages/${created.id}`);
       await alert.getByRole("button", { name: "もう一度保存する" }).click();
@@ -220,6 +220,10 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   page,
   api,
 }, testInfo) => {
+  // 375px で操作が枠を越えないことを測るので、デスクトップの環境は幅を狭める
+  if (testInfo.project.name === "chromium-desktop") {
+    await page.setViewportSize({ width: 375, height: 800 });
+  }
   const created = await openLongPage(page, api, uniqueTitle(testInfo, "衝突の位置"));
   const before = await measureBefore(page);
   const pagePath = `**/api/pages/${created.id}`;
@@ -241,7 +245,7 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   });
   await expect(conflict).toBeVisible();
   await expectBodyNotShifted(page, before);
-  await expectNoticeStaysOnScreen(page, conflict);
+  await expectDockOnScreen(page);
 
   const panel = await boxOf(conflict);
   const take = conflict.getByRole("button", { name: "サーバーの版を取り込む" });
@@ -338,7 +342,7 @@ test("未作成のリンクの通知も、本文を動かさず、塗りの主�
     .filter({ hasText: `「${missing}」のページはまだありません` });
   await expect(notice).toBeVisible();
   await expectBodyNotShifted(page, before);
-  await expectNoticeStaysOnScreen(page, notice);
+  await expectDockOnScreen(page);
   await expect(notice.locator(".button-primary")).toHaveCount(0);
   await expect(page.locator(".button-primary:visible")).toHaveCount(1);
 });
