@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { buildClient, type PageJson, T0 } from "../test/pages";
+import { searchPages } from "./search";
 
 interface Hit {
   id: string;
@@ -274,6 +275,24 @@ async function recent(
   expect(res.status).toBe(200);
   return res.json();
 }
+
+describe("searchPages の LIKE（2 文字以下）", () => {
+  // REST は匿名の短い語を 400 で拒むので、public に絞る LIKE の経路は直接呼んで確かめる
+  it("public に絞ると draft を返さない", async () => {
+    const client = await buildClient();
+    const draft = await client.create("下書きのページ", "下書の本文");
+    const open = await client.create("公開のページ", "これも下書の本文");
+    await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
+      .bind(open.id)
+      .run();
+    expect((await searchPages(env.DB, "下書", 20, "public")).map((hit) => hit.id)).toEqual([
+      open.id,
+    ]);
+    expect((await searchPages(env.DB, "下書", 20, "all")).map((hit) => hit.id).sort()).toEqual(
+      [draft.id, open.id].sort(),
+    );
+  });
+});
 
 describe("GET /api/pages/recent", () => {
   it("更新日時の降順で、削除済みを除いて返す", async () => {
