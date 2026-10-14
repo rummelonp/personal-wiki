@@ -1,6 +1,7 @@
 import { closeCompletion } from "@codemirror/autocomplete";
+import { historyKeymap } from "@codemirror/commands";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
+import type { EditorView, KeyBinding } from "@codemirror/view";
 import { isDocReplacement } from "./replace-doc";
 import { dispatchWhenSettled } from "./settled-dispatch";
 
@@ -19,7 +20,14 @@ const readOnlyOn: Extension = [
 ];
 const readOnlyOff: Extension = [];
 
-/** `createEditor` が積む、`setReadOnly` で切り替えられる readOnly の指定 */
+// historyKeymap の undoSelection と redoSelection（Mod-u など）は state.readOnly を見ず、
+// changeFilter も通さずに doc を戻す。readOnly の間に doc が戻らないよう、readOnly ではどれも動かさない。
+export const readOnlySafeHistoryKeymap: readonly KeyBinding[] = historyKeymap.map((binding) => {
+  const run = binding.run;
+  return run ? { ...binding, run: (view) => !view.state.readOnly && run(view) } : binding;
+});
+
+/** `createEditor` と `createTitleEditor` が積む、`setReadOnly` で切り替えられる readOnly の指定 */
 export function readOnlyCompartment(readOnly: boolean): Extension {
   return readOnlyMode.of(readOnly ? readOnlyOn : readOnlyOff);
 }
@@ -27,7 +35,7 @@ export function readOnlyCompartment(readOnly: boolean): Extension {
 const readOnlyKey = Symbol("setReadOnly");
 
 /**
- * `createEditor` で作った view の readOnly を切り替える。権限の変化で view を作り直すと
+ * `createEditor` か `createTitleEditor` で作った view の readOnly を切り替える。権限の変化で view を作り直すと
  * 変換中の文字が消えるので、作り直さずにこれを使う。
  *
  * - 変換中と確定文字列を読み込むまでの間は切り替えず、落ち着いてから最後の指定だけを適用する
@@ -39,7 +47,7 @@ const readOnlyKey = Symbol("setReadOnly");
  */
 export function setReadOnly(view: EditorView, readOnly: boolean): void {
   if (readOnlyMode.get(view.state) === undefined) {
-    throw new Error("setReadOnly は createEditor で作った view にだけ使える");
+    throw new Error("setReadOnly は createEditor か createTitleEditor で作った view にだけ使える");
   }
   dispatchWhenSettled(view, readOnlyKey, () => {
     const target = readOnly ? readOnlyOn : readOnlyOff;

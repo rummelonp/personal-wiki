@@ -2,7 +2,6 @@ import {
   copyLineDown,
   copyLineUp,
   defaultKeymap,
-  historyKeymap,
   insertBlankLine,
   insertNewlineAndIndent,
   splitLine,
@@ -12,6 +11,7 @@ import { type Command, drawSelection, EditorView, keymap, type ViewUpdate } from
 import { imeDebug } from "./debug-ime";
 import { focusRing } from "./focus";
 import { type ImeEvent, isComposing } from "./ime";
+import { readOnlyCompartment, readOnlySafeHistoryKeymap } from "./read-only";
 import { docReplacement, resettableHistory } from "./replace-doc";
 import { editorSurfaceTheme } from "./theme";
 
@@ -20,6 +20,10 @@ export interface CreateTitleEditorOptions {
   readonly doc?: string;
   /** Enter と ↓ で移る先の本文の view */
   readonly bodyView?: () => EditorView | null;
+  /**
+   * true で入力を止める。focus と選択はできる（本文の view と同じ）。
+   * 作った後に切り替えるときは `setReadOnly` を使う（作り直すと変換中の文字が消える）。
+   */
   readonly readOnly?: boolean;
   /** 渡したときだけ IME の観測を有効にする */
   readonly onImeEvent?: (event: ImeEvent) => void;
@@ -74,20 +78,21 @@ const TITLE_PLACEHOLDER = "タイトルを入力";
  * 未確定文字列の隣の widget が contentDOM から外れる（IME 不変条件 1）。
  * ここでは contentDOM の外にある `view.dom` の class だけを切り替え、文字は行の `::before` に
  * 描くので、composition 中でも contentDOM の node は変わらない。
- * 書けない欄には出さない。今は editable が変わるとホストが view を作り直すが、option ではなく
- * state の facet から判定するので、Compartment で切り替えるようにしても追従する
- * （attributes は update ごとに取り直される）。
+ * 書けない欄には出さない。option ではなく state から判定するので、`setReadOnly` の切り替えにも
+ * 追従する（attributes は update ごとに取り直される）。
  */
 const emptyTitleClass = EditorView.editorAttributes.of((view) =>
-  view.state.doc.length === 0 && view.state.facet(EditorView.editable)
-    ? { class: "cm-title-empty" }
-    : null,
+  view.state.doc.length === 0 && isWritable(view) ? { class: "cm-title-empty" } : null,
 );
 
 /** 疑似要素の文字は a11y ツリーに出さないので、支援技術には placeholder を属性で伝える */
 const titlePlaceholderAttribute = EditorView.contentAttributes.of((view) =>
-  view.state.facet(EditorView.editable) ? { "aria-placeholder": TITLE_PLACEHOLDER } : null,
+  isWritable(view) ? { "aria-placeholder": TITLE_PLACEHOLDER } : null,
 );
+
+function isWritable(view: EditorView): boolean {
+  return view.state.facet(EditorView.editable) && !view.state.readOnly;
+}
 
 /**
  * 本文の見出しより一段大きく見せ、本文の view と余白を揃えて 1 枚の文書に見せる。
@@ -120,6 +125,24 @@ const titleTheme = EditorView.theme({
   },
 });
 
+/**
+ * 直近の keydown を IME が受け持っているか。Safari は変換を確定する Enter の keydown を
+ * compositionend の後に isComposing: false、keyCode 229 で送る。CodeMirror はこれを
+ * compositionend から 100ms 以内の最初の key event に限って捨てるので、それより遅れて届いた分を
+ * keyCode で見分ける。observer は keymap より先に同じ event で呼ばれる。
+ * CodeMirror が Android と iOS で合成し直す Enter は keyCode 13 なので、ここで止まらない。
+ */
+const imeKeydown = new WeakMap<EditorView, boolean>();
+
+const imeKeydownObserver = EditorView.domEventObservers({
+  keydown(event, view) {
+    imeKeydown.set(view, event.isComposing || event.keyCode === 229);
+  },
+});
+
+const imeOwnsKey = (view: EditorView): boolean =>
+  isComposing(view) || imeKeydown.get(view) === true;
+
 function titleKeymap(
   bodyView: (() => EditorView | null) | undefined,
   onCommit: (() => void) | undefined,
@@ -137,7 +160,7 @@ function titleKeymap(
   };
   // 本文が無くても Enter は改行を入れない。composition 中の Enter は変換の確定なので IME に渡す
   const enter: Command = (view) => {
-    if (isComposing(view)) return false;
+    if (imeOwnsKey(view)) return false;
     // 本文へ移る前に呼ぶ。移った先の focus が先に動くと、onCommit が起こす描画の更新が
     // 本文の focus を奪い返しうる
     onCommit?.();
@@ -146,17 +169,20 @@ function titleKeymap(
   };
   // 折り返した title の中では行を移る。本文へ移るのは最後の表示行からだけ
   const down: Command = (view) => {
-    if (isComposing(view)) return false;
+    if (imeOwnsKey(view)) return false;
     const lineEnd = view.moveToLineBoundary(view.state.selection.main, true, true).head;
     return lineEnd === view.state.doc.length && moveToBody(() => 0);
   };
-  return Prec.high(
-    keymap.of([
-      { key: "Enter", run: enter, shift: enter },
-      { key: "Mod-Enter", run: enter },
-      { key: "ArrowDown", run: down },
-    ]),
-  );
+  return [
+    imeKeydownObserver,
+    Prec.high(
+      keymap.of([
+        { key: "Enter", run: enter, shift: enter },
+        { key: "Mod-Enter", run: enter },
+        { key: "ArrowDown", run: down },
+      ]),
+    ),
+  ];
 }
 
 /**
@@ -185,7 +211,7 @@ export function createTitleEditor(
     newlinesToSpaces,
     titleKeymap(options.bodyView, options.onCommit),
     resettableHistory(),
-    keymap.of([...titleDefaultKeymap, ...historyKeymap]),
+    keymap.of([...titleDefaultKeymap, ...readOnlySafeHistoryKeymap]),
     drawSelection(),
     EditorView.lineWrapping,
     editorSurfaceTheme,
@@ -200,9 +226,7 @@ export function createTitleEditor(
     docReplacement,
   ];
   if (options.onImeEvent) extensions.push(imeDebug(options.onImeEvent, "title"));
-  if (options.readOnly) {
-    extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false));
-  }
+  extensions.push(readOnlyCompartment(options.readOnly ?? false));
   if (options.extensions) extensions.push(options.extensions);
   if (options.onUpdate) extensions.push(EditorView.updateListener.of(options.onUpdate));
 

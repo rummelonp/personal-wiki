@@ -1,15 +1,9 @@
-import { defaultKeymap, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Language } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { EditorState, type Extension } from "@codemirror/state";
-import {
-  drawSelection,
-  EditorView,
-  type KeyBinding,
-  keymap,
-  type ViewUpdate,
-} from "@codemirror/view";
+import { drawSelection, EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { Autolink, type MarkdownParser } from "@lezer/markdown";
 import {
   BlockId,
@@ -43,7 +37,7 @@ import { linkActivation } from "./link-activation";
 import { listKeymap } from "./list-keymap";
 import { livePreview } from "./live-preview";
 import type { PageIndex } from "./page-index";
-import { readOnlyCompartment } from "./read-only";
+import { readOnlyCompartment, readOnlySafeHistoryKeymap } from "./read-only";
 import { docReplacement, resettableHistory } from "./replace-doc";
 import { type RevealPolicy, revealPolicy } from "./reveal";
 import { tables } from "./table";
@@ -69,13 +63,6 @@ const markdownWithFrontmatter = new Language(
   [],
   "markdown",
 );
-
-// historyKeymap の undoSelection と redoSelection（Mod-u など）は state.readOnly を見ず、
-// changeFilter も通さずに doc を戻す。readOnly の間に本文が戻らないよう、readOnly ではどれも動かさない。
-const readOnlySafeHistoryKeymap: readonly KeyBinding[] = historyKeymap.map((binding) => {
-  const run = binding.run;
-  return run ? { ...binding, run: (view) => !view.state.readOnly && run(view) } : binding;
-});
 
 export interface CreateEditorOptions {
   /** 最初の本文。作った後に外から差し替えるときは `replaceDoc` を使う */

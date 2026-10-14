@@ -2,6 +2,8 @@ import { EditorSelection, StateEffect } from "@codemirror/state";
 import { EditorView, runScopeHandlers } from "@codemirror/view";
 import { afterEach, describe, expect, test } from "vitest";
 import { createEditor } from "./create-editor";
+import { setReadOnly } from "./read-only";
+import { replaceDoc } from "./replace-doc";
 import { createTitleEditor } from "./title-editor";
 
 const cleanups: (() => void)[] = [];
@@ -139,6 +141,35 @@ describe("createTitleEditor", () => {
     expect(titleView.state.doc.toString()).toBe("題名");
   });
 
+  // CodeMirror が compositionend の直後に捨てる Safari の Enter は Chromium では作れないので、
+  // その窓の外で届いた keyCode 229 の Enter を、実際の keydown として流して確かめる
+  test("an Enter keydown with keyCode 229 after the composition is left to the IME", () => {
+    const bodyView = mount((parent) => createEditor(parent, { doc: "一行目" }));
+    let commits = 0;
+    const titleView = mount((parent) =>
+      createTitleEditor(parent, {
+        doc: "題名",
+        bodyView: () => bodyView,
+        onCommit: () => {
+          commits += 1;
+        },
+      }),
+    );
+    titleView.focus();
+    const keydown = (keyCode: number) =>
+      titleView.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", keyCode, bubbles: true, cancelable: true }),
+      );
+
+    keydown(229);
+    expect(commits).toBe(0);
+    expect(document.activeElement).toBe(titleView.contentDOM);
+
+    keydown(13);
+    expect(commits).toBe(1);
+    expect(document.activeElement).toBe(bodyView.contentDOM);
+  });
+
   test("ArrowDown moves to the start of the body", () => {
     const { titleView, bodyView } = setup();
     bodyView.dispatch({ selection: EditorSelection.cursor(5) });
@@ -187,18 +218,49 @@ describe("createTitleEditor", () => {
     expect(placeholderOf(titleView)).toBe(PLACEHOLDER);
   });
 
-  test("a read-only title shows no placeholder, judged from the editable facet rather than the option", () => {
+  test("a read-only title shows no placeholder, judged from the state rather than the option", () => {
     const readOnly = mount((parent) => createTitleEditor(parent, { doc: "", readOnly: true }));
     expect(placeholderOf(readOnly)).toBe("none");
     expect(readOnly.contentDOM.getAttribute("aria-placeholder")).toBeNull();
 
-    // 今のホストは editable が変わると view を作り直す。ここでは option を経ずに facet だけを
-    // 変え、Compartment で切り替えるようにしても追従することを確かめる
     const titleView = mount((parent) => createTitleEditor(parent, { doc: "" }));
     expect(placeholderOf(titleView)).toBe(PLACEHOLDER);
-    titleView.dispatch({ effects: StateEffect.appendConfig.of(EditorView.editable.of(false)) });
+    setReadOnly(titleView, true);
     expect(placeholderOf(titleView)).toBe("none");
     expect(titleView.contentDOM.getAttribute("aria-placeholder")).toBeNull();
+    setReadOnly(titleView, false);
+    expect(placeholderOf(titleView)).toBe(PLACEHOLDER);
+
+    const notEditable = mount((parent) => createTitleEditor(parent, { doc: "" }));
+    notEditable.dispatch({ effects: StateEffect.appendConfig.of(EditorView.editable.of(false)) });
+    expect(placeholderOf(notEditable)).toBe("none");
+  });
+
+  test("setReadOnly switches the same view, still focusable, and keeps host replacements", () => {
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "題名" }));
+    setReadOnly(titleView, true);
+    expect(titleView.state.readOnly).toBe(true);
+    titleView.dispatch({ changes: { from: 2, insert: "追記" }, userEvent: "input.type" });
+    expect(titleView.state.doc.toString()).toBe("題名");
+    expect(titleView.contentDOM.getAttribute("contenteditable")).toBe("true");
+
+    replaceDoc(titleView, "新しい題名");
+    expect(titleView.state.doc.toString()).toBe("新しい題名");
+
+    setReadOnly(titleView, false);
+    titleView.dispatch({ changes: { from: 0, insert: "続" }, userEvent: "input.type" });
+    expect(titleView.state.doc.toString()).toBe("続新しい題名");
+  });
+
+  test("undo does not change a read-only title", () => {
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "題名" }));
+    titleView.dispatch({ changes: { from: 2, insert: "追記" }, userEvent: "input.type" });
+    setReadOnly(titleView, true);
+    press(titleView, "z", { ctrlKey: true });
+    press(titleView, "z", { metaKey: true });
+    press(titleView, "u", { ctrlKey: true });
+    press(titleView, "u", { metaKey: true });
+    expect(titleView.state.doc.toString()).toBe("題名追記");
   });
 
   test("the placeholder takes no room, so the caret and the field height stay put", () => {
