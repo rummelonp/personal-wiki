@@ -79,6 +79,19 @@ test.describe("本文の左端 @widths", () => {
         "ページの本文（編集）",
       );
 
+      // 空の /?new には文字が無い（入力すると保存でページができて URL が移る）ので、
+      // title 欄を focus して、文字の位置に出るキャレットの左端で測る
+      await page.goto("/?new");
+      await page.locator(".title-input .cm-content").click();
+      const caret = page.locator(".title-input .cm-cursor").first();
+      await expect(caret).toBeVisible();
+      const caretLeft = (await caret.boundingBox())?.x ?? Number.NaN;
+      const brand = await brandLeft(page);
+      expect(
+        Math.abs(caretLeft - brand),
+        `${width}px の新規作成の title（${caretLeft}）がロゴ（${brand}）とずれている`,
+      ).toBeLessThan(TOLERANCE);
+
       await page.goto("/p/00000000-0000-0000-0000-000000000000");
       await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
       await expectAligned(page, ".empty-title", "404");
