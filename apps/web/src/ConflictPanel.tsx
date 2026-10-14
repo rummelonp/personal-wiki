@@ -14,7 +14,7 @@ interface ConflictPanelProps {
   onTakeServer: () => void;
 }
 
-/** 保存しようとした版が古かったとき、サーバーの最新と手元の差分を見せて選ばせる。 */
+/** 保存しようとした版が古かったとき、サーバーの版と手元の差分を見せて選ばせる。 */
 export function ConflictPanel({
   server,
   local,
@@ -24,12 +24,13 @@ export function ConflictPanel({
 }: ConflictPanelProps) {
   const rows = conflictRows(server.body, local.body);
   const titleChanged = server.title !== local.title;
-  // どちらの選択も、選ばなかった側の内容を残さない。取り込みはサーバーの最新を守る側なので主操作にし、
-  // 手元の内容でサーバーの最新を置き換える上書きだけ、押す前に確かめる
+  // どちらの選択も、選ばなかった側の内容が唯一の写しごと消える。どちらを主操作にもせず、
+  // 押す前に両方とも確かめる
+  function confirmTakeServer() {
+    if (window.confirm("手元の変更を破棄して、サーバーの版を取り込みますか？")) onTakeServer();
+  }
   function confirmOverwrite() {
-    if (window.confirm("手元の内容で、サーバーの最新の内容を置き換えます。よろしいですか？")) {
-      onOverwrite();
-    }
+    if (window.confirm("手元の内容で、サーバーの版を置き換えますか？")) onOverwrite();
   }
   return (
     <Notice
@@ -37,12 +38,7 @@ export function ConflictPanel({
       title="サーバーの内容と食い違っています"
       actions={
         <>
-          <button
-            type="button"
-            className="button button-main"
-            onClick={onTakeServer}
-            disabled={busy}
-          >
+          <button type="button" className="button" onClick={confirmTakeServer} disabled={busy}>
             サーバーの版を取り込む
           </button>
           <button type="button" className="button" onClick={confirmOverwrite} disabled={busy}>
@@ -98,7 +94,7 @@ export function ConflictPanel({
         ）。どちらを残すか選んでください。
       </p>
       <p>
-        サーバーの版を取り込むと手元の変更は消え、手元で上書きするとサーバーの最新が置き換わります。
+        サーバーの版を取り込むと手元の変更は消え、手元で上書きするとサーバーの版が置き換わります。
       </p>
     </Notice>
   );

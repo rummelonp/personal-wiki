@@ -208,6 +208,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (!uncreated) onShown?.({ id: pageId, title: savedTitle, visibility: savedVisibility });
   }, [onShown, uncreated, pageId, savedTitle, savedVisibility]);
   const { goTo } = useFragmentJump(editor);
+  // 押したボタンは解決で消えるので、focus が body に落ちないよう本文に戻す。また食い違えば衝突の
+  // 通知が残るので、そのときは動かさない
+  async function resolveConflict(resolve: () => void | Promise<void>) {
+    await resolve();
+    if (session.getState().conflict === null) editor.current?.view()?.focus();
+  }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
@@ -473,8 +479,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             server={state.conflict}
             local={state.draft}
             busy={!idle}
-            onOverwrite={() => void session.overwrite()}
-            onTakeServer={() => session.takeServer()}
+            onOverwrite={() => void resolveConflict(() => session.overwrite())}
+            onTakeServer={() => void resolveConflict(() => session.takeServer())}
           />
         )}
 

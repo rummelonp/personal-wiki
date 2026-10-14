@@ -148,5 +148,6 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
   await conflict.getByRole("button", { name: "手元で上書き" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(conflict).toBeHidden();
+  await expect(bodyEditor(page)).toBeFocused();
   await expectSavedOnServer(api, created.id, FIRST_LINE + typed);
 });

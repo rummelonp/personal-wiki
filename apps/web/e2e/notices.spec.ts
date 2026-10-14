@@ -257,10 +257,10 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
       panel.x + panel.width,
     );
   }
-  // 破壊しない側（サーバーの最新を守る取り込み）が先に並び、手元の上書きは副
+  // どちらを選んでも手元かサーバーの内容が消えるので、並べ方で一方を勧めず、どちらも差し色にしない
   expect((await boxOf(take)).y).toBeLessThanOrEqual((await boxOf(overwrite)).y);
   expect((await boxOf(take)).x).toBeLessThan((await boxOf(overwrite)).x + 1);
-  await expect(take).toHaveClass(/button-main/);
+  await expect(take).not.toHaveClass(/button-main/);
   await expect(overwrite).not.toHaveClass(/button-main/);
 
   // 見出しの最後の 1 文字だけが次の行に落ちない
@@ -295,9 +295,15 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   });
   expect(orphan, "見出しの最後の 1 文字だけが次の行に落ちている").toBe(false);
 
-  // 取り込むと、手元の変更は消えてサーバーの版になる
+  // 取り込むと、手元の変更は消えてサーバーの版になる。押す前に確かめ、断れば何も変わらない
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await take.click();
+  await expect(conflict).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
   await take.click();
   await expect(conflict).toBeHidden();
+  // 押したボタンが消えても、focus は本文に戻る
+  await expect(bodyEditor(page)).toBeFocused();
   await expect(bodyEditor(page)).toContainText("別の場所で足した行");
   await expect(saveState(page)).toHaveText("保存済み");
 });

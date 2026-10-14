@@ -67,6 +67,8 @@ beforeEach(() => {
     ok({ ...PAGE, ...input, version: version + 1 }),
   );
   vi.mocked(getPage).mockResolvedValue(ok(PAGE));
+  // 衝突の操作は、押す前に window.confirm で確かめる。既定では承認する
+  vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
@@ -188,11 +190,23 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.state.readOnly).toBe(true);
     expect(v.state.doc.toString()).toBe("本文の手元の変更");
 
+    // 断れば何も変わらず、衝突の画面が残る
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
     act(() => button("サーバーの版を取り込む").click());
     await flushAsync();
+    expect(v.state.readOnly).toBe(true);
+    expect(v.state.doc.toString()).toBe("本文の手元の変更");
+
+    act(() => button("サーバーの版を取り込む").click());
+    await flushAsync();
+    expect(window.confirm).toHaveBeenLastCalledWith(
+      "手元の変更を破棄して、サーバーの版を取り込みますか？",
+    );
     expect(view()).toBe(v);
     expect(v.state.doc.toString()).toBe("サーバーの本文");
     expect(v.state.readOnly).toBe(false);
+    // 押したボタンは消えるので、focus は本文に戻る
+    expect(document.activeElement).toBe(v.contentDOM);
   });
 
   it("サーバーの版を取り込んだ後の undo で、取り込む前の手元の編集を新しい本文から取り消さない", async () => {
