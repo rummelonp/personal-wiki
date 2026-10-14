@@ -71,7 +71,19 @@ export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps)
         if (event.target === event.currentTarget) onOpenChange(false);
       }}
     >
-      {open && <SwitcherBody index={index} owner={owner} onClose={() => onOpenChange(false)} />}
+      {open && (
+        <SwitcherBody
+          index={index}
+          owner={owner}
+          onClose={() => onOpenChange(false)}
+          onCreated={() => {
+            // 作成の後は、modal の外の要素（キーボードを保つ input）に focus できるよう、
+            // state の反映を待たず今すぐ閉じる。dialog の onClose が state を合わせる
+            dialogRef.current?.close();
+            onOpenChange(false);
+          }}
+        />
+      )}
     </dialog>
   );
 }
@@ -80,10 +92,13 @@ function SwitcherBody({
   index,
   owner,
   onClose,
+  onCreated,
 }: {
   index: TitleIndex;
   owner: boolean;
   onClose: () => void;
+  /** 作成が成功し、`createPageAndOpen` が移る直前に呼ぶ。dialog を閉じ終えること */
+  onCreated: () => void;
 }) {
   const [query, setQuery] = useState("");
   // null は「先頭の行」
@@ -146,7 +161,7 @@ function SwitcherBody({
     if (busy) return;
     setBusy(true);
     setProblem(null);
-    const failed = await createPageAndOpen(trimmed, onClose);
+    const failed = await createPageAndOpen(trimmed, onCreated);
     setBusy(false);
     if (failed !== null) setProblem(failed);
   }

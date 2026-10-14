@@ -13,8 +13,10 @@ export interface CreateProblem {
  * title だけで空のページを作り、作れたらそのページへ移る。作れなかったときは理由を返す。
  * 新規作成のダイアログ、quick switcher、「まだありません」の画面が同じ手順で作る。
  *
- * 移った先では本文にカーソルを置く。開いているモーダルは focus を奪い返すので、`onCreated` で
- * 移る前に閉じる（閉じる更新が移る更新と同じ描画に入り、編集の画面が出るより先に閉じ終わる）。
+ * 移った先では本文にカーソルを置く。開いているモーダルは focus を奪い返し、その外の要素には
+ * focus を移せないので、`onCreated` は呼び出しの中で modal の `dialog.close()` を済ませる。
+ * state の更新だけで閉じる実装は、後の effect で閉じるため、続く `requestBodyFocus` の
+ * キーボードを保つ input に focus が通らない。閉じた後に印と input を足し、その後で移る。
  */
 export async function createPageAndOpen(
   title: string,

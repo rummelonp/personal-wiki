@@ -1,6 +1,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearBodyFocusRequest } from "./body-focus";
 import { ANONYMOUS_TITLE_INDEX_MAX_REQUESTS, TITLE_INDEX_MAX_REQUESTS } from "./link-sources";
 import {
   type ApiResult,
@@ -50,6 +51,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearBodyFocusRequest("NNNNNNNNNNNNNNNNNNNNNN");
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -226,6 +228,19 @@ describe("QuickSwitcher の操作", () => {
     await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
     expect(createPage).toHaveBeenCalledWith({ title: "ほげ", body: "" });
     expect(dialog().open).toBe(false);
+  });
+
+  it("「作成」で作ると、modal を閉じた後にキーボードを保つ input が focus を持つ", async () => {
+    vi.mocked(createPage).mockResolvedValue(
+      ok({ id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ" } as Page),
+    );
+    await renderSwitcher(true);
+    typeText("ほげ");
+    press("Enter");
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
+    const holder = document.querySelector("[data-body-focus-holder]");
+    expect(holder).not.toBeNull();
+    expect(document.activeElement).toBe(holder);
   });
 
   it("作れなかったら閉じずに理由を出し、重複なら既存のページを開ける", async () => {
