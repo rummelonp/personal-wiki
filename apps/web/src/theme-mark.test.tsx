@@ -30,6 +30,13 @@ describe("検索の一致箇所の地（--color-mark-bg）", () => {
       ).toBeGreaterThan(4.5);
     });
 
+    // 一致箇所の中のリンク（差し色の文字）も読める
+    it(`${scheme}: 差し色の文字が地の上で 4.5:1 以上で読める`, () => {
+      expect(
+        contrast(token("--color-accent", scheme), token("--color-mark-bg", scheme)),
+      ).toBeGreaterThan(4.5);
+    });
+
     // 差し色と別の系統（黄）の地に戻らない。差し色が青系なので、青が赤より強いことで見る
     it(`${scheme}: 差し色と同じ青系の色相にある`, () => {
       const hex = token("--color-mark-bg", scheme);

@@ -40,7 +40,7 @@
   /* 色: チップ */
   --color-tag-bg: #eef0fb; /* タグのチップの背景 */
   --color-tag-fg: #3346c4; /* タグのチップの文字 */
-  --color-mark-bg: #d3d9f9; /* 検索の一致箇所の地。差し色の薄い色で、タグのチップより濃い。文字（--color-fg）とは 4.5:1 以上 */
+  --color-mark-bg: #d3d9f9; /* 検索の一致箇所の地。差し色の薄い色で、タグのチップより濃い。文字（--color-fg）と差し色の文字（--color-accent）のどちらとも 4.5:1 以上 */
   --color-draft-bg: #1b1e24; /* 選択中の公開設定の背景 */
   --color-draft-fg: #ffffff; /* 選択中の公開設定の文字 */
 
@@ -175,7 +175,7 @@
 
     --color-tag-bg: #1d2133;
     --color-tag-fg: #a3adff;
-    --color-mark-bg: #343c75;
+    --color-mark-bg: #2c3363;
     --color-draft-bg: #e5e7eb;
     --color-draft-fg: #111317;
 
