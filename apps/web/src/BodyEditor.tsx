@@ -224,7 +224,7 @@ export function BodyEditor({
     created = editor;
     view.current = editor;
     // 作った直後の 1 回だけ。focus は DOM の focus を移すだけで、doc や selection には dispatch しない
-    if (initial.autoFocus) editor.focus();
+    if (initial.autoFocus && !initial.readOnly) editor.focus();
     const waiters = settledWaiters.current;
     return () => {
       view.current = null;

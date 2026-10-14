@@ -131,6 +131,13 @@ describe("本文の受け渡し", () => {
     expect(view()).toBe(first);
   });
 
+  it("autoFocus は作った時点の 1 回だけ、編集できるときに効く", () => {
+    expect(render({ value: "本文", autoFocus: true }).view().hasFocus).toBe(true);
+    act(() => root?.unmount());
+    container?.remove();
+    expect(render({ value: "本文", autoFocus: true, readOnly: true }).view().hasFocus).toBe(false);
+  });
+
   it("フォーカスが外れたら onBlur を呼ぶ", () => {
     const onBlur = vi.fn();
     const { view } = controlled("本文", { onBlur });
