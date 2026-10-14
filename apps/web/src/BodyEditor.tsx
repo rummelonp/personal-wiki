@@ -173,7 +173,10 @@ export function BodyEditor({
     autoFocus,
   };
 
-  useEffect(() => {
+  // 開く操作（flushSync）の中で autoFocus まで済ませるため、layout effect で作る。iOS の Safari は
+  // 操作の中で focus した入力欄にだけキーボードを出す。後に続く readOnly と value の layout effect は、
+  // 作った時点と同じ値なので何も dispatch しない
+  useLayoutEffect(() => {
     const parent = host.current;
     if (parent === null) return;
     const initial = latest.current;

@@ -246,7 +246,8 @@ describe("App の匿名の画面", () => {
     expect(headerButtons()).toEqual(["ページを検索"]);
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
-    expect(document.title).toBe("公開の題 - personal-wiki");
+    // エディタは layout effect で、document.title は後の passive effect で決まる
+    await vi.waitFor(() => expect(document.title).toBe("公開の題 - personal-wiki"));
   });
 
   it("次のページを読み込む間は、前のページの title を document.title に残さない", async () => {
