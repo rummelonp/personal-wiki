@@ -26,7 +26,7 @@ import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
-import { openNewPage, registerLeaveBeforeNewPage } from "./new-page";
+import { openNewPage } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import {
@@ -72,6 +72,7 @@ const findWithSignal = (title: string, signal: AbortSignal) =>
 const STATUS_LABELS: Record<SaveStatus, string> = {
   new: "タイトルを決めると保存します",
   creating: "作成中…",
+  "create-error": "作成に失敗",
   saved: "保存済み",
   unsaved: "未保存の変更あり",
   saving: "保存中…",
@@ -123,19 +124,20 @@ function useEditorSession(
   );
 
   useEffect(() => {
+    session.attach();
     const unbind = bindLifecycle(session, document, window);
     const unregister = registerEditor(session);
-    const unregisterLeave = registerLeaveBeforeNewPage(() => void session.leave());
     const leaveRewrites = linkRewrites.register(session);
+    // 前の画面の unmount（detach）が退避を書き終えた後なので、ここで読む
+    session.adoptPendingBackup();
     // title を渡して開いた新規作成の画面は、title 欄の確定を待たずに作る
     if (session.getState().uncreated) void session.commitTitle();
     return () => {
       unbind();
       unregister();
-      unregisterLeave();
       // アプリ内の遷移でも、未保存の変更をここで送る。送り終えるまでは、step がこのページを
       // 書き換えたら取り込めるよう、リンクの書き換えからは外さない
-      void session.leave().finally(leaveRewrites);
+      void session.detach().finally(leaveRewrites);
     };
   }, [session]);
 
@@ -236,8 +238,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const linkClick = useRef<AbortController | null>(null);
   /** title の重複で作れなかったとき、すでにあるページ。開く導線に使う */
   const [taken, setTaken] = useState<{ title: string; href: string } | null>(null);
-  const titleTaken = state.failedOp?.kind === "create" && state.failedOp.titleTaken;
-  const takenTitle = titleTaken ? state.draft.title : null;
+  const takenTitle =
+    state.failedOp?.kind === "create" && state.failedOp.titleTaken ? state.failedOp.title : null;
 
   useEffect(() => {
     if (takenTitle === null) return;
@@ -376,7 +378,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         {state.pendingBackup !== null && (
           <section className="message message-warn" role="alert">
             <p>
-              保存できなかった内容が、この端末に退避されています（
+              {state.pendingBackup.createFailed
+                ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に退避されています（`
+                : "保存できなかった内容が、この端末に退避されています（"}
               {formatTime(state.pendingBackup.savedAt)}）。
             </p>
             <div className="actions">
@@ -531,7 +535,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             {state.failedOp.titleTaken ? (
               <p>
                 タイトルを変えて Enter を押すと、もう一度作ります。
-                {taken !== null && taken.title === state.draft.title && (
+                {taken !== null && taken.title === state.failedOp.title && (
                   <>
                     {" "}
                     <Link href={taken.href}>そのページを開く</Link>

@@ -558,7 +558,17 @@ describe("PageEditor の見出しと block への移動", () => {
 
 describe("まだ作っていないページ（page が null）", () => {
   const NEW_ID = "CCCCCCCCCCCCCCCCCCCCCC";
-  const NEW_BACKUP_KEY = "personal-wiki:draft:new";
+  const NEW_BACKUP_PREFIX = "personal-wiki:draft:new:";
+  const newBackupKeys = () =>
+    Object.keys(localStorage).filter((key) => key.startsWith(NEW_BACKUP_PREFIX));
+  // 作れていない退避を持つ key はモジュールの中で覚えられるので、テストごとに別の key にする
+  let orphanCount = 0;
+  const seedOrphan = (backup: object) => {
+    orphanCount += 1;
+    const key = `${NEW_BACKUP_PREFIX}orphan-${orphanCount}`;
+    localStorage.setItem(key, JSON.stringify(backup));
+    return key;
+  };
   const titleContent = () => container?.querySelector<HTMLElement>(".title-input .cm-content");
   const bodyContent = () =>
     container?.querySelector<HTMLElement>(".body-editor .cm-content[aria-label='本文']");
@@ -609,7 +619,7 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(document.activeElement).toBe(bodyContent());
     await flushAsync();
     expect(createPage).toHaveBeenCalledWith({ title: "新しい題", body: "先に書いた本文" });
-    expect(localStorage.getItem(NEW_BACKUP_KEY)).toBeNull();
+    expect(newBackupKeys()).toEqual([]);
   });
 
   it("変換を確定する Enter と、空の title では作らない", async () => {
@@ -670,6 +680,10 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(container?.textContent).toContain("タイトルを変えて Enter を押すと、もう一度作ります。");
     expect(view().state.doc.toString()).toBe("残る本文");
     expect(titleText()).toBe("重なる題");
+    // 直しかけの title でも、リンクは送った title の既存のページを指したまま
+    typeTitle("直しかけ");
+    expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(`/p/${ID}`);
+    expect(findPageByTitle).toHaveBeenLastCalledWith("重なる題", expect.anything());
 
     vi.mocked(createPage).mockImplementation(async (input) => created(input));
     typeTitle("別の題");
@@ -690,8 +704,11 @@ describe("まだ作っていないページ（page が null）", () => {
     typeTitle("題");
     pressEnter(false);
     await vi.waitFor(() => expect(container?.textContent).toContain("作成できませんでした。"));
-    const saved = JSON.parse(localStorage.getItem(NEW_BACKUP_KEY) ?? "null");
-    expect(saved).toMatchObject({ title: "題", body: "残る本文" });
+    expect(container?.querySelector("[role='status']")?.textContent).toBe("作成に失敗");
+    const keys = newBackupKeys();
+    expect(keys).toHaveLength(1);
+    const saved = JSON.parse(localStorage.getItem(keys[0] ?? "") ?? "null");
+    expect(saved).toMatchObject({ title: "題", body: "残る本文", createFailed: true });
 
     vi.mocked(createPage).mockImplementation(async (input) => created(input));
     const retry = [...(container?.querySelectorAll("button") ?? [])].find(
@@ -700,6 +717,38 @@ describe("まだ作っていないページ（page が null）", () => {
     act(() => retry?.click());
     await vi.waitFor(() => expect(createPage).toHaveBeenCalledTimes(2));
     expect(createPage).toHaveBeenLastCalledWith({ title: "題", body: "残る本文" });
+  });
+
+  it("作れずに残った退避は、作れなかったことを示して復元を尋ね、復元すると作る", async () => {
+    seedOrphan({
+      title: "残った題",
+      body: "残った本文",
+      baseVersion: 0,
+      savedAt: 0,
+      createFailed: true,
+    });
+    const { view } = renderNew();
+    expect(container?.textContent).toContain(
+      "作成できなかったページ「残った題」の内容が、この端末に退避されています",
+    );
+    expect(view().state.readOnly).toBe(true);
+    const restore = [...(container?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "復元する",
+    );
+    act(() => restore?.click());
+    await vi.waitFor(() =>
+      expect(createPage).toHaveBeenCalledWith({ title: "残った題", body: "残った本文" }),
+    );
+    expect(newBackupKeys()).toEqual([]);
+  });
+
+  it("title を渡して開いた画面は、残った退避を尋ねない", async () => {
+    const key = seedOrphan({ title: "残った題", body: "残った本文", baseVersion: 0, savedAt: 0 });
+    renderNew("渡した題");
+    await flushAsync();
+    expect(container?.textContent).not.toContain("この端末に退避されています");
+    expect(createPage).toHaveBeenCalledWith({ title: "渡した題", body: "" });
+    expect(localStorage.getItem(key)).not.toBeNull();
   });
 
   it("作る前は削除できず、画像を貼ると先に作るよう案内する", async () => {

@@ -54,15 +54,36 @@ export interface ProcessedLinkRewrite {
 }
 
 export type FailedOp =
-  | { kind: "create"; titleTaken: boolean }
+  /** title は作成に送った title。重複の案内は、その後に title 欄を打ち直しても送った title で引く */
+  | { kind: "create"; titleTaken: boolean; title: string }
   | { kind: "save" }
   | { kind: "visibility"; to: Visibility }
   | { kind: "delete" };
 
 const NO_ERROR = { error: null, failedOp: null } as const;
 
-/** まだ作っていないページの退避の key。page id は 22 文字なので重ならない。 */
-export const NEW_PAGE_BACKUP_KEY = "new";
+/**
+ * まだ作っていないページの退避の key の頭。画面ごとに後ろへ別の文字列を付ける。page id は英数字と
+ * `-` `_` の 22 文字で `:` を含まないので重ならない。
+ */
+export const NEW_PAGE_BACKUP_PREFIX = "new:";
+
+/**
+ * このタブのセッションが持つ、作る前の退避の key。次の新規作成の画面は、これを復元の案内に出さない。
+ * 生きている画面や作成の応答を待つ画面の内容を、別の画面で復元してもう 1 つ作らないため。
+ *
+ * 外すのは、画面を閉じた後に作成が失敗したときだけで、その内容は次の新規作成の画面で復元を選ばせる。
+ * 閉じた画面の、作ろうとしなかった内容はこのタブでは出さず、次に開いたタブ（再読み込みを含む）で出す。
+ * 別のタブの生きている画面の key はここに無いので、そちらの内容は案内に出る。
+ */
+const heldNewKeys = new Set<string>();
+let newKeyCount = 0;
+
+function issueNewBackupKey(): string {
+  newKeyCount += 1;
+  const random = Math.random().toString(36).slice(2, 10);
+  return `${NEW_PAGE_BACKUP_PREFIX}${Date.now().toString(36)}-${newKeyCount}-${random}`;
+}
 
 export interface EditorState {
   /**
@@ -98,6 +119,7 @@ export interface EditorState {
 export type SaveStatus =
   | "new"
   | "creating"
+  | "create-error"
   | "saved"
   | "unsaved"
   | "saving"
@@ -128,6 +150,7 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.conflict !== null) return "conflict";
   if (state.busy === "creating") return "creating";
   if (state.busy === "saving") return "saving";
+  if (state.error !== null && state.failedOp?.kind === "create") return "create-error";
   if (state.error !== null && state.failedOp?.kind === "save") return "error";
   if (state.uncreated) return "new";
   return isDirty(state) || hasPendingTitle(state) ? "unsaved" : "saved";
@@ -172,24 +195,26 @@ export class EditorSession {
    * 手元の内容を退避に写すだけにする。画面が無いセッションのタイマーが、離脱の保存の後から
    * keepalive でない保存を 1 本出さないため。leave() は unmount のほか、タブが hidden になったときや
    * pagehide でも呼ばれ、同じセッションが戻ってくるので、leave() で止めきらず戻ったら再開する。
-   * dev の StrictMode では mount の直後にも立つ。
+   * dev の StrictMode では mount の直後にも立ち、mount し直す attach で戻る。
    *
    * hidden になっただけの生きたタブも止まる。その間に重ねた取り込みや送り直しは退避に写すだけで、
    * 表に戻るまで保存しない（内容は退避に残る）。hidden と unmount を区別するより単純なのでこうしている。
+   * unmount の区別が要る所（作る前のページの退避の持ち主）は closed で見る。
    */
   private left = false;
+  /** 画面が unmount された（detach）。dev の StrictMode で mount し直したときは attach で戻る */
+  private closed = false;
   /** 応答を待っている作成。title の Enter に続く blur が、同じページをもう 1 つ作らないようにまとめる */
   private creating: Promise<void> | null = null;
-  /**
-   * 作る前の退避（NEW_PAGE_BACKUP_KEY）のうち、このセッションの内容を写したものの savedAt。
-   * 作れたときに消してよいのは、これと同じ退避だけ。key は新規作成の画面のすべてで共有なので、
-   * 作成の応答を待つ間に開き直した次の画面の退避を消さないようにする。
-   */
-  private ownNewBackupAt: number | null = null;
+  /** まだ作っていないページの退避の key。画面ごとに別にし、作れたら消す */
+  private newKey = "";
+  /** pendingBackup に出している、別の画面が残した作る前の退避の key */
+  private adoptedKey: string | null = null;
 
   /**
    * page に null を渡すと、まだ作っていないページ（新規作成の画面）として始める。title は
    * そのときの title 欄の初期値で、作成は始めない（呼び出し側が commitTitle で始める）。
+   * 前の画面が残した退避は、ここではなく mount の後の adoptPendingBackup で読む。
    */
   constructor(page: Page | null, deps: EditorDeps, title = "") {
     this.api = deps.api;
@@ -200,8 +225,8 @@ export class EditorSession {
     this.stashMs = deps.stashMs ?? DEFAULT_STASH_MS;
     this.whenSettled = deps.whenSettled ?? (() => Promise.resolve());
     if (page === null) {
-      const saved = this.backup.load(NEW_PAGE_BACKUP_KEY);
-      const kept = saved !== null && (saved.title !== "" || saved.body !== "") ? saved : null;
+      this.newKey = issueNewBackupKey();
+      heldNewKeys.add(this.newKey);
       this.state = {
         base: placeholderPage(this.now()),
         uncreated: true,
@@ -211,7 +236,7 @@ export class EditorSession {
         conflict: null,
         authLost: false,
         gone: false,
-        pendingBackup: kept,
+        pendingBackup: null,
         titleInput: null,
       };
       return;
@@ -282,23 +307,23 @@ export class EditorSession {
   }
 
   private backupKey(): string {
-    return this.state.uncreated ? NEW_PAGE_BACKUP_KEY : this.state.base.id;
+    return this.state.uncreated ? this.newKey : this.state.base.id;
   }
 
   private stash(): void {
     // 未決の間は上書きしない。手元は退避と同じ内容か、まだ復元していない
     if (this.state.pendingBackup !== null) return;
-    const { base, draft } = this.state;
-    const savedAt = this.now();
+    const { base, draft, uncreated, failedOp, authLost } = this.state;
+    const createFailed = uncreated && (failedOp?.kind === "create" || authLost);
     this.backup.save(this.backupKey(), {
       title: draft.title,
       body: draft.body,
       baseVersion: base.version,
       baseTitle: base.title,
       baseBody: base.body,
-      savedAt,
+      savedAt: this.now(),
+      ...(createFailed ? { createFailed } : {}),
     });
-    if (this.state.uncreated) this.ownNewBackupAt = savedAt;
   }
 
   /** 保存できなかった手元の内容を localStorage に残す。 */
@@ -366,11 +391,20 @@ export class EditorSession {
 
   /**
    * title 欄の確定（blur、Enter）。打っていた title を draft に入れて、すぐに保存する。
-   * まだ作っていないページなら、ここで作る。
+   * まだ作っていないページなら、ここで作る。アプリ内の移動（リンク、⌘K、ログアウト）で title 欄から
+   * フォーカスが外れたときも作る。
+   *
+   * ただし離脱（leave）の後は作らず、退避だけを残す。タブを隠したときの blur は leave の後に届き、
+   * 打ちかけの title でページを作ってしまうため。画面が戻れば、次の確定で作る。
    */
   commitTitle(): Promise<void> {
     this.applyPendingTitle();
-    return this.state.uncreated ? this.create() : this.flush();
+    if (!this.state.uncreated) return this.flush();
+    if (this.left) {
+      this.stashIfDirty();
+      return this.creating ?? Promise.resolve();
+    }
+    return this.create();
   }
 
   /**
@@ -395,7 +429,8 @@ export class EditorSession {
     const res = await this.api.createPage(sent);
     if (res.ok) {
       this.set({ base: res.value, uncreated: false, busy: null });
-      this.removeOwnNewBackup();
+      this.backup.remove(this.newKey);
+      heldNewKeys.delete(this.newKey);
       // 応答を待つ間に離れていれば rearm は退避を作ったページの key へ写すだけで、保存はしない
       if (isDirty(this.state)) this.rearm();
       return;
@@ -403,23 +438,55 @@ export class EditorSession {
     this.set({ busy: null });
     if (res.reason === "unauthorized") {
       this.set({ authLost: true });
-      this.stashIfDirty();
-      return;
+    } else {
+      this.set({
+        error: failureMessage(res, "作成できなかった"),
+        failedOp: {
+          kind: "create",
+          titleTaken: res.reason === "title_conflict",
+          title: sent.title,
+        },
+      });
     }
-    this.set({
-      error: failureMessage(res, "作成できなかった"),
-      failedOp: { kind: "create", titleTaken: res.reason === "title_conflict" },
-    });
     this.stashIfDirty();
+    // 閉じた画面では失敗を見せられないので、次の新規作成の画面で復元を選ばせる
+    if (this.closed) heldNewKeys.delete(this.newKey);
   }
 
-  private removeOwnNewBackup(): void {
-    if (this.state.pendingBackup !== null || this.ownNewBackupAt === null) return;
-    const saved = this.backup.load(NEW_PAGE_BACKUP_KEY);
-    if (saved !== null && saved.savedAt === this.ownNewBackupAt) {
-      this.backup.remove(NEW_PAGE_BACKUP_KEY);
+  /**
+   * 前の画面が残した作る前の退避を、復元か破棄を選ばせる案内に出す。mount の後に呼ぶ。
+   * 描画の中（constructor）で読むと、前の画面が unmount で書く退避より先に読んでしまう。
+   *
+   * 出すのは、このタブが持っていない key のもの（前のタブの寿命で残ったものと、閉じた後に作成が
+   * 失敗したもの。heldNewKeys を参照）。いくつもあれば新しいものから 1 つずつ出す。title を渡して
+   * 開いた画面と、打ち始めた画面では出さない。その退避は次の素の新規作成の画面まで残る。
+   */
+  adoptPendingBackup(): void {
+    const { uncreated, pendingBackup, draft, titleInput } = this.state;
+    if (!uncreated || pendingBackup !== null || titleInput !== null) return;
+    if (draft.title !== "" || draft.body !== "") return;
+    let newest: { key: string; backup: Backup } | null = null;
+    for (const key of this.backup.list(NEW_PAGE_BACKUP_PREFIX)) {
+      if (heldNewKeys.has(key)) continue;
+      const saved = this.backup.load(key);
+      if (saved === null || (saved.title === "" && saved.body === "")) continue;
+      if (newest === null || saved.savedAt > newest.backup.savedAt) newest = { key, backup: saved };
     }
-    this.ownNewBackupAt = null;
+    if (newest === null) return;
+    this.adoptedKey = newest.key;
+    this.set({ pendingBackup: newest.backup });
+  }
+
+  /** 画面の mount。dev の StrictMode で unmount の後にもう一度 mount されたときも、止めた状態を戻す。 */
+  attach(): void {
+    this.closed = false;
+    this.left = false;
+  }
+
+  /** 画面の unmount。離脱（leave）に加えて、作る前のページの退避の持ち主として閉じた印を付ける。 */
+  detach(): Promise<void> {
+    this.closed = true;
+    return this.leave();
   }
 
   /**
@@ -755,8 +822,15 @@ export class EditorSession {
     const draft = { title: saved.title, body: saved.body };
     this.set({ pendingBackup: null, titleInput: null });
     if (this.state.uncreated) {
-      // 戻した内容は作れたときに消す。title があれば、確定し直させずにそのまま作る
-      this.ownNewBackupAt = saved.savedAt;
+      // 戻した退避の key をこの画面のものとして持ち、作れたときに消す。自分の key に写し直さないのは、
+      // 作るまでの間に閉じても内容を残すため。title があれば、確定し直させずにそのまま作る
+      if (this.adoptedKey !== null) {
+        heldNewKeys.delete(this.newKey);
+        this.backup.remove(this.newKey);
+        this.newKey = this.adoptedKey;
+        heldNewKeys.add(this.newKey);
+        this.adoptedKey = null;
+      }
       this.edit(draft);
       if (draft.title !== "") void this.create();
       return;
@@ -782,10 +856,9 @@ export class EditorSession {
 
   discardBackup(): void {
     if (this.state.pendingBackup === null) return;
-    this.backup.remove(this.backupKey());
+    this.backup.remove(this.adoptedKey ?? this.backupKey());
+    this.adoptedKey = null;
     this.set({ pendingBackup: null });
-    // title を渡して開いた新規作成の画面は、未決の退避が作成を止めていた
-    if (this.state.uncreated && this.state.draft.title !== "") void this.create();
   }
 
   /** 未保存の変更を先に保存してから変える。保存できなければ visibility は変えない。 */
@@ -844,8 +917,12 @@ export class EditorSession {
 
   /**
    * ページを離れるとき。打っていた title を確定し、未保存の内容を退避してから保存を試みる。
-   * まだ作っていないページは作らず、退避だけを残す。作成の応答を待っている間に離れたときも、
-   * 作れた後に続きを保存しない（離れた後の保存の列に、作ったページへの保存を並べない）。
+   * まだ作っていないページは作らず、退避だけを残す。
+   *
+   * 作成の応答を待っている間に離れたら、作れた後も、待つ間に打った本文を送らない。アプリ内の移動でも
+   * 同じにする。離れた後のセッションには画面が無く、その保存が衝突や失敗になっても見せられないため。
+   * 本文は作れた時点で作ったページの id の退避に移す（rearm）ので、次にそのページを開くと復元を選べる。
+   * タブを隠しただけ（画面は残る）なら、戻った後の自動保存で送る。
    */
   leave(): Promise<void> {
     this.applyPendingTitle();

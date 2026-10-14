@@ -10,15 +10,20 @@ export interface Backup {
   baseTitle?: string;
   baseBody?: string;
   savedAt: number;
+  /** まだ作っていないページの退避で、作成を試みて失敗した内容。復元の案内の文言を変える。 */
+  createFailed?: boolean;
 }
 
 export interface BackupStore {
   load(pageId: string): Backup | null;
   save(pageId: string, backup: Backup): void;
   remove(pageId: string): void;
+  /** prefix で始まる key（load に渡す形）の一覧。 */
+  list(prefix: string): string[];
 }
 
-const keyOf = (pageId: string) => `personal-wiki:draft:${pageId}`;
+const KEY_PREFIX = "personal-wiki:draft:";
+const keyOf = (pageId: string) => `${KEY_PREFIX}${pageId}`;
 
 function isBackup(value: unknown): value is Backup {
   if (typeof value !== "object" || value === null) return false;
@@ -29,7 +34,8 @@ function isBackup(value: unknown): value is Backup {
     typeof v.baseVersion === "number" &&
     typeof v.savedAt === "number" &&
     (v.baseTitle === undefined || typeof v.baseTitle === "string") &&
-    (v.baseBody === undefined || typeof v.baseBody === "string")
+    (v.baseBody === undefined || typeof v.baseBody === "string") &&
+    (v.createFailed === undefined || typeof v.createFailed === "boolean")
   );
 }
 
@@ -61,6 +67,19 @@ export function createLocalBackupStore(storage: () => Storage = () => localStora
         storage().removeItem(keyOf(pageId));
       } catch {
         // 同上
+      }
+    },
+    list(prefix) {
+      try {
+        const store = storage();
+        const found: string[] = [];
+        for (let i = 0; i < store.length; i++) {
+          const key = store.key(i);
+          if (key?.startsWith(keyOf(prefix))) found.push(key.slice(KEY_PREFIX.length));
+        }
+        return found;
+      } catch {
+        return [];
       }
     },
   };

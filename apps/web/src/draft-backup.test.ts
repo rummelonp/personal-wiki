@@ -41,9 +41,20 @@ describe("createLocalBackupStore", () => {
   it.each([
     ["baseTitle", { baseTitle: 1 }],
     ["baseBody", { baseBody: null }],
-  ])("%s が文字列でない退避は読まない", (_, extra) => {
+    ["createFailed", { createFailed: "yes" }],
+  ])("%s の型が違う退避は読まない", (_, extra) => {
     const storage = memoryStorage();
     storage.setItem(KEY, JSON.stringify({ ...OLD, ...extra }));
     expect(createLocalBackupStore(() => storage).load(ID)).toBeNull();
+  });
+
+  it("prefix で始まる退避の key を、load に渡す形で返す", () => {
+    const storage = memoryStorage();
+    const store = createLocalBackupStore(() => storage);
+    store.save("new:a", OLD);
+    store.save("new:b", OLD);
+    store.save(ID, OLD);
+    storage.setItem("other:new:c", "{}");
+    expect(store.list("new:").sort()).toEqual(["new:a", "new:b"]);
   });
 });

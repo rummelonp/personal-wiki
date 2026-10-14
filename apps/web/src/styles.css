@@ -609,6 +609,7 @@ a {
 }
 
 .save-state-error,
+.save-state-create-error,
 .save-state-conflict,
 .save-state-auth,
 .save-state-gone {
