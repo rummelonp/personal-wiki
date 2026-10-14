@@ -259,7 +259,9 @@ export interface TagCount {
  * count は listRecentPages の tagKey に同じ表記を渡したときの件数に合わせ、子のタグが付いたページを含む
  * （重複は 1 と数える）。ページに書かれた子のタグ `a/b` から作った親 `a` は、ページに直接書かれていなければ
  * 一覧に出ない。tag は、そのタグが付いたページの表記のうち文字コード順で先頭のもの。
- * tags の削除済みページの行は削除時に消えているので、削除の判定に pages は要らない。
+ * tags の削除済みページの行は削除時（と派生データの作り直し）で消える。readable が public のときは、
+ * public のページを pages から引く副問い合わせで削除済みも除き、行が消え損ねても匿名には出さない。
+ * all のときは pages を読まず、行が消えることに頼る（owner の一覧のたびに全ページを読む副問い合わせを足さない）。
  *
  * readable が public なら、一覧に出すタグ、件数、表記のどれも public のページだけから作る。draft に
  * しか付いていないタグは出さず、draft の表記（`Beta` と `beta` の違いなど）も表に出さない。
@@ -272,7 +274,8 @@ export async function listTagCounts(
     .prepare(
       `WITH visible AS (
          SELECT page_id, tag_key, tag FROM tags
-         WHERE ?1 = 0 OR page_id IN (SELECT id FROM pages WHERE visibility = 'public')
+         WHERE ?1 = 0 OR page_id IN (
+           SELECT id FROM pages WHERE visibility = 'public' AND deleted_at IS NULL)
        )
        SELECT min(t.tag) AS tag,
          (SELECT count(DISTINCT c.page_id) FROM visible AS c

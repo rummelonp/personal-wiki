@@ -229,6 +229,25 @@ describe("GET /api/tags", () => {
     expect(await tagCounts(client)).toEqual([]);
   });
 
+  it("匿名には、tags の行が残ったまま削除済みになった public のページのタグを出さない", async () => {
+    const client = await buildClient();
+    const kept = await client.create("kept", "#alive");
+    const gone = await client.create("gone", "#alive #ghost");
+    // 削除の経路は tags の行も消すので、行を残した状態は SQL で直接作る
+    await env.DB.batch([
+      env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id IN (?1, ?2)").bind(
+        kept.id,
+        gone.id,
+      ),
+      env.DB.prepare("UPDATE pages SET deleted_at = ?2, deleted_by = 'owner' WHERE id = ?1").bind(
+        gone.id,
+        client.clock.now,
+      ),
+    ]);
+    const res = await createApp().request("/api/tags", {}, env);
+    expect(await res.json()).toEqual({ tags: [{ tag: "alive", count: 1 }] });
+  });
+
   it("token が無ければ匿名として 200、read の token で 200", async () => {
     const reader = await buildClient({ scopes: "read", name: "reader" });
     expect((await createApp().request("/api/tags", {}, env)).status).toBe(200);
