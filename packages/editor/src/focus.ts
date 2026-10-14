@@ -1,6 +1,7 @@
 import { type Extension, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import { decorationPlugin } from "./decoration-plugin";
+import { LINE_PADDING_LEFT } from "./theme";
 
 /**
  * 直前の操作が keyboard だったか。focus が pointer と keyboard のどちらで入ったかを決めるのに使う。
@@ -120,6 +121,13 @@ const activeLineTheme = EditorView.baseTheme({
   // あれの base theme（水色の地）まで当たってしまうため。
   ".cm-active-line": {
     backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 7%, var(--ui-color-background))",
+  },
+  // 地の左端を本文の文字の左端に揃える（コードブロックの地と同じ理由で、`theme.ts` 参照）。
+  // 左の padding を自前で決めている行は競るので除く。コードと frontmatter の source は地が自前、
+  // 引用と callout は左端から描くバーと地がある。
+  ".cm-active-line:not(.cm-lp-code, .cm-lp-blockquote, .cm-frontmatter-source)": {
+    marginLeft: LINE_PADDING_LEFT,
+    paddingLeft: "0",
   },
 });
 

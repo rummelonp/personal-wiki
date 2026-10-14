@@ -70,7 +70,10 @@ describe("code block decoration", () => {
     );
     if (!bodyLine) throw new Error("body line is not rendered");
 
-    const codePadding = Number.parseFloat(getComputedStyle(codeLine).paddingLeft);
+    // 地を本文の左端に揃えるため、padding の一部は margin に回っている。文字の位置は両方の合計
+    const codeStyle = getComputedStyle(codeLine);
+    const codePadding =
+      Number.parseFloat(codeStyle.marginLeft) + Number.parseFloat(codeStyle.paddingLeft);
     const bodyPadding = Number.parseFloat(getComputedStyle(bodyLine).paddingLeft);
     expect(codePadding).toBeGreaterThan(bodyPadding);
   });

@@ -193,6 +193,9 @@ export const editorSurfaceTheme = EditorView.baseTheme({
   },
 });
 
+/** CodeMirror の `.cm-line` の既定の左 padding。本文の文字はこの分だけ content の左端から離れる */
+export const LINE_PADDING_LEFT = "6px";
+
 const CODE_BLOCK_RADIUS = "var(--ui-radius-sm, 0.25rem)";
 const CODE_BLOCK_GAP = "var(--ui-space-2, 0.5rem)";
 
@@ -208,6 +211,14 @@ export const livePreviewTheme = EditorView.baseTheme({
     fontFamily: "var(--ui-font-mono, ui-monospace, monospace)",
     paddingLeft: "0.75em",
     paddingRight: "0.75em",
+  },
+  // 地の左端を本文の文字の左端（`.cm-line` の既定の padding 6px）に揃える。行の箱は content の左端から
+  // 始まるので、そのままでは地だけが 6px 左へはみ出す。margin で箱ごと右へ寄せ、その分 padding を
+  // 減らして、コードの文字の位置は変えない。引用と callout の中は、バーや地を行の箱の左端から
+  // 描く規則（`.cm-lp-blockquote`）と競るので寄せない。
+  ".cm-line.cm-lp-code:not(.cm-lp-blockquote)": {
+    marginLeft: LINE_PADDING_LEFT,
+    paddingLeft: `calc(0.75em - ${LINE_PADDING_LEFT})`,
   },
   // 引用と callout の中では丸めない。角丸は行の背景ごと切り抜くので、引用のバー（background-image）と
   // callout の地（background-color）が角で欠ける。
@@ -388,6 +399,12 @@ export const livePreviewTheme = EditorView.baseTheme({
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0 0.2em",
     cursor: "pointer",
+    // tag を 1 塊で次の行へ送る。inline のままだと、`#` と日本語の名前の間（`word-break: keep-all` でも
+    // 消えない）や名前の字の間で折り返す。inline-block なら塊の中は、行の幅より長いときだけ
+    // 行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。
+    display: "inline-block",
+    maxWidth: "100%",
+    boxSizing: "border-box",
   },
   ".cm-block-ref-highlight": {
     backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 24%, var(--ui-color-background))",
