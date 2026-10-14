@@ -62,7 +62,16 @@ export function App() {
     try {
       await saveAllEditors();
       linkRewrites.stop();
-      await logout();
+      try {
+        await logout();
+      } catch {
+        // 失敗の応答でも、サーバーでは済んでいることがある。ログイン状態を確かめ、続いていれば
+        // 止めた書き換えを再開する（匿名ならそのまま匿名の画面に移る）
+        const me = await fetchMe();
+        setSession({ status: "ready", me });
+        if (me.kind === "owner" && me.features.linkRewrites) linkRewrites.start();
+        return;
+      }
       // features は環境の性質で、ログアウトでは変わらない
       setSession((current) => ({
         status: "ready",

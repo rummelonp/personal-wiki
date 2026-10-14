@@ -349,6 +349,36 @@ describe("App の owner の画面", () => {
     expect(logout).toHaveBeenCalledTimes(1);
   });
 
+  it("ログアウトに失敗してログイン状態が続くなら、止めた書き換えを再開し、画面はそのままにする", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() => expect(stepLinkRewrites).toHaveBeenCalledTimes(1));
+    vi.mocked(logout).mockRejectedValueOnce(new Error("POST /_auth/logout が 500 を返した"));
+
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() => expect(stepLinkRewrites).toHaveBeenCalledTimes(2));
+    const logoutAgain = () =>
+      [...(header()?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "ログアウト");
+    await vi.waitFor(() => expect(logoutAgain()?.disabled).toBe(false));
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(main()?.querySelector("[role='alert']")).toBeNull();
+  });
+
+  it("ログアウトに失敗して状態も取得できなければ、エラーの画面にする", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    vi.mocked(logout).mockRejectedValueOnce(new Error("落ちた"));
+    vi.mocked(fetchMe).mockRejectedValue(new Error("落ちた"));
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() => expect(main()?.querySelector("[role='alert']")).not.toBeNull());
+  });
+
   it("ログイン中に /<title> を開くと編集の画面を出す", async () => {
     serve("owner", [PUBLIC]);
     await renderAt(titleUrl(PUBLIC.title));
