@@ -32,6 +32,7 @@
   --color-danger: #b42318; /* 失敗、削除 */
   --color-danger-bg: #fef3f2; /* 失敗の通知の背景 */
   --color-warn-bg: #fffaeb; /* 注意の通知の背景（退避、ログイン切れ、衝突） */
+  --color-mark-bg: #fdeba0; /* 検索の一致箇所の地 */
   --color-warn-border: #d4a72c; /* 注意の通知の枠 */
   --color-ok: #2f9e6b; /* 保存済みの点 */
   --color-diff-add-bg: #e6f4ea; /* 差分: 手元だけにある行 */
@@ -147,6 +148,7 @@
     --color-danger: #f97066;
     --color-danger-bg: #2a1512;
     --color-warn-bg: #2a2412;
+    --color-mark-bg: #5a4a14;
     --color-warn-border: #8a6d1a;
     --color-ok: #4cc38a;
     --color-diff-add-bg: #14281b;

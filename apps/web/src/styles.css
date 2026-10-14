@@ -809,11 +809,10 @@ a {
 /*
  * 一覧は行の地が変わらないので、淡い地で示す。下線はリンクと紛らわしいので使わない。
  * title は最初から太く、太さは効かない。
- * 注意の通知と同じ色なので、ライトでもダークでも文字の色のまま読める。
  */
 .entry mark {
   color: inherit;
-  background: var(--color-warn-bg);
+  background: var(--color-mark-bg);
   border-radius: var(--radius-sm);
 }
 
