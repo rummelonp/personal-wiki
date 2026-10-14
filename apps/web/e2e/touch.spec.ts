@@ -114,6 +114,8 @@ test.describe("タップ対象", () => {
     const m = await page.evaluate(() => {
       // 他のテストが作ったページは抜粋もタグも持たないので、両方を持つ行を選ぶ
       const entry = document.querySelector(".entries .entry:has(.entry-excerpt):has(.chip-link)");
+      // 他のテストが作ったページが上に積もると画面の外へ押し出され、elementFromPoint が何も返さない
+      entry?.scrollIntoView({ block: "center" });
       const box = (selector: string) => {
         const element = entry?.querySelector(selector);
         if (element === null || element === undefined) throw new Error(`${selector} が無い`);
