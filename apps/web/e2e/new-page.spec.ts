@@ -124,6 +124,7 @@ test("title が重複して作れないと、打った内容を残して直し�
   const alert = page.getByRole("alert").filter({ hasText: "作成できませんでした。" });
   await expect(alert).toContainText("タイトルを変えて Enter を押すと、もう一度作ります。");
   await expect(alert.getByRole("link", { name: "そのページを開く" })).toBeVisible();
+  await expect(saveState(page)).toHaveText("作成に失敗");
   await expect(page).toHaveURL(/\/\?new$/);
   await expect(bodyEditor(page)).toHaveText(body);
 
@@ -174,6 +175,7 @@ test("オフラインで作れないと失敗の案内が出て、打った内�
   await typeTitleThenBody(page, title, body);
   const alert = page.getByRole("alert").filter({ hasText: "作成できませんでした。" });
   await expect(alert).toContainText("サーバーに接続できない");
+  await expect(saveState(page)).toHaveText("作成に失敗");
   await expect(bodyEditor(page)).toHaveText(body);
 
   await context.setOffline(false);

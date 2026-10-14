@@ -34,6 +34,9 @@ test("+ から title を決めて作り、続けて書いた本文が再読み�
   await expect(page.locator(".title-input .cm-content")).toBeFocused();
   await page.keyboard.type(title);
   await page.keyboard.press("Enter");
+  // Android の Chrome では CodeMirror が Enter を次のフレームで処理する。同じフレームで打つと改行と
+  // 本文が 1 つの入力にまとまり Enter が消えるので、caret が本文へ移ったのを見てから打つ（作成の応答は待たない）。
+  await expect(bodyEditor(page)).toBeFocused();
   await typeRightAwayAndSave(page, text);
   await expectKeptAfterReload(page, title, text);
 });
