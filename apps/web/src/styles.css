@@ -24,7 +24,7 @@ body {
 a {
   color: var(--color-accent);
   text-decoration-thickness: var(--border-width);
-  text-underline-offset: 0.2em;
+  text-underline-offset: 0.2em; /* token-ok: 文字の大きさに比例させる。rem の token では大きさの違う文字に合わない */
 }
 
 :focus-visible {
@@ -38,8 +38,8 @@ a {
 
 .visually-hidden {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: 1px; /* token-ok: 視覚的に隠す定型の手法が要る 1px。罫線の太さの token とは役割が違う */
+  height: 1px; /* token-ok: 同上 */
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
@@ -141,7 +141,7 @@ a {
 /* 骨格 */
 
 .app {
-  min-height: 100vh;
+  min-height: 100vh; /* token-ok: 画面全体の高さ。寸法の token でなく viewport の単位そのもの */
 }
 
 .narrow,
@@ -172,7 +172,7 @@ a {
   --rail-main-padding-top: var(--space-4);
 
   min-width: 0;
-  padding: var(--rail-main-padding-top) clamp(var(--space-4), 5vw, var(--space-6)) var(--space-7);
+  padding: var(--rail-main-padding-top) clamp(var(--space-4), 5vw, var(--space-6)) var(--space-7); /* token-ok: 画面幅に比例して余白を増やす係数 */
 }
 
 .rail {
@@ -598,7 +598,7 @@ a {
  */
 .note-title {
   margin: 0 0 var(--space-4);
-  padding-inline: 6px 2px;
+  padding-inline: 6px 2px; /* token-ok: 上のコメントのとおり CodeMirror の既定値に合わせる */
   font-family: var(--font-serif);
   font-size: var(--font-size-title);
   font-weight: var(--font-weight-strong);
@@ -676,7 +676,7 @@ a {
 
 .diff-mark {
   flex: none;
-  width: 1em;
+  width: 1em; /* token-ok: 記号 1 文字分。diff の文字の大きさに合わせる */
   text-align: center;
 }
 
@@ -693,7 +693,7 @@ a {
 /* ダイアログ */
 
 .dialog {
-  width: min(100% - var(--space-5), 24rem);
+  width: min(100% - var(--space-5), var(--dialog-width));
   padding: var(--space-4);
   color: var(--color-fg);
   background: var(--color-bg);
@@ -732,7 +732,11 @@ a {
 
 .switcher {
   width: min(100% - var(--space-5), var(--switcher-width));
-  max-height: calc(100dvh - var(--switcher-top) - var(--space-4));
+  max-height: calc(
+    100dvh -
+    var(--switcher-top) -
+    var(--space-4)
+  ); /* token-ok: 画面全体の高さ。viewport の単位そのもの */
   margin: var(--switcher-top) auto auto;
   padding: 0;
   overflow: hidden;
