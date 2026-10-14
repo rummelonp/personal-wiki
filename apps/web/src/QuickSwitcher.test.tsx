@@ -158,16 +158,15 @@ describe("QuickSwitcher の候補", () => {
 
   it("title の一覧は、匿名には続きがあっても 1 回だけ読み、owner には上限の回数まで読む", async () => {
     vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: RECENT, nextCursor: "next" }));
+    // 候補は refresh が終わってから描き直すので、renderSwitcher が候補を待った時点で要求の回数は確定している
     await renderSwitcher(false);
-    // 続きの要求が出るなら、この間に出る
-    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(listPageTitles).toHaveBeenCalledTimes(ANONYMOUS_TITLE_INDEX_MAX_REQUESTS);
     act(() => root?.unmount());
     container?.remove();
     vi.mocked(listPageTitles).mockClear();
 
     await renderSwitcher(true);
-    await vi.waitFor(() => expect(listPageTitles).toHaveBeenCalledTimes(TITLE_INDEX_MAX_REQUESTS));
+    expect(listPageTitles).toHaveBeenCalledTimes(TITLE_INDEX_MAX_REQUESTS);
   });
 });
 
