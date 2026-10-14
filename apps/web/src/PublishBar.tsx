@@ -87,9 +87,14 @@ export function PublishBar({
     previousVisibility.current = visibility;
     if (uncreated) return;
     setNote(visibility === "public" ? "公開しました。" : "下書きに戻しました。");
-    if (refocusPublic.current && visibility === "public") publicOption.current?.focus();
-    refocusPublic.current = false;
   }, [visibility, uncreated]);
+
+  // 待っている間は選択が disabled で focus できない。待ちが終わってから戻す
+  useEffect(() => {
+    if (!refocusPublic.current || pending !== null) return;
+    if (visibility === "public") publicOption.current?.focus();
+    refocusPublic.current = false;
+  }, [visibility, pending]);
 
   useEffect(() => {
     if (confirming) cancel.current?.focus();

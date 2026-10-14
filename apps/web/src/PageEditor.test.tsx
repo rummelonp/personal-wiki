@@ -1420,6 +1420,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(option("公開").getAttribute("aria-pressed")).toBe("true");
     expect(option("公開").disabled).toBe(false);
     expect(publishNote()).toBe("公開しました。");
+    expect(document.activeElement).toBe(option("公開"));
   });
 
   it("公開が失敗したら元の「下書き」に戻し、失敗の通知を出す", async () => {
