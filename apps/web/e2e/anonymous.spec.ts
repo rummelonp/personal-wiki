@@ -73,6 +73,27 @@ test("backlink に draft の参照元が出ない", async ({ page }) => {
   await expectNoDraftTrace(page);
 });
 
+test("匿名の 2 文字では本文の検索を出さず、3 文字以上と案内する", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "ページを検索" }).click();
+  const switcher = page.getByRole("dialog", { name: "ページを検索" });
+  const input = switcher.getByRole("combobox", { name: "ページを検索" });
+  await input.fill("ほげ");
+  await expect(switcher.getByRole("status")).toContainText("3 文字以上");
+  await expect(switcher.getByRole("option", { name: /本文から検索/ })).toHaveCount(0);
+  await input.press("Enter");
+  await expect(page).toHaveURL("/");
+  await expect(switcher).toBeVisible();
+  await input.fill("ほげふ");
+  await expect(switcher.getByRole("option", { name: "「ほげふ」を本文から検索" })).toBeVisible();
+});
+
+test("匿名の 0 件の検索結果には作成の導線が出ない", async ({ page }) => {
+  await page.goto(`/?q=${encodeURIComponent("どこにも無い語句")}`);
+  await expect(page.getByText("一致するページがありません。")).toBeVisible();
+  await expect(page.getByRole("button", { name: /を作成/ })).toHaveCount(0);
+});
+
 test("一覧・title・タグ・検索・backlink の API が draft を返さない", async ({ page, seedIds }) => {
   await page.goto("/");
   const welcomeId = seedIds[SEED.welcome];

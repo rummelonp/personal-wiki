@@ -1,3 +1,4 @@
+import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor";
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -17,8 +18,11 @@ const RECENT_LABEL = "最近更新したページ";
 const ROWS_LABEL = "候補と操作";
 
 /**
- * 並びは、title の候補、title が完全に一致するページが無いときの「作成」、語があるときの
- * 「本文から検索」の順。選択と Enter の動作を同じ配列から引く。
+ * 先頭の行が Enter の既定で、選択と Enter の動作を同じ配列から引く。並びは次のとおり。
+ * - title が完全に一致するページがあるとき: 候補、「本文から検索」。既定はその完全一致のページ。
+ * - 無いとき: 「本文から検索」、候補、「作成」。既定は「本文から検索」。
+ * 語を打って Enter しただけで要らないページができないよう、「作成」は既定にせず末尾に置く。
+ * 匿名が本文を検索できる長さに満たない間は、行き止まりの画面へ移さないよう「本文から検索」を出さない。
  */
 type Row =
   | { kind: "page"; candidate: PageCandidate }
@@ -129,11 +133,15 @@ function SwitcherBody({
   // 完全一致は score が最上位なので、上限で切った候補の先頭に必ず入っている
   const hasExactTitle =
     candidates[0] !== undefined && foldTitle(candidates[0].title) === foldTitle(trimmed);
-  const rows: Row[] = [
-    ...candidates.map((candidate): Row => ({ kind: "page", candidate })),
-    ...(trimmed !== "" && owner && !hasExactTitle ? [{ kind: "create" } as const] : []),
-    ...(trimmed !== "" ? [{ kind: "content-search" } as const] : []),
-  ];
+  const contentSearchTooShort =
+    trimmed !== "" && !owner && searchQueryLength(trimmed) < ANONYMOUS_SEARCH_MIN_CHARS;
+  const pageRows = candidates.map((candidate): Row => ({ kind: "page", candidate }));
+  const contentSearchRows: Row[] =
+    trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
+  const createRows: Row[] = trimmed !== "" && owner && !hasExactTitle ? [{ kind: "create" }] : [];
+  const rows: Row[] = hasExactTitle
+    ? [...pageRows, ...contentSearchRows]
+    : [...contentSearchRows, ...pageRows, ...createRows];
 
   // 選んでいた行が並びから消えたら先頭に戻す
   const keyedIndex = rows.findIndex((row) => rowKey(row) === selectedKey);
@@ -228,9 +236,11 @@ function SwitcherBody({
       )}
       {/* listbox の子は option だけにするので、候補が無いことの案内は外に置く。
           owner には「作成」の行が同じことを伝える */}
-      {trimmed !== "" && candidates.length === 0 && !owner && (
+      {trimmed !== "" && !owner && (candidates.length === 0 || contentSearchTooShort) && (
         <p className="switcher-heading" role="status">
-          タイトルが一致するページはありません。
+          {candidates.length === 0 && "タイトルが一致するページはありません。"}
+          {contentSearchTooShort &&
+            `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
         </p>
       )}
       <div

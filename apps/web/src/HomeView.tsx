@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { type CreateProblem, CreateProblemMessage, createPageAndOpen } from "./create-page";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
 import { RailLayout } from "./Rail";
@@ -27,6 +28,17 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   const tags = useTags();
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
+  const [creating, setCreating] = useState(false);
+  const [problem, setProblem] = useState<CreateProblem | null>(null);
+
+  async function create() {
+    if (creating) return;
+    setCreating(true);
+    setProblem(null);
+    const failed = await createPageAndOpen(trimmed);
+    setCreating(false);
+    if (failed !== null) setProblem(failed);
+  }
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 
@@ -63,6 +75,22 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
           <p className="muted">
             {searching ? "一致するページがありません。" : "ページがまだありません。"}
           </p>
+        )}
+        {/* 検索語の title で作る入口。匿名は作れないので出さない */}
+        {state.status === "ready" && state.entries.length === 0 && searching && owner && (
+          <>
+            <div>
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={() => void create()}
+                disabled={creating}
+              >
+                {`「${trimmed}」を作成`}
+              </button>
+            </div>
+            {problem !== null && <CreateProblemMessage problem={problem} />}
+          </>
         )}
         {state.status === "ready" && state.entries.length > 0 && (
           <>

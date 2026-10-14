@@ -560,6 +560,12 @@ describe("App の owner の画面", () => {
         expect(switcher()?.querySelector("[data-row-kind='create']")).not.toBeNull(),
       );
       const input = switcher()?.querySelector<HTMLInputElement>("input[role='combobox']");
+      // 既定は「本文から検索」なので、↓ で「作成」を選ぶ
+      act(() => {
+        input?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+        );
+      });
       act(() => {
         input?.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),

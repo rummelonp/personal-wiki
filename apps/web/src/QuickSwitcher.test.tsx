@@ -124,21 +124,21 @@ describe("QuickSwitcher の候補", () => {
     expect(container?.querySelector("[data-row-kind='content-search']")).toBeNull();
   });
 
-  it("打つと title で絞り、一致した箇所を強調し、本文から検索する行を最後に出す", async () => {
-    await renderSwitcher(false);
+  it("打つと title で絞って一致した箇所を強調し、完全一致が無ければ「本文から検索」を先頭に出す", async () => {
+    await renderSwitcher(true);
     typeText("買");
-    expect(options()).toEqual(["買い物", "「買」を本文から検索"]);
-    expect(optionElements()[0]?.querySelector("mark")?.textContent).toBe("買");
+    expect(options()).toEqual(["「買」を本文から検索", "買い物", "「買」を作成"]);
+    expect(optionElements()[1]?.querySelector("mark")?.textContent).toBe("買");
   });
 
   it("owner には title が完全に一致するページが無いときだけ「作成」を出す", async () => {
     await renderSwitcher(true);
     typeText("メ");
-    expect(options()).toContain("「メ」を作成");
-    expect(options().at(-1)).toBe("「メ」を本文から検索");
+    expect(options().at(-1)).toBe("「メ」を作成");
     // 「メモ」は部分一致の候補があっても、完全に一致するページがあるので作らせない
     typeText("メモ");
     expect(options()[0]).toBe("メモ");
+    expect(options().at(-1)).toBe("「メモ」を本文から検索");
     expect(options()).not.toContain("「メモ」を作成");
     // 全角半角と大文字小文字の違いは、title の比較と同じ畳み方で同じとみなす
     typeText("ＨＯＮＯ　のメモ");
@@ -147,15 +147,43 @@ describe("QuickSwitcher の候補", () => {
 
   it("匿名には「作成」を出さず、候補が無いことを案内する", async () => {
     await renderSwitcher(false);
-    typeText("ほげ");
-    expect(options()).toEqual(["「ほげ」を本文から検索"]);
+    typeText("ほげふ");
+    expect(options()).toEqual(["「ほげふ」を本文から検索"]);
     expect(container?.querySelector("[role='status']")?.textContent).toContain("ありません");
+  });
+
+  it("匿名が本文を検索できない 3 文字未満では「本文から検索」を出さず、理由を案内する", async () => {
+    await renderSwitcher(false);
+    typeText("ほげ");
+    expect(options()).toEqual([]);
+    expect(container?.querySelector("[role='status']")?.textContent).toContain("3 文字以上");
+    // 候補があっても本文検索の行は出さない
+    typeText("買");
+    expect(options()).toEqual(["買い物"]);
+    expect(container?.querySelector("[role='status']")?.textContent).toContain("3 文字以上");
+    press("Enter");
+    expect(location.pathname).toBe(`/p/${RECENT[3]?.id}`);
+  });
+
+  it("匿名が 3 文字未満で候補も無いとき、Enter は何も起こさない", async () => {
+    await renderSwitcher(false);
+    typeText("ほげ");
+    press("Enter");
+    expect(location.search).toBe(new URL(startUrl).search);
+    expect(dialog().open).toBe(true);
+  });
+
+  it("owner は 1 文字でも「本文から検索」を出す", async () => {
+    await renderSwitcher(true);
+    typeText("ほ");
+    expect(options()).toContain("「ほ」を本文から検索");
+    expect(container?.querySelector("[role='status']")).toBeNull();
   });
 
   it("前後の空白は無視して、語として扱う", async () => {
     await renderSwitcher(true);
     typeText("  ほげ  ");
-    expect(options()).toEqual(["「ほげ」を作成", "「ほげ」を本文から検索"]);
+    expect(options()).toEqual(["「ほげ」を本文から検索", "「ほげ」を作成"]);
   });
 
   it("title の一覧は、匿名には続きがあっても 1 回だけ読み、owner には上限の回数まで読む", async () => {
@@ -217,12 +245,31 @@ describe("QuickSwitcher の操作", () => {
     expect(dialog().open).toBe(false);
   });
 
+  it("title が完全に一致するページが無いとき、Enter は作らずに本文から検索する", async () => {
+    await renderSwitcher(true);
+    typeText("まだ無い語");
+    expect(selected()).toBe("「まだ無い語」を本文から検索");
+    press("Enter");
+    expect(createPage).not.toHaveBeenCalled();
+    expect(new URLSearchParams(location.search).get("q")).toBe("まだ無い語");
+  });
+
+  it("title が完全に一致するなら、Enter はそのページを開く", async () => {
+    await renderSwitcher(true);
+    typeText("メモ");
+    press("Enter");
+    expect(createPage).not.toHaveBeenCalled();
+    expect(location.pathname).toBe(`/p/${RECENT[2]?.id}`);
+  });
+
   it("「作成」を選ぶと空のページを作って、そのページへ移る", async () => {
     vi.mocked(createPage).mockResolvedValue(
       ok({ id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ" } as Page),
     );
     await renderSwitcher(true);
     typeText(" ほげ ");
+    expect(selected()).toBe("「ほげ」を本文から検索");
+    press("ArrowDown");
     expect(selected()).toBe("「ほげ」を作成");
     press("Enter");
     await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
@@ -236,6 +283,7 @@ describe("QuickSwitcher の操作", () => {
     );
     await renderSwitcher(true);
     typeText("ほげ");
+    press("ArrowDown");
     press("Enter");
     await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
     const holder = document.querySelector("[data-body-focus-holder]");
@@ -253,8 +301,6 @@ describe("QuickSwitcher の操作", () => {
     await renderSwitcher(true);
     typeText("メ");
     for (let i = 0; i < options().length; i++) press("ArrowDown");
-    // 末尾は「本文から検索」なので、1 つ戻して「作成」を選ぶ
-    press("ArrowUp");
     expect(selected()).toBe("「メ」を作成");
     press("Enter");
     await vi.waitFor(() =>
@@ -275,7 +321,6 @@ describe("QuickSwitcher の操作", () => {
     await renderSwitcher(true);
     typeText("メ");
     for (let i = 0; i < options().length; i++) press("ArrowDown");
-    press("ArrowUp");
     press("Enter");
     await vi.waitFor(() => expect(container?.querySelector("[role='alert'] a")).not.toBeNull());
     const link = container?.querySelector<HTMLAnchorElement>("[role='alert'] a");
@@ -399,8 +444,8 @@ describe("QuickSwitcher の日本語入力", () => {
 
   it("変換が確定した後の Enter は行を実行する", async () => {
     await renderSwitcher(false);
-    typeText("ほげ");
+    typeText("ほげふ");
     press("Enter");
-    expect(new URLSearchParams(location.search).get("q")).toBe("ほげ");
+    expect(new URLSearchParams(location.search).get("q")).toBe("ほげふ");
   });
 });

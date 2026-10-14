@@ -2,11 +2,24 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomeView } from "./HomeView";
-import { type ApiResult, listRecent, listTags, searchPages } from "./pages-api";
+import {
+  type ApiResult,
+  createPage,
+  listRecent,
+  listTags,
+  type Page,
+  searchPages,
+} from "./pages-api";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
-  return { ...actual, listRecent: vi.fn(), listTags: vi.fn(), searchPages: vi.fn() };
+  return {
+    ...actual,
+    createPage: vi.fn(),
+    listRecent: vi.fn(),
+    listTags: vi.fn(),
+    searchPages: vi.fn(),
+  };
 });
 
 const ok = <T,>(value: T): ApiResult<T> => ({ ok: true, value });
@@ -149,5 +162,41 @@ describe("HomeView の短い検索語", () => {
     await renderHome("ab", true);
     expect(searchPages).toHaveBeenCalledWith("ab");
     expect(guidance()).toBeUndefined();
+  });
+});
+
+describe("HomeView の 0 件の検索", () => {
+  const createButton = () =>
+    [...(container?.querySelectorAll("button") ?? [])].find((b) => b.textContent?.includes("作成"));
+
+  it("owner には検索語の title で作る導線を出し、押すと作ってそのページへ移る", async () => {
+    vi.mocked(searchPages).mockResolvedValue(ok([]));
+    vi.mocked(createPage).mockResolvedValue(
+      ok({ id: "NNNNNNNNNNNNNNNNNNNNNN", title: "無い語" } as Page),
+    );
+    await mountHome(" 無い語 ", true);
+    await vi.waitFor(() => expect(createButton()).toBeDefined());
+    expect(createButton()?.textContent).toBe("「無い語」を作成");
+    // 押すまでは作らない
+    expect(createPage).not.toHaveBeenCalled();
+    await act(async () => createButton()?.click());
+    expect(createPage).toHaveBeenCalledWith({ title: "無い語", body: "" });
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
+    history.replaceState(null, "", "/");
+  });
+
+  it("匿名には出さない", async () => {
+    vi.mocked(searchPages).mockResolvedValue(ok([]));
+    await mountHome("無い語", false);
+    await vi.waitFor(() => expect(container?.textContent).toContain("一致するページがありません"));
+    expect(createButton()).toBeUndefined();
+  });
+
+  it("結果があるときは出さない", async () => {
+    vi.mocked(searchPages).mockResolvedValue(
+      ok([{ ...summary("AAAAAAAAAAAAAAAAAAAAAA", "無い語"), excerpt: "x" }]),
+    );
+    await renderHome("無い語", true);
+    expect(createButton()).toBeUndefined();
   });
 });
