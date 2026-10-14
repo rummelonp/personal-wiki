@@ -166,6 +166,19 @@ const SCENES: Scene[] = [
     },
   },
   {
+    id: "new-page",
+    screen: "ページ",
+    state: "新規作成（title を決める前）",
+    role: "owner",
+    async show({ page }) {
+      await page.goto("/");
+      await page.getByRole("button", { name: "新規作成" }).click();
+      await expect(page.locator(".title-input .cm-content")).toBeFocused();
+      // Enter を押すと作ってしまうので、打つだけにする
+      await page.keyboard.type("新しいページの title");
+    },
+  },
+  {
     id: "switcher",
     screen: "ダイアログ",
     state: "quick switcher",
@@ -178,20 +191,6 @@ const SCENES: Scene[] = [
         .getByRole("combobox", { name: "ページを検索" })
         .fill("メモ");
       await expect(page.getByRole("option").first()).toBeVisible();
-    },
-  },
-  {
-    id: "new-page",
-    screen: "ダイアログ",
-    state: "新規作成",
-    role: "owner",
-    async show({ page }) {
-      await page.goto("/");
-      await page.getByRole("button", { name: "新規作成" }).click();
-      await page
-        .getByRole("dialog", { name: "新規作成" })
-        .getByRole("textbox", { name: "タイトル" })
-        .fill("新しいページの title");
     },
   },
   {

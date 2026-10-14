@@ -38,6 +38,12 @@ test.describe("owner @widths", () => {
     });
   }
 
+  test("新規作成の画面", async ({ page }) => {
+    await page.goto("/?new");
+    await expect(page.locator(".title-input .cm-content")).toBeVisible();
+    await sweepWidths(page);
+  });
+
   test("quick switcher を開いた画面", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "ページを検索" }).click();

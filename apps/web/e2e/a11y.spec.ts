@@ -113,11 +113,11 @@ test.describe("owner", () => {
     await expectNoNewViolations(page, "quick switcher");
   });
 
-  test("新規作成のダイアログ", async ({ page }) => {
+  test("新規作成の画面", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "新規作成" }).click();
-    await expect(page.getByRole("dialog", { name: "新規作成" })).toBeVisible();
-    await expectNoNewViolations(page, "新規作成のダイアログ");
+    await expect(page.locator(".title-input .cm-content")).toBeFocused();
+    await expectNoNewViolations(page, "新規作成の画面");
   });
 });
 
