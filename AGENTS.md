@@ -27,6 +27,14 @@ pnpm test          # vitest run
 
 `packages/editor` のテストは Playwright の Chromium の中で動く。初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れる。
 
+E2E は `pnpm test` に含めず、別に実行する。web を build し、一時の D1 で `wrangler dev`（ポート 8790）を起動して、owner の cookie を作って入る。`apps/worker/.dev.vars` は読まない。
+初回は `pnpm --filter @personal-wiki/web exec playwright install chromium webkit firefox` でブラウザを入れる。
+
+```sh
+pnpm e2e                    # apps/web/e2e のテスト。結果は apps/web/e2e-output/（gitignore 済み）
+pnpm e2e:sheet [--out <dir>]  # 画面の一覧（明暗 × 幅 375・768・1280）を 1 枚の HTML にする
+```
+
 Worker の開発とデプロイは `apps/worker` で実行する。
 
 ```sh
