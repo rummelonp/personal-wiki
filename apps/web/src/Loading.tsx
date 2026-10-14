@@ -3,6 +3,7 @@ import { listHeading } from "./list-heading";
 import { recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
+import { useHoldScrollRestore } from "./scroll-restore";
 
 /*
  * 読み込み中の見せ方。最終の配置と同じ形の帯（スケルトン）を、取得が遅いときだけ出す。
@@ -226,6 +227,7 @@ export function PageSkeleton({
 
 /** 起動時と lazy の読み込みの間に、行き先の画面に合わせて出す帯。 */
 export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean | undefined }) {
+  useHoldScrollRestore();
   switch (route.name) {
     case "home":
       return <ListSkeleton heading={listHeading(route.query, route.tag)} />;

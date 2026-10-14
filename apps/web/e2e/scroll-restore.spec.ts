@@ -114,6 +114,42 @@ test("戻る・進む・戻るの連鎖と再読み込みのあとも、位置�
   await expect.poll(() => scrollY(page)).toBeLessThan(SCROLL + TOLERANCE);
 });
 
+test("再読み込みの起動中に帯が出ても、位置が戻る", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await page.evaluate((y) => window.scrollTo(0, y), SCROLL);
+  await expect.poll(() => scrollY(page)).toBe(SCROLL);
+  // 位置はスクロールが止まってから履歴に書く。書く前の再読み込みは、このテストの対象ではない
+  await expect
+    .poll(() =>
+      page.evaluate(() => (history.state as { scroll?: { y: number } } | null)?.scroll?.y),
+    )
+    .toBe(SCROLL);
+
+  // ログイン状態の確認を止め、一覧より先に起動中の帯を描かせる
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/me", async (route) => {
+    await gate;
+    await route.continue().catch(() => {});
+  });
+  await page.reload();
+  await expect(page.locator(".skeleton-painted").first()).toBeVisible();
+  // 負荷が高いとブラウザの復元が帯の間に走り、帯の高さに丸める。その時点を待たずに、同じ丸めを起こす。
+  // 帯がスクロールできない幅（広い画面）では丸めが起きないので、検査にならない
+  await page.evaluate((y) => window.scrollTo(0, y), SCROLL);
+  const clamped = await scrollY(page);
+  test.skip(clamped === 0, "この幅では起動中の帯がスクロールできない");
+  expect(clamped).toBeLessThan(SCROLL - TOLERANCE);
+  release();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await expect.poll(() => scrollY(page)).toBeGreaterThan(SCROLL - TOLERANCE);
+  await expect.poll(() => scrollY(page)).toBeLessThan(SCROLL + TOLERANCE);
+});
+
 test("一覧からタグで別の一覧へ移って戻ると、元の一覧の位置が戻る", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".entries .entry").first()).toBeVisible();

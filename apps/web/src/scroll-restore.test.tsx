@@ -6,6 +6,7 @@ import {
   rememberScroll,
   restoreCount,
   stateForReplace,
+  useHoldScrollRestore,
   useRestoreScroll,
   useRestoreScrollAfterMount,
 } from "./scroll-restore";
@@ -191,6 +192,21 @@ describe("復元の待ち中", () => {
     expect(restoreCount()).toBeUndefined();
     mount(true);
     expect(window.scrollY).toBe(10);
+  });
+
+  it("再読み込みの起動中の帯でブラウザの復元が丸めても、待ちを捨てずに一覧で戻す", () => {
+    history.replaceState(stateOf({ search: "?t=reload", y: 333, count: 30 }), "", "?t=reload");
+    uninstall();
+    uninstall = installScrollRestore();
+    function Skeleton() {
+      useHoldScrollRestore();
+      return null;
+    }
+    act(() => root.render(<Skeleton />));
+    scrollTo(47);
+    expect(restoreCount()).toBe(30);
+    mount(true, 30);
+    expect(window.scrollY).toBe(333);
   });
 
   it("一覧の下に続く内容（タグ）が済むまで、戻さない", () => {
