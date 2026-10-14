@@ -799,22 +799,26 @@ a {
   white-space: nowrap;
 }
 
-/* 一致した箇所は地の色でなく太さで示す。選択行の地と重なっても読める */
-.switcher-option mark,
-.entry mark {
+/* quick switcher の選択行は地の色が付くので、一致した箇所は地の色でなく太さで示す */
+.switcher-option mark {
   font-weight: var(--font-weight-strong);
   color: inherit;
   background: none;
 }
 
-/* 一覧の title は最初から太いので、太さの代わりに下線で示す */
-.entry-title mark {
-  text-decoration: underline;
-  text-decoration-thickness: 0.1em;
-  text-underline-offset: 0.2em;
+/*
+ * 一覧は行の地が変わらないので、淡い地で示す。下線はリンクと紛らわしいので使わない。
+ * title は最初から太く、太さは効かない。
+ * 注意の通知と同じ色なので、ライトでもダークでも文字の色のまま読める。
+ */
+.entry mark {
+  color: inherit;
+  background: var(--color-warn-bg);
+  border-radius: var(--radius-sm);
 }
 
 .entry-excerpt mark {
+  font-weight: var(--font-weight-strong);
   color: var(--color-fg);
 }
 
