@@ -60,6 +60,9 @@ function cursorOf(value: string | null): Cursor {
 describe("一覧の読み取り行数", () => {
   it("最近の更新は、cursor の有無にかかわらず limit の数倍で止まる", async () => {
     await seed();
+    // 先頭に近い cursor では、先頭から読み飛ばしても行数が増えないので、中ほどの位置から読ませる
+    const deep = PAGES / 2;
+    const deepCursor: Cursor = { updatedAt: T0 + deep, id: String(deep).padStart(22, "0") };
     for (const readable of ["all", "public"] as const) {
       const first = meteredDb();
       const page = await listRecentPages(first.db, { limit: 20, cursor: null, readable });
@@ -67,7 +70,10 @@ describe("一覧の読み取り行数", () => {
       expect(first.counter.rowsRead, readable).toBeLessThan(300);
 
       const next = meteredDb();
-      await listRecentPages(next.db, { limit: 20, cursor: cursorOf(page.nextCursor), readable });
+      const later = await listRecentPages(next.db, { limit: 20, cursor: deepCursor, readable });
+      expect(later.pages[0]?.title, readable).toBe(
+        `bulk ${readable === "all" ? deep - 1 : deep - 2}`,
+      );
       expect(next.counter.rowsRead, readable).toBeLessThan(300);
     }
   });
