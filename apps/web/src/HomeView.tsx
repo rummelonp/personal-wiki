@@ -38,7 +38,8 @@ export function HomeView({ query, tag }: HomeViewProps) {
   return (
     <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
       <div className="home">
-        <SearchBox query={trimmed} />
+        {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
+        {searching && <SearchBox query={trimmed} />}
         <h1 className="list-title">{heading}</h1>
         {searching && tag !== "" && (
           <p className="muted">

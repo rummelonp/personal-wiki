@@ -33,7 +33,7 @@
   --color-danger-bg: #fef3f2; /* 失敗の通知の背景 */
   --color-warn-bg: #fffaeb; /* 注意の通知の背景（退避、ログイン切れ、衝突） */
   --color-warn-border: #d4a72c; /* 注意の通知の枠 */
-  --color-ok: #2f9e6b; /* 保存済み、ログイン中の点 */
+  --color-ok: #2f9e6b; /* 保存済みの点 */
   --color-diff-add-bg: #e6f4ea; /* 差分: 手元だけにある行 */
   --color-diff-del-bg: #fdecea; /* 差分: サーバーだけにある行 */
 
@@ -84,18 +84,22 @@
   --space-6: 2.5rem;
   --space-7: 4rem;
 
+  /* 重なり */
+  --z-header: 10; /* 本文より前に出すヘッダー。ダイアログは top layer なのでこの値に関係なく前に出る */
+
   /* 寸法 */
   --prose-width: 40em; /* 本文の幅 */
   --list-width: 42.5rem; /* トップの一覧の幅 */
-  --hero-search-width: 35rem; /* トップの検索欄の幅 */
   --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
+  --switcher-width: 34rem; /* quick switcher の幅 */
+  --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
+  --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
   --rail-width: 14.375rem; /* ノートの右の情報レールの幅 */
   --control-height: 2.25rem; /* ボタンと 1 行の入力欄の高さ */
   --control-height-sm: 2rem; /* ヘッダーの操作の高さ */
-  --search-min-width: 12rem; /* 検索欄が縮められる下限の幅 */
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
   --diff-max-height: 50vh; /* 衝突の差分の欄の高さの上限（超えるとスクロール） */
-  --dot-size: 0.5rem; /* ログイン中と保存済みの点 */
+  --dot-size: 0.5rem; /* 保存済みの点 */
 
   /*
    * packages/editor が読むトークン。値は上のトークンから写すだけにして、ここで新しい色を作らない。

@@ -4,11 +4,9 @@ import { homeHref, navigate } from "./route";
 interface SearchBoxProps {
   /** 現在の検索語。`/?q=` と入力欄をそろえる。 */
   query: string;
-  /** ヘッダーに置く小さい版。 */
-  compact?: boolean;
 }
 
-export function SearchBox({ query, compact = false }: SearchBoxProps) {
+export function SearchBox({ query }: SearchBoxProps) {
   const [text, setText] = useState(query);
 
   useEffect(() => {
@@ -21,7 +19,7 @@ export function SearchBox({ query, compact = false }: SearchBoxProps) {
   }
 
   return (
-    <search className={compact ? "search search-compact" : "search"}>
+    <search className="search">
       <form onSubmit={handleSubmit}>
         <input
           className="search-input"

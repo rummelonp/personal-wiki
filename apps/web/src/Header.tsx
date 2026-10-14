@@ -1,9 +1,9 @@
 import { useRef } from "react";
 import { loginHref, type Me } from "./api";
+import { PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
 import { NewPageDialog } from "./NewPageDialog";
 import { homeHref } from "./route";
-import { SearchBox } from "./SearchBox";
 
 export type SessionState =
   | { status: "loading" }
@@ -12,13 +12,21 @@ export type SessionState =
 
 interface HeaderProps {
   session: SessionState;
-  /** トップは一覧の上に検索欄があるので、ヘッダーには出さない。 */
-  showSearch: boolean;
   loggingOut: boolean;
   onLogout: () => void;
+  /** quick switcher を開く。検索の入口はこれだけで、検索語はそちらの入力欄で打つ。 */
+  onOpenSearch: () => void;
 }
 
-export function Header({ session, showSearch, loggingOut, onLogout }: HeaderProps) {
+const SHORTCUT_LABEL = /Mac|iPhone|iPad/.test(globalThis.navigator?.userAgent ?? "")
+  ? "⌘K"
+  : "Ctrl K";
+
+/**
+ * 狭い幅でも 1 行に収める。検索は欄でなく開くだけのボタンにし（変換中の文字を別の入力欄へ
+ * 移さないため）、狭い幅では虫眼鏡だけにする。ラベルを隠す幅の切り替えは CSS が持つ。
+ */
+export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderProps) {
   const isOwner = session.status === "ready" && session.me.kind === "owner";
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -27,34 +35,42 @@ export function Header({ session, showSearch, loggingOut, onLogout }: HeaderProp
       <Link className="brand" href={homeHref()}>
         personal-wiki
       </Link>
-      {isOwner && showSearch && <SearchBox query="" compact />}
+      {session.status === "ready" && (
+        <button
+          type="button"
+          className="header-search"
+          aria-label="検索"
+          aria-keyshortcuts="Control+K Meta+K"
+          onClick={onOpenSearch}
+        >
+          <SearchIcon />
+          <span className="header-search-text">ページを検索</span>
+          <kbd className="header-search-key">{SHORTCUT_LABEL}</kbd>
+        </button>
+      )}
       <div className="header-actions">
         {isOwner && (
           <button
             type="button"
-            className="button button-primary button-compact"
+            className="button button-primary button-compact header-new"
+            aria-label="新規作成"
             onClick={() => dialogRef.current?.showModal()}
           >
-            新規作成
+            <PlusIcon />
+            <span className="header-new-label">新規作成</span>
           </button>
         )}
         {session.status === "loading" && <span className="muted">確認中…</span>}
         {session.status === "error" && <span className="muted">状態を取得できませんでした</span>}
         {isOwner && (
-          <>
-            <span className="login-state">
-              <span className="dot" aria-hidden="true" />
-              ログイン中
-            </span>
-            <button
-              type="button"
-              className="button button-quiet button-compact"
-              onClick={onLogout}
-              disabled={loggingOut}
-            >
-              ログアウト
-            </button>
-          </>
+          <button
+            type="button"
+            className="button button-quiet button-compact"
+            onClick={onLogout}
+            disabled={loggingOut}
+          >
+            ログアウト
+          </button>
         )}
         {session.status === "ready" && !isOwner && (
           <a className="button button-primary button-compact" href={loginHref(window.location)}>

@@ -8,6 +8,7 @@ import { linkRewrites } from "./link-rewrites";
 import { stepLinkRewrites } from "./link-rewrites-api";
 import {
   type ApiResult,
+  createPage,
   findPageByTitle,
   getPage,
   listBacklinks,
@@ -153,6 +154,11 @@ const cursorOf = () => {
 
 const main = () => container?.querySelector("main");
 const header = () => container?.querySelector("header");
+/** ヘッダーのボタンの名前（新規作成のダイアログの中は除く）。匿名には検索だけが出る。 */
+const headerButtons = () =>
+  [...(header()?.querySelectorAll("button") ?? [])]
+    .filter((b) => b.closest("dialog") === null)
+    .map((b) => b.getAttribute("aria-label") ?? b.textContent);
 
 describe("App の匿名の画面", () => {
   it("トップで公開ページの一覧と検索とタグを出し、owner の操作を出さない", async () => {
@@ -161,11 +167,11 @@ describe("App の匿名の画面", () => {
     await vi.waitFor(() =>
       expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
     );
-    expect(main()?.querySelector("input[type='search'], form input")).not.toBeNull();
     expect(main()?.textContent).toContain(tagOf(PUBLIC));
     expect(main()?.textContent).not.toContain(DRAFT.title);
     expect(main()?.querySelectorAll("button")).toHaveLength(0);
-    expect(header()?.querySelectorAll("button")).toHaveLength(0);
+    expect(headerButtons()).toEqual(["検索"]);
+    expect(header()?.textContent).not.toContain("新規作成");
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
   });
 
@@ -175,7 +181,7 @@ describe("App の匿名の画面", () => {
     await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("公開の題"));
     expect(main()?.querySelector(".title-input")).toBeNull();
     await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
-    expect(header()?.querySelectorAll("button")).toHaveLength(0);
+    expect(headerButtons()).toEqual(["検索"]);
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
     expect(document.title).toBe("公開の題 - personal-wiki");
@@ -387,6 +393,75 @@ describe("App の owner の画面", () => {
     );
     expect(header()?.textContent).toContain("新規作成");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
+  });
+
+  it("ヘッダーに検索と新規作成とログアウトを 1 行で並べ、ログイン中の表示は出さない", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() => expect(headerButtons()).toEqual(["検索", "新規作成", "ログアウト"]));
+    expect(header()?.textContent).not.toContain("ログイン中");
+  });
+
+  it("存在しない title を開くと、「まだありません」と作成の導線を出し、作ると編集の画面へ移る", async () => {
+    serve("owner", [PUBLIC]);
+    const created: Page = { ...PUBLIC, id: "NNNNNNNNNNNNNNNNNNNNNN", title: "まだ無い題" };
+    vi.mocked(createPage).mockResolvedValue(ok(created));
+    await renderAt(titleUrl("まだ無い題"));
+    await vi.waitFor(() =>
+      expect(main()?.querySelector("h1")?.textContent).toBe("「まだ無い題」はまだありません"),
+    );
+    const create = [...(main()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "このタイトルで作成",
+    );
+    act(() => create?.click());
+    await vi.waitFor(() => expect(location.pathname).toBe(`/p/${created.id}`));
+    expect(createPage).toHaveBeenCalledWith({ title: "まだ無い題", body: "" });
+  });
+
+  it("title が重複して作れなかったら、理由を出して既存のページを開ける", async () => {
+    serve("owner", [PUBLIC]);
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じ title のページがすでにある",
+    });
+    await renderAt(titleUrl("まだ無い題"));
+    await vi.waitFor(() => expect(main()?.textContent).toContain("まだ無い題"));
+    vi.mocked(findPageByTitle).mockResolvedValue(ok(PUBLIC));
+    const create = [...(main()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "このタイトルで作成",
+    );
+    act(() => create?.click());
+    await vi.waitFor(() =>
+      expect(main()?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(
+        `/p/${PUBLIC.id}`,
+      ),
+    );
+  });
+
+  it("id の URL で見つからないときは、作成の導線を出さない", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/p/ZZZZZZZZZZZZZZZZZZZZZZ");
+    await vi.waitFor(() => expect(main()?.textContent).toContain("ページが見つかりません"));
+    expect(main()?.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  it("検索のボタンと Ctrl+K で quick switcher を開き、Ctrl+K でもう一度押すと閉じる", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    const switcher = () => container?.querySelector<HTMLDialogElement>("dialog.switcher");
+    expect(switcher()?.open).toBe(false);
+    const search = header()?.querySelector<HTMLButtonElement>("button[aria-label='検索']");
+    act(() => search?.click());
+    await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
+    });
+    await vi.waitFor(() => expect(switcher()?.open).toBe(false));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
+    });
+    await vi.waitFor(() => expect(switcher()?.open).toBe(true));
   });
 
   it("見出しの fragment 付きの URL を開くと、編集の画面でも見出しにカーソルを置く", async () => {

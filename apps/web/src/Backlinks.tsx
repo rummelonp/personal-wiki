@@ -51,7 +51,7 @@ export function Backlinks({ pageId }: { pageId: string }) {
   }
 
   return (
-    <RailSection title="このページへのリンク">
+    <RailSection title="このページへのリンク" className="rail-section-links">
       {state.status === "loading" && <p className="muted">読み込み中…</p>}
       {state.status === "error" && <p className="muted">取得できませんでした。</p>}
       {state.status === "ready" && state.pages.length === 0 && (

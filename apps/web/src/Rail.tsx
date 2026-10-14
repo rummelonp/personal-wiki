@@ -24,9 +24,18 @@ export function RailLayout({ rail, children }: RailLayoutProps) {
 }
 
 /** 右の列の 1 区画。見出しの書き方をここにそろえる。 */
-export function RailSection({ title, children }: { title: string; children: ReactNode }) {
+export function RailSection({
+  title,
+  className,
+  children,
+}: {
+  title: string;
+  /** 区画を指す印。狭い画面での並べ替えなど、CSS から区画を選ぶのに使う。 */
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="rail-section">
+    <section className={className === undefined ? "rail-section" : `rail-section ${className}`}>
       <h2 className="rail-label">{title}</h2>
       {children}
     </section>

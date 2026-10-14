@@ -7,6 +7,7 @@ import { HomeView } from "./HomeView";
 import { LinkRewriteStatus } from "./LinkRewriteStatus";
 import { linkRewrites } from "./link-rewrites";
 import { NotFound } from "./NotFound";
+import { QuickSwitcher } from "./QuickSwitcher";
 import { parseRoute, useRoute } from "./route";
 
 // エディタ（CodeMirror）はページの画面でしか使わないので、トップと検索の初回の読み込みから外す。
@@ -36,6 +37,7 @@ function PageViewLoadFailed() {
 export function App() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
   const [loggingOut, setLoggingOut] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const route = useRoute();
 
   useEffect(() => {
@@ -99,11 +101,24 @@ export function App() {
     if (canRewriteLinks) linkRewrites.start();
   }, [canRewriteLinks]);
 
+  // ⌘K / Ctrl+K で quick switcher を開閉する。ほかのダイアログ（新規作成）が開いている間は奪わない
+  useEffect(() => {
+    if (!ready) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      if (!switcherOpen && document.querySelector("dialog[open]") !== null) return;
+      event.preventDefault();
+      setSwitcherOpen(!switcherOpen);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [ready, switcherOpen]);
+
   return (
     <div className="app">
       <Header
         session={session}
-        showSearch={route.name !== "home"}
+        onOpenSearch={() => setSwitcherOpen(true)}
         loggingOut={loggingOut}
         onLogout={() => void handleLogout()}
       />
@@ -124,7 +139,7 @@ export function App() {
           />
         )}
         {ready && (route.name === "page" || route.name === "title") && (
-          <Suspense fallback={<p className="muted">読み込み中…</p>}>
+          <Suspense fallback={<p className="narrow muted">読み込み中…</p>}>
             <PageView
               // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す
               key={isOwner ? "owner" : "reader"}
@@ -140,6 +155,15 @@ export function App() {
         )}
         {ready && route.name === "unknown" && <NotFound />}
       </main>
+      {ready && (
+        // 候補の一覧は owner と匿名で違う（draft を含むか）ので、ログイン状態が変わったら作り直す
+        <QuickSwitcher
+          key={isOwner ? "owner" : "reader"}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          owner={isOwner}
+        />
+      )}
     </div>
   );
 }

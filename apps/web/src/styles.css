@@ -53,17 +53,24 @@ a {
   border-radius: 50%;
 }
 
-/* ヘッダー: 線は引かず、余白で本文と分ける */
+/*
+ * ヘッダー: 線は引かず、余白で本文と分ける。スクロールしても上に残すので、本文が透けないよう
+ * 背景を塗る。狭い幅でも 1 行に収める（検索と新規作成はアイコンだけにする。下の狭い画面の節）
+ */
 
 .header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-4);
   padding: var(--space-3) var(--space-5);
+  background: var(--color-bg);
 }
 
 .brand {
+  flex: none;
   font-family: var(--font-serif);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-strong);
@@ -73,50 +80,62 @@ a {
   white-space: nowrap;
 }
 
-.search {
-  flex: 1 1 var(--search-min-width);
-  max-width: var(--hero-search-width);
-}
-
-.search-input {
-  width: 100%;
-  min-height: var(--control-height);
-  padding: 0 var(--space-4);
+/* 検索欄に見えるが、押すと quick switcher を開くボタン */
+.header-search {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: var(--header-search-width);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
   font: inherit;
-  color: var(--color-fg);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  text-align: left;
   background: var(--color-input);
   border: 0;
   border-radius: var(--radius-md);
+  cursor: pointer;
 }
 
-.search-compact {
-  max-width: var(--header-search-width);
+.header-search:hover {
+  background: var(--color-selected);
 }
 
-.search-compact .search-input {
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-3);
-  font-size: var(--font-size-sm);
+.header-search-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-search-key {
+  flex: none;
+  padding: 0 var(--space-1);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
 }
 
 .header-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
   gap: var(--space-2) var(--space-3);
   margin-left: auto;
 }
 
-.login-state {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-fg-muted);
+.header-new {
+  gap: var(--space-1);
 }
 
-.login-state .dot {
-  color: var(--color-ok);
+.icon {
+  flex: none;
 }
 
 /* 骨格 */
@@ -135,10 +154,13 @@ a {
 /*
  * 中央が本文や一覧、右が補助情報。media query の幅には変数を使えないので、
  * 右の列を畳む幅だけはここに直接書く（40rem 未満で本文の下に回す）。
+ * 本文の列は一覧の幅（と左右の余白）で止め、広い画面では本文と右の列をひとまとまりで中央に置く。
+ * 本文の列を 1fr にすると、右の列が画面の右端に離れて残り、左に空白が偏る。
  */
 .rail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: minmax(0, calc(var(--list-width) + 2 * var(--space-6))) var(--rail-width);
+  justify-content: center;
 }
 
 .rail-layout-single {
@@ -172,11 +194,11 @@ a {
 
 .rail-label {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-label);
-  color: var(--color-fg-muted);
+  color: var(--color-fg);
 }
 
 .rail-list,
@@ -419,9 +441,20 @@ a {
   margin: 0 auto;
 }
 
+/* 検索結果の画面で、検索語を直す欄 */
 .home .search {
-  max-width: none;
   margin-bottom: var(--space-5);
+}
+
+.search-input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  font: inherit;
+  color: var(--color-fg);
+  background: var(--color-input);
+  border: 0;
+  border-radius: var(--radius-md);
 }
 
 .entries {
@@ -658,6 +691,105 @@ a {
   width: 100%;
 }
 
+/* quick switcher: 上端を固定する。中央に置くと、候補が減るたびに入力欄が上下に動く */
+
+.switcher {
+  width: min(100% - var(--space-5), var(--switcher-width));
+  max-height: calc(100vh - var(--switcher-top) - var(--space-4));
+  margin: var(--switcher-top) auto auto;
+  padding: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.switcher::backdrop {
+  background: var(--color-backdrop);
+}
+
+.switcher-body {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.switcher-input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  font: inherit;
+  color: var(--color-fg);
+  background: var(--color-input);
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
+.switcher-heading {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+.switcher-list {
+  display: grid;
+  gap: var(--space-1);
+  max-height: var(--switcher-list-max-height);
+  overflow-y: auto;
+}
+
+.switcher-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
+  font: inherit;
+  color: var(--color-fg);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.switcher-option[aria-selected="true"] {
+  background: var(--color-selected);
+  box-shadow: inset calc(var(--border-width) * 2) 0 0 var(--color-accent);
+}
+
+.switcher-option .icon {
+  color: var(--color-fg-muted);
+}
+
+.switcher-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 一致した箇所は地の色でなく太さで示す。選択行の地と重なっても読める */
+.switcher-option mark {
+  font-weight: var(--font-weight-strong);
+  color: inherit;
+  background: none;
+}
+
+.switcher-hints {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
 /* 狭い画面。同じ詳細度の基本の規則を上書きするので、ファイルの最後に置く */
 @media (max-width: 40rem) {
   .rail-layout {
@@ -676,5 +808,39 @@ a {
 
   .header {
     padding-inline: var(--space-4);
+  }
+}
+
+/*
+ * 狭い画面のヘッダーと補助情報。ヘッダーは 1 行に収めるため、検索と新規作成をアイコンだけにする。
+ * 補助情報は本文の下に回るので、目次が長いページでも「このページへのリンク」が先に見えるよう先頭へ寄せる。
+ */
+@media (max-width: 40rem) {
+  .header {
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .header-search {
+    flex: none;
+    justify-content: center;
+    width: var(--control-height-sm);
+    padding: 0;
+    background: none;
+  }
+
+  .header-search-text,
+  .header-search-key,
+  .header-new-label,
+  .switcher-hints {
+    display: none;
+  }
+
+  .header-new {
+    width: var(--control-height-sm);
+    padding: 0;
+  }
+
+  .rail-section-links {
+    order: -1;
   }
 }

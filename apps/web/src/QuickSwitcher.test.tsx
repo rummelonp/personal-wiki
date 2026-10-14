@@ -1,0 +1,317 @@
+import { act, useState } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type ApiResult,
+  createPage,
+  findPageByTitle,
+  listPageTitles,
+  type Page,
+} from "./pages-api";
+import { QuickSwitcher } from "./QuickSwitcher";
+
+vi.mock("./pages-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pages-api")>();
+  return {
+    ...actual,
+    listPageTitles: vi.fn(),
+    createPage: vi.fn(),
+    findPageByTitle: vi.fn(),
+  };
+});
+
+const ok = <T,>(value: T): ApiResult<T> => ({ ok: true, value });
+
+const summary = (id: string, title: string) => ({
+  id,
+  title,
+  visibility: "public" as const,
+  updatedAt: 0,
+});
+// 最近更新した順
+const RECENT = [
+  summary("AAAAAAAAAAAAAAAAAAAAAA", "読書メモ"),
+  summary("BBBBBBBBBBBBBBBBBBBBBB", "Hono のメモ"),
+  summary("CCCCCCCCCCCCCCCCCCCCCC", "メモ"),
+  summary("DDDDDDDDDDDDDDDDDDDDDD", "買い物"),
+];
+
+beforeAll(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+const startUrl = location.href;
+let root: Root | null = null;
+let container: HTMLElement | null = null;
+
+beforeEach(() => {
+  vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: RECENT, nextCursor: null }));
+});
+
+afterEach(() => {
+  act(() => root?.unmount());
+  container?.remove();
+  root = null;
+  container = null;
+  vi.clearAllMocks();
+  history.replaceState(null, "", startUrl);
+});
+
+function Harness({ owner }: { owner: boolean }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        open
+      </button>
+      <QuickSwitcher open={open} onOpenChange={setOpen} owner={owner} />
+    </>
+  );
+}
+
+async function renderSwitcher(owner: boolean) {
+  container = document.createElement("div");
+  document.body.append(container);
+  const mounted = createRoot(container);
+  root = mounted;
+  act(() => mounted.render(<Harness owner={owner} />));
+  // 一覧の取得が終わるのを待つ
+  await vi.waitFor(() => expect(options().length).toBeGreaterThan(0));
+}
+
+const dialog = () =>
+  container?.querySelector<HTMLDialogElement>("dialog.switcher") as HTMLDialogElement;
+const input = () =>
+  container?.querySelector<HTMLInputElement>("input[role='combobox']") as HTMLInputElement;
+const optionElements = () => [
+  ...(container?.querySelectorAll<HTMLElement>("[role='option']") ?? []),
+];
+const options = () => optionElements().map((o) => o.textContent);
+const selected = () =>
+  optionElements().find((o) => o.getAttribute("aria-selected") === "true")?.textContent;
+
+/** 制御された input に値を入れる。React は native の value setter を通した input イベントだけを拾う。 */
+function typeText(text: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  act(() => {
+    setter?.call(input(), text);
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function press(key: string, init: KeyboardEventInit & { keyCode?: number } = {}) {
+  act(() => {
+    input().dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }),
+    );
+  });
+}
+
+describe("QuickSwitcher の候補", () => {
+  it("開くと入力欄にフォーカスがあり、未入力なら最近更新したページを更新順に出す", async () => {
+    await renderSwitcher(true);
+    expect(dialog().open).toBe(true);
+    expect(document.activeElement).toBe(input());
+    expect(options()).toEqual(RECENT.map((p) => p.title));
+    expect(container?.querySelector("[role='listbox']")?.getAttribute("aria-label")).toBe(
+      "最近更新したページ",
+    );
+    // 語が無いので「作成」と「本文から検索」は出さない
+    expect(container?.querySelector("[data-row-kind='create']")).toBeNull();
+    expect(container?.querySelector("[data-row-kind='content-search']")).toBeNull();
+  });
+
+  it("打つと title で絞り、一致した箇所を強調し、本文から検索する行を最後に出す", async () => {
+    await renderSwitcher(false);
+    typeText("買");
+    expect(options()).toEqual(["買い物", "「買」を本文から検索"]);
+    expect(optionElements()[0]?.querySelector("mark")?.textContent).toBe("買");
+  });
+
+  it("owner には title が完全に一致するページが無いときだけ「作成」を出す", async () => {
+    await renderSwitcher(true);
+    typeText("メ");
+    expect(options()).toContain("「メ」を作成");
+    expect(options().at(-1)).toBe("「メ」を本文から検索");
+    // 「メモ」は部分一致の候補があっても、完全に一致するページがあるので作らせない
+    typeText("メモ");
+    expect(options()[0]).toBe("メモ");
+    expect(options()).not.toContain("「メモ」を作成");
+    // 全角半角と大文字小文字の違いは、title の比較と同じ畳み方で同じとみなす
+    typeText("ＨＯＮＯ　のメモ");
+    expect(options()).not.toContain("「ＨＯＮＯ　のメモ」を作成");
+  });
+
+  it("匿名には「作成」を出さず、候補が無いことを案内する", async () => {
+    await renderSwitcher(false);
+    typeText("ほげ");
+    expect(options()).toEqual(["「ほげ」を本文から検索"]);
+    expect(container?.querySelector("[role='status']")?.textContent).toContain("ありません");
+  });
+
+  it("前後の空白は無視して、語として扱う", async () => {
+    await renderSwitcher(true);
+    typeText("  ほげ  ");
+    expect(options()).toEqual(["「ほげ」を作成", "「ほげ」を本文から検索"]);
+  });
+});
+
+describe("QuickSwitcher の操作", () => {
+  it("↑↓で選ぶ行を動かし、端では止まる", async () => {
+    await renderSwitcher(true);
+    expect(selected()).toBe("読書メモ");
+    press("ArrowUp");
+    expect(selected()).toBe("読書メモ");
+    press("ArrowDown");
+    press("ArrowDown");
+    expect(selected()).toBe("メモ");
+    const active = optionElements().find((o) => o.getAttribute("aria-selected") === "true");
+    expect(input().getAttribute("aria-activedescendant")).toBe(active?.id);
+    press("ArrowDown");
+    press("ArrowDown");
+    press("ArrowDown");
+    expect(selected()).toBe("買い物");
+    press("ArrowUp");
+    expect(selected()).toBe("メモ");
+  });
+
+  it("Enter で選んだページを開いて閉じる", async () => {
+    await renderSwitcher(true);
+    press("ArrowDown");
+    press("Enter");
+    expect(location.pathname).toBe(`/p/${RECENT[1]?.id}`);
+    expect(dialog().open).toBe(false);
+  });
+
+  it("語を打つと先頭の行が選ばれ、打ち直すと選択も先頭に戻る", async () => {
+    await renderSwitcher(true);
+    typeText("メ");
+    press("ArrowDown");
+    expect(selected()).not.toBe(options()[0]);
+    typeText("メモ");
+    expect(selected()).toBe(options()[0]);
+  });
+
+  it("「本文から検索」を選ぶと、語を持って検索結果の画面へ移る", async () => {
+    await renderSwitcher(false);
+    typeText("ほげ ふが");
+    press("Enter");
+    expect(location.pathname).toBe("/");
+    expect(new URLSearchParams(location.search).get("q")).toBe("ほげ ふが");
+    expect(dialog().open).toBe(false);
+  });
+
+  it("「作成」を選ぶと空のページを作って、そのページへ移る", async () => {
+    vi.mocked(createPage).mockResolvedValue(
+      ok({ id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ" } as Page),
+    );
+    await renderSwitcher(true);
+    typeText(" ほげ ");
+    expect(selected()).toBe("「ほげ」を作成");
+    press("Enter");
+    await vi.waitFor(() => expect(location.pathname).toBe("/p/NNNNNNNNNNNNNNNNNNNNNN"));
+    expect(createPage).toHaveBeenCalledWith({ title: "ほげ", body: "" });
+    expect(dialog().open).toBe(false);
+  });
+
+  it("作れなかったら閉じずに理由を出し、重複なら既存のページを開ける", async () => {
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じ title のページがすでにある",
+    });
+    vi.mocked(findPageByTitle).mockResolvedValue(ok({ id: "EEEEEEEEEEEEEEEEEEEEEE" } as Page));
+    await renderSwitcher(true);
+    typeText("メ");
+    for (let i = 0; i < options().length; i++) press("ArrowDown");
+    // 末尾は「本文から検索」なので、1 つ戻して「作成」を選ぶ
+    press("ArrowUp");
+    expect(selected()).toBe("「メ」を作成");
+    press("Enter");
+    await vi.waitFor(() =>
+      expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(
+        "/p/EEEEEEEEEEEEEEEEEEEEEE",
+      ),
+    );
+    expect(dialog().open).toBe(true);
+  });
+
+  it("Esc で閉じる", async () => {
+    await renderSwitcher(true);
+    press("Escape");
+    expect(dialog().open).toBe(false);
+  });
+
+  it("ブラウザが閉じた（Esc の既定動作）あとも、開き直せる", async () => {
+    await renderSwitcher(true);
+    act(() => dialog().close());
+    expect(dialog().open).toBe(false);
+    // close イベントで、閉じたことが親の状態にも伝わるのを待つ
+    await vi.waitFor(() => expect(options()).toEqual([]));
+    const open = [...(container?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "open",
+    );
+    act(() => open?.click());
+    await vi.waitFor(() => expect(dialog().open).toBe(true));
+    expect(input().value).toBe("");
+  });
+
+  it("枠の外を押すと閉じ、枠の中を押しても閉じない", async () => {
+    await renderSwitcher(true);
+    act(() => {
+      input().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+    expect(dialog().open).toBe(true);
+    act(() => {
+      dialog().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+    expect(dialog().open).toBe(false);
+  });
+});
+
+describe("QuickSwitcher の日本語入力", () => {
+  it("変換中の Enter（isComposing）では行を実行しない", async () => {
+    await renderSwitcher(true);
+    typeText("ほげ");
+    press("Enter", { isComposing: true });
+    expect(location.pathname).not.toMatch(/^\/p\//);
+    expect(location.search).toBe(new URL(startUrl).search);
+    expect(createPage).not.toHaveBeenCalled();
+    expect(dialog().open).toBe(true);
+    expect(input().value).toBe("ほげ");
+  });
+
+  it("Safari のように isComposing: false で届く変換確定の Enter（keyCode 229）でも実行しない", async () => {
+    await renderSwitcher(true);
+    typeText("ほげ");
+    press("Enter", { keyCode: 229 });
+    expect(createPage).not.toHaveBeenCalled();
+    expect(dialog().open).toBe(true);
+  });
+
+  it("変換中の↑↓と Esc は変換の操作に任せ、選択も閉じる動作も動かさない", async () => {
+    await renderSwitcher(true);
+    typeText("メ");
+    const before = selected();
+    press("ArrowDown", { isComposing: true });
+    press("ArrowDown", { keyCode: 229 });
+    expect(selected()).toBe(before);
+    press("Escape", { isComposing: true });
+    expect(dialog().open).toBe(true);
+  });
+
+  it("変換中に候補を出し直しても、入力欄の値は書き換えない", async () => {
+    await renderSwitcher(true);
+    typeText("ほ");
+    typeText("ほげ");
+    expect(input().value).toBe("ほげ");
+    expect(options()).toContain("「ほげ」を本文から検索");
+  });
+
+  it("変換が確定した後の Enter は行を実行する", async () => {
+    await renderSwitcher(false);
+    typeText("ほげ");
+    press("Enter");
+    expect(new URLSearchParams(location.search).get("q")).toBe("ほげ");
+  });
+});
