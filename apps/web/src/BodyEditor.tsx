@@ -23,14 +23,16 @@ import { scrollBelowStickyHeader } from "./sticky-header";
 import type { WikiLinkSources } from "./wiki-links";
 
 export interface BodyEditorHandle {
-  /** 本文の `offset` の位置にカーソルを置き、見える位置までスクロールする。 */
+  /**
+   * 本文の `offset` の行を画面の上の方に見えるまでスクロールする。編集部品に focus しない。
+   * focus 中なら外す（読むために移るので、キーボードと Live Preview の記号を出さない）。
+   */
   jumpTo: (offset: number) => void;
   /**
    * URL の fragment が指す見出しか block へ、`jumpTo` と同じく移る。見つからなければ何もしない。
-   * block は対象の段落を一時的にハイライトする。`focus` を立てたときだけ編集部品に focus する
-   * （既定は立てない。ページを開いただけでモバイルのキーボードが出ないようにする）。
+   * block は対象の段落を一時的にハイライトする。
    */
-  jumpToFragment: (fragment: PageFragment, options?: { focus?: boolean }) => void;
+  jumpToFragment: (fragment: PageFragment) => void;
   /**
    * IME の変換が落ち着いたら resolve する。落ち着いていればすぐに resolve する。
    * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
@@ -89,16 +91,27 @@ const jumpKey = Symbol("jumpTo");
 const settledKey = Symbol("whenSettled");
 
 /**
- * カーソルを `offset` に置き、その行を画面の上端の近くまでスクロールする。見出しへの移動は
- * 行頭が見えれば足りるわけではなく、その先を読み進めるので、最小限のスクロールにはしない。
+ * focus を外す。リンクや目次から見出しへ移るのは読むためで、focus が残ると iOS のキーボードが
+ * 画面の半分を隠し、カーソルの行の Live Preview の記号（`## `）も現れる。
+ * 続けて編集するには、本文をクリックかタップする（デスクトップの Tab でも入れる）。
+ * focus を残してカーソルだけ別の所に置く案は、画面の外にカーソルがあるまま打てるので採らなかった。
  */
-function moveTo(editor: EditorView, offset: number, focus: boolean): void {
+function leaveEditing(editor: EditorView): void {
+  if (editor.hasFocus) editor.contentDOM.blur();
+}
+
+/**
+ * `offset` の行を画面の上端の近くまでスクロールする。見出しへの移動は行頭が見えれば足りるわけ
+ * ではなく、その先を読み進めるので、最小限のスクロールにはしない。
+ * カーソルは行頭に置くが focus は取らない（focus の無い view は記法を隠すので、記号は出ない）。
+ */
+function moveTo(editor: EditorView, offset: number): void {
   const at = Math.min(offset, editor.state.doc.length);
+  leaveEditing(editor);
   editor.dispatch({
     selection: EditorSelection.cursor(at),
     effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 16 }),
   });
-  if (focus) editor.focus();
 }
 
 /**
@@ -265,20 +278,19 @@ export function BodyEditor({
     jumpTo(offset) {
       const editor = view.current;
       if (editor === null) return;
-      dispatchWhenSettled(editor, jumpKey, () => moveTo(editor, offset, true));
+      dispatchWhenSettled(editor, jumpKey, () => moveTo(editor, offset));
     },
-    jumpToFragment(fragment, options) {
+    jumpToFragment(fragment) {
       const editor = view.current;
       if (editor === null) return;
-      const focus = options?.focus ?? false;
       // 位置は動かす時点の本文で求める。変換が落ち着くまでに本文が変わっていても、その本文の位置に移る
       dispatchWhenSettled(editor, jumpKey, () => {
         if (fragment.kind === "block") {
-          if (revealBlockId(editor, fragment.id) && focus) editor.focus();
+          if (revealBlockId(editor, fragment.id)) leaveEditing(editor);
           return;
         }
         const offset = findHeadingOffset(editor.state.doc.toString(), fragment.heading);
-        if (offset !== null) moveTo(editor, offset, focus);
+        if (offset !== null) moveTo(editor, offset);
       });
     },
     whenSettled() {

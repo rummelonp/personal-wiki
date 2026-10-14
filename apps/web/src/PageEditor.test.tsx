@@ -511,14 +511,23 @@ describe("PageEditor の見出しと block への移動", () => {
     const pathname = location.pathname;
     clickLink("#節B");
     expect(view().state.selection.main.head).toBe(at("## 節B"));
-    // link を押したときは focus する
-    expect(view().hasFocus).toBe(true);
+    // link を押しても focus しない（モバイルでキーボードが出る。記号も現れる）
+    expect(view().hasFocus).toBe(false);
     expect(location.pathname).toBe(pathname);
     expect(location.hash).toBe(hashOf("節B"));
     clickLink("#^blk");
     expect(view().state.selection.main.head).toBe(at("段落 ^blk"));
     expect(findPageByTitle).not.toHaveBeenCalled();
     for (const [titles] of vi.mocked(resolvePages).mock.calls) expect(titles).not.toContain("");
+  });
+
+  it("本文に caret がある状態で見出しの link を押すと、focus を外して記号を出さない", async () => {
+    const { view } = renderPage({ ...PAGE, body: BODY });
+    await flushAsync();
+    view().focus();
+    clickLink("#節B");
+    expect(view().hasFocus).toBe(false);
+    expect(view().state.selection.main.head).toBe(at("## 節B"));
   });
 
   it("ほかのページの見出しへの link は、遷移先の URL に fragment を付ける", async () => {

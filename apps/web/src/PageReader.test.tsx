@@ -288,8 +288,8 @@ describe("見出しと block への移動", () => {
     const pathname = location.pathname;
     clickLink("#節B");
     expect(view().state.selection.main.head).toBe(at("## 節B"));
-    // link を押したときは focus する
-    expect(view().hasFocus).toBe(true);
+    // link を押しても focus しない（モバイルでキーボードが出る。記号も現れる）
+    expect(view().hasFocus).toBe(false);
     expect(location.pathname).toBe(pathname);
     expect(location.hash).toBe(hashOf("節B"));
     for (const [titles] of vi.mocked(resolvePages).mock.calls) expect(titles).not.toContain("");

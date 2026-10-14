@@ -333,12 +333,16 @@ describe("読み取り専用", () => {
 });
 
 describe("jumpTo", () => {
-  it("カーソルを置いてフォーカスする", () => {
+  it("カーソルを移すが、focus はしない。focus 中なら外す", () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled("# 見出し\n\n本文\n\n## 次", { ref });
     act(() => ref.current?.jumpTo(10));
     expect(view().state.selection.main.head).toBe(10);
-    expect(view().hasFocus).toBe(true);
+    expect(view().hasFocus).toBe(false);
+
+    act(() => view().focus());
+    act(() => ref.current?.jumpTo(0));
+    expect(view().hasFocus).toBe(false);
   });
 
   it("変換中は落ち着くまで待つ", async () => {
@@ -357,16 +361,17 @@ describe("jumpTo", () => {
 describe("jumpToFragment", () => {
   const BODY = "# 先頭\n\n本文\n\n## 次の見出し\n\n段落 ^blk1\n\n### 入れ子\n\n終わり";
 
-  it("見出しの行頭にカーソルを置く。focus は頼まれたときだけ", () => {
+  it("見出しの行頭にカーソルを置く。focus はせず、focus 中なら外す", () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled(BODY, { ref });
     act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "次の見出し" }));
     expect(view().state.selection.main.head).toBe(BODY.indexOf("## 次の見出し"));
     expect(view().hasFocus).toBe(false);
 
-    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "先頭" }, { focus: true }));
+    act(() => view().focus());
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "先頭" }));
     expect(view().state.selection.main.head).toBe(0);
-    expect(view().hasFocus).toBe(true);
+    expect(view().hasFocus).toBe(false);
   });
 
   it("入れ子の見出しの path をたどる", () => {
@@ -376,15 +381,16 @@ describe("jumpToFragment", () => {
     expect(view().state.selection.main.head).toBe(BODY.indexOf("### 入れ子"));
   });
 
-  it("block の段落へ移り、一時的にハイライトする。focus は頼まれたときだけ", () => {
+  it("block の段落へ移り、一時的にハイライトする。focus はせず、focus 中なら外す", () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled(BODY, { ref });
     act(() => ref.current?.jumpToFragment({ kind: "block", id: "blk1" }));
     expect(view().state.selection.main.head).toBe(BODY.indexOf("段落"));
     expect(view().hasFocus).toBe(false);
 
-    act(() => ref.current?.jumpToFragment({ kind: "block", id: "blk1" }, { focus: true }));
-    expect(view().hasFocus).toBe(true);
+    act(() => view().focus());
+    act(() => ref.current?.jumpToFragment({ kind: "block", id: "blk1" }));
+    expect(view().hasFocus).toBe(false);
   });
 
   it("見つからなければカーソルもフォーカスも動かさない", () => {
