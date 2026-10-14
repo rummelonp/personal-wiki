@@ -140,29 +140,33 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
   const before = await measureBefore(page);
   await failSaveWith500(page, created);
 
-  // 画面の下の方の行を打つ。通知は画面の下端に出るので、その行が覆われやすい
+  // 画面の下端に近い行を打つ。通知は台に重なって出るので、この行は通知で確実に覆われる
   const viewport = page.viewportSize();
   if (viewport === null) throw new Error("viewport が無い");
   let index = 0;
   for (; index < LINES.length; index++) {
     const box = await lineBox(page, index);
-    if (box !== null && box.y + box.height > viewport.height * 0.75) break;
+    if (box !== null && box.y + box.height > viewport.height * 0.9) break;
   }
+  expect(index, "画面の下端に近い行が無い").toBeLessThan(LINES.length);
   await typeAt(page, index, "、打っている途中");
+  const caretBefore = await caretRect(page);
 
   const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
   await expect(alert).toBeVisible();
   await expect(dock(page)).toContainText("時間をおいて、もう一度試してください。");
-  await expectBodyNotShifted(page, before);
-  await expectDockOnScreen(page);
-  await expectNoHorizontalScroll(page);
-
-  // 通知が覆う高さを避けて、打っている行は見える位置に残る
+  // 追加の入力の前に測る。台が出る前の行は台に覆われる位置にあり、それでも台の上へ逃げている
+  expect(caretBefore.bottom, "行が台に覆われる位置になく、検査にならない").toBeGreaterThan(
+    (await boxOf(alert)).y,
+  );
   await expect
     .poll(async () => (await caretRect(page)).bottom, "打っている行が通知に隠れている")
     .toBeLessThanOrEqual((await boxOf(alert)).y + 0.5);
   const caret = await caretRect(page);
   expect(caret.top, "打っている行がヘッダーより上に出ている").toBeGreaterThanOrEqual(0);
+  await expectBodyNotShifted(page, before);
+  await expectDockOnScreen(page);
+  await expectNoHorizontalScroll(page);
 
   // 続けて打っても、通知は動かず、行は隠れない
   await page.keyboard.type("さらに打つ");
