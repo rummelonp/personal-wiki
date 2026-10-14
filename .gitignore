@@ -25,3 +25,4 @@ apps/worker/backups/
 .claude/plans/
 .claude/worktrees/
 .claude/settings.local.json
+.claude/launch.json
