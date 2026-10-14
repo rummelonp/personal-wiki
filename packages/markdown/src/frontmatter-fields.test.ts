@@ -121,7 +121,8 @@ describe("parseFrontmatterFields", () => {
     );
     const started = Date.now();
     const fields = parseFrontmatterFields(text);
-    expect(Date.now() - started).toBeLessThan(100);
+    // 二次なら 10 万文字で数十秒かかるので、1 秒でも区別できる。100ms では並行して負荷が高いときに揺れた
+    expect(Date.now() - started).toBeLessThan(1000);
 
     // 空白と U+2028 だけの値は `trimEnd` で空になって落ちる
     expect(fields.tags).toEqual([`x${spaces}y`]);
