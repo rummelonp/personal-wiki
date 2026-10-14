@@ -746,8 +746,10 @@ a {
   flex: none;
 }
 
+/* 列の幅を 0 から始める。既定の auto では長い title に合わせて列が広がり、省略されずに横へはみ出す */
 .switcher-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex: 0 1 auto;
   gap: var(--space-1);
   min-height: 0;
