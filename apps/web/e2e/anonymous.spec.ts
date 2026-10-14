@@ -10,7 +10,7 @@ import { DRAFT_MARKER, SEED } from "./support/seed";
 
 /*
  * ジャーニー #9 匿名: public のページを開いてリンクをたどれ、draft が title・一覧・検索・backlink の
- * どこにも出ない。draft は id の URL を知っていれば匿名にも読める仕様（AGENTS.md）なので、
+ * どこにも出ない。draft は id の URL を知っていれば匿名にも読める仕様（docs/attachments.md）なので、
  * `/p/<id>` が読めることは漏れとして扱わない。
  */
 
