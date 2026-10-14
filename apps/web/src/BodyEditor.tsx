@@ -19,6 +19,7 @@ import {
 import { findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import type { PageFragment } from "./page-fragment";
+import { scrollBelowStickyHeader } from "./sticky-header";
 import type { WikiLinkSources } from "./wiki-links";
 
 export interface BodyEditorHandle {
@@ -188,6 +189,7 @@ export function BodyEditor({
         : { resolveAttachmentUrl: initial.resolveAttachmentUrl }),
       extensions: [
         EditorView.contentAttributes.of({ "aria-label": "本文" }),
+        scrollBelowStickyHeader,
         EditorView.domEventHandlers({
           blur: () => {
             latest.current.onBlur?.();

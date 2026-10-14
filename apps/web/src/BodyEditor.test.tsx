@@ -9,7 +9,7 @@ import {
 } from "@personal-wiki/editor";
 import { act, createRef, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { BodyEditor, type BodyEditorHandle, type BodyEditorProps } from "./BodyEditor";
 import type { WikiLinkSources } from "./wiki-links";
@@ -403,6 +403,57 @@ describe("jumpToFragment", () => {
       expect(top).toBeGreaterThanOrEqual(0);
       // y: "start" と yMargin の 16px で、行は画面の上端のすぐ下に来る
       expect(top).toBeLessThan(100);
+    });
+  });
+
+  describe("画面の上端に残るヘッダーがあるとき", () => {
+    const HEADER_HEIGHT = 80;
+    let stickyHeader: HTMLElement | null = null;
+
+    beforeEach(() => {
+      window.scrollTo(0, 0);
+      stickyHeader = document.createElement("header");
+      stickyHeader.className = "header";
+      stickyHeader.style.cssText = `position:sticky;top:0;z-index:1;height:${HEADER_HEIGHT}px`;
+      document.body.prepend(stickyHeader);
+    });
+
+    afterEach(() => {
+      stickyHeader?.remove();
+      stickyHeader = null;
+      window.scrollTo(0, 0);
+    });
+
+    const filler = Array.from({ length: 80 }, (_, i) => `行 ${i}`).join("\n\n");
+    const body = `${filler}\n\n## 末尾の見出し\n\n${filler}`;
+
+    it("見出しの行はヘッダーの下に来る", async () => {
+      const ref = createRef<BodyEditorHandle>();
+      const { view } = controlled(body, { ref });
+      act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "末尾の見出し" }));
+      const v = view();
+      await vi.waitFor(() => {
+        const top = v.coordsAtPos(body.indexOf("## 末尾の見出し"))?.top ?? Number.NaN;
+        expect(top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+        expect(top).toBeLessThan(HEADER_HEIGHT + 100);
+      });
+    });
+
+    it("離れた行へカーソルを動かしたときも、その行はヘッダーの下に来る", async () => {
+      const { view } = controlled(body);
+      const v = view();
+      const at = body.indexOf("## 末尾の見出し");
+      act(() => v.dispatch({ selection: { anchor: at }, scrollIntoView: true }));
+      await vi.waitFor(() => {
+        const top = v.coordsAtPos(at)?.top ?? Number.NaN;
+        expect(top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+      });
+      // 画面の上端のすぐ下にある行へ戻っても、ヘッダーに隠れない
+      act(() => v.dispatch({ selection: { anchor: 0 }, scrollIntoView: true }));
+      await vi.waitFor(() => {
+        const top = v.coordsAtPos(0)?.top ?? Number.NaN;
+        expect(top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+      });
     });
   });
 
