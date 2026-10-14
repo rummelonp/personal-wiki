@@ -42,6 +42,7 @@ import {
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
 import { homeHref, navigate, pageHrefFor } from "./route";
+import { TitleEditor } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
@@ -493,20 +494,12 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           </section>
         )}
 
-        <input
-          className="title-input"
-          aria-label="title"
+        <TitleEditor
           value={state.titleInput ?? state.draft.title}
           readOnly={readOnly}
-          onChange={(event) => session.editTitle(event.target.value)}
-          onKeyDown={(event) => {
-            // 変換を確定する Enter で title を保存しない。Safari はその Enter の keydown を
-            // compositionend の後に isComposing: false で送るので、keyCode 229（IME の処理中）でも見分ける
-            const { isComposing, keyCode } = event.nativeEvent;
-            if (event.key !== "Enter" || isComposing || keyCode === 229) return;
-            event.preventDefault();
-            void session.commitTitle();
-          }}
+          bodyView={() => editor.current?.view() ?? null}
+          onChange={(title) => session.editTitle(title)}
+          onCommit={() => void session.commitTitle()}
           onBlur={() => void session.commitTitle()}
         />
         <BodyEditor

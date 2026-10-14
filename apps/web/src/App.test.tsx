@@ -173,12 +173,13 @@ async function renderAt(path: string) {
 }
 
 const cursorOf = () => {
-  const editor = container?.querySelector<HTMLElement>(".cm-editor");
+  const editor = container?.querySelector<HTMLElement>(".body-editor .cm-editor");
   const view = editor ? EditorView.findFromDOM(editor) : null;
   return view?.state.selection.main.head;
 };
 
 const main = () => container?.querySelector("main");
+const titleText = () => main()?.querySelector(".title-input .cm-content")?.textContent;
 const header = () => container?.querySelector("header");
 /** ヘッダーのボタンの名前（新規作成のダイアログの中は除く）。匿名には検索だけが出る。 */
 const headerButtons = () =>
@@ -364,7 +365,9 @@ describe("App の添付", () => {
       const page = { ...PUBLIC, body: `![[${NAME}]]` };
       serve(me, [page], attachments);
       await renderAt(titleUrl(page.title));
-      await vi.waitFor(() => expect(main()?.querySelector(".cm-editor")).not.toBeNull());
+      await vi.waitFor(() =>
+        expect(main()?.querySelector(".body-editor .cm-editor")).not.toBeNull(),
+      );
       await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
       expect(recorder.srcs).toEqual(
         attachments ? [`/api/pages/${page.id}/attachments/${NAME}`] : [],
@@ -460,9 +463,7 @@ describe("App の owner の画面", () => {
   it("ログイン中に /<title> を開くと編集の画面を出す", async () => {
     serve("owner", [PUBLIC]);
     await renderAt(titleUrl(PUBLIC.title));
-    await vi.waitFor(() =>
-      expect(main()?.querySelector<HTMLInputElement>(".title-input")?.value).toBe("公開の題"),
-    );
+    await vi.waitFor(() => expect(titleText()).toBe("公開の題"));
     expect(header()?.textContent).toContain("新規作成");
     expect(location.pathname).toBe(titleUrl(PUBLIC.title));
   });
@@ -644,7 +645,7 @@ describe("App の owner の画面", () => {
     serve("owner", [DRAFT]);
     await renderAt(titleUrl(DRAFT.title));
     await vi.waitFor(() => expect(location.pathname).toBe(`/p/${DRAFT.id}`));
-    expect(main()?.querySelector<HTMLInputElement>(".title-input")?.value).toBe("下書きの題");
+    expect(titleText()).toBe("下書きの題");
     expect(findPageByTitle).toHaveBeenCalledTimes(1);
     expect(getPage).not.toHaveBeenCalled();
   });

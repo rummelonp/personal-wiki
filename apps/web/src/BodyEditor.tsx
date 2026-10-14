@@ -36,6 +36,8 @@ export interface BodyEditorHandle {
    * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
    */
   whenSettled: () => Promise<void>;
+  /** title 欄の Enter と ↓ が移る先。破棄した後は null */
+  view: () => EditorView | null;
 }
 
 export interface BodyEditorProps {
@@ -284,6 +286,7 @@ export function BodyEditor({
         });
       });
     },
+    view: () => view.current,
   }));
 
   return <div ref={host} className="body-editor" />;

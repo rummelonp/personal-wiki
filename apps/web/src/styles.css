@@ -539,26 +539,28 @@ a {
   color: var(--color-danger);
 }
 
+/* 左右の padding を持たせない。title と本文の文字の左端は、どちらも CodeMirror の行の padding で揃う */
 .title-input {
-  display: block;
-  width: 100%;
   margin: 0 0 var(--space-4);
-  padding: 0;
-  font-family: var(--font-serif);
-  font-size: var(--font-size-title);
-  font-weight: var(--font-weight-strong);
-  line-height: var(--line-height-tight);
-  letter-spacing: var(--letter-spacing-heading);
-  color: var(--color-fg);
-  background: none;
-  border: 0;
   border-bottom: var(--border-width) solid transparent;
-  border-radius: 0;
 }
 
 .title-input:hover,
-.title-input:focus {
+.title-input:focus-within {
   border-bottom-color: var(--color-border);
+}
+
+/* title エディタの既定の大きさ（28px）は .cm-editor に直接付くので、同じ要素で上書きする */
+.title-input .cm-editor {
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--color-fg);
+}
+
+/* CodeMirror の既定の line-height は .cm-scroller に付くので、その内側で上書きする */
+.title-input .cm-content {
+  line-height: var(--line-height-tight);
 }
 
 /* 読み取り専用の画面の title。編集の画面の title 欄と同じ位置と書体にそろえる */
@@ -817,7 +819,7 @@ a {
     border-left: 0;
   }
 
-  .title-input,
+  .title-input .cm-editor,
   .note-title {
     font-size: var(--font-size-title-narrow);
   }

@@ -93,8 +93,9 @@ function renderPage(page: Page = PAGE, attachments = false) {
   root = mounted;
   act(() => mounted.render(<PageEditor page={page} attachments={attachments} />));
   const view = () => {
-    // `.cm-content` から探すと、展開した embed の中の view に当たることがある
-    const editor = container?.querySelector<HTMLElement>(".cm-editor");
+    // `.cm-content` から探すと、展開した embed の中の view に当たることがある。title 欄も
+    // CodeMirror なので、本文の枠から探す
+    const editor = container?.querySelector<HTMLElement>(".body-editor .cm-editor");
     const found = editor ? EditorView.findFromDOM(editor) : null;
     if (!found) throw new Error("エディタが無い");
     return found;
@@ -437,17 +438,9 @@ describe("PageEditor の wikilink", () => {
     await vi.waitFor(() => expect(container?.querySelector(".cm-embed-page")).not.toBeNull());
     await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(1));
 
-    const input = container?.querySelector<HTMLInputElement>("input.title-input");
-    if (!input) throw new Error("title の入力が無い");
-    act(() => input.focus());
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-        input,
-        "新しい題",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    act(() => input.blur());
+    act(() => titleView().focus());
+    typeTitle("新しい題");
+    act(() => titleView().contentDOM.blur());
     await vi.waitFor(() => expect(resolvePages).toHaveBeenCalledTimes(2));
     expect(findPageByTitle).toHaveBeenCalledTimes(1);
   });
@@ -911,23 +904,30 @@ describe("添付の貼り付けと表示", () => {
   });
 });
 
-function titleInput(): HTMLInputElement {
-  const input = container?.querySelector<HTMLInputElement>("input.title-input");
-  if (!input) throw new Error("title の入力が無い");
-  return input;
+function titleView(): EditorView {
+  const editor = container?.querySelector<HTMLElement>(".title-input .cm-editor");
+  const found = editor ? EditorView.findFromDOM(editor) : null;
+  if (!found) throw new Error("title の欄が無い");
+  return found;
 }
 
-function typeTitle(text: string): void {
-  const input = titleInput();
+const titleText = () => titleView().state.doc.toString();
+
+/** title 欄の中身を `text` に打ち替える。`userEvent` に compose を渡すと変換中の入力になる */
+function typeTitle(text: string, userEvent = "input.type"): void {
+  const v = titleView();
   act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, text);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: text },
+      selection: { anchor: text.length },
+      userEvent,
+    });
   });
 }
 
 function pressEnter(isComposing: boolean, keyCode = 13): void {
   act(() => {
-    titleInput().dispatchEvent(
+    titleView().contentDOM.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "Enter",
         isComposing,
@@ -940,19 +940,23 @@ function pressEnter(isComposing: boolean, keyCode = 13): void {
 }
 
 describe("title の確定", () => {
-  it("打っている間は保存せず、Enter で確定して保存する。変換中の Enter では保存しない", async () => {
-    renderPage();
-    act(() => titleInput().focus());
-    typeTitle("しんしい");
+  it("打っている間は保存せず、Enter で確定して保存し、本文へ移る。変換中の Enter では保存しない", async () => {
+    const { view } = renderPage();
+    act(() => titleView().focus());
+    titleView().contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    typeTitle("しんしい", "input.type.compose");
     await flushAsync();
-    pressEnter(true);
-    typeTitle("新しい題");
+    pressEnter(true, 229);
+    typeTitle("新しい題", "input.type.compose");
+    titleView().contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
     await flushAsync();
     expect(updatePage).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(titleView().contentDOM);
     expect(container?.querySelector(".save-state")?.textContent).toContain("未保存");
 
     pressEnter(false);
     await flushAsync();
+    expect(document.activeElement).toBe(view().contentDOM);
     expect(updatePage).toHaveBeenCalledTimes(1);
     expect(updatePage).toHaveBeenCalledWith(
       ID,
@@ -961,14 +965,14 @@ describe("title の確定", () => {
       expect.anything(),
     );
     // 確定済みなので、その後の blur では送らない
-    act(() => titleInput().blur());
+    act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(1);
   });
 
   it("Safari の変換を確定する Enter（isComposing が false で keyCode が 229）では保存しない", async () => {
     renderPage();
-    act(() => titleInput().focus());
+    act(() => titleView().focus());
     typeTitle("新しい題");
     pressEnter(false, 229);
     await flushAsync();
@@ -981,9 +985,9 @@ describe("title の確定", () => {
 
   it("blur で確定して保存する", async () => {
     renderPage();
-    act(() => titleInput().focus());
+    act(() => titleView().focus());
     typeTitle("別の題");
-    act(() => titleInput().blur());
+    act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledWith(
       ID,
@@ -1007,7 +1011,71 @@ describe("title の確定", () => {
       { title: "題", body: "本文を書き足す" },
       expect.anything(),
     );
-    expect(titleInput().value).toBe("打ちかけ");
+    expect(titleText()).toBe("打ちかけ");
+  });
+
+  it("長い title は改行を含まない 1 つの title として打ち、貼り付けた改行は空白にする", async () => {
+    renderPage();
+    act(() => titleView().focus());
+    const v = titleView();
+    act(() => {
+      v.dispatch({
+        changes: { from: v.state.doc.length, insert: "の続き\n二行目" },
+        userEvent: "input.paste",
+      });
+    });
+    expect(titleText()).toBe("題の続き 二行目");
+    act(() => v.contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledWith(
+      ID,
+      1,
+      { title: "題の続き 二行目", body: "本文" },
+      expect.anything(),
+    );
+  });
+
+  it("退避が未決の間は title も読み取り専用にし、復元すると同じ欄のまま書けるように戻す", async () => {
+    localStorage.setItem(
+      BACKUP_KEY,
+      JSON.stringify({ title: "退避した題", body: "本文", baseVersion: 1, savedAt: 0 }),
+    );
+    const { button } = renderPage();
+    const v = titleView();
+    expect(v.state.readOnly).toBe(true);
+    typeTitle("打てない");
+    expect(titleText()).toBe("題");
+
+    act(() => button("復元する").click());
+    await flushAsync();
+    expect(titleView()).toBe(v);
+    expect(titleText()).toBe("退避した題");
+    expect(v.state.readOnly).toBe(false);
+    typeTitle("打てる");
+    expect(titleText()).toBe("打てる");
+  });
+
+  it("衝突の解決でサーバーの title を取り込むと、同じ欄の中身を差し替える", async () => {
+    const server: Page = { ...PAGE, title: "サーバーの題", version: 2 };
+    vi.mocked(updatePage).mockResolvedValue({
+      ok: false,
+      reason: "version_conflict",
+      currentVersion: 2,
+    });
+    vi.mocked(getPage).mockResolvedValue(ok(server));
+    const { view, button } = renderPage();
+    const v = titleView();
+    view().focus();
+    typeAtEnd(view(), "の手元の変更");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(v.state.readOnly).toBe(true);
+
+    act(() => button("サーバーの版を取り込む").click());
+    await flushAsync();
+    expect(titleView()).toBe(v);
+    expect(titleText()).toBe("サーバーの題");
+    expect(v.state.readOnly).toBe(false);
   });
 });
 
@@ -1049,9 +1117,9 @@ describe("リンクの書き換えの取り込み", () => {
       version: 3,
     });
     const { view } = renderPage(linked);
-    act(() => titleInput().focus());
+    act(() => titleView().focus());
     typeTitle("新");
-    act(() => titleInput().blur());
+    act(() => titleView().contentDOM.blur());
     await vi.waitFor(() => expect(view().state.doc.toString()).toBe("[[新他]] 本文"));
     expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
 
@@ -1109,9 +1177,9 @@ describe("リンクの書き換えの取り込み", () => {
       }),
     );
     renderPage();
-    act(() => titleInput().focus());
+    act(() => titleView().focus());
     typeTitle("新#");
-    act(() => titleInput().blur());
+    act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(container?.textContent).toContain("この title はリンクに書けないので");
     expect(stepLinkRewrites).not.toHaveBeenCalled();
@@ -1127,9 +1195,9 @@ describe("リンクの書き換えの取り込み", () => {
       }),
     );
     const { view } = renderPage();
-    act(() => titleInput().focus());
+    act(() => titleView().focus());
     typeTitle("新#");
-    act(() => titleInput().blur());
+    act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(container?.textContent).toContain("この title はリンクに書けないので");
 
@@ -1142,9 +1210,9 @@ describe("リンクの書き換えの取り込み", () => {
     expect(container?.textContent).toContain("この title はリンクに書けないので");
 
     // リンク元が無い title への変更は、応答に linkRewrites が付かない
-    act(() => titleInput().focus());
+    act(() => titleView().focus());
     typeTitle("新");
-    act(() => titleInput().blur());
+    act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(3);
     expect(container?.textContent).not.toContain("この title はリンクに書けないので");
