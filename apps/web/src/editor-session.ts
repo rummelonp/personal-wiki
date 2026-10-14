@@ -363,6 +363,14 @@ export class EditorSession {
    */
   private rearm(): void {
     if (isReadOnly(this.state)) return;
+    if (!this.state.uncreated && !isDirty(this.state)) {
+      // 失敗で残した退避は、base に戻した手元と同じ内容になる。残すと次に開いたとき、
+      // 保存済みの内容を復元するか尋ねてしまう（resumeOnNewBase と同じ規則）
+      this.clearTimer();
+      this.clearStashTimer();
+      this.removeBackup(this.state.base.id);
+      return;
+    }
     if (this.left) {
       // 離脱の退避は古い base のままなので、重ね直した内容と新しい base で書き直す
       this.clearTimer();

@@ -400,6 +400,34 @@ describe("ログイン切れ", () => {
     expect(backup.load(ID)).toBeNull();
   });
 
+  it("保存が失敗して退避したあと、手元を base に戻したら退避を消す", async () => {
+    const { session, api, backup } = setup();
+    api.updatePage = vi.fn(
+      async () => ({ ok: false, reason: "error", message: "サーバーで問題が起きました" }) as const,
+    );
+    session.edit({ title: "題", body: "手元" });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(backup.load(ID)).toMatchObject({ body: "手元" });
+
+    session.edit({ title: "題", body: "本文" });
+    expect(saveStatusOf(session.getState())).toBe("saved");
+    expect(backup.load(ID)).toBeNull();
+  });
+
+  it("title_conflict で退避したあと、title を base に戻したら退避を消す", async () => {
+    const { session, api, backup } = setup();
+    api.updatePage = vi.fn(
+      async () => ({ ok: false, reason: "title_conflict", message: "重複" }) as const,
+    );
+    session.editTitle("週報");
+    await session.commitTitle();
+    expect(backup.load(ID)).toMatchObject({ title: "週報" });
+
+    session.editTitle("題");
+    await session.commitTitle();
+    expect(backup.load(ID)).toBeNull();
+  });
+
   it("ログイン切れの間の入力は、離脱すれば待たずに退避する", async () => {
     const { session, api, backup } = setup();
     api.updatePage = async () => ({ ok: false, reason: "unauthorized" });
