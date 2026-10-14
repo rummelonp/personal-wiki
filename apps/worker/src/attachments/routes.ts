@@ -76,6 +76,9 @@ async function attachmentResponse(
   // 匿名の draft の画像を共有キャッシュに置かせず、毎回の再検証で参照を外したことをすぐ効かせる。
   // owner と token は resolvePrincipal が private, no-store で上書きする
   if (anonymous) headers.set("Cache-Control", "private, no-cache");
+  // 匿名に返す画像は、公開ページの画像を外から埋め込めるよう付けない。draft の画像は id の URL で
+  // 匿名にも読めるので、そこから外の画面へ流れないよう、認証つきの応答にだけ付ける
+  else headers.set("Cross-Origin-Resource-Policy", "same-origin");
   if (matchesIfNoneMatch(c.req.header("If-None-Match"), etag)) {
     return new Response(null, { status: 304, headers });
   }

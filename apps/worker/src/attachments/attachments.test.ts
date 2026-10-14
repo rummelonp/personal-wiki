@@ -359,6 +359,7 @@ describe("GET /api/pages/:id/attachments/:name の認可", () => {
       expect(res.headers.get("Cache-Control"), path).toBe("private, no-cache");
       expect(res.headers.get("Content-Security-Policy"), path).toBe("default-src 'none'; sandbox");
       expect(res.headers.get("X-Content-Type-Options"), path).toBe("nosniff");
+      expect(res.headers.get("Cross-Origin-Resource-Policy"), path).toBeNull();
       const name = path.slice(path.lastIndexOf("/") + 1);
       expect(res.headers.get("ETag"), path).toBe(`"${name}"`);
       expect(res.headers.get("Content-Disposition"), path).toBe(`inline; filename="${name}"`);
@@ -398,6 +399,7 @@ describe("GET /api/pages/:id/attachments/:name の認可", () => {
         const res = await call(path, { headers });
         expect(res.status, path).toBe(200);
         expect(res.headers.get("Cache-Control"), path).toBe("private, no-store");
+        expect(res.headers.get("Cross-Origin-Resource-Policy"), path).toBe("same-origin");
         expect(res.headers.get("Content-Type"), path).toBe(
           path.includes(names.onDraft) ? "image/jpeg" : "image/png",
         );
