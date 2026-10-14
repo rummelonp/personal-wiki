@@ -86,4 +86,11 @@ describe("読み込み中の帯", () => {
     expect(container?.querySelector(".note-title")?.textContent).toBe("行き先の題");
     expect(container?.querySelector(".note-title .skeleton")).toBeNull();
   });
+
+  it("匿名の画面には公開の行が無いので、その帯も出さない", () => {
+    restoreDelay = setLoadingDelay(0);
+    mount(<PageSkeleton owner={false} />);
+    expect(container?.querySelector(".skeleton-meta")).toBeNull();
+    expect(container?.querySelector(".skeleton-body")).not.toBeNull();
+  });
 });

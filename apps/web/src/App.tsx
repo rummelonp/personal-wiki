@@ -189,7 +189,7 @@ export function App() {
             />
           )}
           {ready && (route.name === "page" || route.name === "title" || route.name === "new") && (
-            <Suspense fallback={<RouteSkeleton route={route} />}>
+            <Suspense fallback={<RouteSkeleton route={route} owner={isOwner} />}>
               <PageView
                 // owner と匿名では読めるページも画面も違うので、ログイン状態が変わったら取り直す。
                 // `/?new` も同じ位置と key に置き、作れた後の `/p/<id>` で作り直さない

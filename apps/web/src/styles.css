@@ -898,19 +898,22 @@ a {
   width: 55%;
 }
 
-/* title の下の、公開の状態と操作の行 */
+/* title の下の、公開の行（.publish-bar）。segmented と同じ横長の角丸にする */
 .skeleton-meta {
   display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  min-height: var(--control-height);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
 }
 
-.skeleton-dot {
-  width: var(--space-5);
-  height: var(--space-5);
-  border-radius: 50%;
+.skeleton-segmented {
+  display: inline-flex;
+  color: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+.skeleton-segmented > span {
+  padding: var(--space-1) var(--space-3);
 }
 
 .skeleton-body {
@@ -1303,6 +1306,11 @@ a {
   .rail {
     border-top: var(--border-width) solid var(--color-border);
     border-left: 0;
+  }
+
+  /* 狭い画面では本文の下に回るので、帯の場所には届いた本文が入る。帯は出さない */
+  .rail:has(.skeleton-rail) {
+    display: none;
   }
 
   /* 本文の下に回る列は固定せず、ページ全体のスクロールに任せる */

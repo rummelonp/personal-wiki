@@ -173,6 +173,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
                 ? recallTitle(target.id)
                 : undefined
           }
+          owner={owner}
         />
       );
     case "unauthorized":

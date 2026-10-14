@@ -172,8 +172,16 @@ export function ListSkeleton({ heading }: { heading?: string }) {
 /**
  * ページの画面全体の帯。title が分かっていれば文字で出し、帯は本文の行だけにする
  * （title は読み込み後も同じ位置と書体で出るので、動かない）。
+ * `owner` が false なら公開の行を出さない（匿名の画面には無く、届くと本文が上へ詰まるため）。
+ * 起動時はまだ分からないので、使う人の多い owner の形を既定にする。
  */
-export function PageSkeleton({ title }: { title?: string | undefined }) {
+export function PageSkeleton({
+  title,
+  owner = true,
+}: {
+  title?: string | undefined;
+  owner?: boolean | undefined;
+}) {
   const painted = useSkeletonPainted();
   const rail = (
     <div className={`skeleton-rail ${paintedClass(painted) ?? ""}`} aria-hidden="true">
@@ -197,10 +205,15 @@ export function PageSkeleton({ title }: { title?: string | undefined }) {
             title
           )}
         </div>
-        <div className="skeleton-meta" aria-hidden="true">
-          <span className="skeleton skeleton-dot" />
-          <span className="skeleton skeleton-dot" />
-        </div>
+        {owner && (
+          <div className="skeleton-meta" aria-hidden="true">
+            {/* 本物の segmented と同じ文字を透明で置き、幅と高さを合わせる */}
+            <span className="skeleton skeleton-segmented">
+              <span>下書き</span>
+              <span>公開</span>
+            </span>
+          </div>
+        )}
         <div className="skeleton-body" aria-hidden="true">
           {[0, 1, 2, 3, 4].map((i) => (
             <span className="skeleton skeleton-text" key={i} />
@@ -212,16 +225,16 @@ export function PageSkeleton({ title }: { title?: string | undefined }) {
 }
 
 /** 起動時と lazy の読み込みの間に、行き先の画面に合わせて出す帯。 */
-export function RouteSkeleton({ route }: { route: Route }) {
+export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean | undefined }) {
   switch (route.name) {
     case "home":
       return <ListSkeleton heading={listHeading(route.query, route.tag)} />;
     case "title":
-      return <PageSkeleton title={route.title} />;
+      return <PageSkeleton title={route.title} owner={owner} />;
     case "page":
-      return <PageSkeleton title={recallTitle(route.id)} />;
+      return <PageSkeleton title={recallTitle(route.id)} owner={owner} />;
     case "new":
-      return <PageSkeleton />;
+      return <PageSkeleton owner={owner} />;
     case "unknown":
       return <ListSkeleton />;
   }

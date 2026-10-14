@@ -56,7 +56,10 @@ test.describe("ページを開く途中", () => {
       // 左上の 1 語ではなく、title は文字で、本文と右の欄は帯で出る
       await expect(page.locator(".note[aria-busy='true'] .note-title")).toHaveText(title);
       await expect(page.locator(".note .skeleton-body .skeleton").first()).toBeVisible();
-      await expect(page.locator(".skeleton-rail .skeleton").first()).toBeVisible();
+      // 狭い画面（40rem 以下）では右の欄が本文の下に回り、その場所には本文が入るので帯を出さない
+      const railBand = page.locator(".skeleton-rail .skeleton").first();
+      if ((page.viewportSize()?.width ?? 0) > 640) await expect(railBand).toBeVisible();
+      else await expect(railBand).toBeHidden();
       expect(await page.locator(".note .skeleton-body .skeleton").count()).toBeGreaterThanOrEqual(
         3,
       );
