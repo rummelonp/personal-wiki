@@ -2,21 +2,25 @@
   {
     "rule": "color-contrast",
     "target": "span.header-search-text",
+    "projects": ["chromium-desktop"],
     "note": "ヘッダーの検索ボタンの文字（#6b7180 / #f1f2f5、4.36:1）。狭い画面では文字を隠すので出ない"
   },
   {
     "rule": "color-contrast",
     "target": "kbd.header-search-key",
+    "projects": ["chromium-desktop"],
     "note": "ヘッダーの検索ボタンのショートカット表示（#6b7180 / #f1f2f5、4.36:1）。狭い画面では隠すので出ない"
   },
   {
     "rule": "color-contrast",
     "target": "span.chip-count",
+    "projects": ["chromium-desktop", "webkit-iphone"],
     "note": "右の列のタグのページ数（#6b79d5 / #eef0fb、3.47:1）"
   },
   {
     "rule": "color-contrast",
     "target": "p.save-state.save-state-saved",
+    "projects": ["chromium-desktop", "webkit-iphone"],
     "note": "保存の状態の「保存済み」（#2f9e6b / #fbfbfc、3.26:1）"
   }
 ]

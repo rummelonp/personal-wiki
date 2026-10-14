@@ -10,14 +10,19 @@ import { SEED } from "./support/seed";
  * 書いて許し、そこに無い違反が出たときだけ落とす（アプリを直すのはこのテストの役目ではない）。
  * 画面ごとの件数は annotation（html の報告）に出す。
  *
+ * 既知の違反は project ごとに書く（狭い画面ではヘッダーの文字を隠すので、出る違反が違う）。直したのに
+ * 一覧に残るのを防ぐため、その project のどの画面でも出なくなった項目があれば最後のテストで落とす。
+ * そのためにこのファイルは 1 つの worker で順に走らせ、見つけた違反を worker の中で集める。
+ *
  * 違反の要素は、axe の target（CSS selector）ではなく、要素の名前と class で見分ける。target は
  * 画面の中で一意になる最短の selector なので、同じ要素でも画面やブラウザで変わる（`.save-state` と `p`、
- * class の並びの入れ替わりなど）。
+ * class の並びの入れ替わりなど）。class は並びに依らないよう並べ替える。
  */
 
 interface KnownViolation {
   rule: string;
   target: string;
+  projects: string[];
   note: string;
 }
 
@@ -34,10 +39,17 @@ function elementOf(html: string): string {
     /\bclass="([^"]*)"/
       .exec(open[2] ?? "")?.[1]
       ?.split(/\s+/)
-      .filter(Boolean) ?? [];
+      .filter(Boolean)
+      .sort() ?? [];
   return [open[1]?.toLowerCase(), ...classes].join(".");
 }
-const knownKeys = new Set(known.map((v) => keyOf(v.rule, v.target)));
+
+const knownFor = (project: string) => known.filter((v) => v.projects.includes(project));
+const SCREENS = 9;
+const checked = new Set<string>();
+const seen = new Set<string>();
+
+test.describe.configure({ mode: "serial" });
 
 async function expectNoNewViolations(page: Page, screen: string): Promise<void> {
   const results = await new AxeBuilder({ page })
@@ -57,6 +69,9 @@ async function expectNoNewViolations(page: Page, screen: string): Promise<void> 
     type: "axe",
     description: `${screen}: serious 以上 ${found.length} 件（${found.map((v) => keyOf(v.rule, v.target)).join(", ") || "なし"}）`,
   });
+  checked.add(screen);
+  for (const v of found) seen.add(keyOf(v.rule, v.target));
+  const knownKeys = new Set(knownFor(test.info().project.name).map((v) => keyOf(v.rule, v.target)));
   const fresh = found.filter((v) => !knownKeys.has(keyOf(v.rule, v.target)));
   expect(fresh, `${screen} に a11y-known.json に無い違反がある`).toEqual([]);
 }
@@ -129,5 +144,14 @@ test.describe("匿名", () => {
 });
 
 test("既知の違反の一覧は、規則と対象の組が重ならない", () => {
-  expect(knownKeys.size).toBe(known.length);
+  expect(new Set(known.map((v) => keyOf(v.rule, v.target))).size).toBe(known.length);
+});
+
+test("既知の違反は、どれもこの project のどこかの画面でまだ出る", () => {
+  // 一部の画面だけを選んで走らせたときは、出なかったことを確かめられない
+  test.skip(checked.size < SCREENS, "すべての画面を調べていない");
+  const stale = knownFor(test.info().project.name)
+    .map((v) => keyOf(v.rule, v.target))
+    .filter((key) => !seen.has(key));
+  expect(stale, "直った違反を a11y-known.json から外す").toEqual([]);
 });
