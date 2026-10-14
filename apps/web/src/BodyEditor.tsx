@@ -77,6 +77,8 @@ export interface BodyEditorProps {
    * ページが変わるときは BodyEditor ごと作り直す。
    */
   resolveAttachmentUrl?: AttachmentUrlResolver;
+  /** 作った時点で 1 度だけ、エディタに focus する。ページを開いただけでキーボードを出さないため既定は立てない。 */
+  autoFocus?: boolean;
   ref?: Ref<BodyEditorHandle>;
 }
 
@@ -120,6 +122,7 @@ export function BodyEditor({
   onUploadAttachment,
   acceptAttachment,
   resolveAttachmentUrl,
+  autoFocus = false,
   ref,
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -140,6 +143,7 @@ export function BodyEditor({
     onUploadAttachment,
     acceptAttachment,
     resolveAttachmentUrl,
+    autoFocus,
   });
   latest.current = {
     value,
@@ -153,6 +157,7 @@ export function BodyEditor({
     onUploadAttachment,
     acceptAttachment,
     resolveAttachmentUrl,
+    autoFocus,
   };
 
   useEffect(() => {
@@ -218,6 +223,8 @@ export function BodyEditor({
     });
     created = editor;
     view.current = editor;
+    // 作った直後の 1 回だけ。focus は DOM の focus を移すだけで、doc や selection には dispatch しない
+    if (initial.autoFocus) editor.focus();
     const waiters = settledWaiters.current;
     return () => {
       view.current = null;

@@ -135,10 +135,9 @@ function SwitcherBody({
     if (busy) return;
     setBusy(true);
     setProblem(null);
-    const failed = await createPageAndOpen(trimmed);
+    const failed = await createPageAndOpen(trimmed, onClose);
     setBusy(false);
-    if (failed === null) onClose();
-    else setProblem(failed);
+    if (failed !== null) setProblem(failed);
   }
 
   function selectRow(row: Row) {

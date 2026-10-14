@@ -10,6 +10,7 @@ import {
 } from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
+import { clearBodyFocusRequest, wantsBodyFocus } from "./body-focus";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
 import { bindLifecycle, registerEditor } from "./editor-lifecycle";
@@ -193,6 +194,11 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
         ),
     }),
   );
+  // 作った直後に開いたときだけ、本文にカーソルを置く。印は開いた時点の 1 回で使い切る
+  const [focusBody] = useState(() => wantsBodyFocus(page.id));
+  useEffect(() => {
+    clearBodyFocusRequest(page.id);
+  }, [page.id]);
   const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
   const linkClick = useRef<AbortController | null>(null);
   /** 作成の応答を待っている title。null なら作成中ではない */
@@ -510,6 +516,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           ref={editor}
           value={state.draft.body}
           readOnly={readOnly}
+          autoFocus={focusBody}
           pageIndex={titleIndex}
           linkTargets={linkTargets}
           links={links}

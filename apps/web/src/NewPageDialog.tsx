@@ -26,10 +26,9 @@ export function NewPageDialog({ dialogRef }: NewPageDialogProps) {
     if (trimmed === "" || busy) return;
     setBusy(true);
     setProblem(null);
-    const failed = await createPageAndOpen(trimmed);
+    const failed = await createPageAndOpen(trimmed, close);
     setBusy(false);
-    if (failed === null) close();
-    else setProblem(failed);
+    if (failed !== null) setProblem(failed);
   }
 
   return (

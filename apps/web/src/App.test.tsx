@@ -500,6 +500,103 @@ describe("App の owner の画面", () => {
     expect(titleText()).toBe("まだ無い題");
   });
 
+  describe("作ったページの本文にカーソルを置く", () => {
+    const created: Page = { ...DRAFT, id: "NNNNNNNNNNNNNNNNNNNNNN", title: "ほげ", body: "" };
+    const bodyHasFocus = () => document.activeElement === editorContent();
+    const serveCreating = () => {
+      serve("owner", [PUBLIC, DRAFT]);
+      vi.mocked(createPage).mockResolvedValue(ok(created));
+      vi.mocked(getPage).mockImplementation(async (id) =>
+        id === created.id ? ok(created) : id === DRAFT.id ? ok(DRAFT) : notFound,
+      );
+    };
+    const settledEditor = () =>
+      vi.waitFor(() => {
+        expect(location.pathname).toBe(`/p/${created.id}`);
+        expect(main()?.querySelector(BODY_CONTENT)).not.toBeNull();
+      });
+
+    it("存在しない title の画面で作成すると、移った先の本文にフォーカスする", async () => {
+      serveCreating();
+      await renderAt(titleUrl(created.title));
+      await vi.waitFor(() => expect(main()?.textContent).toContain("まだありません"));
+      const create = [...(main()?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent === "このタイトルで作成",
+      );
+      act(() => create?.click());
+      await settledEditor();
+      await vi.waitFor(() => expect(bodyHasFocus()).toBe(true));
+    });
+
+    it("新規作成のダイアログで作成すると、ダイアログが閉じた後も本文にフォーカスがある", async () => {
+      serveCreating();
+      await renderAt("/");
+      const open = header()?.querySelector<HTMLButtonElement>("button[aria-label='新規作成']");
+      act(() => open?.click());
+      const dialog = header()?.querySelector<HTMLDialogElement>("dialog.dialog");
+      const input = dialog?.querySelector<HTMLInputElement>("input.text-input");
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      act(() => {
+        setter?.call(input, created.title);
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      const submit = [...(dialog?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent === "作成",
+      );
+      act(() => submit?.click());
+      await settledEditor();
+      await vi.waitFor(() => expect(dialog?.open).toBe(false));
+      expect(bodyHasFocus()).toBe(true);
+    });
+
+    it("quick switcher の「作成」で作ると、移った先の本文にフォーカスする", async () => {
+      stubUserAgent(LINUX_UA);
+      serveCreating();
+      await renderAt("/");
+      pressShortcut({ ctrlKey: true });
+      await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+      typeInSwitcher(created.title);
+      await vi.waitFor(() =>
+        expect(switcher()?.querySelector("[data-row-kind='create']")).not.toBeNull(),
+      );
+      const input = switcher()?.querySelector<HTMLInputElement>("input[role='combobox']");
+      act(() => {
+        input?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        );
+      });
+      await settledEditor();
+      await vi.waitFor(() => expect(switcher()?.open).toBe(false));
+      expect(bodyHasFocus()).toBe(true);
+    });
+
+    it("既存のページを開いたときは、本文にフォーカスしない", async () => {
+      serveCreating();
+      await renderAt(`/p/${DRAFT.id}`);
+      await vi.waitFor(() => expect(main()?.querySelector(BODY_CONTENT)).not.toBeNull());
+      await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      expect(bodyHasFocus()).toBe(false);
+    });
+
+    it("作った直後のページを開き直すと、2 回目は本文にフォーカスしない", async () => {
+      serveCreating();
+      await renderAt(titleUrl(created.title));
+      await vi.waitFor(() => expect(main()?.textContent).toContain("まだありません"));
+      const create = [...(main()?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent === "このタイトルで作成",
+      );
+      act(() => create?.click());
+      await settledEditor();
+      await vi.waitFor(() => expect(bodyHasFocus()).toBe(true));
+      act(() => navigate(`/p/${DRAFT.id}`));
+      await vi.waitFor(() => expect(titleText()).toBe(DRAFT.title));
+      act(() => navigate(`/p/${created.id}`));
+      await vi.waitFor(() => expect(titleText()).toBe(created.title));
+      await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+      expect(bodyHasFocus()).toBe(false);
+    });
+  });
+
   it("title が重複して作れなかったら、理由を出して既存のページを開ける", async () => {
     serve("owner", [PUBLIC]);
     vi.mocked(createPage).mockResolvedValue({
