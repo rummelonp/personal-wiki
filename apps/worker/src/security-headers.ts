@@ -7,9 +7,10 @@ import type { AppEnv } from "./env";
  * - Referrer-Policy は、ページの URL（title を含む）を外部のリンク先へ送らないため
  * - `/api/*` の X-Robots-Tag: noindex は、匿名で読める JSON（ページの本文や一覧）を検索エンジンに
  *   載せないため。HTML の noindex は withHtmlHeaders が別に付ける
- * - `/api/*` の JSON の Cross-Origin-Resource-Policy: same-origin は、他のサイトが no-cors の読み込みで
- *   owner の応答を取り込む経路を塞ぐため。添付の画像は JSON ではないので対象にしない。匿名に返す画像は
- *   公開ページから外部に埋め込めるよう付けず、owner と token に返す画像は attachments/routes.ts が付ける
+ * - `/api/*` の JSON の Cross-Origin-Resource-Policy: same-origin は、owner の応答を別の origin が
+ *   no-cors で取り込む経路を塞ぐため。cross-site では SameSite=Lax で cookie が送られないので、
+ *   防ぐのは同じ site の別 origin からの取り込みと、Spectre 系の読み取り。添付の画像は JSON ではないので
+ *   対象にしない。owner と token に返す画像には attachments/routes.ts が付ける
  */
 export const securityHeaders = defineBaseMiddleware(
   createMiddleware<AppEnv>(async (c, next) => {
