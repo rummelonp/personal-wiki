@@ -65,7 +65,8 @@ a {
   display: flex;
   align-items: center;
   gap: var(--space-2) var(--space-4);
-  padding: var(--space-3) var(--space-5);
+  min-height: var(--header-height);
+  padding: var(--header-padding-block) var(--space-5);
   background: var(--color-bg);
 }
 
@@ -181,13 +182,25 @@ a {
 }
 
 .rail {
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+/*
+ * 列の中身はヘッダーの下に固定する。列全体を固定するのは、目次だけを固定すると、下に続く区画が
+ * スクロールで目次の裏に回って隠れるため。中身が画面より高いときは列の中でスクロールする。
+ * 固定は stretch した grid item では効かないので、列（.rail）ではなく中身に付ける。
+ */
+.rail-inner {
+  position: sticky;
+  top: var(--header-height);
   display: grid;
   align-content: start;
   gap: var(--space-5);
-  min-width: 0;
+  max-height: var(--rail-max-height);
   padding: var(--space-5) var(--space-4);
-  font-size: var(--font-size-sm);
-  border-left: var(--border-width) solid var(--color-border);
+  overflow-y: auto;
 }
 
 .rail-section {
@@ -239,6 +252,35 @@ a {
 
 .outline-link:hover {
   color: var(--color-accent);
+}
+
+/* 長い目次が右の列を占めて、下の区画（リンク元、公開設定）を押し出さないよう、目次の中でスクロールする */
+.rail-section-outline .outline {
+  max-height: var(--outline-max-height);
+  overflow-y: auto;
+}
+
+/* 狭い画面の畳んだ目次。広い画面では隠し、右の列の目次を使う（下の狭い画面の節で切り替える） */
+.toc {
+  display: none;
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.toc > summary {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.toc .outline {
+  max-height: var(--outline-max-height);
+  margin: 0 var(--space-3) var(--space-3);
+  overflow-y: auto;
 }
 
 .facts {
@@ -892,6 +934,13 @@ a {
     border-left: 0;
   }
 
+  /* 本文の下に回る列は固定せず、ページ全体のスクロールに任せる */
+  .rail-inner {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+
   .title-input .cm-editor,
   .note-title {
     font-size: var(--font-size-title-narrow);
@@ -904,7 +953,8 @@ a {
 
 /*
  * 狭い画面のヘッダーと補助情報。ヘッダーは 1 行に収めるため、検索と新規作成をアイコンだけにする。
- * 補助情報は本文の下に回るので、目次が長いページでも「このページへのリンク」が先に見えるよう先頭へ寄せる。
+ * 補助情報は本文の下に回るので、「このページへのリンク」を先頭へ寄せる。目次は title の下の畳んだ目次
+ * （.toc）に移し、右の列の目次は隠す。
  */
 @media (max-width: 40rem) {
   .header {
@@ -935,6 +985,14 @@ a {
   .header-logout {
     width: var(--control-height-sm);
     padding: 0;
+  }
+
+  .toc {
+    display: block;
+  }
+
+  .rail-section-outline {
+    display: none;
   }
 
   .rail-section-links {
@@ -973,13 +1031,9 @@ a {
 
   /*
    * ヘッダーの操作は箱を 44px にしつつ、塗りと枠は従来の大きさ（--header-control-visual）で止め、
-   * 残りは透明な border にする。上下の余白も詰めて、ヘッダーの高さを従来の 56px 前後に保つ。
+   * 残りは透明な border にする。
    * 枠は border でなく inset の影で描く（border は透明にして当たり判定の側に回すため）。
    */
-  .header {
-    padding-block: calc(var(--space-3) / 2);
-  }
-
   .header .button-compact {
     --edge: var(--color-border-strong);
     --inset: calc((var(--tap-size) - var(--header-control-visual)) / 2);
@@ -1087,6 +1141,11 @@ a {
   .outline-link {
     width: 100%;
     min-height: var(--tap-size);
+  }
+
+  .toc > summary {
+    min-height: var(--tap-size);
+    padding-block: 0;
   }
 
   .segmented-option {

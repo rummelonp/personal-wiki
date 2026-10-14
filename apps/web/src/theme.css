@@ -102,6 +102,19 @@
   --control-height-sm: 2rem; /* ヘッダーの操作の高さ */
   --header-control-visual: 2rem; /* ヘッダーの操作の見た目の大きさ。タッチ端末では当たり判定が --tap-size に上がり、差は透明な border で埋める */
   --tap-size: 2.75rem; /* タッチ操作の当たり判定の下限（44px）。下の pointer: coarse が操作の高さに使う */
+  --header-padding-block: var(
+    --space-3
+  ); /* ヘッダーの上下の余白。タッチ端末では下の pointer: coarse が詰める */
+  --header-height: calc(
+    var(--control-height-sm) +
+    2 *
+    var(--header-padding-block)
+  ); /* ヘッダーの高さ。操作の高さと余白から決め、その下に固定する要素（右の列）の位置もこれで決める */
+  --rail-max-height: calc(
+    100dvh -
+    var(--header-height)
+  ); /* 固定した右の列の高さの上限（超えると列の中でスクロール） */
+  --outline-max-height: 40vh; /* 目次の高さの上限（超えると目次の中でスクロール） */
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
   --diff-max-height: 50vh; /* 衝突の差分の欄の高さの上限（超えるとスクロール） */
   --dot-size: 0.5rem; /* 保存済みの点 */
@@ -173,11 +186,13 @@
 /*
  * 指で押す端末では、操作の高さを当たり判定の下限（--tap-size）まで上げる。
  * ボタン、入力欄、ヘッダーの操作は、この 2 つの token を通して高さを決めているので、ここで揃う。
+ * ヘッダーは操作が大きくなる分、上下の余白を詰めて、高さを従来の 56px 前後に保つ。
  * 一覧の行、タグ、補助列のリンクなど token を通さない対象は、styles.css の同じ条件の節が受け持つ。
  */
 @media (pointer: coarse) {
   :root {
     --control-height: var(--tap-size);
     --control-height-sm: var(--tap-size);
+    --header-padding-block: calc(var(--space-3) / 2);
   }
 }

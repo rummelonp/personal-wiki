@@ -8,7 +8,7 @@ import { clearBodyFocusRequest } from "./body-focus";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { Link } from "./Link";
-import { Outline } from "./Outline";
+import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import type { Page } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
@@ -143,6 +143,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
           </section>
         )}
         <h1 className="note-title">{page.title}</h1>
+        <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
           ref={editor}
           value={page.body}

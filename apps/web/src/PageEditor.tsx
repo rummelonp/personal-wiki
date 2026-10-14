@@ -27,7 +27,7 @@ import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
-import { Outline } from "./Outline";
+import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import {
   createPage,
@@ -512,6 +512,7 @@ export function PageEditor({ page, attachments = false, onShown }: PageEditorPro
           onCommit={() => void session.commitTitle()}
           onBlur={() => void session.commitTitle()}
         />
+        <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
           ref={editor}
           value={state.draft.body}
