@@ -35,3 +35,11 @@ export function PlusIcon() {
     </Icon>
   );
 }
+
+export function LogoutIcon() {
+  return (
+    <Icon>
+      <path d="M6.5 2.5h-3v11h3M10 5l3 3-3 3M13 8H6.5" />
+    </Icon>
+  );
+}

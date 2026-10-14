@@ -8,9 +8,6 @@ import { SEED } from "./support/seed";
  */
 
 const WIDTHS = [320, 375, 768, 1280, 1440];
-// 320px の owner はヘッダーがはみ出す（下の test.fixme）。直るまで、他の幅で他の崩れを見張る
-const OWNER_WIDTHS = WIDTHS.filter((width) => width !== 320);
-
 async function sweepWidths(page: Page, widths = WIDTHS): Promise<void> {
   for (const width of widths) {
     await test.step(`${width}px`, async () => {
@@ -21,35 +18,23 @@ async function sweepWidths(page: Page, widths = WIDTHS): Promise<void> {
 }
 
 test.describe("owner @widths", () => {
-  /*
-   * アプリの不具合: 幅 320px では、owner のヘッダー（ロゴ、検索、新規作成、ログアウト）が 1 行に
-   * 収まらず、ログアウトのボタンが右へ 24px ほどはみ出して横スクロールが出る。匿名（ログインのリンク
-   * だけ）でははみ出さない。狭い画面の CSS は検索と新規作成をアイコンにするが、ログアウトは文字のまま。
-   */
-  test.fixme("320px でヘッダーがはみ出さない", async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 800 });
-    await page.goto("/");
-    await expect(page.locator(".entries .entry").first()).toBeVisible();
-    await expectNoHorizontalScroll(page);
-  });
-
   test("トップの一覧", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".entries .entry").first()).toBeVisible();
-    await sweepWidths(page, OWNER_WIDTHS);
+    await sweepWidths(page);
   });
 
   test("検索の結果", async ({ page }) => {
     await page.goto(`/?q=${encodeURIComponent("メモ")}`);
     await expect(page.locator(".entries .entry").first()).toBeVisible();
-    await sweepWidths(page, OWNER_WIDTHS);
+    await sweepWidths(page);
   });
 
   for (const title of [SEED.server, SEED.database, SEED.longTitle, SEED.manyTags, SEED.longPage]) {
     test(`ページの編集: ${title}`, async ({ page, seedIds }) => {
       await page.goto(`/p/${seedIds[title]}`);
       await expect(page.locator(".title-input")).toHaveText(title);
-      await sweepWidths(page, OWNER_WIDTHS);
+      await sweepWidths(page);
     });
   }
 
@@ -61,7 +46,7 @@ test.describe("owner @widths", () => {
       .getByRole("combobox", { name: "ページを検索" })
       .fill("メモ");
     await expect(page.getByRole("option").first()).toBeVisible();
-    await sweepWidths(page, OWNER_WIDTHS);
+    await sweepWidths(page);
   });
 });
 

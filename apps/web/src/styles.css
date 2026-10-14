@@ -134,6 +134,11 @@ a {
   gap: var(--space-1);
 }
 
+/* ログアウトの絵は狭い画面だけで使う（広い画面は文言を出す。下の狭い画面の節） */
+.header-logout-icon {
+  display: none;
+}
+
 .icon {
   flex: none;
 }
@@ -376,8 +381,9 @@ a {
   background: var(--color-accent);
 }
 
+/* 濃さだけで文字より一段控える。これより薄いとチップの地に対し 4.5:1 を割る */
 .chip-count {
-  opacity: 0.7;
+  opacity: 0.85;
   font-variant-numeric: tabular-nums;
 }
 
@@ -916,16 +922,102 @@ a {
   .header-search-text,
   .header-search-key,
   .header-new-label,
+  .header-logout-label,
   .switcher-hints {
     display: none;
   }
 
-  .header-new {
+  .header-logout-icon {
+    display: inline-flex;
+  }
+
+  .header-new,
+  .header-logout {
     width: var(--control-height-sm);
     padding: 0;
   }
 
   .rail-section-links {
     order: -1;
+  }
+}
+
+/*
+ * 320px 級の画面。ヘッダーの 3 つの操作が指で押せる大きさ（44px）になっても 1 行に収まるよう、
+ * 左右の余白と操作どうしの間を詰める。操作は箱どうしが触れ合うだけで、重ならない。
+ */
+@media (max-width: 22.5rem) {
+  .header {
+    padding-inline: var(--space-3);
+  }
+
+  .header-actions {
+    gap: var(--space-1);
+  }
+}
+
+/*
+ * タッチ操作の端末の当たり判定。ボタンと入力欄の高さは theme.css の --control-height が上げるので、
+ * ここでは token を通さない対象（ロゴ、一覧の title、タグ、補助列のリンク、切り替え）を 44px 以上にする。
+ * 疑似要素で広げず、箱そのものを大きくする。疑似要素は隣の対象と重なりやすく、
+ * 縦に並ぶ対象は行どうしの間隔を 0 にして、箱が重ならないようにする。
+ * 他の規則を上書きするので、ファイルの最後に置く。
+ */
+@media (pointer: coarse) {
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap-size);
+  }
+
+  .entry {
+    padding-block: var(--space-2);
+  }
+
+  /* 行の高さを足りない分だけ上下の padding で補い、title の字の大きさと位置は変えない */
+  .entry-title {
+    padding-block: calc((var(--tap-size) - var(--font-size-md) * var(--line-height)) / 2);
+  }
+
+  /*
+   * チップの見た目（背景）は文字の周りの padding までで止め、透明な border で高さを 44px にする。
+   * 段が折り返しても、隣の段の当たり判定と重ならない。
+   */
+  .chips {
+    row-gap: 0;
+  }
+
+  .chip-link {
+    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
+
+    justify-content: center;
+    min-width: var(--tap-size);
+
+    /* border の太さは端末の画素に丸められて 44px に数 px 足りなくなるので、高さの下限でも押さえる */
+    min-height: var(--tap-size);
+    padding-block: var(--space-1);
+    border-block: calc((var(--tap-size) - var(--pill-height)) / 2) solid transparent;
+    background-clip: padding-box;
+  }
+
+  .rail-list,
+  .outline {
+    gap: 0;
+  }
+
+  .rail-list a {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap-size);
+  }
+
+  .outline-link {
+    width: 100%;
+    min-height: var(--tap-size);
+  }
+
+  .segmented-option {
+    min-width: var(--tap-size);
+    min-height: var(--tap-size);
   }
 }

@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { loginHref, type Me } from "./api";
-import { PlusIcon, SearchIcon } from "./icons";
+import { LogoutIcon, PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
 import { NewPageDialog } from "./NewPageDialog";
 import { homeHref } from "./route";
@@ -22,6 +22,7 @@ interface HeaderProps {
 /**
  * 狭い幅でも 1 行に収める。検索は欄でなく開くだけのボタンにし（変換中の文字を別の入力欄へ
  * 移さないため）、狭い幅では虫眼鏡だけにする。ラベルを隠す幅の切り替えは CSS が持つ。
+ * 匿名の「ログイン」は塗らない。塗りの差し色は、読者が読むページより目立つ。
  */
 export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderProps) {
   const isOwner = session.status === "ready" && session.me.kind === "owner";
@@ -62,15 +63,19 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
         {isOwner && (
           <button
             type="button"
-            className="button button-quiet button-compact"
+            className="button button-quiet button-compact header-logout"
+            aria-label="ログアウト"
             onClick={onLogout}
             disabled={loggingOut}
           >
-            ログアウト
+            <span className="header-logout-icon">
+              <LogoutIcon />
+            </span>
+            <span className="header-logout-label">ログアウト</span>
           </button>
         )}
         {session.status === "ready" && !isOwner && (
-          <a className="button button-primary button-compact" href={loginHref(window.location)}>
+          <a className="button button-compact" href={loginHref(window.location)}>
             ログイン
           </a>
         )}
