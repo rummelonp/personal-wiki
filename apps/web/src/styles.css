@@ -558,14 +558,22 @@ a {
   color: var(--color-fg);
 }
 
-/* CodeMirror の既定の line-height は .cm-scroller に付くので、その内側で上書きする */
+/*
+ * CodeMirror の既定の line-height は .cm-scroller に付くので、その内側で上書きする。
+ * 縦の padding（既定は 4px）を消し、読み取りの画面の title（.note-title）と縦の位置をそろえる
+ */
 .title-input .cm-content {
+  padding-block: 0;
   line-height: var(--line-height-tight);
 }
 
-/* 読み取り専用の画面の title。編集の画面の title 欄と同じ位置と書体にそろえる */
+/*
+ * 読み取り専用の画面の title。編集の画面の title 欄と同じ位置と書体にそろえる。
+ * 横の padding は CodeMirror の .cm-line の既定（左 6px、右 2px）と同じ値で、左端と折り返す幅を合わせる
+ */
 .note-title {
   margin: 0 0 var(--space-4);
+  padding-inline: 6px 2px;
   font-family: var(--font-serif);
   font-size: var(--font-size-title);
   font-weight: var(--font-weight-strong);
