@@ -126,4 +126,25 @@ describe("title 欄のカーソル", () => {
     const char = firstCharRect(view.contentDOM);
     expect(Math.abs(cursor.left - char.right)).toBeLessThan(2);
   });
+
+  it("縦の padding が無くても、選択の地を行の高さの中に、文字に重ねて描く", async () => {
+    await browserPage.viewport(1024, 800);
+    const article = mountNote("editor");
+    const content = article.querySelector<HTMLElement>(".title-input .cm-content");
+    const view = content ? EditorView.findFromDOM(content) : null;
+    if (!view) throw new Error("title の view が無い");
+    view.focus();
+    view.dispatch({ selection: { anchor: 0, head: TITLE.length } });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const selection = article
+      .querySelector(".title-input .cm-selectionBackground")
+      ?.getBoundingClientRect();
+    const line = article.querySelector(".title-input .cm-line")?.getBoundingClientRect();
+    if (!selection || !line) throw new Error("選択か行が無い");
+    expect(selection.height).toBeGreaterThan(0);
+    expect(selection.top).toBeGreaterThanOrEqual(line.top - 1);
+    expect(selection.bottom).toBeLessThanOrEqual(line.bottom + 1);
+    expect(Math.abs(selection.left - firstCharRect(view.contentDOM).left)).toBeLessThan(2);
+  });
 });
