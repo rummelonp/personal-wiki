@@ -9,7 +9,7 @@ import { WikiLink } from "./wikilink";
 // Editor（lang-markdown の GFM 入り）が描く構造に合わせる。抽出系の parser（wikilink.ts）が
 // GFM Table を外す理由は派生データ（links など）の結果を変えないためで、表示にしか使わないここには当たらない。
 // Tag は入れない。`#tag` は記法ではなく本文の語として扱う。
-const BODY_EXTENSIONS = [
+export const BODY_EXTENSIONS = [
   ObsidianComment,
   WikiLink,
   BlockId,

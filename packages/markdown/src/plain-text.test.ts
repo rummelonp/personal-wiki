@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractPlainText } from "./plain-text";
+import { extractPlainText, extractPlainTextParts } from "./plain-text";
 
 describe("extractPlainText", () => {
   it("drops heading markers and keeps tags as words", () => {
@@ -292,6 +292,54 @@ describe("extractPlainText", () => {
         expect(extractPlainText("```sh\n| a | b |\n```", { fragment: true })).toBe("| a | b |");
         expect(extractPlainText("本文\n| a | b |", { fragment: true })).toBe("本文 | a | b |");
       });
+    });
+  });
+});
+
+describe("extractPlainTextParts", () => {
+  const withoutTags = (markdown: string) => extractPlainTextParts(markdown).textWithoutTrailingTags;
+
+  it("keeps tags in text and drops tags at the end of a line from textWithoutTrailingTags", () => {
+    const parts = extractPlainTextParts("本文です。 #メモ #使い方");
+    expect(parts.text).toBe("本文です。 #メモ #使い方");
+    expect(parts.textWithoutTrailingTags).toBe("本文です。");
+  });
+
+  it("drops a line made only of tags, wherever it is", () => {
+    expect(withoutTags("#a #b\n\n本文\n\n#c\n\n続き")).toBe("本文 続き");
+  });
+
+  it("keeps a tag inside a sentence", () => {
+    expect(withoutTags("今日は #メモ を書いた #日記")).toBe("今日は #メモ を書いた");
+  });
+
+  it("keeps tags followed by text, even when another tag ends the line", () => {
+    expect(withoutTags("#メモ 今日のこと")).toBe("#メモ 今日のこと");
+  });
+
+  it("drops a tag at the end of a list item and a heading", () => {
+    expect(withoutTags("# 見出し #tag\n- 項目 #x/y\n- 次")).toBe("見出し 項目 次");
+  });
+
+  it("does not treat code, URL fragments or wikilink headings as tags", () => {
+    expect(withoutTags("`#code`\nhttps://example.com/#section\n[[A#見出し]]")).toBe(
+      "#code https://example.com/#section A#見出し",
+    );
+  });
+
+  it("does not treat a non-tag hash such as an issue number as a tag", () => {
+    expect(withoutTags("対応 #123")).toBe("対応 #123");
+  });
+
+  it("returns the same text for a body without trailing tags", () => {
+    const parts = extractPlainTextParts("## 振り返り\n- 準備 [[読書メモ]]");
+    expect(parts.textWithoutTrailingTags).toBe(parts.text);
+  });
+
+  it("returns empty strings for a frontmatter cut by truncation", () => {
+    expect(extractPlainTextParts("---\ntags: [a]", { truncated: true })).toEqual({
+      text: "",
+      textWithoutTrailingTags: "",
     });
   });
 });

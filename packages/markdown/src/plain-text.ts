@@ -1,8 +1,10 @@
 import type { SyntaxNode, Tree } from "@lezer/common";
+import { parser } from "@lezer/markdown";
 import { blockIdNodes } from "./block-id";
 import { commentNodes } from "./comment";
-import { displayParser, fragmentDisplayParser } from "./display-parser";
-import { frontmatterEnd, frontmatterNodes } from "./frontmatter";
+import { BODY_EXTENSIONS } from "./display-parser";
+import { Frontmatter, frontmatterEnd, frontmatterNodes } from "./frontmatter";
+import { Tag, tagNodes } from "./tag";
 import { isEmbedWikiLink, wikiLinkNodes } from "./wikilink";
 
 /** 記号だけの node。中身を持たないので、node を落とせば記法が消えて前後の文字がつながる。 */
@@ -38,10 +40,21 @@ const DROPPED_NODES = new Set([
   "LinkReference",
 ]);
 
+// 表示用の displayParser は Tag を持たない（`#tag` を本文の語として扱うため）。ここは末尾のタグを
+// 抜粋から除くために範囲が要るので、Tag を足した parser を別に持つ。Tag は WikiLink と同じ parser に
+// 入れる必要がある（`[[T#H]]` の `#H` を WikiLink より先に拾わないため）。
+const plainTextParser = parser.configure([Frontmatter, ...BODY_EXTENSIONS, Tag]);
+const plainTextFragmentParser = parser.configure([...BODY_EXTENSIONS, Tag]);
+
 interface Edit {
   readonly from: number;
   readonly to: number;
   readonly insert: string;
+}
+
+interface TagRange {
+  readonly from: number;
+  readonly to: number;
 }
 
 const COLLAPSIBLE_WHITESPACE = /\s+/g;
@@ -85,12 +98,31 @@ interface ExtractPlainTextOptions {
  * 改行と連続する空白は 1 つの空白に畳む。block の境目には必ず改行があるので、語がくっつくことはない。
  */
 export function extractPlainText(markdown: string, options: ExtractPlainTextOptions = {}): string {
+  return extractPlainTextParts(markdown, options).text;
+}
+
+export interface PlainTextParts {
+  /** extractPlainText と同じ。`#tag` を語として残す */
+  readonly text: string;
+  /**
+   * text から、行の終わりに並ぶ `#tag` を除いたもの。一覧の抜粋はタグを別にチップで出すので、
+   * 抜粋に同じ語を重ねない。`今日は #メモ を書いた` のように文の途中にあるタグは文の一部なので残す。
+   * 全文検索の索引は text から作る（タグの語でも引けるように）。
+   */
+  readonly textWithoutTrailingTags: string;
+}
+
+/** 1 回の構文解析から、タグを残した text と末尾のタグを除いた text の両方を作る。 */
+export function extractPlainTextParts(
+  markdown: string,
+  options: ExtractPlainTextOptions = {},
+): PlainTextParts {
   const fragment = options.fragment === true;
   const source =
     options.truncated === true ? withoutTruncationDebris(markdown, fragment) : markdown;
-  if (source === null) return "";
+  if (source === null) return { text: "", textWithoutTrailingTags: "" };
 
-  const markdownParser = fragment ? fragmentDisplayParser : displayParser;
+  const markdownParser = fragment ? plainTextFragmentParser : plainTextParser;
   let readable = source;
   let tree = markdownParser.parse(readable);
   if (fragment && !startsWithTable(tree)) {
@@ -106,15 +138,33 @@ export function extractPlainText(markdown: string, options: ExtractPlainTextOpti
     }
   }
   const edits: Edit[] = [];
+  const tagRanges: TagRange[] = [];
   tree.iterate({
     enter(ref) {
+      if (ref.name === tagNodes.tag) {
+        tagRanges.push({ from: ref.from, to: ref.to });
+        return false;
+      }
       const edit = editFor(ref.node, readable);
       if (edit === null) return true;
       edits.push(edit);
       return false;
     },
   });
+  const trailingTags = trailingTagRanges(tagRanges, readable);
 
+  return {
+    text: applyEdits(readable, edits),
+    textWithoutTrailingTags: applyEdits(
+      readable,
+      [...edits, ...trailingTags.map((range) => ({ ...range, insert: " " }))].sort(
+        (a, b) => a.from - b.from,
+      ),
+    ),
+  };
+}
+
+function applyEdits(readable: string, edits: readonly Edit[]): string {
   let text = "";
   let cursor = 0;
   for (const edit of edits) {
@@ -123,6 +173,26 @@ export function extractPlainText(markdown: string, options: ExtractPlainTextOpti
   }
   text += readable.slice(cursor);
   return text.replace(COLLAPSIBLE_WHITESPACE, " ").trim();
+}
+
+/** 同じ行で、後ろに空白とタグしか続かないタグ。`#a #b` が行末に並ぶなら両方を返す。 */
+function trailingTagRanges(tags: readonly TagRange[], source: string): TagRange[] {
+  const trailing: TagRange[] = [];
+  // 後ろから見て、次のタグが同じ行の末尾のタグなら、そこまでの間が空白だけであればよい
+  let next: TagRange | null = null;
+  for (let i = tags.length - 1; i >= 0; i -= 1) {
+    const tag = tags[i] as TagRange;
+    const newline = source.indexOf("\n", tag.to);
+    const lineEnd = newline === -1 ? source.length : newline;
+    const limit = next !== null && next.from <= lineEnd ? next.from : lineEnd;
+    if (source.slice(tag.to, limit).trim() === "") {
+      trailing.push(tag);
+      next = tag;
+    } else {
+      next = null;
+    }
+  }
+  return trailing.reverse();
 }
 
 /** 切り出しの切り口で壊れた部分を落とした source。全体が frontmatter の途中なら null。 */

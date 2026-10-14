@@ -2,7 +2,7 @@ import { foldTitle, normalizeTitleKey } from "@personal-wiki/domain";
 import { isAttachmentTarget } from "./embed";
 import { frontmatterEnd } from "./frontmatter";
 import { parseFrontmatterFields } from "./frontmatter-fields";
-import { extractPlainText } from "./plain-text";
+import { extractPlainTextParts } from "./plain-text";
 import { extractTags, frontmatterTagName } from "./tag";
 import { extractWikiLinks } from "./wikilink";
 
@@ -23,6 +23,8 @@ export interface DerivedData {
   readonly links: DerivedLink[];
   readonly tags: DerivedTag[];
   readonly plainText: string;
+  /** plainText から行末のタグを除いたもの。一覧の抜粋の元で、全文検索には使わない */
+  readonly excerptText: string;
   /** 本文の添付の embed（`![[...]]`）の target。書かれた文字列のまま、重複は先頭の 1 件に畳む。名前の形の検査は呼び出し側が行う */
   readonly attachments: string[];
 }
@@ -66,5 +68,12 @@ export function extractDerived(body: string): DerivedData {
     tags.push({ tag: name, tagKey });
   }
 
-  return { links, tags, plainText: extractPlainText(body), attachments: [...attachments] };
+  const { text, textWithoutTrailingTags } = extractPlainTextParts(body);
+  return {
+    links,
+    tags,
+    plainText: text,
+    excerptText: textWithoutTrailingTags,
+    attachments: [...attachments],
+  };
 }

@@ -684,9 +684,9 @@ describe("検索と一覧の tool", () => {
     const firstPages = first.json.pages as { id: string; url: string; titleUrl: null }[];
     expect(firstPages.map((p) => p.id)).toEqual([ids[2], ids[1]]);
     expect(firstPages[0]).toMatchObject({ url: `${ORIGIN}/p/${ids[2]}`, titleUrl: null });
-    // 本文の先頭の抜粋とタグ。本文が空のページは excerpt が無い
+    // 本文の先頭の抜粋（行末のタグは除く）とタグ。本文が空のページは excerpt が無い
     expect(firstPages[0]).toMatchObject({
-      excerpt: "三つ目の本文 #memo #Work/Sub",
+      excerpt: "三つ目の本文",
       tags: ["memo", "Work/Sub"],
     });
     expect(firstPages[1]).toEqual(expect.objectContaining({ tags: [] }));

@@ -11,7 +11,7 @@ export interface DerivedValues {
   attachmentsJson: string;
   ftsTitle: string;
   ftsBody: string;
-  /** 一覧に出す本文の先頭。NFKC にはかけず、書かれた表記のまま持つ */
+  /** 一覧に出す本文の先頭。NFKC にはかけず、書かれた表記のまま持つ。行末のタグはチップで別に出すので含めない */
   excerpt: string;
 }
 
@@ -47,7 +47,7 @@ export function deriveValues(title: string, body: string): DerivedValues {
     attachmentsJson: JSON.stringify(derived.attachments.filter(isAttachmentName)),
     ftsTitle: foldForSearch(title),
     ftsBody: foldForSearch(derived.plainText),
-    excerpt: excerptOf(derived.plainText),
+    excerpt: excerptOf(derived.excerptText),
   };
 }
 

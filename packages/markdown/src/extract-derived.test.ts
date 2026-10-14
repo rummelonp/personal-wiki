@@ -4,7 +4,13 @@ import { extractDerived } from "./extract-derived";
 
 describe("extractDerived", () => {
   it("returns empty data for an empty body", () => {
-    expect(extractDerived("")).toEqual({ links: [], tags: [], plainText: "", attachments: [] });
+    expect(extractDerived("")).toEqual({
+      links: [],
+      tags: [],
+      plainText: "",
+      excerptText: "",
+      attachments: [],
+    });
   });
 
   it("does not derive a link from a same-page heading or block reference", () => {

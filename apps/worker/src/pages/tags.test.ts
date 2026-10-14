@@ -35,8 +35,31 @@ describe("excerpt と tags", () => {
       "---\ntags: [Zeta]\n---\n# 見出し\n\n**強調**と[[リンク|別名]]を含む本文。 #Beta #alpha",
     );
     const [page] = await recent(client);
-    expect(page?.excerpt).toBe("見出し 強調と別名を含む本文。 #Beta #alpha");
+    expect(page?.excerpt).toBe("見出し 強調と別名を含む本文。");
     expect(page?.tags).toEqual(["alpha", "Beta", "Zeta"]);
+  });
+
+  it("抜粋から行末のタグを除き、文の途中のタグと、タグだけの本文の扱いを分ける", async () => {
+    const client = await buildClient();
+    await client.create("末尾", "最初の段落。\n\n#メモ #使い方\n\n次の段落。 #日記");
+    await client.create("途中", "今日は #メモ を書いた");
+    await client.create("タグだけ", "#a #b");
+    const pages = new Map((await recent(client)).map((p) => [p.title, p]));
+    expect(pages.get("末尾")?.excerpt).toBe("最初の段落。 次の段落。");
+    expect(pages.get("末尾")?.tags).toEqual(["メモ", "使い方", "日記"]);
+    expect(pages.get("途中")?.excerpt).toBe("今日は #メモ を書いた");
+    expect(pages.get("タグだけ")).not.toHaveProperty("excerpt");
+    expect(pages.get("タグだけ")?.tags).toEqual(["a", "b"]);
+  });
+
+  it("抜粋から除いたタグの語でも検索でき、検索の抜粋は一致位置の周辺なのでタグが残る", async () => {
+    const client = await buildClient();
+    await client.create("メモ", "本文 #cloudflare");
+    const res = await client.request("/api/search?q=cloudflare");
+    const [hit] = (await res.json<{ results: (Listed & { excerpt: string })[] }>()).results;
+    expect(hit?.title).toBe("メモ");
+    expect(hit?.excerpt).toBe("本文 #cloudflare");
+    expect((await recent(client))[0]?.excerpt).toBe("本文");
   });
 
   it("抜粋は 120 文字で切って省略記号を付け、全角の表記を畳まない", async () => {
@@ -60,7 +83,7 @@ describe("excerpt と tags", () => {
         title: "p",
         visibility: "draft",
         updatedAt: expect.any(Number),
-        excerpt: "次の本文 #new",
+        excerpt: "次の本文",
         tags: ["new"],
       },
     ]);
@@ -80,7 +103,7 @@ describe("excerpt と tags", () => {
       expect.not.objectContaining({ excerpt: expect.anything() }),
     ]);
     await client.request("/api/admin/derived/rebuild", { method: "POST", json: { after: null } });
-    expect((await recent(client))[0]?.excerpt).toBe("古い本文 #t");
+    expect((await recent(client))[0]?.excerpt).toBe("古い本文");
   });
 
   it("search の各件にもタグを付け、抜粋は一致位置の周辺のまま（FTS と LIKE の両方）", async () => {
