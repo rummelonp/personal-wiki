@@ -29,15 +29,18 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
   const [now] = useState(() => Date.now());
   const [creating, setCreating] = useState(false);
-  const [problem, setProblem] = useState<CreateProblem | null>(null);
+  // 失敗はその語に紐づける。検索語を変えたあとに前の語の失敗を出さない
+  const [failure, setFailure] = useState<{ title: string; problem: CreateProblem } | null>(null);
+  const problem = failure !== null && failure.title === trimmed ? failure.problem : null;
 
   async function create() {
     if (creating) return;
     setCreating(true);
-    setProblem(null);
-    const failed = await createPageAndOpen(trimmed);
+    setFailure(null);
+    const title = trimmed;
+    const failed = await createPageAndOpen(title);
     setCreating(false);
-    if (failed !== null) setProblem(failed);
+    if (failed !== null) setFailure({ title, problem: failed });
   }
 
   if (state.status === "unauthorized") return <SignInNotice expired />;

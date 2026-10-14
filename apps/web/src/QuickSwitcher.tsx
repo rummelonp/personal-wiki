@@ -234,8 +234,8 @@ function SwitcherBody({
           {RECENT_LABEL}
         </p>
       )}
-      {/* listbox の子は option だけにするので、候補が無いことの案内は外に置く。
-          owner には「作成」の行が同じことを伝える */}
+      {/* listbox の子は option だけにするので、候補が無いことと本文から検索できないことの案内は
+          外に置く。owner には「作成」と「本文から検索」の行が同じことを伝える */}
       {trimmed !== "" && !owner && (candidates.length === 0 || contentSearchTooShort) && (
         <p className="switcher-heading" role="status">
           {candidates.length === 0 && "タイトルが一致するページはありません。"}

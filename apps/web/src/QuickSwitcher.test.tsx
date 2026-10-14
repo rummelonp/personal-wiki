@@ -395,6 +395,7 @@ describe("QuickSwitcher の日本語入力", () => {
     await renderSwitcher(true);
     typeText("ほげ");
     press("Enter", { keyCode: 229 });
+    expect(location.search).toBe(new URL(startUrl).search);
     expect(createPage).not.toHaveBeenCalled();
     expect(dialog().open).toBe(true);
   });
