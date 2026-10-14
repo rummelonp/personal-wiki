@@ -139,6 +139,27 @@ describe("focus の枠", () => {
     await tabInto(title);
     expect(outlineOf(title).outlineStyle).toBe("solid");
   });
+
+  // Enter と ↓ は keyboard の操作だが、移り先は本文の caret で分かるので、本文の全体を枠で囲まない
+  it.each(["{Enter}", "{ArrowDown}"])(
+    "title から %s で本文へ移ったときは枠を出さない",
+    async (key) => {
+      const body = mount();
+      const title = createTitleEditor(container(), {
+        doc: "題",
+        bodyView: () => body,
+        onUpdate: countFocusChange,
+      });
+      views.push(title);
+      await tabInto(title);
+      expect(outlineOf(title).outlineStyle).toBe("solid");
+
+      await userEvent.keyboard(key);
+      // title の blur も数に入るので、回数ではなく本文の側の反映（枠と同じ transaction で付く class）を待つ
+      await vi.waitFor(() => expect(body.dom.classList.contains("cm-focused")).toBe(true));
+      expect(outlineOf(body).outlineStyle).toBe("none");
+    },
+  );
 });
 
 describe("カーソル行の地", () => {

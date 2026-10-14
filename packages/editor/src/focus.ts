@@ -46,6 +46,15 @@ const inputModalityTracker = ViewPlugin.define(() => {
   };
 });
 
+/**
+ * keyboard の操作に続けて、移り先が caret で分かる場所へ focus を移す（title の Enter で本文へ移るなど）。
+ * 枠は Tab で飛んだ先を示すためのものなので、pointer で入ったときと同じく枠を出さない。
+ */
+export function focusWithoutRing(view: EditorView): void {
+  lastInputWasKeyboard = false;
+  view.focus();
+}
+
 const setKeyboardFocus = StateEffect.define<boolean>();
 
 /**
