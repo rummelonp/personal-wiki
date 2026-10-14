@@ -168,6 +168,39 @@ describe("GET /api/search", () => {
     expect(titles(await search(client, "検索語"))).toEqual(["検索語の題名", "本文だけ"]);
   });
 
+  it("title に語を含むページを、本文が長くても、本文に語だけを含む短いページより上に置く", async () => {
+    const client = await buildClient();
+    // bm25 は本文が短いほど一致を強く見るので、短い本文の方が単純な重み付けでは上に来る
+    await client.create("Static Assets", "#cloudflare");
+    await client.create(
+      "Cloudflare Workers のメモ",
+      `Workers の設定を書く。${"あいうえお。".repeat(200)} cloudflare の管理画面から開く。`,
+    );
+    expect(titles(await search(client, "cloudflare"))).toEqual([
+      "Cloudflare Workers のメモ",
+      "Static Assets",
+    ]);
+  });
+
+  it("title に語を含むページの中は、関連度、更新の新しい順に並べる", async () => {
+    const client = await buildClient();
+    await client.create("検索語 A", "別の話");
+    client.clock.now += 1000;
+    await client.create("検索語 B", "別の話");
+    await client.create("本文だけ", "検索語 検索語 検索語");
+    expect(titles(await search(client, "検索語"))).toEqual(["検索語 B", "検索語 A", "本文だけ"]);
+  });
+
+  it("2 文字以下の語も、title に含むページを本文だけのページより上に置く", async () => {
+    const client = await buildClient();
+    await client.create("本文だけ", "ねこの話");
+    client.clock.now += 1000;
+    await client.create("ねこ日記", "別の話");
+    client.clock.now += 1000;
+    await client.create("最新の本文", "ねこ");
+    expect(titles(await search(client, "ねこ"))).toEqual(["ねこ日記", "最新の本文", "本文だけ"]);
+  });
+
   it("関連度が同じなら更新の新しい順に返す", async () => {
     const client = await buildClient();
     // bm25 は title の長さの差でも変わるので、同じ長さの title にして同点にする

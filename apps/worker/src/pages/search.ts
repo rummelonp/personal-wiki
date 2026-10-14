@@ -377,11 +377,14 @@ const compact = (text: string) => text.replace(/\s+/g, " ").trim();
  *
  * - 3 文字以上: FTS5 の MATCH。query 全体を `"` で囲んだ phrase として渡し、`"` は二重にする。
  *   FTS5 の構文（`*`、`OR`、`NEAR(`、列指定）として解釈させないため。
- *   関連度（bm25）の順に返す。title の一致は本文の 4 倍に重み付けする。語が title に入っている
- *   ページは探している対象であることが多い。同点は更新が新しい順。
- * - 2 文字以下: LIKE（`%`、`_`、`\` はエスケープ）。関連度が無いので更新が新しい順。索引が使えず
- *   全ページを走査するが、一人用の wiki の規模では許容する。LIKE が畳む大文字小文字は ASCII だけで、
- *   MATCH（Unicode の大文字小文字を畳む）とは差がある。
+ *   title に語を含むページを先に、その中と残りをそれぞれ関連度（bm25）の順に返す。語が title に入っている
+ *   ページは探している対象であることが多い。title の一致を bm25 の重みだけで上に出そうとしても、
+ *   bm25 は title と本文を合わせた長さで正規化するので、本文が長いページは title に一致しても、
+ *   本文が短くタグにだけ語を含むページより下になる（title の重みを 4 倍にしても逆転しない）。
+ *   title の重み（本文の 4 倍）は、title に含むページどうしを title の一致の多さで並べる。同点は更新が新しい順。
+ * - 2 文字以下: LIKE（`%`、`_`、`\` はエスケープ）。関連度が無いので、title に含むページを先に、
+ *   その中と残りをそれぞれ更新が新しい順に返す。索引が使えず全ページを走査するが、一人用の wiki の規模では許容する。
+ *   LIKE が畳む大文字小文字は ASCII だけで、MATCH（Unicode の大文字小文字を畳む）とは差がある。
  * 抜粋は本文から取る。title にだけ一致したときは本文の先頭になる。
  */
 export async function searchPages(
@@ -392,6 +395,7 @@ export async function searchPages(
 ): Promise<SearchHit[]> {
   const publicOnly = publicOnlyFlag(readable);
   if ([...query].length >= TRIGRAM_MIN_CHARS) {
+    const phrase = `"${query.replaceAll('"', '""')}"`;
     const { results } = await db
       .prepare(
         `SELECT p.id, p.title, p.visibility, p.updated_at,
@@ -399,9 +403,18 @@ export async function searchPages(
          FROM pages_fts JOIN pages AS p ON p.seq = pages_fts.rowid
          WHERE pages_fts MATCH ?1 AND p.deleted_at IS NULL
            AND (?5 = 0 OR p.visibility = 'public')
-         ORDER BY bm25(pages_fts, 4.0, 1.0), p.updated_at DESC, p.id DESC LIMIT ?2`,
+         ORDER BY pages_fts.rowid IN (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?6) DESC,
+                  bm25(pages_fts, 4.0, 1.0), p.updated_at DESC, p.id DESC LIMIT ?2`,
       )
-      .bind(`"${query.replaceAll('"', '""')}"`, limit, ELLIPSIS, EXCERPT_CHARS, publicOnly)
+      .bind(
+        phrase,
+        limit,
+        ELLIPSIS,
+        EXCERPT_CHARS,
+        publicOnly,
+        // 列指定（`{title}:`）は FTS5 の構文。phrase は `"` で閉じてあるので、query が式に混ざらない
+        `{title}: ${phrase}`,
+      )
       .all<FtsRow>();
     const tags = await tagsByPage(
       db,
@@ -421,14 +434,15 @@ export async function searchPages(
               substr(body, start, ?4) AS excerpt
        FROM (
          SELECT p.id, p.title, p.visibility, p.updated_at, f.body AS body,
+                f.title LIKE ?1 ESCAPE '\\' AS in_title,
                 max(1, instr(lower(f.body), lower(?2)) - ?5) AS start,
                 length(f.body) AS length
          FROM pages_fts AS f JOIN pages AS p ON p.seq = f.rowid
          WHERE (f.title LIKE ?1 ESCAPE '\\' OR f.body LIKE ?1 ESCAPE '\\') AND p.deleted_at IS NULL
            AND (?6 = 0 OR p.visibility = 'public')
-         ORDER BY p.updated_at DESC, p.id DESC LIMIT ?3
+         ORDER BY in_title DESC, p.updated_at DESC, p.id DESC LIMIT ?3
        )
-       ORDER BY updated_at DESC, id DESC`,
+       ORDER BY in_title DESC, updated_at DESC, id DESC`,
     )
     .bind(pattern, query, limit, EXCERPT_CHARS, EXCERPT_LEAD_CHARS, publicOnly)
     .all<LikeRow>();
