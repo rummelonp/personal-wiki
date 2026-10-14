@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    // support/stack.ts が apps/worker/scripts の JSONC の読み込みを使う
+    "allowJs": true
+  },
+  "include": ["e2e", "playwright.config.ts", "playwright.sheet.config.ts"]
+}

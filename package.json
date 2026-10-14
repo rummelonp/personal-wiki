@@ -13,7 +13,8 @@
     "lint": "biome check . && node scripts/check-css-tokens.mjs",
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit && pnpm -r --if-present run typecheck",
-    "test": "vitest run && pnpm --filter @personal-wiki/worker --filter @personal-wiki/editor --filter @personal-wiki/web test"
+    "test": "vitest run && pnpm --filter @personal-wiki/worker --filter @personal-wiki/editor --filter @personal-wiki/web test",
+    "e2e": "pnpm --filter @personal-wiki/web test:e2e"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

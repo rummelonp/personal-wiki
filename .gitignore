@@ -11,6 +11,9 @@ coverage/
 # vitest の browser mode が失敗したテストのスクリーンショットを置く
 .vitest/
 
+# E2E の結果、計測値、一覧シート（apps/web/playwright.config.ts、apps/web/e2e/sheet/run.mjs の既定の出力先）
+apps/web/e2e-output/
+
 # デプロイ先ごとの値と、そこから合成した wrangler の設定（apps/worker/scripts/deploy-config.mjs）
 apps/worker/deploy.env
 apps/worker/wrangler.deploy.json
