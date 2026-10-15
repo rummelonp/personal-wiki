@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import type { Extension, Range } from "@codemirror/state";
+import { type Extension, findClusterBreak, type Range } from "@codemirror/state";
 import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { commentNodes, highlightNodes, taskListNodes } from "@personal-wiki/markdown";
@@ -20,6 +20,22 @@ const emphasis = Decoration.mark({ class: "cm-lp-em" });
 const strikethrough = Decoration.mark({ class: "cm-lp-strike" });
 const highlight = Decoration.mark({ class: "cm-lp-highlight" });
 const inlineCode = Decoration.mark({ class: "cm-lp-inline-code" });
+
+/**
+ * インラインコードと直後の閉じ括弧、句読点の間で折り返さないための mark。
+ * 隠した `` ` `` は CodeMirror が atomic な inline の要素（widget とその前後の buffer の img）で描き、
+ * 要素の前後は折り返せる位置になるので、行末禁則が効かずに「）」だけが次の行へ送られる。
+ *
+ * コードから句読点までを nowrap で囲み、長いコードの中の折り返しは最後の字を除いた部分（`wrappable`）にだけ戻す。
+ * Chromium では、コードの要素の中を折り返せる指定にしておくと、外側が nowrap でもコードの直後で折り返す。
+ * nowrap をコードの最後の字から始めないのは、CodeMirror が終わりの遅い mark を外側にするため
+ * インラインコードの要素が 2 つに割れ、地と角丸に継ぎ目が出るから。
+ */
+const noBreak = Decoration.mark({ class: "cm-lp-nobreak" });
+const wrappable = Decoration.mark({ class: "cm-lp-wrappable" });
+const CLOSING_PUNCTUATION = /^[）」』】〕〉》、。，．：；！？)\]},.:;!?'"’”]+/;
+// 閉じ括弧、句読点の連なりとして見る長さの上限。行の残り全体を切り出さないための値
+const CLOSING_PUNCTUATION_LOOKAHEAD = 8;
 const headingLines = [1, 2, 3, 4, 5, 6].map((level) =>
   Decoration.line({ class: `cm-lp-heading cm-lp-h${level}` }),
 );
@@ -266,6 +282,26 @@ function build(view: EditorView): BuiltDecorations {
           if (!seen.has(key)) {
             seen.add(key);
             decorations.push(inlineCode.range(node.from, node.to));
+            // 句読点の連なりは、続く構文の記号（リンクの `]` など）の手前と、親の終わりで止める。
+            // nowrap がリンクの文の外へはみ出すと、CodeMirror がリンクの要素を 2 つに割る
+            const next = node.node.nextSibling;
+            const end = Math.min(
+              node.to + CLOSING_PUNCTUATION_LOOKAHEAD,
+              next ? next.from : Number.POSITIVE_INFINITY,
+              node.node.parent ? node.node.parent.to : Number.POSITIVE_INFINITY,
+            );
+            const tail = CLOSING_PUNCTUATION.exec(state.doc.sliceString(node.to, end));
+            const open = node.node.firstChild;
+            const close = node.node.lastChild;
+            if (tail && open && close && close.name === "CodeMark" && close.from > open.to) {
+              const lastChar = findClusterBreak(
+                state.doc.sliceString(open.to, close.from),
+                close.from - open.to,
+                false,
+              );
+              decorations.push(noBreak.range(node.from, node.to + tail[0].length));
+              if (lastChar > 0) decorations.push(wrappable.range(open.to, open.to + lastChar));
+            }
           }
           return true;
         }

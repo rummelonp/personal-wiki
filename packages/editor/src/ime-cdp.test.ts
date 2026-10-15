@@ -299,6 +299,26 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
   });
 });
 
+// 変換は CodeMirror が DOM の変更を読んで doc にするので、caret の隣の要素の形（インラインコードの中の
+// 折り返しを戻す mark の境目）が変わると、確定した文字の行き先がずれうる
+describe("conversion next to an inline element", () => {
+  it("converts just before the last character of a code followed by a closing bracket", async () => {
+    const doc = "設定は `wrangler.jsonc`）の中";
+    const v = mount(doc);
+    expect(v.contentDOM.querySelector(".cm-lp-wrappable")).not.toBeNull();
+    v.dispatch({ selection: EditorSelection.cursor(doc.indexOf("c`")) });
+    log = [];
+
+    await compose("あ");
+    await commit("亜");
+    await settled(v);
+
+    expect(v.state.doc.toString()).toBe("設定は `wrangler.json亜c`）の中");
+    expectOnlyComposeTransactions(duringComposition());
+    expect(kindsOf(duringComposition(), "decoration-rebuild")).toEqual([]);
+  });
+});
+
 // CodeMirror は変換中（DOM の変更を読んだ後）の keydown を keymap より前に捨てるので、editor の
 // isComposing の guard（list-keymap、title-editor、acceptUnlessComposing）を外してもここは落ちない。
 // ここが見張るのは CodeMirror のその挙動が変わったときの回帰で、guard 自体は各単体テストが

@@ -165,6 +165,69 @@ describe("inline code and the IME invariants", () => {
   });
 });
 
+describe("inline code and line wrapping", () => {
+  /** `char` の 1 字目の矩形。行の中の text node を順に探す */
+  function charRect(line: Element, char: string): DOMRect {
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const index = node.textContent?.indexOf(char) ?? -1;
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 1);
+      return range.getBoundingClientRect();
+    }
+    throw new Error(`${char} is not rendered`);
+  }
+
+  it.each([
+    ["全角の閉じ括弧", "本文の設定は `wrangler.jsonc`）の中にある。", "）"],
+    ["句点", "設定は次の `wrangler.jsonc`。続きの文", "。"],
+    ["半角の閉じ括弧", "file (see `wrangler.jsonc`) for details", ")"],
+  ])("keeps %s on the same visual line as the code before it, at any width", (_, doc, char) => {
+    const v = mount(`${doc}\n\n後`);
+    placeCursor(v, v.state.doc.length);
+    const line = v.contentDOM.querySelector(".cm-line") as Element;
+    const code = codes(v)[0];
+    if (!code || !host) throw new Error("inline code is not rendered");
+
+    const failures: string[] = [];
+    // 狭い幅から 1px ずつ広げ、閉じ括弧の直前が折り返し位置になる幅を必ず通らせる
+    for (let width = 120; width <= 400; width++) {
+      host.style.width = `${width}px`;
+      const rects = code.getClientRects();
+      const last = rects[rects.length - 1];
+      const mark = charRect(line, char);
+      if (last && Math.abs(mark.top - last.top) > 2) failures.push(`${width}px`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it.each([
+    ["リンクの文の最後のコード", "[see `wrangler.jsonc`](https://example.com) 後"],
+    ["リンクの文の中で閉じ括弧が続くコード", "[see `wrangler.jsonc`）](https://example.com) 後"],
+  ])("keeps the markdown link in one element: %s", (_, doc) => {
+    const v = mount(`${doc}\n\n後`);
+    placeCursor(v, v.state.doc.length);
+
+    const links = v.contentDOM.querySelectorAll(".cm-md-link");
+    expect(links).toHaveLength(1);
+    expect(links[0]?.querySelector(".cm-lp-inline-code")).not.toBeNull();
+  });
+
+  it("still wraps a code longer than the line inside the code", () => {
+    const v = mount(`前 \`${"a-".repeat(80)}\`）後\n\n後`);
+    placeCursor(v, v.state.doc.length);
+    const code = codes(v)[0];
+    if (!code || !host) throw new Error("inline code is not rendered");
+    host.style.width = "200px";
+
+    expect(code.getClientRects().length).toBeGreaterThan(1);
+    expect(v.contentDOM.scrollWidth).toBeLessThanOrEqual(v.contentDOM.clientWidth);
+  });
+});
+
 describe("inline code contrast", () => {
   it.each(["light", "dark"] as const)(
     "%s: text on the code background is at least 4.5:1",

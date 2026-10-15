@@ -352,6 +352,13 @@ export const livePreviewTheme = EditorView.baseTheme({
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0.1em 0.25em",
   },
+  // インラインコードと直後の閉じ括弧の間で折り返さない（live-preview.ts）。長いコードは中で折り返せるよう、
+  // 最後の字を除いた部分を行と同じ指定（CodeMirror の `.cm-lineWrapping`）に戻す
+  ".cm-lp-nobreak": { whiteSpace: "nowrap" },
+  ".cm-lp-nobreak .cm-lp-wrappable": {
+    whiteSpace_fallback: "pre-wrap",
+    whiteSpace: "break-spaces",
+  },
   ".cm-lp-comment": { color: "var(--ui-color-muted)" },
   ".cm-line.cm-lp-comment-hidden": { display: "none" },
   // frontmatter（frontmatter-block.ts）。畳んだ枠は開き `---` の行に置く。2 行目以降は畳んだ
