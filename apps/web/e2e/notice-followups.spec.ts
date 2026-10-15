@@ -78,7 +78,7 @@ test("失敗の通知からキーボードで再試行して衝突になった�
 
 const VIEWPORTS = [
   { name: "高さ 667", width: 375, height: 667, rows: 2 },
-  // 低い画面は、title の知らせの 1 行の分だけ欄が狭い。変更の行 1 行は見せる
+  // 低い画面は、title の知らせの分だけ欄が狭い。変更の行 1 行は見せる
   { name: "高さ 500", width: 375, height: 500, rows: 1 },
 ];
 
@@ -129,6 +129,15 @@ for (const viewport of VIEWPORTS) {
       const rowHeight = (details.querySelector(".diff-row") as HTMLElement).getBoundingClientRect()
         .height;
       const outer = element.getBoundingClientRect();
+      const hint = element.querySelector(".conflict-hint") as HTMLElement;
+      const hintLine = Number.parseFloat(getComputedStyle(hint).lineHeight);
+      // 省略や行の切り捨ては要素の大きさに現れないので、最後の文字そのものが見えているかを測る
+      const title = hint.lastChild as Text;
+      const lastChar = document.createRange();
+      lastChar.setStart(title, title.length - 1);
+      lastChar.setEnd(title, title.length);
+      const end = lastChar.getBoundingClientRect();
+      const box = hint.getBoundingClientRect();
       return {
         room: details.clientHeight,
         rowHeight,
@@ -137,6 +146,9 @@ for (const viewport of VIEWPORTS) {
         hintInNotice: inside(element.querySelector(".conflict-hint"), outer),
         hintOutsidePane: !details.contains(element.querySelector(".conflict-hint")),
         noticeInViewport: outer.top >= -0.5 && outer.bottom <= window.innerHeight + 0.5,
+        noticeFitsWidth: element.scrollWidth <= element.clientWidth,
+        hintWhole: end.right <= box.right + 0.5 && end.bottom <= box.bottom + 0.5,
+        hintLines: Math.round(hint.clientHeight / hintLine),
       };
     });
     expect(measured.room, "差分の欄が足りない").toBeGreaterThanOrEqual(
@@ -144,7 +156,14 @@ for (const viewport of VIEWPORTS) {
     );
     expect(measured.firstInPane, "最初の変更の行が欄からはみ出している").toBe(true);
     expect(measured.noticeInViewport, "通知が画面からはみ出している").toBe(true);
-    // 比較が欄の先頭に見えていなくても、欄の外の 1 行で title が違うと分かる
+    expect(measured.noticeFitsWidth, "長い title が通知の幅を押し広げている").toBe(true);
+    // この長さの title は末尾まで読める。末尾だけ違う title を省略すると見分けられない
+    expect(measured.hintWhole, "サーバーの title の末尾が切れている").toBe(true);
+    expect(
+      measured.hintLines,
+      "サーバーの title が 2 行を超えて欄を狭めている",
+    ).toBeLessThanOrEqual(2);
+    // 比較が欄の先頭に見えていなくても、欄の外の手がかりで title が違うと分かる
     expect(
       measured.titlesInPane || (measured.hintInNotice && measured.hintOutsidePane),
       "title も違うと分かるものが最初の表示に見えていない",

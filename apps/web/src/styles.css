@@ -1335,10 +1335,22 @@ a {
   background: var(--color-surface);
 }
 
-.diff-legend,
-.conflict-hint {
+.diff-legend {
   margin: 0;
   font-size: var(--font-size-sm);
+}
+
+.conflict-hint {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.conflict-hint-label {
+  margin-right: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
 }
 
 /* quick switcher: 上端を固定する。中央に置くと、候補が減るたびに入力欄が上下に動く */

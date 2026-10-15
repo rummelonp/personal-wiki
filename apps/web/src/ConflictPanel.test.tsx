@@ -319,14 +319,18 @@ describe("差分の欄", () => {
       expect(within(details.querySelector(".diff-insert") as Element, details)).toBe(true);
     });
 
-    it("収まらないときは変更の組を見せ、欄の外の 1 行で title も違うことを知らせる", async () => {
+    it("収まらないときは変更の組を見せ、選ぶ前に読む位置でサーバーの title を知らせる", async () => {
       const { details } = await mountInDock({
         changeAt: 25,
         detailsRows: 2.5,
         titleDiffers: true,
       });
       const hint = document.querySelector(".conflict-hint") as Element;
-      expect(hint.textContent).toContain("title");
+      expect(hint.textContent).toBe(`サーバーのタイトル：${SERVER.title}`);
+      const take = [...document.querySelectorAll(".notice button")].find(
+        (button) => button.textContent === "サーバーの版を取り込む",
+      ) as Element;
+      expect(hint.compareDocumentPosition(take) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(details.contains(hint)).toBe(false);
       expect(within(hint, document.querySelector(".notice") as Element)).toBe(true);
       expect(within(details.querySelector(".diff-delete") as Element, details)).toBe(true);

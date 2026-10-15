@@ -137,9 +137,9 @@ export function ConflictPanel({
   }
   const titles = titleChanged && (
     <dl className="conflict-titles">
-      <dt>サーバーの title</dt>
+      <dt>サーバーのタイトル</dt>
       <dd>{server.title}</dd>
-      <dt>手元の title</dt>
+      <dt>手元のタイトル</dt>
       <dd>{local.title}</dd>
     </dl>
   );
@@ -203,11 +203,6 @@ export function ConflictPanel({
               幅の狭い画面で長い title が欄を押しつぶして差分が 1 行も残らないので、差分の欄の先頭に入れる */}
           <div className="conflict-summary">
             {!hasDiff && titles}
-            {/* 欄の先頭の title の比較は、最初の変更を見せるために送ると外へ流れる。上書きは
-                サーバーの title も消すので、見落とさないよう欄の外に手がかりを 1 行置く */}
-            {hasDiff && titleChanged && (
-              <p className="muted conflict-hint">title も食い違っています</p>
-            )}
             {hasDiff ? (
               <p className="muted diff-legend">− はサーバーだけにある行、＋ は手元だけにある行</p>
             ) : (
@@ -248,9 +243,19 @@ export function ConflictPanel({
       }
     >
       <p>
-        このページは別の場所で更新されました（{formatTime(server.updatedAt)}
-        ）。どちらを残すか選んでください。
+        {`このページは ${formatTime(server.updatedAt)} に別の場所で更新されました。どちらを残すか選んでください。`}
       </p>
+      {/* 欄の先頭の title の比較は、最初の変更を見せるために送ると外へ流れる。上書きはサーバーの title も
+          消すので、選ぶ前に読む位置にサーバーの title を置く。末尾だけ違う title も見分けられるよう 1 行で省略せずに
+          折り返し、差分の欄を残すため 2 行で切る。それより長い title は欄の先頭で読む */}
+      {hasDiff && titleChanged && (
+        <p className="conflict-hint">
+          <span className="conflict-hint-label">
+            サーバーのタイトル<span className="visually-hidden">：</span>
+          </span>
+          {server.title}
+        </p>
+      )}
     </Notice>
   );
 }
