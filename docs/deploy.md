@@ -201,12 +201,17 @@ Cron を使わないときの進め方と、Cron が飛ばしたページの扱�
 
 新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で毎回次の 3 つを順に実行します。
 `derived:rebuild` は環境変数 `WIKI_TOKEN` から write の token を読みます。
+`0008_title_key_underscore.sql` を含む更新（これより前の版からの更新）だけは、`pnpm deploy:remote` と `pnpm derived:rebuild --remote` の間に、title_key をそろえ直す SQL の実行が要ります。
+`pnpm db:migrate:remote` の出力に `0008_title_key_underscore.sql` が出たら、この更新に当たります。
+手順は「title の `_` と空白をそろえる migration」の項にあります。
 
 ```sh
 pnpm db:migrate:remote
 pnpm deploy:remote
 pnpm derived:rebuild --remote
 ```
+
+`0009_api_token_names.sql` は、上の 3 つのコマンドのほかに操作が要りません。
 
 migration は派生データの表を足すことがあります。
 デプロイが先だと、新しい版が使う表がまだ無く、保存と一覧がエラーで止まります。
@@ -236,7 +241,8 @@ links と待っているリンクの書き換えの key もこの migration が�
 migration からデプロイまでの間は前の版の Worker が動いていて、この間のページの保存は title_key を古い規則で計算し直します。
 本文だけの保存でも、`_` を含む title の key が `a_b` に戻ります。
 戻った key は title の変更とみなされ、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれます。
-この migration を当てる更新では、デプロイのあとに「前の版に戻す」の項の SQL を 1 回実行して key をそろえ直し、そのあとに `derived:rebuild` を実行します。
+この migration を当てる更新では、`pnpm db:migrate:remote`、`pnpm deploy:remote` の順に実行したあと、「前の版に戻す」の項の SQL を 1 回実行して key をそろえ直します。
+そのあとに `pnpm derived:rebuild --remote` を実行します。
 
 ## 前の版に戻す
 
