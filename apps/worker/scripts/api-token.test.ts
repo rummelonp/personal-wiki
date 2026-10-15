@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
   generateToken,
@@ -160,5 +162,66 @@ describe("main", () => {
     const { io, out } = fakeIo();
     expect(() => main(["revoke", "laptop", "--force"], io)).toThrow("unknown option: --force");
     expect(out.spawnArgs).toHaveLength(0);
+  });
+});
+
+const MIGRATIONS_DIR = new URL("../migrations/", import.meta.url);
+const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR).sort();
+
+/** migration を適用した D1 の代わりの SQLite */
+function migratedDb(files = MIGRATION_FILES) {
+  const db = new DatabaseSync(":memory:");
+  for (const name of files) db.exec(readFileSync(new URL(name, MIGRATIONS_DIR), "utf8"));
+  return db;
+}
+
+describe("0009_api_token_names.sql", () => {
+  const FILE = "0009_api_token_names.sql";
+  const BEFORE = MIGRATION_FILES.filter((f) => f < FILE);
+  const insert = (db: DatabaseSync, values: string) =>
+    db.exec(
+      `INSERT INTO api_tokens (id, name, token_hash, scopes, created_at, last_used_at, revoked_at) VALUES ${values}`,
+    );
+  const rows = (db: DatabaseSync) => db.prepare("SELECT * FROM api_tokens ORDER BY id").all();
+
+  it("既存の行を id ごと残し、name の重複を許す", () => {
+    const db = migratedDb(BEFORE);
+    insert(
+      db,
+      "(3, 'laptop', 'aa', 'read write', 10, 20, 30), (7, 'phone', 'bb', 'read', 11, NULL, NULL)",
+    );
+    const before = rows(db);
+    expect(() => insert(db, "(8, 'laptop', 'cc', 'read', 12, NULL, NULL)")).toThrow(/UNIQUE/);
+
+    db.exec(readFileSync(new URL(FILE, MIGRATIONS_DIR), "utf8"));
+    expect(rows(db)).toEqual(before);
+
+    insert(db, "(8, 'laptop', 'cc', 'read', 12, NULL, NULL)");
+    // id を指定しない行は、最大の id の次になる
+    db.exec(
+      "INSERT INTO api_tokens (name, token_hash, scopes, created_at) VALUES ('laptop', 'dd', 'read', 13)",
+    );
+    expect(
+      db
+        .prepare("SELECT id FROM api_tokens WHERE name = 'laptop' ORDER BY id")
+        .all()
+        .map((r) => r.id),
+    ).toEqual([3, 8, 9]);
+  });
+
+  it("token_hash の一意と scopes の CHECK は残り、name の `:` は CHECK で拒む", () => {
+    const db = migratedDb();
+    insert(db, "(1, 'a', 'aa', 'read', 1, NULL, NULL)");
+    expect(() => insert(db, "(2, 'b', 'aa', 'read', 1, NULL, NULL)")).toThrow(/UNIQUE/);
+    expect(() => insert(db, "(2, 'b', 'bb', '', 1, NULL, NULL)")).toThrow(/CHECK/);
+    expect(() => insert(db, "(2, 'a:b', 'bb', 'read', 1, NULL, NULL)")).toThrow(/CHECK/);
+    expect(() =>
+      db.exec("INSERT INTO api_tokens (name, token_hash, scopes) VALUES ('c', 'cc', 'read')"),
+    ).toThrow(/NOT NULL/);
+    expect(
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE name LIKE 'api_tokens%' AND type = 'table'")
+        .all(),
+    ).toEqual([{ name: "api_tokens" }]);
   });
 });
