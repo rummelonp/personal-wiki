@@ -140,33 +140,36 @@ export function ConflictPanel({
           {rows.every((row) => row.kind === "skip") ? (
             <p className="notice-text muted">本文に差分はありません。</p>
           ) : (
-            <div className="diff">
-              {rows.map((row, index) =>
-                row.kind === "skip" ? (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: 差分の行に安定した id は無い
-                  <div key={index} className="diff-skip muted">
-                    … {row.count} 行は同じ …
-                  </div>
-                ) : (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: 同上
-                  <div key={index} className={`diff-row diff-${row.kind}`}>
-                    <span className="diff-mark" aria-hidden="true">
-                      {MARKS[row.kind]}
-                    </span>
-                    <span className="diff-text">{row.text === "" ? " " : row.text}</span>
-                    <span className="visually-hidden">
-                      {row.kind === "delete"
-                        ? "（サーバーだけにある行）"
-                        : row.kind === "insert"
-                          ? "（手元だけにある行）"
-                          : ""}
-                    </span>
-                  </div>
-                ),
-              )}
-            </div>
+            <>
+              {/* 差分の欄は長くなり、下端の凡例は最初の表示で見えない。記号の意味は読み始める前に要る */}
+              <p className="muted diff-legend">− はサーバーだけにある行、＋ は手元だけにある行</p>
+              <div className="diff">
+                {rows.map((row, index) =>
+                  row.kind === "skip" ? (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: 差分の行に安定した id は無い
+                    <div key={index} className="diff-skip muted">
+                      … {row.count} 行は同じ …
+                    </div>
+                  ) : (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: 同上
+                    <div key={index} className={`diff-row diff-${row.kind}`}>
+                      <span className="diff-mark" aria-hidden="true">
+                        {MARKS[row.kind]}
+                      </span>
+                      <span className="diff-text">{row.text === "" ? " " : row.text}</span>
+                      <span className="visually-hidden">
+                        {row.kind === "delete"
+                          ? "（サーバーだけにある行）"
+                          : row.kind === "insert"
+                            ? "（手元だけにある行）"
+                            : ""}
+                      </span>
+                    </div>
+                  ),
+                )}
+              </div>
+            </>
           )}
-          <p className="muted diff-legend">− はサーバーだけにある行、＋ は手元だけにある行</p>
         </div>
       }
     >

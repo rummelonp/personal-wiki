@@ -257,6 +257,12 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   await expect(conflict).toBeVisible();
   await expectBodyNotShifted(page, before);
   await expectDockOnScreen(page);
+  // 凡例は差分の前にあり、最初の表示から見える（差分の欄の最下端に置くと、スクロールするまで見えない）
+  const legend = dock(page).locator(".diff-legend");
+  await expect(legend).toBeInViewport({ ratio: 1 });
+  expect((await boxOf(legend)).y, "凡例が差分より下にある").toBeLessThan(
+    (await boxOf(dock(page).locator(".diff"))).y,
+  );
   // 本文を打っている最中に通知が出ても、focus は奪わない（変換中なら IME が切れる）
   await expect(bodyEditor(page)).toBeFocused();
 

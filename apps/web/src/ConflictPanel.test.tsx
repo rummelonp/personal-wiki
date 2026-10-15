@@ -102,4 +102,13 @@ describe("衝突の操作の確認", () => {
     expect(onOverwrite).toHaveBeenCalledTimes(1);
     expect(onTakeServer).not.toHaveBeenCalled();
   });
+
+  it("凡例は、差分の前に置く（下端では最初の表示で見えない）", () => {
+    mount();
+    const legend = document.querySelector(".diff-legend");
+    const diff = document.querySelector(".diff");
+    expect(legend?.textContent).toContain("サーバーだけにある行");
+    expect(diff).not.toBeNull();
+    expect(legend?.compareDocumentPosition(diff as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
 });
