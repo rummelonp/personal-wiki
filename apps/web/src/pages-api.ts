@@ -116,6 +116,17 @@ function recordOf(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
+/**
+ * 保存で title や本文に制御文字（NUL など）が入っていたときの文。invalid_field の固定の文は
+ * 再読み込みを勧めるが、この誤りは再読み込みでは直らず、入力から取り除く必要がある。
+ */
+function controlCharMessage(code: string, body: Record<string, unknown>): string | undefined {
+  if (code !== "invalid_field" || body.reason !== "control_char") return undefined;
+  return body.field === "title"
+    ? "title に制御文字が含まれていて保存できません。取り除いてください。"
+    : "本文に NUL が含まれていて保存できません。取り除いてください。";
+}
+
 async function failureOf(res: Response): Promise<ApiFailure> {
   if (res.status === 401) return { ok: false, reason: "unauthorized" };
   if (res.status === 404) return { ok: false, reason: "not_found" };
@@ -139,7 +150,7 @@ async function failureOf(res: Response): Promise<ApiFailure> {
   // サーバーの message は API を使う側（エージェント）向けの常体なので、画面の文体にそろえた固定の文を
   // 優先する。検索語の誤りは searchPages が先に固定の文へ置き換える
   const serverMessage = typeof body.message === "string" ? body.message : undefined;
-  const message = ERROR_MESSAGES[code] ?? serverMessage;
+  const message = controlCharMessage(code, body) ?? ERROR_MESSAGES[code] ?? serverMessage;
   return { ok: false, reason: "error", message: message ?? statusMessage(res.status) };
 }
 

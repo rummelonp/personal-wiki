@@ -765,7 +765,15 @@ export class EditorSession {
     this.set({ busy: "saving", ...NO_ERROR });
     const res = await this.api.updatePage(base.id, base.version, snapshot, options);
     if (res.ok) {
-      this.set({ base: res.value, busy: null });
+      // サーバーは title を 1 行に整えて保存する。既存のページの title に改行やタブが残っていると、
+      // 整えた title が手元の title と一致せず、未保存のまま保存を繰り返すので、送った title のままの
+      // 手元は、応答の title に合わせる
+      const { draft } = this.state;
+      const adopted =
+        draft.title === snapshot.title && res.value.title !== snapshot.title
+          ? { draft: { ...draft, title: res.value.title } }
+          : {};
+      this.set({ base: res.value, busy: null, ...adopted });
       if (isDirty(this.state)) {
         // 保存中にさらに入力があった
         this.rearm();

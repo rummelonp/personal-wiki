@@ -191,6 +191,47 @@ describe("自動保存の間引き", () => {
     expect(server.page.body).toBe("本文");
   });
 
+  describe("title にタブが残っている既存のページ", () => {
+    // サーバーは保存のたびに title のタブを空白にして返す
+    function setupTabTitle() {
+      const ctx = setup({ server: page({ title: "表\tの題", body: "本文" }) });
+      const real = ctx.api.updatePage;
+      ctx.api.updatePage = async (id, version, input, options) =>
+        real(id, version, { ...input, title: input.title.replaceAll("\t", " ") }, options);
+      return ctx;
+    }
+
+    it("開いただけでは保存せず、未保存にもならない", async () => {
+      const { session, api } = setupTabTitle();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.calls).toEqual([]);
+      expect(saveStatusOf(session.getState())).toBe("saved");
+    });
+
+    it("本文を直した保存は 1 回で止まり、版を進め続けない", async () => {
+      const { session, api, server } = setupTabTitle();
+      session.edit({ title: "表\tの題", body: "直した" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.calls).toEqual(["put@1"]);
+      expect(server.page).toMatchObject({ title: "表 の題", body: "直した", version: 2 });
+      expect(session.getState().draft.title).toBe("表 の題");
+      expect(saveStatusOf(session.getState())).toBe("saved");
+    });
+
+    it("保存中に本文をさらに直しても、次の保存で止まる", async () => {
+      const { session, api, server } = setupTabTitle();
+      session.edit({ title: "表\tの題", body: "a" });
+      const saving = session.flush();
+      await vi.advanceTimersByTimeAsync(0);
+      session.edit({ title: "表\tの題", body: "ab" });
+      await saving;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.calls).toEqual(["put@1", "put@2"]);
+      expect(server.page.version).toBe(3);
+      expect(saveStatusOf(session.getState())).toBe("saved");
+    });
+  });
+
   it("title の重複は error として知らせる", async () => {
     const { session, api } = setup();
     api.updatePage = async () => ({ ok: false, reason: "title_conflict", message: "重複" });

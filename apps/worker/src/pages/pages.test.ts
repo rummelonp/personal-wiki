@@ -142,6 +142,105 @@ describe("POST /api/pages", () => {
     expect(await snapshotDb()).toEqual(before);
   });
 
+  it("title に NUL などの C0 の制御文字があれば 400 invalid_field で、何も書かない", async () => {
+    const { create, request } = await buildClient();
+    const page = await create("元の title", "本文");
+    const before = await snapshotDb();
+    for (const title of ["a\u0000b", "a\u0001b", "a\u001fb"]) {
+      const created = await request("/api/pages", { method: "POST", json: { title, body: "" } });
+      expect(created.status).toBe(400);
+      expect(await created.json()).toEqual({
+        error: "invalid_field",
+        field: "title",
+        reason: "control_char",
+        message: expect.any(String),
+      });
+      const updated = await request(`/api/pages/${page.id}`, {
+        method: "PUT",
+        headers: { "If-Match": '"1"' },
+        json: { title, body: "本文" },
+      });
+      expect(updated.status).toBe(400);
+      expect(await updated.json()).toMatchObject({ error: "invalid_field", field: "title" });
+    }
+    expect(await snapshotDb()).toEqual(before);
+  });
+
+  it("title の改行とタブは空白にして保存し、DEL など C0 の外の文字は受ける", async () => {
+    const { request } = await buildClient();
+    const res = await request("/api/pages", {
+      method: "POST",
+      json: { title: "a\r\nb\tc\u007f", body: "" },
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ title: "a b c\u007f" });
+  });
+
+  it("本文に NUL があれば 400 invalid_field で、タブ、改行、復帰は受ける", async () => {
+    const { create, request } = await buildClient();
+    const page = await create("本文の検査", "元の本文");
+    const before = await snapshotDb();
+    const created = await request("/api/pages", {
+      method: "POST",
+      json: { title: "NUL", body: "a\u0000b" },
+    });
+    expect(created.status).toBe(400);
+    expect(await created.json()).toEqual({
+      error: "invalid_field",
+      field: "body",
+      reason: "control_char",
+      message: expect.any(String),
+    });
+    const updated = await request(`/api/pages/${page.id}`, {
+      method: "PUT",
+      headers: { "If-Match": '"1"' },
+      json: { title: "本文の検査", body: "a\u0000" },
+    });
+    expect(updated.status).toBe(400);
+    expect(await updated.json()).toMatchObject({ error: "invalid_field", field: "body" });
+    expect(await snapshotDb()).toEqual(before);
+
+    const accepted = await request("/api/pages", {
+      method: "POST",
+      json: { title: "制御文字", body: "a\tb\r\nc\nd\u0001" },
+    });
+    expect(accepted.status).toBe(201);
+    expect(await accepted.json()).toMatchObject({ body: "a\tb\r\nc\nd\u0001" });
+  });
+
+  it("追記する text に NUL があれば 400 invalid_field で、書かない", async () => {
+    const { create, request } = await buildClient();
+    const page = await create("追記先", "元の本文");
+    const before = await snapshotDb();
+    const res = await request(`/api/pages/${page.id}/append`, {
+      method: "POST",
+      json: { text: "a\u0000b" },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "invalid_field", field: "text" });
+    expect(await snapshotDb()).toEqual(before);
+    const ok = await request(`/api/pages/${page.id}/append`, {
+      method: "POST",
+      json: { text: "a\tb" },
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  it("NUL を含む既存の本文のページにも、NUL の無い text は追記できる", async () => {
+    const { create, request } = await buildClient();
+    const page = await create("古いページ", "元の本文");
+    // 検査を入れる前に保存されたページを、D1 に直接書いて作る
+    await env.DB.prepare("UPDATE pages SET body = ?2 WHERE id = ?1")
+      .bind(page.id, "古い\u0000本文")
+      .run();
+    const res = await request(`/api/pages/${page.id}/append`, {
+      method: "POST",
+      json: { text: "足す" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ body: "古い\u0000本文\n足す" });
+  });
+
   it("title_key が同じページがあれば 409 title_conflict", async () => {
     const { create, request } = await buildClient();
     await create("Hello World");

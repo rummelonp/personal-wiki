@@ -1,4 +1,10 @@
-import { normalizeTitleKey, singleLineTitle, wikiLinkUnsafeChars } from "@personal-wiki/domain";
+import {
+  normalizeTitleKey,
+  singleLineTitle,
+  textHasNul,
+  titleHasControlChar,
+  wikiLinkUnsafeChars,
+} from "@personal-wiki/domain";
 import type { ReadableVisibility } from "../auth/principal";
 import { clearDerivedStatements, derivedStatements, deriveValues } from "./derived";
 import { generatePageId } from "./id";
@@ -48,6 +54,7 @@ export const MAX_TITLE_BYTES = 1024;
 
 export type InputError =
   | { ok: false; reason: "invalid_title" }
+  | { ok: false; reason: "control_char"; field: "title" | "body" | "text" }
   | { ok: false; reason: "title_too_long" }
   | { ok: false; reason: "body_too_large" };
 
@@ -176,10 +183,23 @@ interface PreparedContent {
   body: string;
 }
 
-function prepareContent(rawTitle: string, body: string): PreparedContent | InputError {
+/**
+ * 保存する title と本文を整え、規則に合うか調べる。
+ * 制御文字の検査は新しく書き込む入力にだけ掛ける。追記は既存の本文を渡し直すので、NUL を含む
+ * 既存のページに追記できなくならないよう、呼び出し側で追記する text だけを調べる。
+ */
+function prepareContent(
+  rawTitle: string,
+  body: string,
+  { checkControlChars }: { checkControlChars: boolean },
+): PreparedContent | InputError {
   const title = singleLineTitle(rawTitle);
   const key = normalizeTitleKey(title);
   if (!key.ok) return { ok: false, reason: "invalid_title" };
+  if (checkControlChars) {
+    if (titleHasControlChar(title)) return { ok: false, reason: "control_char", field: "title" };
+    if (textHasNul(body)) return { ok: false, reason: "control_char", field: "body" };
+  }
   const encoder = new TextEncoder();
   if (encoder.encode(title).length > MAX_TITLE_BYTES) {
     return { ok: false, reason: "title_too_long" };
@@ -254,7 +274,7 @@ export async function createPage(
   db: D1Database,
   input: CreatePageInput,
 ): Promise<WriteSuccess | WriteError> {
-  const content = prepareContent(input.title, input.body);
+  const content = prepareContent(input.title, input.body, { checkControlChars: true });
   if (!content.ok) return content;
   const id = generatePageId();
   const statements = [
@@ -430,7 +450,7 @@ export async function updatePage(
   db: D1Database,
   input: UpdatePageInput,
 ): Promise<UpdateSuccess | WriteError> {
-  const content = prepareContent(input.title, input.body);
+  const content = prepareContent(input.title, input.body, { checkControlChars: true });
   if (!content.ok) return content;
   const result = await writeContent(db, input, content, true);
   return result === GUARD_REJECTED ? notFoundOrConflict(db, input.id) : result;
@@ -463,6 +483,7 @@ export async function appendToPage(
   db: D1Database,
   input: AppendInput,
 ): Promise<(UpdateSuccess & { attempts: number }) | AppendError> {
+  if (textHasNul(input.text)) return { ok: false, reason: "control_char", field: "text" };
   for (let attempt = 1; attempt <= APPEND_MAX_ATTEMPTS; attempt++) {
     const current = await findPageById(db, input.id);
     if (current === null) return { ok: false, reason: "not_found" };
@@ -474,7 +495,7 @@ export async function appendToPage(
       actor: input.actor,
       now: input.now,
     };
-    const content = prepareContent(update.title, update.body);
+    const content = prepareContent(update.title, update.body, { checkControlChars: false });
     if (!content.ok) return content;
     const result = await writeContent(db, update, content, false);
     if (result === GUARD_REJECTED) continue;

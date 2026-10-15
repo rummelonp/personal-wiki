@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { isErr, isOk } from "./result";
-import { foldKeepingUnderscore, foldTitle, normalizeTitleKey, wikiLinkUnsafeChars } from "./title";
+import {
+  foldKeepingUnderscore,
+  foldTitle,
+  normalizeTitleKey,
+  singleLineTitle,
+  wikiLinkUnsafeChars,
+} from "./title";
 
 describe("wikiLinkUnsafeChars", () => {
   it("returns nothing for a title a WikiLink can target", () => {
@@ -18,6 +24,13 @@ describe("wikiLinkUnsafeChars", () => {
 
   it("allows a backslash that is not at the end", () => {
     expect(wikiLinkUnsafeChars("a\\b")).toEqual([]);
+  });
+});
+
+describe("singleLineTitle", () => {
+  it("replaces each line break and tab with a space and trims", () => {
+    expect(singleLineTitle(" a\r\nb\nc\td\u2028e ")).toBe("a b c d e");
+    expect(singleLineTitle("a\t\tb")).toBe("a  b");
   });
 });
 

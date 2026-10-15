@@ -50,15 +50,16 @@ export function foldTitle(text: string): string {
   return foldKeepingUnderscore(text).replace(/_/g, " ");
 }
 
-const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/g;
+const LINE_BREAK_OR_TAB = /\r\n|[\n\r\t\u2028\u2029]/g;
 
 /**
  * title の入力文字列を、`pages.title` に保存する 1 行の title にする。
- * 改行は 1 つずつ空白に置き換え、前後の空白を trim する。
+ * 改行とタブは 1 つずつ空白に置き換え、前後の空白を trim する。
+ * タブも空白にするのは、表の 1 セルなどを貼った title を、制御文字として拒まずに保存するため。
  * title が 1 行であることは入力側だけでは保証できないので、Editor の入力 filter とこの関数の 2 か所で防ぐ。
  */
 export function singleLineTitle(text: string): string {
-  return text.replace(LINE_BREAK, " ").trim();
+  return text.replace(LINE_BREAK_OR_TAB, " ").trim();
 }
 
 /** WikiLink の構文（`[[target|label]]`、`#heading`、`^blockid`）と重なり、target に書けない文字 */

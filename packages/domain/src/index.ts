@@ -8,6 +8,7 @@ export {
   isAttachmentName,
   matchesAttachmentMagic,
 } from "./attachment";
+export { textHasNul, titleHasControlChar } from "./page-input";
 export {
   canonicalPagePath,
   isPageId,

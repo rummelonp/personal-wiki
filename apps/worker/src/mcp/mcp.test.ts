@@ -571,6 +571,30 @@ describe("ページの tool", () => {
     });
   });
 
+  it("title の制御文字と本文の NUL は、REST と同じ invalid_field で拒み、何も書かない", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Ctl", body: "元" });
+    const before = await snapshotDb();
+    const fieldError = (field: string) => ({
+      isError: true,
+      json: { error: "invalid_field", field, reason: "control_char", message: expect.any(String) },
+    });
+    expect(await call("create_page", { title: "a\u0001b", body: "" })).toEqual(fieldError("title"));
+    expect(await call("create_page", { title: "x", body: "a\u0000" })).toEqual(fieldError("body"));
+    expect(
+      await call("update_page", { id: created.id, version: 1, title: "a\u0000", body: "元" }),
+    ).toEqual(fieldError("title"));
+    expect(
+      await call("update_page", { id: created.id, version: 1, title: "Ctl", body: "\u0000" }),
+    ).toEqual(fieldError("body"));
+    expect(await call("append_to_page", { id: created.id, text: "\u0000" })).toEqual(
+      fieldError("text"),
+    );
+    expect(await snapshotDb()).toEqual(before);
+    const accepted = await call("append_to_page", { id: created.id, text: "a\tb" });
+    expect(accepted.isError).toBe(false);
+  });
+
   it("visibility などの知らないキーは REST と同じコードで拒み、何も書かない", async () => {
     const { call } = await mcpClient();
     const { json: created } = await call("create_page", { title: "Vis", body: "" });

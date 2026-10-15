@@ -199,6 +199,21 @@ export function describeWriteError(error: WriteError | AppendError): WriteErrorD
         status: 400,
         body: { error: "invalid_title", message: "title が空か、空白だけになっている" },
       };
+    case "control_char":
+      return {
+        status: 400,
+        body: {
+          error: "invalid_field",
+          field: error.field,
+          reason: "control_char",
+          message:
+            error.field === "title"
+              ? "title に制御文字（NUL など）を含められない"
+              : error.field === "body"
+                ? "本文に NUL を含められない"
+                : "text に NUL を含められない",
+        },
+      };
     case "title_too_long":
       return { status: 400, body: { error: "title_too_long", max: MAX_TITLE_BYTES } };
     case "body_too_large":

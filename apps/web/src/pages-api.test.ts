@@ -194,6 +194,18 @@ describe("失敗の分類", () => {
     });
   });
 
+  it("制御文字の invalid_field は、再読み込みではなく取り除くよう伝える", async () => {
+    for (const [field, text] of [
+      ["title", "title に制御文字"],
+      ["body", "本文に NUL"],
+    ] as const) {
+      const { fetchFn } = failing(400, { error: "invalid_field", field, reason: "control_char" });
+      const res = await getPage(ID, fetchFn);
+      expect(res).toMatchObject({ ok: false, message: expect.stringContaining(text) });
+      expect(JSON.stringify(res)).not.toContain("再読み込み");
+    }
+  });
+
   it("未知の code は、サーバーの message をそのまま使う", async () => {
     const { fetchFn } = failing(400, { error: "something_new", message: "新しい誤り" });
     expect(await getPage(ID, fetchFn)).toMatchObject({ ok: false, message: "新しい誤り" });
