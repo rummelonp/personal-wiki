@@ -151,6 +151,25 @@ describe("public のページの HTML", () => {
     }
   });
 
+  it("`_` にすると title_key が変わる title は、空白のままの URL が正しいページに着き、`_` の URL は別のページを引く", async () => {
+    const { navigate, create } = await seed();
+    // "a ¨" の title_key は "a \u0308" で、"a_¨" は "a  \u0308" になり、別のページとして並べられる
+    await create("a ¨", "本文 1", "public");
+    await create("a_¨", "本文 2", "public");
+    const spaced = `/${encodeURIComponent("a ¨")}`;
+    const snake = `/${encodeURIComponent("a_¨")}`;
+    for (const [path, title] of [
+      [spaced, "a ¨"],
+      [snake, "a_¨"],
+    ] as const) {
+      const res = await navigate(path);
+      expect(res.status, path).toBe(200);
+      const meta = metaOf(await res.text());
+      expect(meta.ogTitle, path).toBe(title);
+      expect(meta.canonical, path).toBe(`${ORIGIN}${path}`);
+    }
+  });
+
   it("/p/<id> で開いても正規の URL は /<title> にする", async () => {
     const { navigate, open } = await seed();
     for (const path of [`/p/${open.id}`, `/p/${open.id}/`]) {

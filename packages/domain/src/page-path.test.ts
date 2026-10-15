@@ -38,9 +38,12 @@ describe("titlePath", () => {
     }
   });
 
-  it("NFKC で空白を含む形になる文字が空白の隣にあると、空白をそのまま書く", () => {
+  it("NFKC で空白を含む形になる文字が空白の直後にあると、空白をそのまま書く", () => {
     // "a ¨" の title_key は "a \u0308"。"a_¨" は "a  \u0308" になり、同じページを引けない
     expect(titlePath("a ¨")).toBe(`/${encodeURIComponent("a ¨")}`);
+    expect(foldTitle("a_¨")).not.toBe(foldTitle("a ¨"));
+    // NFKC の後の形なら同じ key だが、"a_¨" と見分けにくいので使わない
+    expect(foldTitle("a_\u0308")).toBe(foldTitle("a ¨"));
   });
 
   it("予約語と重なる title は、大文字小文字と全角半角、`/` の後ろを問わず null", () => {
@@ -166,6 +169,7 @@ describe("parsePagePath", () => {
       "a?b#c",
       "x+y&z",
       "a_b",
+      "a ¨",
     ]) {
       const path = titlePath(title);
       expect(path).not.toBeNull();

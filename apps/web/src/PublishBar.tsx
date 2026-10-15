@@ -16,6 +16,8 @@ const PENDING_NOTES: Record<Visibility, string> = {
 /**
  * 手でコピーしてもらう URL。title の percent-encoding を日本語に戻して読めるようにする。
  * 空白は戻さない。貼り付け先で URL が空白の手前で切れる。
+ * title の空白は普通 `_` で書かれる。`%20` が残るのは、`_` にすると別のページを引く title
+ * （titlePath の urlTitle）だけなので、`_` に読み替えない。
  * `%25` も戻さない。decodeURI は `%2F` などは残すが `%25` は `%` に戻すので、`a%2Fb` の title が
  * `a/b` のページを指す URL に変わる。
  */

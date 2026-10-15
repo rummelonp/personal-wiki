@@ -58,6 +58,25 @@ test.describe("anonymous", () => {
     expect(await canonical(page)).toBe(`${E2E_ORIGIN}${underscored(title)}`);
   });
 
+  test("`_` にすると別のページを引く title は、空白のままの URL で正しいページが開く", async ({
+    page,
+    api,
+  }, testInfo) => {
+    // "x ¨" の title_key と "x_¨" の title_key は違い、2 つのページは並べて作れる
+    const base = uniqueTitle(testInfo, "記号").replace(/\s+/g, "-");
+    const spaced = `${base} ¨`;
+    const snake = `${base}_¨`;
+    await api.createPage({ title: spaced, body: "本文", visibility: "public" });
+    await api.createPage({ title: snake, body: "本文", visibility: "public" });
+    for (const title of [spaced, snake]) {
+      const path = `/${encodeURIComponent(title)}`;
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
+      expect(pathname(page)).toBe(path);
+      expect(await canonical(page)).toBe(`${E2E_ORIGIN}${path}`);
+    }
+  });
+
   test("直接開いた取得中の帯は `_` でつないだ URL を空白にした title で出し、取得後は本当の title になる", async ({
     page,
     api,
