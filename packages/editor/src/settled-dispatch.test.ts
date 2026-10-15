@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dispatchWhenSettled, settledDispatch } from "./settled-dispatch";
@@ -93,6 +93,46 @@ describe("dispatchWhenSettled", () => {
     expect(() => dispatchWhenSettled(looked, "a", after)).not.toThrow();
     expect(() => dispatchWhenSettled(fresh, "a", after)).not.toThrow();
     expect(after).not.toHaveBeenCalled();
+  });
+
+  it("keeps working in a view whose extension was removed and added back by reconfigure", () => {
+    host = document.createElement("div");
+    document.body.append(host);
+    const compartment = new Compartment();
+    view = new EditorView({
+      parent: host,
+      state: EditorState.create({ doc: "", extensions: compartment.of(settledDispatch) }),
+    });
+    const before = vi.fn();
+    dispatchWhenSettled(view, "a", before);
+    expect(before).toHaveBeenCalledTimes(1);
+
+    view.dispatch({ effects: compartment.reconfigure([]) });
+    // view は生きているので、破棄済みとして黙って捨てず、extension が無いことを知らせる
+    const during = vi.fn();
+    expect(() => dispatchWhenSettled(view as EditorView, "a", during)).toThrow();
+    expect(during).not.toHaveBeenCalled();
+
+    view.dispatch({ effects: compartment.reconfigure(settledDispatch) });
+    const after = vi.fn();
+    dispatchWhenSettled(view, "a", after);
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops held actions when the extension is removed by reconfigure", async () => {
+    host = document.createElement("div");
+    document.body.append(host);
+    const compartment = new Compartment();
+    view = new EditorView({
+      parent: host,
+      state: EditorState.create({ doc: "", extensions: compartment.of(settledDispatch) }),
+    });
+    const action = vi.fn();
+    view.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    dispatchWhenSettled(view, "a", action);
+    view.dispatch({ effects: compartment.reconfigure([]) });
+    await settle();
+    expect(action).not.toHaveBeenCalled();
   });
 
   it("refuses a view without the extension", () => {

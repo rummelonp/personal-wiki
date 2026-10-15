@@ -1,17 +1,23 @@
+import { Facet } from "@codemirror/state";
 import { type EditorView, type PluginValue, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { compositionSettledNotifier, isCompositionUnsettled } from "./ime";
 
-// 破棄した view では plugin を引けなくなる（引けないと extension が無い view と区別できない）ので、
-// 破棄済みの view をここで覚えておく。
-const destroyedViews = new WeakSet<EditorView>();
+// view を破棄すると plugin は引けなくなるが、state の facet は残る。plugin が引けない view を、
+// この facet が立っていれば破棄済み、立っていなければ extension が無い view と見分ける。plugin の
+// destroy は reconfigure で外れた場合にも呼ばれるので、そこでは破棄を判定できない。update の例外で
+// CodeMirror が外した plugin も facet は残るので、破棄と同じに黙って捨てる。
+const installed = Facet.define<true, boolean>({ combine: (values) => values.length > 0 });
 
 class SettledDispatcher implements PluginValue {
   private readonly pending = new Map<unknown, () => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private destroyed = false;
 
   constructor(private readonly view: EditorView) {}
 
   run(key: unknown, action: () => void): void {
+    // view.plugin は破棄の前に引いた instance を、破棄の後も返すことがある
+    if (this.destroyed) return;
     if (isCompositionUnsettled(this.view)) {
       this.pending.set(key, action);
       return;
@@ -30,7 +36,7 @@ class SettledDispatcher implements PluginValue {
   }
 
   destroy(): void {
-    destroyedViews.add(this.view);
+    this.destroyed = true;
     clearTimeout(this.timer);
     this.pending.clear();
   }
@@ -50,7 +56,7 @@ class SettledDispatcher implements PluginValue {
 const settledDispatcher = ViewPlugin.fromClass(SettledDispatcher);
 
 /** 公開名は `docReplacement`（replace-doc.ts）。 */
-export const settledDispatch = [settledDispatcher, compositionSettledNotifier];
+export const settledDispatch = [settledDispatcher, compositionSettledNotifier, installed.of(true)];
 
 /**
  * editor の外から view を dispatch する処理を、IME の変換が落ち着いてから実行する（IME 不変条件 1）。
@@ -70,10 +76,11 @@ export const settledDispatch = [settledDispatcher, compositionSettledNotifier];
  * （`Symbol` など）を渡す。
  */
 export function dispatchWhenSettled(view: EditorView, key: unknown, action: () => void): void {
-  if (destroyedViews.has(view)) return;
   const dispatcher = view.plugin(settledDispatcher);
-  if (!dispatcher) {
-    throw new Error("dispatchWhenSettled には docReplacement extension を入れた view が必要です");
+  if (dispatcher) {
+    dispatcher.run(key, action);
+    return;
   }
-  dispatcher.run(key, action);
+  if (view.state.facet(installed)) return;
+  throw new Error("dispatchWhenSettled には docReplacement extension を入れた view が必要です");
 }
