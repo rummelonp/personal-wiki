@@ -33,7 +33,7 @@ import type { PageCandidate, PageIndex } from "./page-index";
  */
 export interface LinkTargetSource {
   /**
-   * title の page の見出しと block id。page が無い・読めない場合は null を返す。
+   * title の page の見出しと block id。page が無いか読めない場合は null を返す。
    * `extractLinkTargets`（`@personal-wiki/markdown`）に本文を渡せば得られる。
    * 候補が要らなくなると（カーソルが link の外へ出る、選択が動くなど）`signal` が中断される。
    * 続けて打った文字では中断されず、結果は打鍵の分だけ絞り込まれて使われる。
@@ -139,7 +139,7 @@ function createOptions(query: string): Completion[] {
 /**
  * `[[Title#` と `[[Title#^` の候補。Title が空なら今の page（editor の本文）、あれば `linkTargets` から
  * 取る。絞り込みは autocomplete の fuzzy に任せる（page の title と違い、順位付けの規則を
- * 持たない）。page が無い・候補が 0 件のときは null にして、候補 UI を開かない。
+ * 持たない）。page が無いか候補が 0 件のときは null にして、候補 UI を開かない。
  */
 async function sectionCompletion(
   options: WikiLinkAutocompleteOptions,

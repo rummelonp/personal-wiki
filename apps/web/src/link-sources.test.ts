@@ -238,7 +238,7 @@ describe("createLinkTargetSource", () => {
     expect(find).toHaveBeenCalledTimes(1);
   });
 
-  it("ページが無い・通信に失敗した・例外が出たときは null を返し、reject しない", async () => {
+  it("ページが無いとき、通信に失敗したとき、例外が出たときは null を返し、reject しない", async () => {
     const results: (() => Promise<ApiResult<Page>>)[] = [
       async () => ({ ok: false, reason: "not_found" }),
       async () => ({ ok: false, reason: "error", message: "サーバーに接続できない" }),
