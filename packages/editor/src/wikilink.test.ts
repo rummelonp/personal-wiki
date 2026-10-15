@@ -2,6 +2,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "./create-editor";
+import { charRect } from "./test-geometry";
 
 const DOC = "前置き [[Amazon Web Services|AWS]] と [[日本語ページ]] の後ろ\n\n2 行目";
 const LINK = "[[Amazon Web Services|AWS]]";
@@ -373,5 +374,70 @@ describe("Live Preview", () => {
     const start = doc.indexOf("[[");
     const hiddenStart = v.moveByChar(EditorSelection.cursor(start), true);
     expect(hiddenStart.head).toBe(doc.indexOf("Label"));
+  });
+});
+
+describe("WikiLink and line wrapping", () => {
+  /** 幅を 1px ずつ広げ、括弧、句読点 `char` が link の端と別の表示行に落ちる幅を集める */
+  function widthsSplitFromLink(v: EditorView, char: string, side: "after" | "before"): string[] {
+    placeCursor(v, v.state.doc.length);
+    const line = v.contentDOM.querySelector(".cm-line") as Element;
+    const link = v.contentDOM.querySelector(".cm-wikilink");
+    if (!link || !host) throw new Error("wikilink is not rendered");
+
+    const failures: string[] = [];
+    // 狭い幅から広げ、括弧、句読点の隣が折り返し位置になる幅を必ず通らせる
+    for (let width = 120; width <= 400; width++) {
+      host.style.width = `${width}px`;
+      const rects = link.getClientRects();
+      const edge = side === "after" ? rects[rects.length - 1] : rects[0];
+      const mark = charRect(line, char);
+      if (edge && Math.abs(mark.top - edge.top) > 2) failures.push(`${width}px`);
+    }
+    return failures;
+  }
+
+  it.each([
+    ["全角の閉じ括弧", "本文の設定は [[wrangler の設定]]）の中にある。", "）"],
+    ["ラベルの後の句点", "設定は次の [[wrangler の設定|ラベル付きの link]]。続きの文", "。"],
+    ["半角の閉じ括弧", "file (see [[Settings of wrangler]]) for details", ")"],
+  ])("keeps %s on the same visual line as the link before it, at any width", (_, doc, char) => {
+    const v = mount(`${doc}\n\n後`);
+    expect(widthsSplitFromLink(v, char, "after")).toEqual([]);
+  });
+
+  it.each([
+    ["全角の開き括弧", "本文の設定は（[[wrangler の設定]] の中）にある。", "（"],
+    ["鉤括弧", "設定の説明は「[[wranglerconfigurationsettings]] を見る」こと。", "「"],
+    ["半角の開き括弧", "see the docs ([[wranglerconfigurationsettings]] for) details", "("],
+  ])("keeps %s on the same visual line as the link after it, at any width", (_, doc, char) => {
+    const v = mount(`${doc}\n\n後`);
+    expect(widthsSplitFromLink(v, char, "before")).toEqual([]);
+  });
+
+  it("keeps the link in one element", () => {
+    const v = mount("設定は（[[wrangler の設定]]）の中\n\n後");
+    placeCursor(v, v.state.doc.length);
+
+    expect(v.contentDOM.querySelectorAll(".cm-wikilink")).toHaveLength(1);
+    expect(v.contentDOM.querySelector(".cm-wikilink")?.textContent).toBe("wrangler の設定");
+  });
+
+  it("does not add the no-break mark where no bracket or punctuation touches the link", () => {
+    const v = mount("前 [[Note]] 後\n\n後");
+    placeCursor(v, v.state.doc.length);
+
+    expect(v.contentDOM.querySelector(".cm-lp-nobreak")).toBeNull();
+  });
+
+  it("still wraps a label longer than the line inside the link", () => {
+    const v = mount(`前 [[Note|${"a-".repeat(80)}]]）後\n\n後`);
+    placeCursor(v, v.state.doc.length);
+    const link = v.contentDOM.querySelector(".cm-wikilink");
+    if (!link || !host) throw new Error("wikilink is not rendered");
+    host.style.width = "200px";
+
+    expect(link.getClientRects().length).toBeGreaterThan(1);
+    expect(v.contentDOM.scrollWidth).toBeLessThanOrEqual(v.contentDOM.clientWidth);
   });
 });

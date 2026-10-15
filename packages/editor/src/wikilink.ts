@@ -10,6 +10,7 @@ import {
 } from "@personal-wiki/markdown";
 import { type BuiltDecorations, decorationPlugin } from "./decoration-plugin";
 import { isModifiedClick } from "./link-activation";
+import { noBreakDecorations } from "./no-break";
 import { createRevealTest } from "./reveal";
 
 export interface WikiLinkClick {
@@ -69,6 +70,7 @@ function hrefOf(hrefs: readonly WikiLinkHref[], link: WikiLinkClick): string | n
 function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltDecorations {
   const reveal = createRevealTest(view);
   const { state } = view;
+  const caret = view.hasFocus ? state.selection.ranges : [];
   const resolvers = state.facet(wikiLinkResolver);
   const hrefs = state.facet(wikiLinkHref);
   const decorations: Range<Decoration>[] = [];
@@ -125,22 +127,28 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
           }).range(node.from, node.to),
         );
 
+        // 記号を表示している間は素の文字なので、折り返しはブラウザの禁則に任せる
         if (reveal(node.from, node.to)) return false;
 
         // 簡略表示では label があれば label だけ、無ければ target だけを残す。
         const separator = node.node.getChild(wikiLinkNodes.separator);
         const closeFrom = node.to - 2;
+        let visible: { from: number; to: number };
         if (separator && parts.label !== null) {
           conceal(node.from, separator.to);
           conceal(closeFrom, node.to);
+          visible = { from: separator.to, to: closeFrom };
         } else if (separator) {
           // `[[Title|]]`: 空 label は target 表示へフォールバックする
           conceal(node.from, node.from + 2);
           conceal(separator.from, node.to);
+          visible = { from: node.from + 2, to: separator.from };
         } else {
           conceal(node.from, node.from + 2);
           conceal(closeFrom, node.to);
+          visible = { from: node.from + 2, to: closeFrom };
         }
+        decorations.push(...noBreakDecorations(state.doc, node.node, visible, caret));
         return false;
       },
     });

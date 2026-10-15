@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { type Extension, findClusterBreak, type Range } from "@codemirror/state";
+import type { Extension, Range } from "@codemirror/state";
 import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { commentNodes, highlightNodes, taskListNodes } from "@personal-wiki/markdown";
@@ -12,6 +12,7 @@ import { externalHref, MD_LINK_URL_ATTR } from "./external-link";
 import { linkSyntaxParts } from "./link-syntax";
 import { ListIndents, type ListPrefix, listIndentsStale } from "./list-indent";
 import { type TaskSyntax, taskSyntax } from "./list-syntax";
+import { noBreakDecorations } from "./no-break";
 import { createRevealTest, isSimplifiedView } from "./reveal";
 
 const hide = Decoration.replace({});
@@ -21,22 +22,6 @@ const strikethrough = Decoration.mark({ class: "cm-lp-strike" });
 const highlight = Decoration.mark({ class: "cm-lp-highlight" });
 const inlineCode = Decoration.mark({ class: "cm-lp-inline-code" });
 
-/**
- * インラインコードと、直前の開き括弧、直後の閉じ括弧、句読点の間で折り返さないための mark。
- * 隠した `` ` `` は CodeMirror が atomic な inline の要素（widget とその前後の buffer の img）で描き、
- * 要素の前後は折り返せる位置になるので、禁則が効かずに「）」だけが次の行頭へ、「（」だけが行末へ送られる。
- *
- * 開き括弧から句読点までを nowrap で囲み、長いコードの中の折り返しは、括弧に接する字を除いた部分（`wrappable`）にだけ戻す。
- * Chromium では、コードの要素の中を折り返せる指定にしておくと、外側が nowrap でもコードの直後で折り返す。
- * nowrap をコードの途中から始めないのは、CodeMirror が終わりの遅い mark を外側にするため
- * インラインコードの要素が 2 つに割れ、地と角丸に継ぎ目が出るから。
- */
-const noBreak = Decoration.mark({ class: "cm-lp-nobreak" });
-const wrappable = Decoration.mark({ class: "cm-lp-wrappable" });
-const CLOSING_PUNCTUATION = /^[）」』】〕〉》、。，．：；！？)\]},.:;!?'"’”]+/;
-const OPENING_PUNCTUATION = /[（「『【〔〈《([{'"‘“]+$/;
-// 括弧、句読点の連なりとして見る長さの上限。行の残り全体を切り出さないための値
-const PUNCTUATION_LOOKAHEAD = 8;
 const headingLines = [1, 2, 3, 4, 5, 6].map((level) =>
   Decoration.line({ class: `cm-lp-heading cm-lp-h${level}` }),
 );
@@ -90,6 +75,7 @@ const horizontalRule = Decoration.replace({ widget: new HorizontalRuleWidget() }
 function build(view: EditorView): BuiltDecorations {
   const reveal = createRevealTest(view);
   const { state } = view;
+  const caret = view.hasFocus ? state.selection.ranges : [];
   const decorations: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   // 同じ node が隣り合う visibleRange の両方に跨ると enter が 2 回走る。
@@ -283,40 +269,17 @@ function build(view: EditorView): BuiltDecorations {
           if (!seen.has(key)) {
             seen.add(key);
             decorations.push(inlineCode.range(node.from, node.to));
-            // 括弧、句読点の連なりは、前後の構文の記号（リンクの `[` や `]` など）の手前と、親の端で止める。
-            // nowrap がリンクの文の外へはみ出すと、CodeMirror がリンクの要素を 2 つに割る
-            const parent = node.node.parent;
-            const previous = node.node.prevSibling;
-            const next = node.node.nextSibling;
-            const end = Math.min(
-              node.to + PUNCTUATION_LOOKAHEAD,
-              next ? next.from : Number.POSITIVE_INFINITY,
-              parent ? parent.to : Number.POSITIVE_INFINITY,
-            );
-            const start = Math.max(
-              node.from - PUNCTUATION_LOOKAHEAD,
-              previous ? previous.to : 0,
-              parent ? parent.from : 0,
-            );
-            const tail = CLOSING_PUNCTUATION.exec(state.doc.sliceString(node.to, end))?.[0] ?? "";
-            const head =
-              OPENING_PUNCTUATION.exec(state.doc.sliceString(start, node.from))?.[0] ?? "";
             const open = node.node.firstChild;
             const close = node.node.lastChild;
-            if (
-              (tail || head) &&
-              open &&
-              close &&
-              close.name === "CodeMark" &&
-              close.from > open.to
-            ) {
-              const body = state.doc.sliceString(open.to, close.from);
-              const firstChar = head ? findClusterBreak(body, 0, true) : 0;
-              const lastChar = tail ? findClusterBreak(body, body.length, false) : body.length;
-              decorations.push(noBreak.range(node.from - head.length, node.to + tail.length));
-              if (lastChar > firstChar) {
-                decorations.push(wrappable.range(open.to + firstChar, open.to + lastChar));
-              }
+            if (open && close && close.name === "CodeMark" && close.from > open.to) {
+              decorations.push(
+                ...noBreakDecorations(
+                  state.doc,
+                  node.node,
+                  { from: open.to, to: close.from },
+                  caret,
+                ),
+              );
             }
           }
           return true;

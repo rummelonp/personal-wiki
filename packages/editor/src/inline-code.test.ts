@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 import { createEditor } from "./create-editor";
 import { colorOf, contrastRatio, MIN_CONTRAST, resolve } from "./test-contrast";
+import { charRect } from "./test-geometry";
 import { resetEditorHue, resetScheme, setEditorHue, setScheme } from "./test-tokens";
 
 let view: EditorView | null = null;
@@ -166,20 +167,6 @@ describe("inline code and the IME invariants", () => {
 });
 
 describe("inline code and line wrapping", () => {
-  /** `char` の 1 字目の矩形。行の中の text node を順に探す */
-  function charRect(line: Element, char: string): DOMRect {
-    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const index = node.textContent?.indexOf(char) ?? -1;
-      if (index < 0) continue;
-      const range = document.createRange();
-      range.setStart(node, index);
-      range.setEnd(node, index + 1);
-      return range.getBoundingClientRect();
-    }
-    throw new Error(`${char} is not rendered`);
-  }
-
   it.each([
     ["全角の閉じ括弧", "本文の設定は `wrangler.jsonc`）の中にある。", "）"],
     ["句点", "設定は次の `wrangler.jsonc`。続きの文", "。"],

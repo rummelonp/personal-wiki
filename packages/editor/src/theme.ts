@@ -393,8 +393,8 @@ export const livePreviewTheme = EditorView.baseTheme({
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0.1em 0.25em",
   },
-  // インラインコードと直後の閉じ括弧の間で折り返さない（live-preview.ts）。長いコードは中で折り返せるよう、
-  // 最後の字を除いた部分を行と同じ指定（CodeMirror の `.cm-lineWrapping`）に戻す
+  // インラインコードや wikilink と、隣り合う括弧、句読点の間で折り返さない（no-break.ts）。長い本文は
+  // 中で折り返せるよう、括弧、句読点に接する字を除いた部分を行と同じ指定（CodeMirror の `.cm-lineWrapping`）に戻す
   ".cm-lp-nobreak": { whiteSpace: "nowrap" },
   ".cm-lp-nobreak .cm-lp-wrappable": {
     whiteSpace_fallback: "pre-wrap",

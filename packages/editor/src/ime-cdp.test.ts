@@ -334,6 +334,39 @@ describe("conversion next to an inline element", () => {
     expectOnlyComposeTransactions(duringComposition());
     expect(kindsOf(duringComposition(), "decoration-rebuild")).toEqual([]);
   });
+
+  // 折り返さない範囲（インラインコードや wikilink と、隣り合う括弧、句読点）の中で変換が始まると、
+  // 変換中は decoration を組み直さないので、未確定の長い文字列が折り返されずに行の外へはみ出す
+  describe("a long conversion next to a bracket or punctuation", () => {
+    const LONG = "あいうえお".repeat(6);
+
+    it.each([
+      ["after a wikilink followed by a full stop", "前置きの文 [[リンク]]。", "。"],
+      ["between a closing bracket and a full stop", "前置きの文 [[リンク]]）。", "）"],
+      ["after a code followed by a full stop", "前置きの文 `code`。", "。"],
+    ])("stays inside the line: %s", async (_, doc, after) => {
+      const host = newHost();
+      host.style.width = "300px";
+      const v = focusAtEnd(
+        createEditor(host, { doc: `${doc}\n\n後`, onImeEvent: (e) => log.push(e) }),
+      );
+      v.dispatch({ selection: EditorSelection.cursor(doc.indexOf(after) + after.length) });
+      log = [];
+
+      await compose(LONG);
+      await expect.poll(() => v.contentDOM.textContent).toContain(LONG);
+      // 列の幅は CodeMirror の測り直しで広がるので、それが済んでから測る
+      await new Promise<void>((resolve) => v.requestMeasure({ read: () => null, write: resolve }));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      // 折り返せない未確定文字は、行の外へはみ出して横にスクロールできてしまう
+      expect(v.scrollDOM.scrollWidth).toBeLessThanOrEqual(v.scrollDOM.clientWidth);
+      await commit(LONG);
+      await settled(v);
+      expect(v.state.doc.toString()).toContain(LONG);
+      expect(kindsOf(duringComposition(), "decoration-rebuild")).toEqual([]);
+    });
+  });
 });
 
 // CodeMirror は変換中（DOM の変更を読んだ後）の keydown を keymap より前に捨てるので、editor の
