@@ -458,7 +458,7 @@ describe("ページの tool", () => {
     expect((await call("read_page", { id: plain.id })).json).toMatchObject({
       visibility: "public",
       url: `${ORIGIN}/p/${plain.id}`,
-      titleUrl: `${ORIGIN}/Hello%20World%2F2`,
+      titleUrl: `${ORIGIN}/Hello_World%2F2`,
     });
     expect((await call("read_page", { id: reserved.id })).json).toMatchObject({
       visibility: "public",

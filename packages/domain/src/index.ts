@@ -11,6 +11,7 @@ export {
 export {
   canonicalPagePath,
   isPageId,
+  literalTitlePath,
   type PagePath,
   pageIdPath,
   parsePagePath,

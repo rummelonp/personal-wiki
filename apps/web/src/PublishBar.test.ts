@@ -15,9 +15,15 @@ describe("readableUrl", () => {
     expect(shown("設計メモ")).toBe(`${origin}/設計メモ`);
   });
 
-  it("空白は戻さず、貼った先で URL が切れない", () => {
-    expect(shown("週次 ふりかえり")).toBe(`${origin}/週次%20ふりかえり`);
-    expect(shown("全角　空白")).toBe(`${origin}/全角%E3%80%80空白`);
+  it("title の空白は URL で `_` になっている", () => {
+    expect(shown("週次 ふりかえり")).toBe(`${origin}/週次_ふりかえり`);
+    expect(shown("全角　空白")).toBe(`${origin}/全角_空白`);
+  });
+
+  it("URL に残った空白は戻さず、貼った先で URL が切れない", () => {
+    // `_` にすると title_key が変わる title は、空白を encode したまま URL に残る
+    expect(shown("a ¨")).toBe(`${origin}/a%20¨`);
+    expect(readableUrl(`${origin}/%E5%85%A8%E3%80%80`)).toBe(`${origin}/全%E3%80%80`);
   });
 
   it("% を含む title は、貼った先で同じページを指す", () => {

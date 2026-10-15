@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   homeHref,
+  missingPagePath,
   navigate,
   newPageHref,
   pageHref,
@@ -66,7 +67,7 @@ describe("href", () => {
   });
 
   it("public のページは /<title>、draft と予約語の title は /p/<id> にする", () => {
-    expect(pageHrefFor({ id: ID, title: "a/b c", visibility: "public" })).toBe("/a%2Fb%20c");
+    expect(pageHrefFor({ id: ID, title: "a/b c", visibility: "public" })).toBe("/a%2Fb_c");
     expect(pageHrefFor({ id: ID, title: "a/b c", visibility: "draft" })).toBe(`/p/${ID}`);
     expect(pageHrefFor({ id: ID, title: "API", visibility: "public" })).toBe(`/p/${ID}`);
   });
@@ -76,6 +77,18 @@ describe("href", () => {
       const href = pageHrefFor({ id: ID, title, visibility: "public" });
       expect(parseRoute(href, "")).toEqual({ name: "title", title });
     }
+  });
+
+  it("空白を含む title の URL は `_` のまま読み、空白に戻さない", () => {
+    const href = pageHrefFor({ id: ID, title: "My Note", visibility: "public" });
+    expect(href).toBe("/My_Note");
+    expect(parseRoute(href, "")).toEqual({ name: "title", title: "My_Note" });
+    expect(parseRoute("/My%20Note", "")).toEqual({ name: "title", title: "My Note" });
+  });
+
+  it("まだ無いページへのリンクは、空白を `_` にしない", () => {
+    expect(missingPagePath("a b")).toBe("/a%20b");
+    expect(parseRoute("/a%20b", "")).toEqual({ name: "title", title: "a b" });
   });
 });
 

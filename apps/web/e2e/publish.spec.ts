@@ -9,7 +9,7 @@ import { E2E_ORIGIN } from "./support/stack";
  * fetch で調べる（owner の画面が「公開」と言っていても、実際に匿名に出ているかは別に確かめる）。
  */
 
-const titlePath = (title: string) => `/${encodeURIComponent(title)}`;
+const titlePath = (title: string) => `/${encodeURIComponent(title.replace(/\s+/g, "_"))}`;
 const option = (page: Page, label: "下書き" | "公開") =>
   page.locator(".publish-bar .segmented-option", { hasText: new RegExp(`^${label}$`) });
 const confirmPanel = (page: Page) => page.getByRole("region", { name: "公開の確認" });
@@ -229,10 +229,11 @@ test.describe("共有の URL", () => {
     await page.getByRole("button", { name: "URL をコピー" }).click();
     await expect(notice(page)).toContainText("コピーできませんでした");
     const url = page.getByRole("textbox", { name: "共有する URL" });
-    // percent-encoding を戻して読める形で見せる。空白は貼り付け先で切れないよう戻さない
-    const readable = `${E2E_ORIGIN}${decodeURI(titlePath(title)).replace(/\s/g, encodeURIComponent)}`;
+    // percent-encoding を戻して読める形で見せる。title の空白は URL では `_` になっている
+    const readable = `${E2E_ORIGIN}${decodeURI(titlePath(title))}`;
     await expect(url).toHaveValue(readable);
     expect(readable).not.toContain("%E");
+    expect(readable).not.toMatch(/\s|%20/);
     await expect(url).toBeFocused();
     const selection = await url.evaluate((input: HTMLInputElement) => ({
       start: input.selectionStart,

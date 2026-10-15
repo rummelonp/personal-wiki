@@ -6,7 +6,7 @@ import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
-import { recallTitle, rememberTitle } from "./page-titles";
+import { recallTitle, recallTitleFor, rememberTitle } from "./page-titles";
 import {
   failureMessage,
   findPageByTitle,
@@ -180,7 +180,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
         <PageSkeleton
           title={
             target.by === "title"
-              ? target.title
+              ? (recallTitleFor(target.title) ?? target.title)
               : target.by === "id"
                 ? recallTitle(target.id)
                 : undefined

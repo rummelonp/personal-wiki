@@ -120,9 +120,9 @@ describe("public のページの HTML", () => {
       title: "Open Note - wiki",
       ogTitle: "Open Note",
       ogDescription: "公開の kangaroo の話",
-      ogUrl: `${ORIGIN}/Open%20Note`,
+      ogUrl: `${ORIGIN}/Open_Note`,
       ogType: "article",
-      canonical: `${ORIGIN}/Open%20Note`,
+      canonical: `${ORIGIN}/Open_Note`,
       twitterCard: "summary",
       robots: null,
     });
@@ -132,7 +132,23 @@ describe("public のページの HTML", () => {
     const { navigate } = await seed();
     const res = await navigate("/open%20NOTE");
     expect(res.status).toBe(200);
-    expect(metaOf(await res.text()).ogUrl).toBe(`${ORIGIN}/Open%20Note`);
+    expect(metaOf(await res.text()).ogUrl).toBe(`${ORIGIN}/Open_Note`);
+  });
+
+  it("`_` は空白と同じ文字として引き、正規の URL は空白を `_` にする", async () => {
+    const { navigate, create } = await seed();
+    for (const path of ["/Open_Note", "/open_note", "/Open%5FNote"]) {
+      const res = await navigate(path);
+      expect(res.status, path).toBe(200);
+      expect(metaOf(await res.text()).canonical, path).toBe(`${ORIGIN}/Open_Note`);
+    }
+    // `_` を含む title も、URL の `_` を空白に戻さずに引く
+    await create("snake_case", "本文", "public");
+    for (const path of ["/snake_case", "/snake%20case"]) {
+      const res = await navigate(path);
+      expect(res.status, path).toBe(200);
+      expect(metaOf(await res.text()).ogTitle, path).toBe("snake_case");
+    }
   });
 
   it("/p/<id> で開いても正規の URL は /<title> にする", async () => {
@@ -142,8 +158,8 @@ describe("public のページの HTML", () => {
       expect(res.status, path).toBe(200);
       expect(res.headers.get("X-Robots-Tag"), path).toBeNull();
       const meta = metaOf(await res.text());
-      expect(meta.ogUrl, path).toBe(`${ORIGIN}/Open%20Note`);
-      expect(meta.canonical, path).toBe(`${ORIGIN}/Open%20Note`);
+      expect(meta.ogUrl, path).toBe(`${ORIGIN}/Open_Note`);
+      expect(meta.canonical, path).toBe(`${ORIGIN}/Open_Note`);
     }
   });
 
@@ -178,7 +194,7 @@ describe("public のページの HTML", () => {
     const { navigate, create } = await seed();
     const res = await navigate("/Open%20Note/");
     expect(res.status).toBe(200);
-    expect(metaOf(await res.text()).canonical).toBe(`${ORIGIN}/Open%20Note`);
+    expect(metaOf(await res.text()).canonical).toBe(`${ORIGIN}/Open_Note`);
     // title の末尾の / は %2F で書くので、/ を外した title とは別のページになる
     const slash = await create("Slash/", "", "public");
     const encoded = await navigate("/Slash%2F");
@@ -198,7 +214,7 @@ describe("owner と token の HTML", () => {
       expect(res.status, label).toBe(200);
       expect(res.headers.get("Cache-Control"), label).toBe("private, no-store");
       expect(res.headers.get("X-Robots-Tag"), label).toBeNull();
-      expect(metaOf(await res.text()).ogUrl, label).toBe(`${ORIGIN}/Open%20Note`);
+      expect(metaOf(await res.text()).ogUrl, label).toBe(`${ORIGIN}/Open_Note`);
     }
   });
 });
@@ -452,7 +468,7 @@ describe("値のエスケープ", () => {
     expect(meta.title).toBe(`${title} - wiki`);
     expect(meta.ogTitle).toBe(title);
     expect(meta.ogDescription).toBe('1 < 2 & "x" &lt;y&gt;');
-    expect(meta.ogUrl).toBe(`${ORIGIN}/${encodeURIComponent(title)}`);
+    expect(meta.ogUrl).toBe(`${ORIGIN}/${encodeURIComponent(title.replaceAll(" ", "_"))}`);
   });
 
   it("抜粋の改行や制御文字も属性値の中に収まる", async () => {

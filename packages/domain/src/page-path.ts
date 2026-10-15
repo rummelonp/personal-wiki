@@ -1,4 +1,4 @@
-import { foldKeepingUnderscore } from "./title";
+import { foldKeepingUnderscore, foldTitle } from "./title";
 
 /*
  * ページの URL（`/p/<id>` と `/<title>`）の規則。Worker の配信と OGP、SPA のルーティングが
@@ -45,7 +45,20 @@ export function isPageId(value: string): boolean {
 export const pageIdPath = (id: string): string => `/p/${id}`;
 
 /**
- * public のページを `/<title>` で開くときのパス。予約語と重なる title は null で、`/p/<id>` だけで開く。
+ * title を URL に書くときの形。空白の並びを 1 つの `_` にする。
+ * title_key は `_` を空白と同じ文字に畳むので、この形の `/<title>` を引けば同じページに届く。
+ * 並びを 1 つにするのは、title_key が空白の並びを 1 つに畳み、`_` の並びは畳まないため
+ * （"a  b" を "a__b" にすると別の key になる）。
+ * NFKC で空白を含む形に変わる文字（`¨` など）が空白の隣にあると、置き換えた形が別の key になるので、
+ * そのときは title のまま書く。
+ */
+function urlTitle(title: string): string {
+  const underscored = title.trim().replace(/\s+/g, "_");
+  return foldTitle(underscored) === foldTitle(title) ? underscored : title;
+}
+
+/**
+ * URL に書く文字列を `/<文字列>` のパスにする。予約語と重なるなら null。
  *
  * パスでは `/` もエンコードするが、プロキシや配信の層が `%2F` を戻しても別のパスに入らないよう、
  * title_key と同じ畳み方（大文字小文字、全角半角を区別しない）をしてから `/` で区切って判定する。
@@ -54,12 +67,29 @@ export const pageIdPath = (id: string): string => `/p/${id}`;
  * - 先頭が予約語か空（`/api` が `//api` になる）なら使わない。
  * - `.` と `..` の segment は URL の解決で消えたり前の segment を消したりするので、どこにあっても使わない。
  */
-export function titlePath(title: string): string | null {
-  const segments = foldKeepingUnderscore(title).split("/");
+function segmentPath(segment: string): string | null {
+  const segments = foldKeepingUnderscore(segment).split("/");
   const head = segments[0] ?? "";
   if (head === "" || RESERVED_TITLE_SEGMENTS.includes(head)) return null;
-  if (segments.some((segment) => segment === "." || segment === "..")) return null;
-  return `/${encodeURIComponent(title)}`;
+  if (segments.some((s) => s === "." || s === "..")) return null;
+  return `/${encodeURIComponent(segment)}`;
+}
+
+/**
+ * public のページを `/<title>` で開くときのパス。title の空白は `_` で書く（urlTitle）。
+ * 予約語と重なる title は null で、`/p/<id>` だけで開く。
+ */
+export function titlePath(title: string): string | null {
+  return segmentPath(urlTitle(title));
+}
+
+/**
+ * title の空白を `_` にせず、そのまま `/<title>` にしたパス。まだ無いページへのリンクに使う。
+ * 開いた画面は URL の文字列を title として出し、そのまま作るので、`[[a b]]` から "a_b" のページを作らない。
+ * 作った後は canonicalPagePath の形に置き換わる。
+ */
+export function literalTitlePath(title: string): string | null {
+  return segmentPath(title);
 }
 
 export type PagePath = { kind: "id"; id: string } | { kind: "title"; title: string };
@@ -69,10 +99,11 @@ export type PagePath = { kind: "id"; id: string } | { kind: "title"; title: stri
  *
  * - `/p/<id>` と `/<title>` は、どちらも末尾の `/` を 1 つまで許す。titlePath は title の `/` を
  *   `%2F` にするので、エンコードされていない末尾の `/` が title の一部になることはない
- * - title は 1 回だけ decode する。エンコードされていない途中の `/` は title の `/` として読む
+ * - title は 1 回だけ decode する。`_` は空白に戻さない（title_key が `_` と空白を同じ文字に畳むので、
+ *   `/a_b` も `/a%20b` も "a b" のページを引ける）。エンコードされていない途中の `/` は title の `/` として読む
  *   （配信の層が `%2F` を戻した URL でも同じページを開く）。末尾の `/` だけは区切りとして除くので、
  *   末尾が `/` の title は `%2F` を戻されると別の title（`/Foo/` なら `Foo`）を指す
- * - titlePath が null になる title（予約語、`.` の segment、空）は null。`/P/x` や `/API` も含む
+ * - literalTitlePath が null になる title（予約語、`.` の segment、空）は null。`/P/x` や `/API` も含む
  */
 export function parsePagePath(pathname: string): PagePath | null {
   if (!pathname.startsWith("/")) return null;
@@ -88,7 +119,7 @@ export function parsePagePath(pathname: string): PagePath | null {
   } catch {
     return null;
   }
-  return titlePath(title) === null ? null : { kind: "title", title };
+  return literalTitlePath(title) === null ? null : { kind: "title", title };
 }
 
 /** ページを開くときの正の URL のパス。public は `/<title>`、draft と予約語の title は `/p/<id>`。 */

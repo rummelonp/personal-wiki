@@ -1,8 +1,8 @@
 import {
   canonicalPagePath,
+  literalTitlePath,
   pageIdPath,
   parsePagePath,
-  titlePath,
 } from "@personal-wiki/domain/page-path";
 import { useSyncExternalStore } from "react";
 import { canResolveTitle } from "./pages-api";
@@ -52,9 +52,10 @@ export const pageHrefFor = canonicalPagePath;
 /**
  * まだ無いページへのリンクの行き先（title の URL の空のページ）。予約語と重なるなど title の URL に
  * できない title と、長すぎて存在しえない（問い合わせられない）title は null。
+ * 空白は `_` にしない。開いた画面が URL の文字列を作るページの title にするため（literalTitlePath）。
  */
 export function missingPagePath(title: string): string | null {
-  return canResolveTitle(title) ? titlePath(title) : null;
+  return canResolveTitle(title) ? literalTitlePath(title) : null;
 }
 
 const NAVIGATE_EVENT = "personal-wiki:navigate";
