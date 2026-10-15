@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
 
 /*
- * ジャーニー #1 書き留める: 新規作成 → 本文に入力 → 自動保存 → 再読み込みで残っている。
+ * 書き留める流れ: 新規作成 → 本文に入力 → 自動保存 → 再読み込みで残っている。
  * 入力は keyboard.type で、日本語の変換（IME）は対象外。
  *
  * 作成の応答を待たずに打ち始める。新規作成の画面は、開く操作の中で入力欄にフォーカスし、作った後も

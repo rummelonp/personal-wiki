@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test, uniqueTitle } from "./support/fixtures";
 import { SEED } from "./support/seed";
 
-/* ジャーニー #2 探して開く: 一覧、quick switcher、検索、タグ、backlink。 */
+/* 探して開く流れ: 一覧、quick switcher、検索、タグ、backlink。 */
 
 const entryLink = (title: string) => ({ name: title, exact: true });
 

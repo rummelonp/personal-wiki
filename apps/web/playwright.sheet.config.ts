@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import { E2E_ORIGIN } from "./e2e/support/stack";
 
 /*
- * 画面の一覧（e2e/sheet/run.mjs から起動する）。画面と状態ごとに、明暗 × 幅 375・768・1280 の
+ * 画面の一覧（e2e/sheet/run.mjs から起動する）。画面と状態ごとに、明暗 × 幅 375、768、1280 の
  * スクリーンショットを撮る。比べる基準の画像は持たず、人が見て崩れを探すためのもの。
  */
 
