@@ -66,6 +66,15 @@ describe("衝突の操作の確認", () => {
     expect(button("やめる").getAttribute("aria-describedby")).toBe(question?.id);
   });
 
+  it.each([
+    ["サーバーの版を取り込む", "手元の変更を破棄して"],
+    ["手元で上書き", "サーバーの版を破棄して"],
+  ])("%s の確認の問いは、失われる側を言い切る", (label, lost) => {
+    mount();
+    act(() => button(label).click());
+    expect(document.querySelector(".notice-question")?.textContent).toContain(lost);
+  });
+
   it.each(["サーバーの版を取り込む", "手元で上書き"])(
     "%s の確認をやめると、押したボタンに focus が戻る",
     (choice) => {

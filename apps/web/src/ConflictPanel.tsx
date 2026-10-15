@@ -12,7 +12,10 @@ type Choice = "take" | "overwrite";
 /** 選んだ内容を実行する前に、失われるものを言い切って確かめる。 */
 const CONFIRMS: Record<Choice, { question: string; run: string }> = {
   take: { question: "手元の変更を破棄して、サーバーの版を取り込みますか？", run: "取り込む" },
-  overwrite: { question: "手元の内容で、サーバーの版を置き換えますか？", run: "上書きする" },
+  overwrite: {
+    question: "サーバーの版を破棄して、手元の内容で上書きしますか？",
+    run: "上書きする",
+  },
 };
 
 interface ConflictPanelProps {
