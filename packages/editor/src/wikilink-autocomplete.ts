@@ -220,11 +220,12 @@ export function wikiLinkCompletionSource(options: WikiLinkAutocompleteOptions): 
       to: context.pos,
       // 並び順は PageIndex の scoring に任せる。autocomplete 側の fuzzy で並べ替えさせない。
       filter: false,
-      // 索引が空のうちの「作成」は、既にあるページを無いと見せる偽の候補になるので出さない
+      // 索引を取り終える前と、取得に失敗して空のままのときの「作成」は、既にあるページを
+      // 無いと見せる偽の候補になるので出さない
       options:
         candidates.length > 0
           ? candidates.map(candidateOption)
-          : (options.index.settled?.() ?? true)
+          : (options.index.settled?.() ?? true) && !(options.index.failed?.() ?? false)
             ? createOptions(query)
             : [],
     };

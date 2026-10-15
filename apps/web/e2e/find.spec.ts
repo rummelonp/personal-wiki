@@ -110,6 +110,34 @@ test("quick switcher で ↓ を押して「作成」を選べば、キーボー
   expect(await pageExists(page, title)).toBe(true);
 });
 
+test("title の一覧を取れないときの quick switcher は、「作成」を出さず失敗を案内し、取れたら戻る", async ({
+  page,
+}) => {
+  const titles = "**/api/pages/titles*";
+  await page.route(titles, (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "internal" }),
+    }),
+  );
+  // 既にあるページの title を打つ。取れていないだけなのに「作成」を勧めてはならない
+  const { switcher, input } = await openSwitcherAndType(page, SEED.database);
+  await expect(switcher.getByRole("status")).toContainText("候補を取得できませんでした。");
+  await expect(switcher.getByRole("option", { name: /を作成$/ })).toHaveCount(0);
+  await expect(switcher.getByRole("option", { selected: true })).toHaveText(
+    `「${SEED.database}」を本文から検索`,
+  );
+
+  await page.unroute(titles);
+  await input.press("Escape");
+  await expect(switcher).toBeHidden();
+  await page.getByRole("button", { name: "ページを検索" }).click();
+  await input.fill(SEED.database);
+  await expect(switcher.getByRole("option", { name: SEED.database, exact: true })).toBeVisible();
+  await expect(switcher.getByText("候補を取得できませんでした。")).toHaveCount(0);
+});
+
 test("一致しない検索は 0 件の案内を出す", async ({ page }) => {
   await page.goto(`/?q=${encodeURIComponent("どこにも無い語句")}`);
   await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();

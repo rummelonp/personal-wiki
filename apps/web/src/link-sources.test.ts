@@ -68,6 +68,73 @@ describe("createTitleIndex", () => {
     expect(rejected.settled()).toBe(true);
   });
 
+  it("候補が 1 件も無いまま最新の refresh が失敗したら failed になり、成功すると戻る", async () => {
+    let fail = true;
+    const index = createTitleIndex(async () => {
+      if (fail) throw new Error("network");
+      return listOk([summary("1", "Note")]);
+    });
+    expect(index.failed()).toBe(false);
+    await index.refresh();
+    expect(index.settled()).toBe(true);
+    expect(index.failed()).toBe(true);
+
+    const rejected = createTitleIndex(
+      async () => ({ ok: false, reason: "error", message: "失敗" }) as ApiResult<never>,
+    );
+    await rejected.refresh();
+    expect(rejected.failed()).toBe(true);
+
+    fail = false;
+    await index.refresh();
+    expect(index.failed()).toBe(false);
+    expect(index.settled()).toBe(true);
+  });
+
+  it("ページが 1 件も無い wiki の取得は、成功なので failed にならない", async () => {
+    const index = createTitleIndex(async () => listOk([]));
+    await index.refresh();
+    expect(index.failed()).toBe(false);
+  });
+
+  it("前に取れた候補や途中まで取れた候補があれば、後の refresh が失敗しても failed にしない", async () => {
+    let mode: "ok" | "fail" | "partial" = "ok";
+    const index = createTitleIndex(async (cursor) => {
+      if (mode === "fail" || (mode === "partial" && cursor !== null)) throw new Error("network");
+      return listOk([summary("1", "Note")], mode === "partial" ? "next" : null);
+    });
+    await index.refresh();
+    mode = "fail";
+    await index.refresh();
+    expect(index.failed()).toBe(false);
+    expect(index.search("Note")).toHaveLength(1);
+
+    const fresh = createTitleIndex(async (cursor) => {
+      if (cursor !== null) throw new Error("network");
+      return listOk([summary("1", "Note")], "next");
+    });
+    await fresh.refresh();
+    expect(fresh.failed()).toBe(false);
+  });
+
+  it("後から始まった refresh に追い越された refresh の失敗は、failed にしない", async () => {
+    const outcomes: ((r: ApiResult<PageList<PageSummary>>) => void)[] = [];
+    const index = createTitleIndex(
+      () =>
+        new Promise((resolve) => {
+          outcomes.push(resolve);
+        }),
+    );
+    const first = index.refresh();
+    const second = index.refresh();
+    outcomes[0]?.({ ok: false, reason: "error", message: "失敗" } as ApiResult<never>);
+    await first;
+    expect(index.failed()).toBe(false);
+    outcomes[1]?.(listOk([summary("1", "Note")]));
+    await second;
+    expect(index.failed()).toBe(false);
+  });
+
   it("後から始まった refresh に追い越された refresh は、settled にしない", async () => {
     const releases: (() => void)[] = [];
     const index = createTitleIndex(async () => {

@@ -104,6 +104,20 @@ function press(key: string, init: KeyboardEventInit & { keyCode?: number } = {})
   });
 }
 
+/**
+ * Escape で閉じ、dialog の close イベントが届くまで待つ。イベントはタスクで遅れて届き、
+ * onClose が開閉の state を閉じた側に戻すので、待たずに開き直すと開いた直後に閉じてしまう。
+ */
+async function closeWithEscape() {
+  const closed = new Promise((resolve) =>
+    dialog().addEventListener("close", resolve, { once: true }),
+  );
+  press("Escape");
+  await act(async () => {
+    await closed;
+  });
+}
+
 describe("QuickSwitcher の候補", () => {
   it("開くと入力欄にフォーカスがあり、未入力なら最近更新したページを更新順に出す", async () => {
     await renderSwitcher(true);
@@ -423,13 +437,69 @@ describe("QuickSwitcher の候補の取得中", () => {
     expect(status()).toEqual([expect.stringMatching(/候補を読み込み中…[\s\S]*3 文字以上/)]);
   });
 
-  it("取得に失敗しても、済んだ扱いで「作成」を出す", async () => {
+  const failure = { ok: false, reason: "error", message: "失敗" } as unknown as ApiResult<never>;
+  const CANDIDATES_FAILED = "候補を取得できませんでした。";
+
+  it("owner には、取得に失敗して候補が無いとき、「作成」を出さず失敗を案内する", async () => {
     await openPending(true);
     typeText("新しい語");
-    await act(async () =>
-      deliver({ ok: false, reason: "error", message: "失敗" } as unknown as ApiResult<never>),
-    );
+    await act(async () => deliver(failure));
+    expect(container?.querySelector("[data-row-kind='create']")).toBeNull();
+    expect(pending()).toBeNull();
+    expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
+    // 索引に依らない「本文から検索」は残り、既定の行になる
+    expect(options()).toEqual(["「新しい語」を本文から検索"]);
+    expect(selected()).toBe("「新しい語」を本文から検索");
+  });
+
+  it("匿名には、取得に失敗して候補が無いとき、「一致するページはありません」を出さず失敗を案内する", async () => {
+    await openPending(false);
+    typeText("新しい語");
+    await act(async () => deliver(failure));
+    expect(container?.textContent).not.toContain("タイトルが一致するページはありません。");
+    expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
+  });
+
+  it("未入力でも、取得に失敗して候補が無いことを案内する", async () => {
+    await openPending(true);
+    await act(async () => deliver(failure));
+    expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
+  });
+
+  it("開き直したときの取得が失敗しても、前に取れた候補があれば失敗を見せず、「作成」も出す", async () => {
+    await renderSwitcher(true);
+    await closeWithEscape();
+    vi.mocked(listPageTitles).mockResolvedValue(failure);
+    act(() => container?.querySelector("button")?.click());
+    await vi.waitFor(() => expect(vi.mocked(listPageTitles)).toHaveBeenCalledTimes(2));
+    // 失敗の応答を描き終えてから確かめる。「作成」は前の取得の結果で最初から出ているので、
+    // 出たことを待つだけでは失敗が反映される前に通ってしまう
+    await act(async () => {});
+    typeText("新しい語");
     expect(container?.querySelector("[data-row-kind='create']")).not.toBeNull();
+    expect(container?.textContent).not.toContain(CANDIDATES_FAILED);
+    typeText("読書");
+    expect(options()).toContain("読書メモ");
+  });
+
+  it("失敗のあとに取得が成功したら、失敗の案内は消えて「作成」が出る", async () => {
+    vi.mocked(listPageTitles).mockResolvedValue(failure);
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () => mounted.render(<Harness owner={true} />));
+    typeText("新しい語");
+    expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
+
+    await closeWithEscape();
+    vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: RECENT, nextCursor: null }));
+    await act(async () => container?.querySelector("button")?.click());
+    typeText("新しい語");
+    await vi.waitFor(() =>
+      expect(container?.querySelector("[data-row-kind='create']")).not.toBeNull(),
+    );
+    expect(container?.textContent).not.toContain(CANDIDATES_FAILED);
   });
 
   it("「候補を読み込み中…」の文字は、遅れの後に見せる", async () => {

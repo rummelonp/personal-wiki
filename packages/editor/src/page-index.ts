@@ -24,6 +24,11 @@ export interface PageIndex {
    * 全件を最初から持つ索引は実装しなくてよい（済んでいる扱い）。
    */
   settled?(): boolean;
+  /**
+   * 候補を取るのに失敗し、候補が 1 件も無いか。true の間の「候補なし」は、無いと分かったのではなく
+   * 確かめられていないので、補完は「作成」の候補を出さない。実装しない索引は失敗しない扱い。
+   */
+  failed?(): boolean;
 }
 
 export interface MemoryPageIndexOptions {

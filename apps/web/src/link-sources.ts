@@ -16,6 +16,12 @@ export interface TitleIndex extends PageIndex {
   refresh(): Promise<void>;
   /** 1 回目の refresh が済んだか。一度 true になったら戻らない。 */
   settled(): boolean;
+  /**
+   * 最新の refresh が失敗し、かつ候補が 1 件も無いか。成功した refresh で false に戻る。
+   * true の間の「候補なし」は、無いと分かったのではなく確かめられていない。
+   * 前に取れた候補や、途中まで取れた候補があれば、失敗しても false のまま。
+   */
+  failed(): boolean;
 }
 
 export type ListTitles = (cursor: string | null) => Promise<ApiResult<PageList<PageSummary>>>;
@@ -47,12 +53,16 @@ export function createTitleIndex(
   // 遅れて終わった古い取り直しで、新しい候補を上書きしない
   let generation = 0;
   let settled = false;
+  let lastFailed = false;
+  let count = 0;
 
   return {
     search: (query) => current.search(query),
     settled: () => settled,
+    failed: () => lastFailed && count === 0,
     async refresh() {
       const mine = ++generation;
+      let failed = false;
       try {
         const pages: PageCandidate[] = [];
         let cursor: string | null = null;
@@ -61,17 +71,26 @@ export function createTitleIndex(
           try {
             res = await list(cursor);
           } catch {
+            failed = true;
             return;
           }
-          if (mine !== generation || !res.ok) return;
+          if (mine !== generation) return;
+          if (!res.ok) {
+            failed = true;
+            return;
+          }
           pages.push(...res.value.pages.map(({ id, title }) => ({ id, title })));
           current = build(pages);
+          count = pages.length;
           cursor = res.value.nextCursor;
           if (cursor === null) return;
         }
       } finally {
         // 後から始まった refresh に追い越されたものは済ませない。その refresh が最後に済ませる
-        if (mine === generation) settled = true;
+        if (mine === generation) {
+          settled = true;
+          lastFailed = failed;
+        }
       }
     },
   };

@@ -18,12 +18,14 @@ import { homeHref, navigate, pageHref } from "./route";
 
 const RECENT_LABEL = "最近更新したページ";
 const ROWS_LABEL = "候補と操作";
+const CANDIDATES_FAILED = "候補を取得できませんでした。時間をおいて、開き直してください。";
 
 /**
  * 先頭の行が Enter の既定で、選択と Enter の動作を同じ配列から引く。並びは次のとおり。
  * - title が完全に一致するページがあるとき: 候補、「本文から検索」。既定はその完全一致のページ。
  * - 無いとき: 「本文から検索」、候補、「作成」。既定は「本文から検索」。
  * 語を打って Enter しただけで要らないページができないよう、「作成」は既定にせず末尾に置く。
+ * 候補の取得に失敗して 1 件も無いときは、title の完全一致を確かめられないので「作成」を出さない。
  * 匿名が本文を検索できる長さに満たない間は、行き止まりの画面へ移さないよう「本文から検索」を出さない。
  */
 type Row =
@@ -147,6 +149,8 @@ function SwitcherBody({
 
   // 1 回目の取得が済むまでの「候補なし」は、無いのではなく取れていないだけ
   const settled = index.settled();
+  // 取れていない候補は「一致なし」でも「作成」でもない。完全一致を確かめられないので、その 2 つの代わりに失敗の案内を出す
+  const failed = index.failed();
   const trimmed = query.trim();
   // 候補には文字が飛び飛びに当たるものもある。強調するのは、空白で区切った語がそのまま含まれる箇所だけ
   const terms = trimmed.split(/\s+/);
@@ -157,12 +161,12 @@ function SwitcherBody({
     candidates[0] !== undefined && foldTitle(candidates[0].title) === foldTitle(trimmed);
   const contentSearchTooShort =
     trimmed !== "" && !owner && searchQueryLength(trimmed) < ANONYMOUS_SEARCH_MIN_CHARS;
-  const noMatch = trimmed !== "" && !owner && settled && candidates.length === 0;
+  const noMatch = trimmed !== "" && !owner && settled && !failed && candidates.length === 0;
   const pageRows = candidates.map((candidate): Row => ({ kind: "page", candidate }));
   const contentSearchRows: Row[] =
     trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
   const createRows: Row[] =
-    trimmed !== "" && owner && !hasExactTitle && settled ? [{ kind: "create" }] : [];
+    trimmed !== "" && owner && !hasExactTitle && settled && !failed ? [{ kind: "create" }] : [];
   const rows: Row[] = hasExactTitle
     ? [...pageRows, ...contentSearchRows]
     : [...contentSearchRows, ...pageRows, ...createRows];
@@ -252,11 +256,12 @@ function SwitcherBody({
       {/* listbox の子は option だけにするので、候補が無いことと本文から検索できないことの案内は
           外に置く。owner には「作成」と「本文から検索」の行が同じことを伝える */}
       {/* 案内の status は 1 つにまとめる。取得中と匿名の案内が同時に出ると、status が 2 つ並ぶため */}
-      {(!settled || noMatch || contentSearchTooShort) && (
+      {(!settled || failed || noMatch || contentSearchTooShort) && (
         <div role="status">
           {!settled && <PendingCandidates />}
-          {(noMatch || contentSearchTooShort) && (
+          {(failed || noMatch || contentSearchTooShort) && (
             <p className="switcher-heading">
+              {failed && CANDIDATES_FAILED}
               {noMatch && "タイトルが一致するページはありません。"}
               {contentSearchTooShort &&
                 `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}

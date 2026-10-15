@@ -106,6 +106,29 @@ describe("the create option", () => {
     expect(labels(v)).toEqual(["「Zeta」を作成"]);
   });
 
+  it("is not offered while the index has failed to load and has no candidates", async () => {
+    let failed = true;
+    const loaded = createMemoryPageIndex([{ id: "p1", title: "Code" }], {
+      normalize: (text) => text.toLowerCase(),
+    });
+    // 取得に失敗して空のままの「作成」は、既にあるページを無いと見せてしまう
+    const index: PageIndex = {
+      search: (query) => (failed ? [] : loaded.search(query)),
+      settled: () => true,
+      failed: () => failed,
+    };
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Code");
+    expect(labels(v)).toEqual([]);
+    expect(completionStatus(v.state)).toBeNull();
+
+    failed = false;
+    await typeQuery(v, "Code");
+    expect(labels(v)).toEqual(["Code"]);
+    await typeQuery(v, "Zeta");
+    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+  });
+
   it("is not offered for a blank query or a heading or block reference", async () => {
     const { view: v } = mount();
     for (const query of [" ", "Zeta#見出し", "Zeta^abc"]) {
