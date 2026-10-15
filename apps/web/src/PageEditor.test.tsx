@@ -228,6 +228,10 @@ describe("PageEditor と本文のエディタ", () => {
           removeEventListener() {},
         }) as unknown as MediaQueryList,
     );
+    // ページの枠が見える範囲の外にある状態で解決し、focus を移してもスクロールしないことを見る
+    const spacer = document.createElement("div");
+    spacer.style.height = "5000px";
+    document.body.append(spacer);
     try {
       vi.mocked(updatePage).mockResolvedValue({
         ok: false,
@@ -241,17 +245,24 @@ describe("PageEditor と本文のエディタ", () => {
       typeAtEnd(v, "の手元の変更");
       act(() => v.contentDOM.blur());
       await flushAsync();
-      const scrolled = window.scrollY;
 
       act(() => button("サーバーの版を取り込む").click());
       await flushAsync();
+      window.scrollTo(0, 4000);
+      const scrolled = window.scrollY;
+      expect(scrolled).toBeGreaterThan(0);
       act(() => button("取り込む").click());
       await flushAsync();
       expect(v.state.doc.toString()).toBe("サーバーの本文");
-      expect(document.activeElement).toBe(container?.querySelector("article"));
+      const article = container?.querySelector("article");
+      expect(document.activeElement).toBe(article);
       expect(window.scrollY).toBe(scrolled);
+      // 枠は focus を移す間だけ受け取れる。外れたら、タップで本文の focus を奪わないよう元に戻す
+      act(() => v.contentDOM.focus());
+      expect(article?.hasAttribute("tabindex")).toBe(false);
     } finally {
       coarse.mockRestore();
+      spacer.remove();
     }
   });
 

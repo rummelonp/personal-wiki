@@ -230,16 +230,20 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (!uncreated) onShown?.({ id: pageId, title: savedTitle, visibility: savedVisibility });
   }, [onShown, uncreated, pageId, savedTitle, savedVisibility]);
   const { goTo } = useFragmentJump(editor);
-  // 押したボタンは解決で消えるので、focus が body に落ちないよう移す。移す先は本文だが、タッチ端末では
-  // 本文に移すと、確認の操作で閉じたキーボードが開き直り、カーソルの行へスクロールして title が見える
-  // 範囲から外れる。そこではキーボードを開かないページの枠に移し、スクロールの位置も動かさない。
-  // また食い違えば衝突の通知が残るので、そのときは動かさない
+  // 押したボタンは解決で消えるので、focus が body に落ちないよう移す。解決の間にサーバーの版がまた進むと
+  // 衝突の通知が残るので、そのときは動かさない。移す先は本文だが、タッチ端末では本文に移すと、確認の操作で閉じたキーボードが
+  // 開き直り、カーソルの行へスクロールして title が見える範囲から外れる。そこではキーボードを開かない
+  // ページの枠に移し、スクロールの位置も動かさない。枠に tabindex を付けるのは focus を持つ間だけにする。
+  // 付けたままだと、本文の編集中に枠の余白を押しただけで枠が focus を取り、本文の入力が途切れる
   async function resolveConflict(resolve: () => void | Promise<void>) {
     await resolve();
     if (session.getState().conflict !== null) return;
-    if (window.matchMedia("(pointer: coarse)").matches)
-      article.current?.focus({ preventScroll: true });
-    else editor.current?.view()?.focus();
+    const frame = article.current;
+    if (frame !== null && window.matchMedia("(pointer: coarse)").matches) {
+      frame.tabIndex = -1;
+      frame.addEventListener("blur", () => frame.removeAttribute("tabindex"), { once: true });
+      frame.focus({ preventScroll: true });
+    } else editor.current?.view()?.focus();
   }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
@@ -439,7 +443,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         ref={article}
         className={leaving ? "note note-leaving" : "note"}
         aria-busy={leaving || undefined}
-        tabIndex={-1}
       >
         {linkPending !== null && (
           <span className="visually-hidden" role="status">
