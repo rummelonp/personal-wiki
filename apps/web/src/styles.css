@@ -1412,18 +1412,20 @@ a {
 }
 
 /*
- * 一覧は行の地が変わらないので、淡い地で示す。下線はリンクと紛らわしいので使わない。
- * title は最初から太く、太さは効かない。
+ * 一覧は行の地が変わらないので、title と抜粋のどちらも淡い地で示す。
+ * title は最初から太く、抜粋だけ太くすると強調の強さが揃わないので、太さは変えない。
+ * 下線はリンクと紛らわしいので使わない。
+ * 抜粋は補助色で書くので一致箇所を本文色にし、title は hover の色の変化を引き継ぐ。
  */
 .entry mark {
-  color: inherit;
+  font-weight: inherit;
+  color: var(--color-fg);
   background: var(--color-mark-bg);
   border-radius: var(--radius-sm);
 }
 
-.entry-excerpt mark {
-  font-weight: var(--font-weight-strong);
-  color: var(--color-fg);
+.entry-title mark {
+  color: inherit;
 }
 
 .switcher-hints {

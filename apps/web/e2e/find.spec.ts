@@ -209,6 +209,36 @@ test("検索結果の見出しは、開き括弧の行頭の空きを詰める",
   expect(next).toBeLessThan(size * 0.75);
 });
 
+test("検索結果の title と抜粋で、一致箇所に同じ規則の強調が付く", async ({
+  page,
+  api,
+}, testInfo) => {
+  const word = uniqueTitle(testInfo, "強調");
+  await api.createPage({ title: word, body: `前の文 ${word} 後の文` });
+  await page.goto(`/?q=${encodeURIComponent(word)}`);
+  const row = page.locator(".entries .entry", { hasText: word }).first();
+  const titleMark = row.locator(".entry-title mark");
+  const excerptMark = row.locator(".entry-excerpt mark");
+  await expect(titleMark).toHaveText(word);
+  await expect(excerptMark).toHaveText(word);
+  const styleOf = (mark: typeof titleMark) =>
+    mark.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        color: style.color,
+        background: style.backgroundColor,
+        radius: style.borderRadius,
+        // 周りの文字より太くしない（最初から太い title だけ強調が弱く見えるため）
+        weightChanged:
+          style.fontWeight !== getComputedStyle(element.parentElement as Element).fontWeight,
+      };
+    });
+  const title = await styleOf(titleMark);
+  expect(title).toEqual(await styleOf(excerptMark));
+  expect(title.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(title.weightChanged).toBe(false);
+});
+
 test("タグで絞り込める", async ({ page }) => {
   await page.goto("/");
   await page
