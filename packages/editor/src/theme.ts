@@ -164,6 +164,9 @@ export const editorSurfaceTheme = EditorView.baseTheme({
     color: "var(--ui-color-text)",
     boxShadow: "inset 2px 0 0 var(--ui-color-accent)",
   },
+  // 取得に失敗した案内の行は選べないので、先頭の行でも選択の地と線を付けない
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li.cm-completion-notice[aria-selected]":
+    { background: "none", boxShadow: "none", cursor: "default" },
   "&light .cm-tooltip-autocomplete .cm-completionMatchedText": {
     textDecoration: "none",
     fontWeight: "700",

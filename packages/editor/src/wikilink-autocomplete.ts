@@ -9,6 +9,7 @@ import {
   completionStatus,
   moveCompletionSelection,
   pickedCompletion,
+  selectedCompletion,
   startCompletion,
 } from "@codemirror/autocomplete";
 import {
@@ -51,7 +52,8 @@ export interface WikiLinkAutocompleteOptions {
   readonly linkTargets?: LinkTargetSource;
   /**
    * 候補解決（`PageIndex.search` から `CompletionResult` を返すまで）の所要時間を ms で受け取る。
-   * 計測用。
+   * 計測用。同期に解決したときだけ呼ぶ。索引の取り直しを待った場合は、待ちが利用者の打鍵の
+   * 応答ではないので呼ばない。
    */
   readonly onLatency?: (ms: number) => void;
   /**
@@ -118,6 +120,31 @@ function applyText(text: string) {
 
 function candidateOption(candidate: PageCandidate): Completion {
   return { label: candidate.title, type: "text", apply: applyText(candidate.title) };
+}
+
+/**
+ * 選べない案内の行。選択の見た目（theme.ts）と、Enter と Tab を取らない扱い（`acceptUnlessComposing`）は
+ * この集合で見分ける。
+ * 先頭の行には CodeMirror が `aria-selected` を付けるので、読み上げは選択された候補として伝える。
+ * 行の属性は `optionClass` では変えられず、選択なしで開く設定（`selectOnOpen`）は
+ * 通常の候補の先頭選択まで外してしまうため、そのままにしている。案内の文は行の中身として読まれる。
+ */
+const notices = new WeakSet<Completion>();
+
+/**
+ * 候補の取得に失敗して候補が空のときに出す案内。何も出さないと、失敗なのか一致なしなのか区別できない。
+ * 選んでも何も書かず、閉じるだけにする。
+ */
+function failureNotice(): Completion {
+  const notice: Completion = {
+    label: "候補を取得できません",
+    type: "text",
+    apply: (view) => {
+      closeCompletion(view);
+    },
+  };
+  notices.add(notice);
+  return notice;
 }
 
 /**
@@ -196,7 +223,18 @@ async function sectionCompletion(
   };
 }
 
+/**
+ * `[[Title` の候補。取得前の「作成」は既にあるページを無いと見せる偽の候補になる。取得に失敗して
+ * 空のままのときも同じなので、「作成」の代わりに失敗を案内する。取得が済んでいない間は何も出さない。
+ */
+function titleOptions(index: PageIndex, query: string, candidates: PageCandidate[]): Completion[] {
+  if (candidates.length > 0) return candidates.map(candidateOption);
+  if (index.settled?.() === false) return [];
+  return index.failed?.() ? [failureNotice()] : createOptions(query);
+}
+
 export function wikiLinkCompletionSource(options: WikiLinkAutocompleteOptions): CompletionSource {
+  const { index } = options;
   return (context): CompletionResult | null | Promise<CompletionResult | null> => {
     // readOnly の view では候補を選んでも書けないので、明示の起動（Ctrl-Space）や変換後の再開でも
     // 候補を出さず、linkTargets の取得（ホストの API 呼び出し）も走らせない
@@ -214,23 +252,28 @@ export function wikiLinkCompletionSource(options: WikiLinkAutocompleteOptions): 
 
     const started = performance.now();
     const query = match.text.slice(2);
-    const candidates = options.index.search(query);
-    const result: CompletionResult = {
+    const result = (candidates: PageCandidate[]): CompletionResult => ({
       from: match.from + 2,
       to: context.pos,
       // 並び順は PageIndex の scoring に任せる。autocomplete 側の fuzzy で並べ替えさせない。
       filter: false,
-      // 索引を取り終える前と、取得に失敗して空のままのときの「作成」は、既にあるページを
-      // 無いと見せる偽の候補になるので出さない
-      options:
-        candidates.length > 0
-          ? candidates.map(candidateOption)
-          : (options.index.settled?.() ?? true) && !(options.index.failed?.() ?? false)
-            ? createOptions(query)
-            : [],
-    };
+      options: titleOptions(index, query, candidates),
+    });
+
+    const candidates = index.search(query);
+    const unavailable = !(index.settled?.() ?? true) || (index.failed?.() ?? false);
+    if (candidates.length === 0 && unavailable && index.retry) {
+      // 最初の取得が失敗したまま、別のページへ移るまで候補が出ない状態にしない。取り直しが済むまで待ち、
+      // 取れていれば候補を、まだ失敗していれば案内を出す
+      return index.retry().then(() => {
+        // IME 不変条件 4。待っている間に composition が始まっていれば、結果を受け取らせない
+        if (context.aborted || (context.view && isComposing(context.view))) return null;
+        return result(index.search(query));
+      });
+    }
+    const resolved = result(candidates);
     options.onLatency?.(performance.now() - started);
-    return result;
+    return resolved;
   };
 }
 
@@ -241,6 +284,9 @@ export function wikiLinkCompletionSource(options: WikiLinkAutocompleteOptions): 
  */
 const acceptUnlessComposing: Command = (view) => {
   if (isComposing(view)) return false;
+  // 案内の行は選べない。Enter と Tab を取らず、改行やリスト項目の操作に渡す
+  const selected = selectedCompletion(view.state);
+  if (selected !== null && notices.has(selected)) return false;
   return acceptCompletion(view);
 };
 
@@ -361,6 +407,7 @@ export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Exte
       override: [wikiLinkCompletionSource(options)],
       compareCompletions: (a, b) => (documentOrder.get(a) ?? 0) - (documentOrder.get(b) ?? 0),
       defaultKeymap: false,
+      optionClass: (completion) => (notices.has(completion) ? "cm-completion-notice" : ""),
       activateOnTypingDelay: options.typingDelay ?? 0,
       icons: false,
     }),

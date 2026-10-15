@@ -225,6 +225,38 @@ test("新規ページの 1 行目で [[ を打つと、補完の窓がヘッダ�
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(viewport?.height ?? 0);
 });
 
+test("title の一覧を取れなかったときの [[ の補完は失敗を案内し、取れるようになった後の入力で候補が出る", async ({
+  page,
+}, testInfo) => {
+  const titles = "**/api/pages/titles*";
+  // 取り直しの間隔を実時間で待たずに進める
+  await page.clock.install();
+  await page.route(titles, (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "internal" }),
+    }),
+  );
+  await openFromPlus(page);
+  await typeTitleThenBody(
+    page,
+    uniqueTitle(testInfo, "補完の失敗"),
+    `[[${SEED.welcome.slice(0, 2)}`,
+  );
+  const popup = page.locator(".cm-tooltip-autocomplete");
+  // 失敗なのか一致なしなのか区別できるよう、案内の行を出す。「作成」は出さない
+  await expect(popup.getByText("候補を取得できません")).toBeVisible();
+  await expect(popup.getByText(/を作成$/)).toHaveCount(0);
+
+  // 取り直しは失敗の直後を避けて間隔を空けるので、API が戻った後、間隔が過ぎてから打つ
+  await page.unroute(titles);
+  await page.clock.fastForward(5_100);
+  await page.keyboard.type(SEED.welcome.slice(2, 3));
+  await expect(popup.getByText(SEED.welcome).first()).toBeVisible();
+  await expect(popup.getByText("候補を取得できません")).toHaveCount(0);
+});
+
 test.describe("匿名", () => {
   test.use({ role: "anonymous" });
 

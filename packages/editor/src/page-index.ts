@@ -29,6 +29,12 @@ export interface PageIndex {
    * 確かめられていないので、補完は「作成」の候補を出さない。実装しない索引は失敗しない扱い。
    */
   failed?(): boolean;
+  /**
+   * 補完を始めるとき、候補が 0 件で、まだ取れていない（`settled` でない）か取得に失敗している（`failed`）なら
+   * 呼ぶ。取り直しを始め（取得中ならそれを待ち）、終わったら解決する。補完は解決後に候補を引き直す。
+   * 取り直す間隔を空けるのも、取得中に重ねて取らないのも実装の役目で、補完は打鍵ごとに呼ぶ。reject しない。
+   */
+  retry?(): Promise<void>;
 }
 
 export interface MemoryPageIndexOptions {

@@ -106,7 +106,7 @@ describe("the create option", () => {
     expect(labels(v)).toEqual(["「Zeta」を作成"]);
   });
 
-  it("is not offered while the index has failed to load and has no candidates", async () => {
+  it("is replaced by a failure notice while the index has failed to load and has no candidates", async () => {
     let failed = true;
     const loaded = createMemoryPageIndex([{ id: "p1", title: "Code" }], {
       normalize: (text) => text.toLowerCase(),
@@ -119,8 +119,7 @@ describe("the create option", () => {
     };
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Code");
-    expect(labels(v)).toEqual([]);
-    expect(completionStatus(v.state)).toBeNull();
+    expect(labels(v)).toEqual(["候補を取得できません"]);
 
     failed = false;
     await typeQuery(v, "Code");
@@ -166,6 +165,117 @@ describe("the create option", () => {
     acceptCompletion(v);
     expect(v.state.doc.toString()).toBe("[[Zeta]]");
     expect(v.state.selection.main.head).toBe("[[Zeta]]".length);
+  });
+});
+
+describe("the failure notice", () => {
+  const failingIndex = (): PageIndex => ({
+    search: () => [],
+    settled: () => true,
+    failed: () => true,
+  });
+
+  it("is not selectable: Enter and Tab do not pick it, and are left to the editor", async () => {
+    const { view: v } = mount("", undefined, failingIndex());
+    await typeQuery(v, "Co");
+    expect(labels(v)).toEqual(["候補を取得できません"]);
+    await afterInteractionDelay();
+    runScopeHandlers(v, new KeyboardEvent("keydown", { key: "Enter" }), "editor");
+    // 案内が Enter を取ると改行できない（選んでも何も書かない）。取らなければ、editor の改行になる
+    expect(v.state.doc.toString()).toBe("[[Co\n");
+  });
+
+  it("gets a class that the theme uses to drop the selected look", async () => {
+    const { view: v } = mount("", undefined, failingIndex());
+    await typeQuery(v, "Co");
+    expect(host?.querySelector(".cm-tooltip-autocomplete li")?.classList).toContain(
+      "cm-completion-notice",
+    );
+  });
+});
+
+describe("the index retry", () => {
+  /** 取得に失敗して空の索引。retry の呼び出しと、取り直しの結果を差し込める */
+  function retryingIndex() {
+    const loaded = createMemoryPageIndex([{ id: "p1", title: "Code" }], {
+      normalize: (text) => text.toLowerCase(),
+    });
+    const state = { failed: true, settled: true, retries: 0, recoversTo: true };
+    const index: PageIndex = {
+      search: (query) => (state.failed ? [] : loaded.search(query)),
+      settled: () => state.settled,
+      failed: () => state.failed,
+      retry: async () => {
+        state.retries++;
+        await Promise.resolve();
+        if (state.recoversTo) state.failed = false;
+      },
+    };
+    return { index, state };
+  }
+
+  it("is awaited before the first completion after a failed load, so candidates appear without moving to another page", async () => {
+    const { index, state } = retryingIndex();
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Co");
+    expect(state.retries).toBe(1);
+    expect(labels(v)).toEqual(["Code"]);
+  });
+
+  it("shows the failure notice when the retry fails again", async () => {
+    const { index, state } = retryingIndex();
+    state.recoversTo = false;
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Co");
+    expect(state.retries).toBe(1);
+    expect(labels(v)).toEqual(["候補を取得できません"]);
+  });
+
+  it("is also awaited while the first load has not finished, then offers create for a missing page", async () => {
+    const { index, state } = retryingIndex();
+    state.failed = false;
+    state.settled = false;
+    index.retry = async () => {
+      state.retries++;
+      await Promise.resolve();
+      state.settled = true;
+    };
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Zeta");
+    expect(state.retries).toBe(1);
+    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+  });
+
+  it("is not called when candidates are found", async () => {
+    const { index, state } = retryingIndex();
+    state.failed = false;
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Co");
+    expect(state.retries).toBe(0);
+    expect(labels(v)).toEqual(["Code"]);
+  });
+
+  it("is not called for a query with no candidates once the index loaded", async () => {
+    const { index, state } = retryingIndex();
+    state.failed = false;
+    const { view: v } = mount("", undefined, index);
+    await typeQuery(v, "Zeta");
+    expect(state.retries).toBe(0);
+    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+  });
+
+  it("drops the result when a composition starts while it waits", async () => {
+    const { index } = retryingIndex();
+    let release = () => {};
+    index.retry = () => new Promise<void>((resolve) => (release = resolve));
+    const { view: v } = mount("", undefined, index);
+    typeChar(v, "[");
+    typeChar(v, "[");
+    typeChar(v, "C");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    release();
+    await afterCompletionWouldSettle();
+    expect(completionStatus(v.state)).toBeNull();
   });
 });
 
