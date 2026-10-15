@@ -221,6 +221,36 @@ describe("createTitleIndex", () => {
 describe("createTitleIndex の取り直し", () => {
   const failed = () => ({ ok: false, reason: "error", message: "失敗" }) as ApiResult<never>;
 
+  it("取得中の間だけ loading が true で、遅れて終わった古い取り直しでは戻らない", async () => {
+    const releases: (() => void)[] = [];
+    const index = createTitleIndex(
+      () =>
+        new Promise((resolve) => {
+          releases.push(() => resolve(listOk([summary("1", "Note")])));
+        }),
+    );
+    expect(index.loading()).toBe(false);
+    const first = index.refresh();
+    const second = index.refresh();
+    expect(index.loading()).toBe(true);
+    releases[0]?.();
+    await first;
+    // 後から始めた取り直しがまだ続いている
+    expect(index.loading()).toBe(true);
+    releases[1]?.();
+    await second;
+    expect(index.loading()).toBe(false);
+  });
+
+  it("list が同期に投げても、loading は取得の後に false へ戻る", async () => {
+    const index = createTitleIndex(() => {
+      throw new Error("sync");
+    });
+    await index.refresh();
+    expect(index.loading()).toBe(false);
+    expect(index.failed()).toBe(true);
+  });
+
   it("失敗の後の retry は、間隔が過ぎていれば取り直し、取れたら failed が戻る（補完の最初の取得の失敗）", async () => {
     let clock = 0;
     let fail = true;
@@ -297,6 +327,7 @@ describe("createTitleIndex の取り直し", () => {
 
     releases[1]?.(listOk([summary("1", "Note")]));
     await waiting;
+    expect(index.loading()).toBe(false);
     expect(index.search("note")).toHaveLength(1);
   });
 

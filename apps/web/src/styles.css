@@ -1276,6 +1276,20 @@ a {
   color: var(--color-fg-muted);
 }
 
+/* 取得の失敗は、見出しや補助の文と見分けがつくよう、一段大きくして失敗の色にする */
+.switcher-alert {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+}
+
+/*
+ * 案内の status は中身が無い間も DOM に置く（空で置いてから中身を入れないと読み上げられない）。
+ * flex の gap を作らないよう、流れから外す。
+ */
+.switcher-status:empty {
+  position: absolute;
+}
+
 .switcher-pending:not(.skeleton-painted) {
   visibility: hidden;
 }
@@ -1293,6 +1307,11 @@ a {
   min-height: 0;
   max-height: var(--switcher-list-max-height);
   overflow-y: auto;
+}
+
+/* 行が 0 件の listbox は高さが無いのに、前後の gap が案内の下に余白を足す */
+.switcher-list:empty {
+  display: none;
 }
 
 .switcher-option {

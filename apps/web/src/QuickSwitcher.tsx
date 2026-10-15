@@ -1,10 +1,18 @@
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor";
-import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { highlightMatches } from "./highlight";
 import { PlusIcon, SearchIcon } from "./icons";
-import { useSkeletonPainted } from "./Loading";
+import { useAfterFrames, useDelayedWhile } from "./Loading";
 import {
   ANONYMOUS_TITLE_INDEX_MAX_REQUESTS,
   createTitleIndex,
@@ -18,7 +26,7 @@ import { homeHref, navigate, pageHref } from "./route";
 
 const RECENT_LABEL = "最近更新したページ";
 const ROWS_LABEL = "候補と操作";
-const CANDIDATES_FAILED = "候補を取得できませんでした。時間をおいて、開き直してください。";
+const CANDIDATES_FAILED = "候補を取得できません。開き直してください。";
 
 /**
  * 先頭の行が Enter の既定で、選択と Enter の動作を同じ配列から引く。並びは次のとおり。
@@ -102,10 +110,14 @@ export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps)
  * 取得が済む前の「一致なし」や「作成」を見せないので、待っていることはここで伝える。
  */
 function PendingCandidates() {
-  const painted = useSkeletonPainted();
+  // 一覧や本文の帯とは別の待ちなので、帯を描いた記録を共有する useSkeletonPainted は使わない。
+  // 共有すると、一覧の帯が出ている最中に開いたときに遅れなしで文字が出る
+  const painted = useDelayedWhile(true);
+  // 開いた描画と同じ更新で中身を入れた status は読まれないので、文字は後の frame で入れる
+  const announced = useAfterFrames();
   return (
     <>
-      <span className="visually-hidden">候補を読み込み中…</span>
+      {announced && <span className="visually-hidden">候補を読み込み中…</span>}
       <p
         className={`switcher-heading switcher-pending${painted ? " skeleton-painted" : ""}`}
         aria-hidden="true"
@@ -137,9 +149,13 @@ function SwitcherBody({
   const hoveredRef = useRef(false);
   const listboxId = useId();
 
-  useEffect(() => {
+  // 取り直しが始まったことを、最初の描画の前に反映する。前の失敗が残った索引で開き直すと、
+  // 取り直しの間も失敗の案内が一瞬出てしまう
+  useLayoutEffect(() => {
     let cancelled = false;
-    void index.refresh().then(() => {
+    const refreshing = index.refresh();
+    setLoaded((n) => n + 1);
+    void refreshing.then(() => {
       if (!cancelled) setLoaded((n) => n + 1);
     });
     return () => {
@@ -151,6 +167,9 @@ function SwitcherBody({
   const settled = index.settled();
   // 取れていない候補は「一致なし」でも「作成」でもない。完全一致を確かめられないので、その 2 つの代わりに失敗の案内を出す
   const failed = index.failed();
+  // 失敗の後に開き直して取り直している間は、失敗でなく取得中として見せる
+  const retrying = failed && index.loading();
+  const showFailed = failed && !retrying;
   const trimmed = query.trim();
   // 候補には文字が飛び飛びに当たるものもある。強調するのは、空白で区切った語がそのまま含まれる箇所だけ
   const terms = trimmed.split(/\s+/);
@@ -255,20 +274,19 @@ function SwitcherBody({
       )}
       {/* listbox の子は option だけにするので、候補が無いことと本文から検索できないことの案内は
           外に置く。owner には「作成」と「本文から検索」の行が同じことを伝える */}
-      {/* 案内の status は 1 つにまとめる。取得中と匿名の案内が同時に出ると、status が 2 つ並ぶため */}
-      {(!settled || failed || noMatch || contentSearchTooShort) && (
-        <div role="status">
-          {!settled && <PendingCandidates />}
-          {(failed || noMatch || contentSearchTooShort) && (
-            <p className="switcher-heading">
-              {failed && CANDIDATES_FAILED}
-              {noMatch && "タイトルが一致するページはありません。"}
-              {contentSearchTooShort &&
-                `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
-            </p>
-          )}
-        </div>
-      )}
+      {/* 案内の status は 1 つにまとめる。取得中と匿名の案内が同時に出ると、status が 2 つ並ぶため。
+          中身を持ったまま挿入した status は多くの読み上げで読まれないので、常に置いて中身だけを入れる */}
+      <div role="status" className="switcher-status">
+        {(!settled || retrying) && <PendingCandidates />}
+        {(showFailed || noMatch || contentSearchTooShort) && (
+          <p className={showFailed ? "switcher-heading switcher-alert" : "switcher-heading"}>
+            {showFailed && CANDIDATES_FAILED}
+            {noMatch && "タイトルが一致するページはありません。"}
+            {contentSearchTooShort &&
+              `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
+          </p>
+        )}
+      </div>
       <div
         id={listboxId}
         role="listbox"

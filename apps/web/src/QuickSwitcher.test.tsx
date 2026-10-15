@@ -1,7 +1,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { setLoadingDelay } from "./Loading";
+import { ListSkeleton, setLoadingDelay } from "./Loading";
 import { ANONYMOUS_TITLE_INDEX_MAX_REQUESTS, TITLE_INDEX_MAX_REQUESTS } from "./link-sources";
 import { openNewPage } from "./new-page";
 import { type ApiResult, listPageTitles } from "./pages-api";
@@ -185,7 +185,8 @@ describe("QuickSwitcher の候補", () => {
     await renderSwitcher(true);
     typeText("ほ");
     expect(options()).toContain("「ほ」を本文から検索");
-    expect(container?.querySelector("[role='status']")).toBeNull();
+    // 案内が無い間も status は置いたままで、中身だけが空になる
+    expect(container?.querySelector("[role='status']")?.textContent).toBe("");
   });
 
   it("前後の空白は無視して、語として扱う", async () => {
@@ -438,7 +439,7 @@ describe("QuickSwitcher の候補の取得中", () => {
   });
 
   const failure = { ok: false, reason: "error", message: "失敗" } as unknown as ApiResult<never>;
-  const CANDIDATES_FAILED = "候補を取得できませんでした。";
+  const CANDIDATES_FAILED = "候補を取得できません。";
 
   it("owner には、取得に失敗して候補が無いとき、「作成」を出さず失敗を案内する", async () => {
     await openPending(true);
@@ -502,6 +503,48 @@ describe("QuickSwitcher の候補の取得中", () => {
     expect(container?.textContent).not.toContain(CANDIDATES_FAILED);
   });
 
+  it("失敗のあとに開き直して取り直している間は、失敗の案内でなく「候補を読み込み中…」を出す", async () => {
+    vi.mocked(listPageTitles).mockResolvedValue(failure);
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () => mounted.render(<Harness owner={true} />));
+    expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
+
+    await closeWithEscape();
+    vi.mocked(listPageTitles).mockReturnValue(
+      new Promise((resolve) => {
+        deliver = resolve as never;
+      }),
+    );
+    await act(async () => container?.querySelector("button")?.click());
+    expect(container?.textContent).not.toContain(CANDIDATES_FAILED);
+    expect(status()).toEqual([expect.stringContaining("候補を読み込み中…")]);
+    expect(pending()).not.toBeNull();
+
+    // 取り直しがまた失敗したら、失敗の案内に戻る
+    await act(async () => deliver(failure));
+    expect(pending()).toBeNull();
+    expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
+  });
+
+  it("失敗の案内は、見出しと見分けがつくよう失敗の印の class を持ち、短い文言で出す", async () => {
+    await openPending(true);
+    await act(async () => deliver(failure));
+    const note = container?.querySelector("[role='status'] p");
+    expect(note?.classList).toContain("switcher-alert");
+    expect(note?.textContent).toBe("候補を取得できません。開き直してください。");
+  });
+
+  it("案内の status は、取得中から失敗へ変わる間も同じ要素のまま中身だけが変わる", async () => {
+    await openPending(true);
+    const region = container?.querySelector("[role='status']");
+    expect(region).not.toBeNull();
+    await act(async () => deliver(failure));
+    expect(container?.querySelector("[role='status']")).toBe(region);
+  });
+
   it("「候補を読み込み中…」の文字は、遅れの後に見せる", async () => {
     const restore = setLoadingDelay(0);
     try {
@@ -519,6 +562,42 @@ describe("QuickSwitcher の候補の取得中", () => {
       await openPending(true);
       expect(pending()?.classList.contains("skeleton-painted")).toBe(false);
     } finally {
+      restore();
+    }
+  });
+
+  it("開いた描画では status を空にし、frame を空けてから支援技術向けの「候補を読み込み中…」を入れる", async () => {
+    await openPending(true);
+    const live = container?.querySelector("[role='status']");
+    const announced = () => live?.querySelector(".visually-hidden")?.textContent;
+    expect(live).not.toBeNull();
+    expect(announced()).toBeUndefined();
+
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    expect(container?.querySelector("[role='status']")).toBe(live);
+    expect(announced()).toBe("候補を読み込み中…");
+  });
+
+  it("一覧の帯を描いている最中に開いても、「候補を読み込み中…」の文字は遅れの後に見せる", async () => {
+    const restore = setLoadingDelay(1_000);
+    vi.useFakeTimers();
+    const board = document.createElement("div");
+    document.body.append(board);
+    const boardRoot = createRoot(board);
+    try {
+      // 帯を描いた記録は、描く側が遅れの後に立てる。立ったままの画面で開いた状況を作る
+      await act(async () => boardRoot.render(<ListSkeleton />));
+      await act(async () => vi.advanceTimersByTime(1_000));
+      expect(board.querySelector(".skeleton-painted")).not.toBeNull();
+
+      await openPending(true);
+      expect(pending()?.classList.contains("skeleton-painted")).toBe(false);
+    } finally {
+      act(() => boardRoot.unmount());
+      board.remove();
+      vi.useRealTimers();
       restore();
     }
   });

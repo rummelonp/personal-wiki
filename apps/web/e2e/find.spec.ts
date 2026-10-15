@@ -125,7 +125,7 @@ test("title の一覧を取れないときの quick switcher は、「作成」�
   );
   // 既にあるページの title を打つ。取れていないだけなのに「作成」を勧めてはならない
   const { switcher, input } = await openSwitcherAndType(page, SEED.database);
-  await expect(switcher.getByRole("status")).toContainText("候補を取得できませんでした。");
+  await expect(switcher.getByRole("status")).toContainText("候補を取得できません。");
   await expect(switcher.getByRole("option", { name: /を作成$/ })).toHaveCount(0);
   await expect(switcher.getByRole("option", { selected: true })).toHaveText(
     `「${SEED.database}」を本文から検索`,
@@ -137,7 +137,50 @@ test("title の一覧を取れないときの quick switcher は、「作成」�
   await page.getByRole("button", { name: "ページを検索" }).click();
   await input.fill(SEED.database);
   await expect(switcher.getByRole("option", { name: SEED.database, exact: true })).toBeVisible();
-  await expect(switcher.getByText("候補を取得できませんでした。")).toHaveCount(0);
+  await expect(switcher.getByText("候補を取得できません。")).toHaveCount(0);
+});
+
+test("quick switcher の失敗の案内は、幅 375 でも 1 行に収まり、下の余白が上より広がらない", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 700 });
+  await page.route("**/api/pages/titles*", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "internal" }),
+    }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "ページを検索" }).click();
+  const switcher = page.getByRole("dialog", { name: "ページを検索" });
+  const note = switcher.getByText("候補を取得できません。");
+  await expect(note).toBeVisible();
+  const metrics = await switcher.evaluate((dialog) => {
+    const note = dialog.querySelector(".switcher-alert") as HTMLElement;
+    const input = dialog.querySelector(".switcher-input") as HTMLElement;
+    const body = dialog.querySelector(".switcher-body") as HTMLElement;
+    // 1 文字だけの同じ要素の高さが 1 行の高さ
+    const probe = note.cloneNode(false) as HTMLElement;
+    probe.textContent = "あ";
+    note.after(probe);
+    const lineHeight = probe.getBoundingClientRect().height;
+    probe.remove();
+    const noteBox = note.getBoundingClientRect();
+    return {
+      lines: Math.round(noteBox.height / lineHeight),
+      above: noteBox.top - input.getBoundingClientRect().bottom,
+      below: dialog.getBoundingClientRect().bottom - noteBox.bottom,
+      // dialog の枠の下の線も、下の余白に入る
+      padding:
+        Number.parseFloat(getComputedStyle(body).paddingBottom) +
+        Number.parseFloat(getComputedStyle(dialog).borderBottomWidth),
+    };
+  });
+  expect(metrics.lines).toBe(1);
+  // 下は body の padding だけ。空の listbox の gap を足さない
+  expect(metrics.below).toBeCloseTo(metrics.padding, 0);
+  expect(metrics.below).toBeLessThanOrEqual(metrics.above + metrics.padding);
 });
 
 test("一致しない検索は 0 件の案内を出す", async ({ page }) => {

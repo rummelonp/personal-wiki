@@ -16,8 +16,7 @@ export interface TitleIndex extends PageIndex {
   refresh(): Promise<void>;
   /**
    * 候補が空のまま取れていない（取得が済んでいないか、失敗している）ときに、取り直しを始めて終わりを待つ。
-   * 取得中ならその終わりを待ち、重ねて取らない。待つ間に別の取得が始まれば、それも待つ。
-   * 失敗の直後は取り直さず、すぐ解決する。
+   * 取得中ならその終わりを待ち、重ねて取らない。待つ間に別の取得が始まれば、それも待つ。失敗の直後は取り直さず、すぐ解決する。
    * 候補があるか、取得に成功していれば何もしない。reject しない。
    */
   retry(): Promise<void>;
@@ -29,6 +28,8 @@ export interface TitleIndex extends PageIndex {
    * 前に取れた候補や、途中まで取れた候補があれば、失敗しても false のまま。
    */
   failed(): boolean;
+  /** 取り直しの最中か。失敗の後の取り直しの間は、失敗の案内でなく読み込み中を見せるために使う。 */
+  loading(): boolean;
 }
 
 export type ListTitles = (cursor: string | null) => Promise<ApiResult<PageList<PageSummary>>>;
@@ -114,6 +115,7 @@ export function createTitleIndex(
     search: (query) => current.search(query),
     settled: () => settled,
     failed: () => lastFailed && count === 0,
+    loading: () => running !== null,
     refresh() {
       const promise = load(++generation);
       running = promise;
