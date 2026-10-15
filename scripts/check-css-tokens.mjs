@@ -4,7 +4,7 @@
 // 見つかれば `file:行: 値 (種類)` を出力して終了コード 1 で終わる。
 //
 // 拾うもの: 色（hex、rgb() など。var() を含まない関数、色名）、長さ（px、rem、em、vh など。0 は除く）、
-//   font-family、box-shadow、z-index。% と fr は相対値なので拾わない。
+//   font-family、box-shadow、text-shadow、z-index。% と fr は相対値なので拾わない。
 //   @media などの at-rule の条件（media query の幅には var() を使えない）と、セレクタは見ない。
 // 宣言の途中か同じ行の末尾に `/* token-ok: 理由 */` があれば、その宣言は許可する。
 //   理由が空なら失敗にする。何も許可していない token-ok も失敗にする（直したあとに残るため）。

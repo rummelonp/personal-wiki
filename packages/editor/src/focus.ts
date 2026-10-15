@@ -136,7 +136,7 @@ const activeLineTheme = EditorView.baseTheme({
   // （`theme.ts`）、ここでは margin を使わず、地を content-box で切る。margin で寄せると、CodeMirror が
   // 複数行の選択範囲の矩形を最初の行の padding-left から計算するため、文書の 1 行目が active のとき
   // 選択範囲が 6px 左にずれる。active line は本文の行なので padding を変えずに済む。
-  // 引用・callout の行は、バーを background-image で描いており、background-clip は背景の層ごとに
+  // 引用と callout の行は、バーを background-image で描いており、background-clip は背景の層ごとに
   // 決まって地の層だけ切れないので、揃えない。コードと frontmatter の source は地が自前。
   ".cm-active-line:not(.cm-lp-code, .cm-lp-blockquote, .cm-frontmatter-source)": {
     backgroundClip: "content-box",

@@ -194,7 +194,7 @@ export const editorSurfaceTheme = EditorView.baseTheme({
 });
 
 /**
- * 行・inline の「面」の地。選択範囲の地は本文の下の層（`.cm-selectionLayer`）に描かれるので、
+ * 行と inline の「面」の地。選択範囲の地は本文の下の層（`.cm-selectionLayer`）に描かれるので、
  * 不透明な地はその上の選択を隠す。選択が透けるよう、本文の色を透明へ薄く混ぜた半透明の地にする。
  * 4% は `--ui-color-surface` を「本文の色を地へ 4% 混ぜた色」とみなした値で、エディタ面の上では
  * surface 色とほぼ同じ見え方になる（ホストの surface が大きく外れると地の見え方がずれる）。

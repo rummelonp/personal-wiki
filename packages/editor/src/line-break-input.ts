@@ -12,8 +12,8 @@ import { isComposing } from "./ime";
  *
  * この変更を Enter の 1 回分とみなして keymap に流すので、リストの行頭記号の継続も
  * キーボードの Enter と揃う。WebKit が 2 つ目の `\n` を足すのは行末だけなので、行の途中の
- * 改行は以前どおり既定の挿入のまま。選択の置き換えと変換中は、Enter と同じ意味にならないので除く。
- * beforeinput で止める案は採らない。iOS で Enter を止めるとキーボードの大文字・小文字の
+ * 改行は既定の挿入のまま。選択の置き換えと変換中は、Enter と同じ意味にならないので除く。
+ * beforeinput で止める案は採らない。iOS で Enter を止めるとキーボードの大文字と小文字の
  * 状態が戻らなくなる（CodeMirror のコメントにある既知の挙動）。
  *
  * 貼り付けは CodeMirror の paste handler が直接 doc を書くので、この経路に来ない。

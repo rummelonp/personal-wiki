@@ -455,7 +455,7 @@ describe("settling after a delayed DOM flush (iOS Safari)", () => {
       await commit("[[");
       await macrotask();
       // 遅れた flush がまだ確定後の選択（DOM では折りたたまれている）を読んでおらず、settle もまだ。
-      // 修正前はここで settle し、古い選択（[[ 全体）を DOM に書き戻していた
+      // ここで settle すると、古い選択（[[ 全体）が DOM に書き戻される
       expect(v.state.selection.main).toMatchObject({ from: 1, to: 3 });
       expect(domSelectionCollapsed()).toBe(true);
       expect(isCompositionUnsettled(v)).toBe(true);

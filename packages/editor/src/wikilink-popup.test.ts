@@ -109,7 +109,7 @@ describe("the completion popup rows", () => {
     const tooltip = await openCompletion(v);
     const rows = [...tooltip.querySelectorAll("li")];
     expect(rows.length).toBe(3);
-    // 密度は今のまま（デスクトップでは詰めたまま）
+    // pointer が coarse でない環境では、行は 44px 未満に詰めたまま
     const compact = rows[0]?.getBoundingClientRect().height ?? 0;
     if (!matchMedia("(pointer: coarse)").matches) expect(compact).toBeLessThan(44);
 
