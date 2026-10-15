@@ -115,6 +115,18 @@ async function waitForPortsClosed(ports: number[]): Promise<void> {
   }
 }
 
+/** 準備の段階ごとの所要時間。テストの report に載らないので、遅くなったときにどこが伸びたかをここで見る。 */
+export const setupTimings: { label: string; ms: number }[] = [];
+
+export async function timed<T>(label: string, task: () => Promise<T>): Promise<T> {
+  const start = performance.now();
+  try {
+    return await task();
+  } finally {
+    setupTimings.push({ label, ms: performance.now() - start });
+  }
+}
+
 /** 一時ディレクトリに設定と秘密を書き、migration を当てて wrangler dev を起動する。 */
 async function launch(
   dir: string,
@@ -125,11 +137,13 @@ async function launch(
   const persist = join(dir, "state");
   const wrangler = join(WORKER_DIR, "node_modules/.bin/wrangler");
 
-  await run(
-    wrangler,
-    ["d1", "migrations", "apply", "DB", "--local", "--persist-to", persist, "-c", config],
-    // migration の確認の質問を出させない
-    { cwd: dir, env: { ...process.env, CI: "1" } },
+  await timed("migration", () =>
+    run(
+      wrangler,
+      ["d1", "migrations", "apply", "DB", "--local", "--persist-to", persist, "-c", config],
+      // migration の確認の質問を出させない
+      { cwd: dir, env: { ...process.env, CI: "1" } },
+    ),
   );
 
   let output = "";
@@ -174,7 +188,9 @@ export async function startStack(): Promise<Stack> {
   }
   // 繰り返し実行するときにビルドを省く（web のソースを変えていないときだけ使う）
   if (process.env.E2E_SKIP_BUILD !== "1") {
-    await run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR });
+    await timed("build", () =>
+      run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR }),
+    );
   }
 
   const dir = mkdtempSync(join(tmpdir(), "personal-wiki-e2e-"));
@@ -217,7 +233,7 @@ export async function startStack(): Promise<Stack> {
   };
 
   try {
-    await waitForHealthy(child, log);
+    await timed("起動", () => waitForHealthy(child, log));
   } catch (error) {
     await stop();
     throw error;
