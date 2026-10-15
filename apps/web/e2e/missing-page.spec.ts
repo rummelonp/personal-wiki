@@ -69,4 +69,28 @@ test.describe("匿名", () => {
     await expect(page.locator(".rail-section-links")).not.toContainText(hidden.title);
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
   });
+
+  test("public のリンク元が無ければ、リンク元の節も右の欄も出さない", async ({
+    page,
+    api,
+  }, testInfo) => {
+    const missing = uniqueTitle(testInfo, "まだ無いリンク先");
+    await api.createPage({
+      title: uniqueTitle(testInfo, "下書きのリンク元"),
+      body: `[[${missing}]]`,
+    });
+    // 取得中も欄は隠れるので、応答を待たないと取得前の状態で通ってしまう
+    const backlinks = page.waitForResponse((res) =>
+      res.url().includes("/api/pages/by-title/backlinks"),
+    );
+    await page.goto(titlePath(missing));
+    await backlinks;
+
+    await expect(page.getByRole("heading", { level: 1, name: missing })).toBeVisible();
+    await expect(
+      page.getByText("まだ作られていないか、公開されていないページです。"),
+    ).toBeVisible();
+    await expect(page.locator(".rail-section-links")).toHaveCount(0);
+    await expect(page.locator(".rail")).toBeHidden();
+  });
 });

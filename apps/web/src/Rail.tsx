@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 
 interface RailLayoutProps {
-  /** 右の列の中身。null なら欄を出さない（本文の列の位置は変えない）。 */
+  /**
+   * 右の列の中身。null なら欄を出さない（本文の列の位置は変えない）。
+   * 中身の部品が何も描いていない間も、CSS が欄を隠す（styles.css の `.rail-inner:empty`）。
+   */
   rail: ReactNode | null;
   children: ReactNode;
 }
