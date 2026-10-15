@@ -257,6 +257,40 @@ test("title の一覧を取れなかったときの [[ の補完は失敗を案�
   await expect(popup.getByText("候補を取得できません")).toHaveCount(0);
 });
 
+test("補完の窓は画面の右端に接せず、指で押す端末では縁と行の余白を広げる", async ({
+  page,
+  isMobile,
+}, testInfo) => {
+  await openFromPlus(page);
+  // caret を行の中ほどまで進め、窓が画面の右端へ寄せられる位置で開く（幅の狭い端末の場合）
+  await typeTitleThenBody(
+    page,
+    uniqueTitle(testInfo, "補完の余白"),
+    `あいうえおかきくけこ[[${SEED.welcome.slice(0, 2)}`,
+  );
+  const frame = page.locator(".cm-tooltip-autocomplete > ul");
+  await expect(frame.getByText(SEED.welcome).first()).toBeVisible();
+  const box = await frame.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  const right = (box?.x ?? 0) + (box?.width ?? 0);
+  expect(right).toBeLessThanOrEqual((viewport?.width ?? 0) - 12);
+  expect(box?.x ?? 0).toBeGreaterThanOrEqual(12);
+  if (!isMobile) return;
+  // 幅の狭い端末では右端へ寄せられたことを確かめる（でないと余白の検査が空振りする）
+  expect(right).toBeGreaterThanOrEqual((viewport?.width ?? 0) - 24);
+  const padding = await frame.evaluate((list) => {
+    const option = list.querySelector("li");
+    return {
+      list: Number.parseFloat(getComputedStyle(list).paddingLeft),
+      option: option ? Number.parseFloat(getComputedStyle(option).paddingLeft) : 0,
+    };
+  });
+  expect(padding.list).toBeGreaterThanOrEqual(8);
+  expect(padding.option).toBeGreaterThanOrEqual(12);
+});
+
 test.describe("匿名", () => {
   test.use({ role: "anonymous" });
 

@@ -128,6 +128,7 @@ export const typographyTheme = EditorView.theme({
 });
 
 const TOUCH_ROW_HEIGHT = "44px";
+const AUTOCOMPLETE_EDGE_GAP = "var(--ui-space-4, 1rem)";
 // ホストが --ui-color-selected を渡さないときは、本文の色を地へ薄く混ぜて選択行の地にする
 const SELECTED_BACKGROUND =
   "var(--ui-color-selected, color-mix(in srgb, var(--ui-color-text) 8%, var(--ui-color-background)))";
@@ -159,11 +160,31 @@ export const editorSurfaceTheme = EditorView.baseTheme({
     boxShadow: "var(--ui-shadow-popover, 0 8px 24px rgb(0 0 0 / 0.16))",
   },
   "&light .cm-tooltip-section:not(:first-child)": { borderTop: "1px solid var(--ui-color-border)" },
+  // CodeMirror は tooltip の箱の右端を画面の右端（tooltipSpace）までしか寄せないので、箱の枠のままでは
+  // 窓が画面の端に接する。枠を中の ul に移し、箱の右に透明な余白を持たせて、窓と画面の端の間を空ける。
+  // 余白の上のタップは下の本文に通す。
+  "&light .cm-tooltip.cm-tooltip.cm-tooltip-autocomplete": {
+    border: "none",
+    backgroundColor: "transparent",
+    borderRadius: "0",
+    boxShadow: "none",
+    paddingRight: AUTOCOMPLETE_EDGE_GAP,
+    pointerEvents: "none",
+  },
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > *": {
+    pointerEvents: "auto",
+  },
   "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul": {
     fontFamily: "var(--ui-font-body)",
     padding: "var(--ui-space-1, 0.25rem)",
     // autocomplete の `height: 100%` に padding が足されて、詰められた窓の枠からはみ出さないようにする
     boxSizing: "border-box",
+    border: "1px solid var(--ui-color-border)",
+    backgroundColor: "var(--ui-color-background)",
+    borderRadius: "var(--ui-radius-md, 0.375rem)",
+    boxShadow: "var(--ui-shadow-popover, 0 8px 24px rgb(0 0 0 / 0.16))",
+    // 左端も、画面の右端へ寄せられたときに右と同じだけ空く幅にとどめる
+    maxWidth: `min(700px, calc(100vw - 2 * ${AUTOCOMPLETE_EDGE_GAP}))`,
   },
   "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li": {
     padding: "var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem)",
@@ -193,15 +214,18 @@ export const editorSurfaceTheme = EditorView.baseTheme({
   // 半分見える行でスクロールできることを示す。caret の上下が狭くて窓が詰められるときは、
   // CodeMirror が測った余地（spaceVert）が高さを決め、この上限より優先される。
   // 行の高さは padding でなく line-height で取り、`text-overflow: ellipsis` が効く block の行のまま
-  // 文字を縦中央に置く。
+  // 文字を縦中央に置く。窓の縁と行の左右の余白も、行の高さに釣り合うよう広げる。
   // @media の中では style-mod が `&` を media の文に置き換えるので、`&light` を使えない。
   "@media (pointer: coarse)": {
     ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul": {
       maxHeight: `calc(${TOUCH_ROW_HEIGHT} * 5.5)`,
+      padding: "var(--ui-space-2, 0.5rem)",
     },
     ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li": {
       paddingTop: "0",
       paddingBottom: "0",
+      paddingLeft: "var(--ui-space-3, 0.75rem)",
+      paddingRight: "var(--ui-space-3, 0.75rem)",
       lineHeight: TOUCH_ROW_HEIGHT,
     },
   },

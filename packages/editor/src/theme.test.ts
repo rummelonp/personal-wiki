@@ -232,8 +232,11 @@ describe("editor colors", () => {
     v.dom.append(tooltip);
     try {
       const option = query(v, ".cm-tooltip-autocomplete li[aria-selected]");
-      expect(toRgb(getComputedStyle(tooltip).backgroundColor)).toEqual(background);
-      expect(toRgb(getComputedStyle(tooltip).borderTopColor)).toEqual(border);
+      // 窓の枠は ul が持つ（箱は画面の端との余白を持つ透明な入れ物）
+      const frame = query(v, ".cm-tooltip-autocomplete > ul");
+      expect(toRgb(getComputedStyle(frame).backgroundColor)).toEqual(background);
+      expect(toRgb(getComputedStyle(frame).borderTopColor)).toEqual(border);
+      expect(getComputedStyle(frame).boxShadow).not.toBe("none");
       // 選択行は quick switcher と同じく、地の色の変化と左の差し色の線で示す（差し色の地にしない）
       expect(toRgb(getComputedStyle(option).backgroundColor)).toEqual(selected);
       expect(colorOf(option)).toEqual(text);
@@ -250,6 +253,31 @@ describe("editor colors", () => {
       expect(Number.parseFloat(getComputedStyle(option).paddingLeft)).toBeGreaterThan(3);
       expect(getComputedStyle(option).boxShadow).toContain("inset");
       expect(getComputedStyle(option).boxShadow).toContain(`rgb(${accent.join(", ")})`);
+    } finally {
+      tooltip.remove();
+    }
+  });
+
+  it("補完の窓は、tooltip の箱を画面の右端へ寄せられても、端との間に余白を残す", () => {
+    const v = mount();
+    const tooltip = document.createElement("div");
+    tooltip.className = "cm-tooltip cm-tooltip-autocomplete";
+    tooltip.innerHTML = "<ul><li>候補</li></ul>";
+    v.dom.append(tooltip);
+    try {
+      // CodeMirror は箱の右端を tooltipSpace の右端までしか寄せないので、余白は箱の内側に要る
+      const box = tooltip.getBoundingClientRect();
+      const frame = query(v, ".cm-tooltip-autocomplete > ul").getBoundingClientRect();
+      expect(box.right - frame.right).toBeGreaterThanOrEqual(12);
+      const style = getComputedStyle(tooltip);
+      expect(style.borderRightWidth).toBe("0px");
+      expect(style.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+      expect(style.boxShadow).toBe("none");
+      // 余白の上のタップは下の本文へ通し、窓の中だけが受ける
+      expect(style.pointerEvents).toBe("none");
+      expect(getComputedStyle(query(v, ".cm-tooltip-autocomplete > ul")).pointerEvents).toBe(
+        "auto",
+      );
     } finally {
       tooltip.remove();
     }
