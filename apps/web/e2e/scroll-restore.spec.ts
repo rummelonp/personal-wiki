@@ -12,6 +12,61 @@ const TOLERANCE = 40;
 
 const scrollY = (page: Page) => page.evaluate(() => Math.round(window.scrollY));
 
+interface BodyLine {
+  text: string;
+  top: number;
+}
+
+/**
+ * ヘッダーの下に見えている本文の最初の行の、文字と上端（viewport から）。本文は画面の外の行の高さが
+ * 推定のまま残るので、同じスクロール量でも見える行が変わる。内容が同じ位置に見えるかは行で比べる。
+ * ページの中で動かすので、外の変数や helper は参照しない（mousedown の listener にも文字列で渡す）。
+ */
+function measureFirstVisibleBodyLine(): BodyLine | null {
+  const header = document.querySelector("header.header")?.getBoundingClientRect().bottom ?? 0;
+  for (const line of document.querySelectorAll('.cm-content[aria-label="本文"] .cm-line')) {
+    if ((line.textContent ?? "").trim() === "") continue;
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    const rect = range.getClientRects()[0];
+    if (rect !== undefined && rect.bottom > header + 2) {
+      return { text: (line.textContent ?? "").slice(0, 20), top: Math.round(rect.top) };
+    }
+  }
+  return null;
+}
+
+const firstVisibleBodyLine = (page: Page) => page.evaluate(measureFirstVisibleBodyLine);
+
+type WindowWithLine = Window & { lineAtMousedown?: BodyLine | null };
+
+/** 次の mousedown の時点（クリックでスクロールや selection が動く前）の行を覚えておく */
+const recordLineAtMousedown = (page: Page) =>
+  page.evaluate(`(() => {
+    const measure = ${measureFirstVisibleBodyLine.toString()};
+    document.addEventListener(
+      "mousedown",
+      () => { window.lineAtMousedown = measure(); },
+      { capture: true, once: true },
+    );
+  })()`);
+
+const lineAtMousedown = (page: Page) =>
+  page.evaluate(() => (window as WindowWithLine).lineAtMousedown ?? null);
+
+/** 戻した後の合わせ直し（3 秒）の間と、終わった後の両方で、同じ行が同じ位置にあること */
+async function expectSameLineAfterBack(page: Page, before: BodyLine | null): Promise<void> {
+  expect(before, "本文の行が見えている").not.toBeNull();
+  // 戻した後に、画面の外の行が測り直されて高さが変わることがあるので、落ち着いてから比べる
+  await page.waitForTimeout(1000);
+  for (const phase of ["合わせ直しの間", "合わせ直しの後"]) {
+    const after = await firstVisibleBodyLine(page);
+    expect(after?.text, phase).toBe(before?.text);
+    expect(Math.abs((after?.top ?? 0) - (before?.top ?? 0)), phase).toBeLessThanOrEqual(3);
+    if (phase === "合わせ直しの間") await page.waitForTimeout(3500);
+  }
+}
+
 /**
  * 画面内に見えている最初の行のタイトル（selector で変えられる）を、座標のクリックで開く
  * （クリックによるスクロールを避ける）。
@@ -188,7 +243,7 @@ test("owner の編集画面で本文の #tag を押すと、タグの一覧へ�
   await expect(bodyEditor(page)).toBeVisible();
 });
 
-test("長いページから wikilink で別のページへ移って戻ると、元のページの位置が戻る", async ({
+test("長いページから wikilink で別のページへ移って戻ると、元のページの同じ行が同じ位置に見える", async ({
   page,
   seedIds,
 }) => {
@@ -196,30 +251,23 @@ test("長いページから wikilink で別のページへ移って戻ると、�
   await expect(bodyEditor(page).getByText("見出し 1", { exact: true })).toBeVisible();
   await page.evaluate((y) => window.scrollTo(0, y), 3000);
   await expect.poll(() => scrollY(page)).toBe(3000);
+  // 動かした直後は、描かれた行が測られて高さが変わっていく。落ち着いてから測る
+  await page.waitForTimeout(500);
+  expect(await scrollY(page), "ページの途中").toBeGreaterThan(1000);
 
-  // CodeMirror は画面の近くの行だけを描き、動かすたびに描く行が変わる。Playwright が押す前にもう一度
-  // 動かすことがあるので、戻り先は押した瞬間の位置を測る
-  const clickedAt = page.evaluate(
-    () =>
-      new Promise<number>((resolve) => {
-        document.addEventListener("mousedown", () => resolve(Math.round(window.scrollY)), {
-          capture: true,
-          once: true,
-        });
-      }),
-  );
   const pageUrl = page.url();
-  await page.locator(".cm-wikilink").first().click();
-  const before = await clickedAt;
-  expect(before, "ページの途中").toBeGreaterThan(1000);
+  await recordLineAtMousedown(page);
+  await openVisibleEntry(page, ".cm-wikilink");
+  const before = await lineAtMousedown(page);
   await expect(page).not.toHaveURL(pageUrl);
   await expect(page.locator("h1.note-title, .title-input").first()).toBeVisible();
 
   await page.goBack();
   await expect(page).toHaveURL(pageUrl);
   await expect(bodyEditor(page)).toBeVisible();
-  await expect.poll(() => scrollY(page)).toBeGreaterThan(before - TOLERANCE);
-  await expect.poll(() => scrollY(page)).toBeLessThan(before + TOLERANCE);
+  // スクロール量ではなく、見える行で比べる。本文は画面の外の行の高さが推定のままなので、
+  // 同じ量でも別の行が見える
+  await expectSameLineAfterBack(page, before);
 });
 
 test("空のページのリンク元からページを開いて戻ると、リンク元が届いてから位置が戻る", async ({
@@ -250,4 +298,48 @@ test("空のページのリンク元からページを開いて戻ると、リ�
   await expect(links).toHaveCount(20);
   await expect.poll(() => scrollY(page)).toBeGreaterThan(target - TOLERANCE);
   await expect.poll(() => scrollY(page)).toBeLessThan(target + TOLERANCE);
+});
+
+test.describe("狭い画面で目次から見出しへ移ったページ", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    if (testInfo.project.name === "chromium-desktop") {
+      await page.setViewportSize({ width: 375, height: 812 });
+    }
+  });
+
+  for (const tocOpen of [false, true]) {
+    test(`wikilink で別のページへ移って戻ると、同じ行が同じ位置に見える（離れるとき目次は${tocOpen ? "開いている" : "閉じている"}）`, async ({
+      page,
+      seedIds,
+    }) => {
+      await page.goto(`/p/${seedIds[SEED.longPage]}`);
+      await expect(bodyEditor(page).getByText("見出し 1", { exact: true })).toBeVisible();
+      const toc = page.locator("details.toc");
+      await toc.locator("summary").click();
+      await toc.getByRole("button", { name: "見出し 30", exact: true }).click();
+      await expect(bodyEditor(page).getByText("見出し 30", { exact: true })).toBeInViewport();
+      const jumpedTo = await scrollY(page);
+
+      if (tocOpen) {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await toc.locator("summary").click();
+        await expect(toc).toHaveJSProperty("open", true);
+        await page.evaluate((y) => window.scrollTo(0, y), jumpedTo);
+      }
+      // 移動の後に行の高さが測り直されて落ち着くまで待つ
+      await page.waitForTimeout(500);
+
+      const pageUrl = page.url();
+      await recordLineAtMousedown(page);
+      await openVisibleEntry(page, ".cm-wikilink");
+      const before = await lineAtMousedown(page);
+      await expect(page).not.toHaveURL(pageUrl);
+      await expect(page.locator("h1.note-title, .title-input").first()).toBeVisible();
+
+      await page.goBack();
+      await expect(page).toHaveURL(pageUrl);
+      await expect(bodyEditor(page)).toBeVisible();
+      await expectSameLineAfterBack(page, before);
+    });
+  }
 });

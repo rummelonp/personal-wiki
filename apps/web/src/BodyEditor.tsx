@@ -19,8 +19,10 @@ import {
 } from "@personal-wiki/editor";
 import { extractBlockIds, findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { bodyScrollAnchor } from "./body-scroll-anchor";
 import { NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 import type { PageFragment } from "./page-fragment";
+import { registerScrollAnchor } from "./scroll-restore";
 import { scrollBelowStickyHeader } from "./sticky-header";
 import type { WikiLinkSources } from "./wiki-links";
 
@@ -264,7 +266,9 @@ export function BodyEditor({
     // 作った直後の 1 回だけ。focus は DOM の focus を移すだけで、doc や selection には dispatch しない
     if (initial.autoFocus && !initial.readOnly) editor.focus();
     const waiters = settledWaiters.current;
+    const unregisterAnchor = registerScrollAnchor(bodyScrollAnchor(editor));
     return () => {
+      unregisterAnchor();
       view.current = null;
       editor.destroy();
       for (const resolve of waiters.splice(0)) resolve();

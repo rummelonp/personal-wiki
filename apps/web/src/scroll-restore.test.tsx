@@ -3,8 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   installScrollRestore,
+  registerScrollAnchor,
   rememberScroll,
   restoreCount,
+  type ScrollAnchor,
   stateForReplace,
   useHoldScrollRestore,
   useRestoreScroll,
@@ -21,10 +23,13 @@ interface Entry {
   search: string;
   y?: number;
   count?: number;
+  anchor?: ScrollAnchor;
 }
 
 const stateOf = (entry: Entry) =>
-  entry.y === undefined ? null : { scroll: { y: entry.y, count: entry.count } };
+  entry.y === undefined
+    ? null
+    : { scroll: { y: entry.y, count: entry.count, anchor: entry.anchor } };
 
 function popTo(entry: Entry): void {
   history.replaceState(stateOf(entry), "", entry.search);
@@ -224,6 +229,63 @@ describe("復元の待ち中", () => {
     expect(window.scrollY).toBe(0);
     act(() => root.render(<Page ready />));
     expect(window.scrollY).toBe(800);
+  });
+
+  it("本文の画面は、離れる前の行を書き、戻るときは y の代わりにその行へ戻す", () => {
+    const anchor: ScrollAnchor = { offset: 120, delta: -8 };
+    const apply = vi.fn(() => true);
+    const unregister = registerScrollAnchor({ read: () => anchor, apply });
+    try {
+      act(() => root.render(<Page ready />));
+      window.scrollTo(0, 300);
+      rememberScroll();
+      expect(history.state).toEqual({ scroll: { y: 300, anchor } });
+
+      act(() => root.render(null));
+      window.scrollTo(0, 0);
+      popTo({ search: "?t=page", y: 800, anchor });
+      act(() => root.render(<Page ready={false} />));
+      act(() => root.render(<Page ready />));
+      expect(apply).toHaveBeenCalledExactlyOnceWith(anchor);
+      expect(window.scrollY).toBe(0);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("行へ戻せない（本文が無い、行が読めなかった）ときは、y へ戻す", () => {
+    const anchor: ScrollAnchor = { offset: 120, delta: -8 };
+    const unregister = registerScrollAnchor({ read: () => null, apply: () => false });
+    try {
+      window.scrollTo(0, 300);
+      rememberScroll();
+      expect(history.state).toEqual({ scroll: { y: 300 } });
+
+      act(() => root.render(null));
+      popTo({ search: "?t=page", y: 800, anchor });
+      act(() => root.render(<Page ready />));
+      expect(window.scrollY).toBe(800);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("保存された行が負の添字なら 0 に丸め、有限でなければ捨てて y へ戻す", () => {
+    const apply = vi.fn(() => true);
+    const unregister = registerScrollAnchor({ read: () => null, apply });
+    try {
+      popTo({ search: "?t=page", y: 800, anchor: { offset: -20, delta: 5 } });
+      act(() => root.render(<Page ready />));
+      expect(apply).toHaveBeenCalledExactlyOnceWith({ offset: 0, delta: 5 });
+      act(() => root.render(null));
+
+      popTo({ search: "?t=page", y: 800, anchor: { offset: Number.NaN, delta: 5 } });
+      act(() => root.render(<Page ready />));
+      expect(apply).toHaveBeenCalledOnce();
+      expect(window.scrollY).toBe(800);
+    } finally {
+      unregister();
+    }
   });
 
   it("ページを描いた直後の戻るでは、ページが戻した先の一覧の復元を使わない", () => {

@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect } from "react";
  * （読み込み中の 1 行）なので、位置が 0 に丸められ、内容が届いても戻らない。
  * そこで位置を履歴のエントリの state に持ち、内容が描かれた後に自分で戻す。
  * 同じ URL が履歴に何度あっても、再読み込みのあとでも、エントリごとの位置が戻る。
+ * 本文のあるページは、y に加えてヘッダーの下端に見えていた本文の行も持ち、y の代わりにその行の位置へ戻す。
  * history.scrollRestoration は auto のままにする。画面が残ったままの戻り（同じページの hash の移動）は、
  * ブラウザの復元が正しいので任せる。
  *
@@ -16,11 +17,32 @@ import { useEffect, useLayoutEffect } from "react";
 
 const STATE_KEY = "scroll";
 
+/**
+ * ヘッダーの下端に見えていた本文の行。スクロール量（y）は、画面の外の行の高さが推定値のままか
+ * 測った後かで同じ内容を指さなくなるので、本文の画面は行で位置を持つ。
+ */
+export interface ScrollAnchor {
+  /** 本文の中での行頭の添字 */
+  offset: number;
+  /** 行の上端の、ヘッダーの下端からの距離（px）。行の途中が上端に見えていたときは負 */
+  delta: number;
+}
+
+/** 本文の画面が、見えている行を読み、その行を元の位置へ戻す手段 */
+export interface ScrollAnchorSource {
+  /** 行で位置を言い表せないとき（本文の上端がヘッダーの下に在る、など）は null */
+  read: () => ScrollAnchor | null;
+  /** 戻す操作を始められたら true。false なら呼び出し側が y で戻す */
+  apply: (anchor: ScrollAnchor) => boolean;
+}
+
 /** 履歴のエントリに持つ、離れる前の位置。 */
 interface Saved {
   y: number;
   /** 一覧で読み込んでいた件数。「さらに表示」で読み足した分まで同じ長さに戻すのに使う */
   count?: number;
+  /** 本文の画面で、y の代わりに戻す行。行で戻せないときは y で戻す */
+  anchor?: ScrollAnchor;
 }
 
 /** 復元の対象。popstate か初回の読み込みで決め、画面が描かれたときに使い切る */
@@ -35,6 +57,9 @@ let settledUrl: string | null = null;
 /** 一覧が今読み込んでいる件数。一覧の画面が出ている間だけ持つ */
 let loadedCount: number | undefined;
 
+/** 表示中の本文。無ければ位置は y だけを書く */
+let anchorSource: ScrollAnchorSource | null = null;
+
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 /** スクロールが止まってから書くまでの間。replaceState は呼びすぎると Safari が止めるので間引く */
@@ -46,18 +71,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function anchorOf(value: unknown): ScrollAnchor | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.offset !== "number" ||
+    typeof value.delta !== "number" ||
+    !Number.isFinite(value.offset) ||
+    !Number.isFinite(value.delta)
+  ) {
+    return undefined;
+  }
+  // history.state は書き換えられうるので、負の添字は 0 に丸める。上限（doc の長さ）は本文の側で丸める
+  return { offset: Math.max(0, value.offset), delta: value.delta };
+}
+
 function savedOf(state: unknown): Saved | null {
   if (!isRecord(state)) return null;
   const saved = state[STATE_KEY];
   if (!isRecord(saved) || typeof saved.y !== "number") return null;
-  return typeof saved.count === "number" ? { y: saved.y, count: saved.count } : { y: saved.y };
+  const anchor = anchorOf(saved.anchor);
+  return {
+    y: saved.y,
+    ...(typeof saved.count === "number" ? { count: saved.count } : {}),
+    ...(anchor === undefined ? {} : { anchor }),
+  };
 }
 
 function writeCurrentEntry(): void {
   clearTimeout(timer);
   timer = undefined;
-  const saved: Saved =
-    loadedCount === undefined ? { y: window.scrollY } : { y: window.scrollY, count: loadedCount };
+  const anchor = anchorSource?.read() ?? undefined;
+  const saved: Saved = {
+    y: window.scrollY,
+    ...(loadedCount === undefined ? {} : { count: loadedCount }),
+    ...(anchor === undefined ? {} : { anchor }),
+  };
   const state = isRecord(history.state) ? history.state : {};
   try {
     history.replaceState({ ...state, [STATE_KEY]: saved }, "", window.location.href);
@@ -154,9 +202,20 @@ function publish(ready: boolean, count: number | undefined): () => void {
 
 function restoreNow(): void {
   if (pending === null || pending.url !== currentUrl()) return;
-  const { y } = pending.saved;
+  const { y, anchor } = pending.saved;
   pending = null;
+  if (anchor !== undefined && anchorSource?.apply(anchor)) return;
   window.scrollTo(0, y);
+}
+
+/**
+ * 本文を持つ画面が、見えている行の読み書きを登録する。返す関数で外す。
+ */
+export function registerScrollAnchor(source: ScrollAnchorSource): () => void {
+  anchorSource = source;
+  return () => {
+    if (anchorSource === source) anchorSource = null;
+  };
 }
 
 /**
