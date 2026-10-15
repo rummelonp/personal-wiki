@@ -88,8 +88,9 @@ export interface DecorationPluginOptions {
   readonly name: string;
   readonly build: DecorationBuilder;
   /**
-   * doc、selection、viewport、focus、構文木の変化のほかに組み直す条件。builder が
-   * StateField のような view 内の状態を読むときに渡す。composition 中はこれが true でも組み直さない。
+   * doc、selection、viewport、focus、構文木、readOnly（builder は `view.state.readOnly` を読む前提）
+   * の変化のほかに組み直す条件。builder が StateField のような view 内の状態を読むときに渡す。
+   * composition 中はこれが true でも組み直さない。
    */
   readonly rebuildWhen?: (update: ViewUpdate) => boolean;
 }
