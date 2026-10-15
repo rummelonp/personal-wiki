@@ -50,10 +50,16 @@ E2E の build は `apps/web/dist` を上書きするので、8787 で動かし�
 web のソースを前の build から変えていなければ、`E2E_SKIP_BUILD=1 pnpm e2e` で build を省ける。
 E2E のポートは既定で 8790（inspector は 9339）。
 別の worktree の E2E と同時に流すときは `E2E_PORT=8800 pnpm e2e` のように変える。
-`pnpm e2e:sheet` も同じサーバーを起動するので、`apps/web/dist` の上書き、`E2E_SKIP_BUILD`、`E2E_PORT` は `pnpm e2e` と同じに働く。
+`pnpm e2e:full` と `pnpm e2e:sheet` も同じサーバーを起動するので、`apps/web/dist` の上書き、`E2E_SKIP_BUILD`、`E2E_PORT` は `pnpm e2e` と同じに働く。
+
+`pnpm e2e` は主の環境（デスクトップの Chromium と iPhone の WebKit）だけを走らせる。
+従の環境（Firefox、Android の Chromium、デスクトップの WebKit）の smoke と速さの計測（`apps/web/e2e/perf-budget.json` の予算）は `pnpm e2e:full` だけが走らせる。
+CI は E2E を流さないので、master に取り込む前と push の前に `pnpm e2e:full` を流す。
 
 ```sh
-pnpm e2e                    # apps/web/e2e のテスト。結果は apps/web/e2e-output/（gitignore 済み）
+pnpm e2e                    # apps/web/e2e のテスト（主の環境）。結果は apps/web/e2e-output/（gitignore 済み）
+pnpm e2e:full               # 全部の環境と速さの計測
+pnpm e2e e2e/notices.spec.ts  # ファイルを絞る。--last-failed、--only-changed も渡せる
 pnpm e2e:sheet [--out <dir>]  # 画面の一覧（明暗 × 幅 375、768、1280）を 1 枚の HTML にする
 ```
 
