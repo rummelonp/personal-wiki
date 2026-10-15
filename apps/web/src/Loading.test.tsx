@@ -33,17 +33,36 @@ const busy = () => container?.querySelector("[aria-busy='true']") !== null;
 const status = () => container?.querySelector("[role='status']")?.textContent;
 
 describe("読み込み中の帯", () => {
-  it("遅れの間は帯を描かず、取得中であることと「読み込み中…」は最初から伝える", () => {
+  it("遅れの間は帯を描かず、取得中であることは最初から、「読み込み中…」は frame を空けて伝える", () => {
     vi.useFakeTimers();
     mount(<PageSkeleton />);
     expect(busy()).toBe(true);
-    expect(status()).toBe("読み込み中…");
     expect(painted()).toBe(false);
 
     act(() => vi.advanceTimersByTime(249));
     expect(painted()).toBe(false);
     act(() => vi.advanceTimersByTime(1));
     expect(painted()).toBe(true);
+  });
+
+  it("「読み込み中…」の status は空で取り付け、frame を空けて文字を入れる。aria-busy の外に置く", () => {
+    vi.useFakeTimers();
+    mount(<PageSkeleton />);
+    // 取り付けと同じ描画の更新では文字を入れない（中身を持ったまま挿入すると読まれない）
+    expect(container?.querySelector("[role='status']")).not.toBeNull();
+    expect(status()).toBe("");
+
+    act(() => vi.advanceTimersByTime(40));
+    expect(status()).toBe("読み込み中…");
+    expect(container?.querySelector("[aria-busy='true'] [role='status']")).toBeNull();
+  });
+
+  it("文字を入れる前に取り除けば、文字を入れない", () => {
+    vi.useFakeTimers();
+    mount(<PageSkeleton />);
+    act(() => root?.render(<p>届いた</p>));
+    act(() => vi.advanceTimersByTime(100));
+    expect(container?.querySelector("[role='status']")).toBeNull();
   });
 
   it("遅れを 0 にすると、最初の描画から帯を描く", () => {

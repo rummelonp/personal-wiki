@@ -93,11 +93,39 @@ export function useDelayedWhile(active: boolean): boolean {
   return active && shown;
 }
 
-/** 支援技術にだけ伝える「読み込み中…」。取得中の領域の中に置く。 */
+/**
+ * 取り付けてから 2 frame 後に true になる。live region の中身を、取り付けとは別の frame で入れるための印。
+ * 経路の遷移や離散イベントによる描画は commit の終わりで effect まで同期に流れるので、effect で
+ * 文字を入れても、支援技術からは中身を持ったまま挿入したのと同じになる。frame を 1 つ空けただけでは、
+ * 取り付けと同じ描画の更新に入ることがあるので 2 つ待つ。
+ */
+export function useAfterFrames(): boolean {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setReady(true));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, []);
+
+  return ready;
+}
+
+/**
+ * 支援技術にだけ伝える「読み込み中…」。取得中の領域の外に置く（`aria-busy` の中の status は、
+ * 多くの読み上げが変化を伝えない）。中身を持ったまま挿入した status も読まれないので、
+ * 空で置いてから、後の frame で文字を入れる（`useAfterFrames`）。
+ */
 export function LoadingStatus() {
+  const ready = useAfterFrames();
   return (
     <span className="visually-hidden" role="status">
-      読み込み中…
+      {ready ? "読み込み中…" : ""}
     </span>
   );
 }
@@ -153,8 +181,8 @@ export function ListSkeleton({ heading }: { heading?: string }) {
   const painted = useSkeletonPainted();
   return (
     <RailLayout rail={null}>
+      <LoadingStatus />
       <div className={`home ${paintedClass(painted) ?? ""}`} aria-busy="true">
-        <LoadingStatus />
         {heading === undefined ? (
           <div className="list-title" aria-hidden="true">
             <span className="skeleton skeleton-text skeleton-heading" />
@@ -197,8 +225,8 @@ export function PageSkeleton({
   );
   return (
     <RailLayout rail={rail}>
+      <LoadingStatus />
       <div className={`note ${paintedClass(painted) ?? ""}`} aria-busy="true">
-        <LoadingStatus />
         <div className="note-title">
           {title === undefined ? (
             <span className="skeleton skeleton-text skeleton-title" aria-hidden="true" />

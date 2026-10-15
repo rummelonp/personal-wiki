@@ -35,15 +35,12 @@ function PreviousEntries({
 }) {
   const painted = useSkeletonPainted();
   return (
-    <>
-      <LoadingStatus />
-      <EntryList
-        entries={previous.entries}
-        now={now}
-        showVisibility={showVisibility}
-        className={painted ? "entries-stale skeleton-painted" : "entries-stale"}
-      />
-    </>
+    <EntryList
+      entries={previous.entries}
+      now={now}
+      showVisibility={showVisibility}
+      className={painted ? "entries-stale skeleton-painted" : "entries-stale"}
+    />
   );
 }
 
@@ -76,15 +73,12 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   );
 
   const heading = listHeading(trimmed, tag);
+  const busy = state.status === "loading" || (state.status === "ready" && state.loadingMore);
 
   return (
     <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
-      <div
-        className="home"
-        aria-busy={
-          state.status === "loading" || (state.status === "ready" && state.loadingMore) || undefined
-        }
-      >
+      {busy && <LoadingStatus />}
+      <div className="home" aria-busy={busy || undefined}>
         {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
         {searching && <SearchBox query={trimmed} />}
         <h1 className={listTitleClass(heading)}>{heading}</h1>
@@ -96,12 +90,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             <Link href={homeHref(trimmed)}>タグを外す</Link>
           </p>
         )}
-        {state.status === "loading" && state.previous === undefined && (
-          <>
-            <LoadingStatus />
-            <SkeletonEntries />
-          </>
-        )}
+        {state.status === "loading" && state.previous === undefined && <SkeletonEntries />}
         {state.status === "loading" && state.previous !== undefined && (
           <PreviousEntries previous={state.previous} now={now} showVisibility={owner} />
         )}
@@ -189,7 +178,6 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
                 さらに表示
               </button>
             )}
-            {state.loadingMore && <LoadingStatus />}
           </>
         )}
       </div>

@@ -15,14 +15,16 @@ type State =
 function PendingLinks() {
   const painted = useSkeletonPainted();
   return (
-    <div
-      className={painted ? "skeleton-links skeleton-painted" : "skeleton-links"}
-      aria-busy="true"
-    >
+    <>
       <LoadingStatus />
-      <span className="skeleton skeleton-text" aria-hidden="true" />
-      <span className="skeleton skeleton-text skeleton-rail-short" aria-hidden="true" />
-    </div>
+      <div
+        className={painted ? "skeleton-links skeleton-painted" : "skeleton-links"}
+        aria-busy="true"
+      >
+        <span className="skeleton skeleton-text" aria-hidden="true" />
+        <span className="skeleton skeleton-text skeleton-rail-short" aria-hidden="true" />
+      </div>
+    </>
   );
 }
 
