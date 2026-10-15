@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { isInView } from "./in-view";
 import { setLoadingDelay } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { type LinkRewriteStepResult, stepLinkRewrites } from "./link-rewrites-api";
@@ -24,6 +25,9 @@ import { navigate } from "./route";
 import { recordImageSrcs } from "./test-image-srcs";
 
 vi.mock("./link-rewrites-api", () => ({ stepLinkRewrites: vi.fn() }));
+
+// 上端の保存の状態が見えているかは、画面の位置で決まる。既定では見えないことにし、試験ごとに切り替える
+vi.mock("./in-view", () => ({ isInView: vi.fn() }));
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
@@ -67,6 +71,7 @@ let container: HTMLElement | null = null;
 
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(isInView).mockReturnValue(false);
   vi.mocked(updatePage).mockImplementation(async (_id, version, input) =>
     ok({ ...PAGE, ...input, version: version + 1 }),
   );
@@ -179,6 +184,72 @@ describe("PageEditor と本文のエディタ", () => {
     await act(async () => finish(ok({ ...PAGE, body: "本文を書き足す", version: 2 })));
     await flushAsync();
     expect(container?.querySelector(".notice")).toBeNull();
+  });
+
+  it("もう一度保存する間、上端の保存の状態が見えていれば、台には保存中の通知を出さない", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+    const { view, button } = renderPage();
+    view().focus();
+    typeAtEnd(view(), "を書き足す");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+
+    let finish: (value: ApiResult<Page>) => void = () => {};
+    vi.mocked(updatePage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    vi.mocked(isInView).mockReturnValue(true);
+    act(() => button("もう一度保存する").click());
+    await flushAsync();
+    // 上端の「保存中…」と同じ保存を指すので、二重に出さない
+    expect(container?.querySelector(".save-state")?.textContent).toBe("保存中…");
+    expect(container?.querySelector(".notice")).toBeNull();
+
+    // 保存の間に下までスクロールして上端が見えなくなったら、台に出す
+    vi.mocked(isInView).mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    expect(container?.querySelector(".notice-title")?.textContent).toBe("保存しています…");
+
+    // 上端に戻れば、また台からは消える
+    vi.mocked(isInView).mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    expect(container?.querySelector(".notice")).toBeNull();
+
+    await act(async () => finish(ok({ ...PAGE, body: "本文を書き足す", version: 2 })));
+    await flushAsync();
+    expect(container?.querySelector(".notice")).toBeNull();
+  });
+
+  it("上端が見えていて進行の通知が出なかったときも、再び失敗したら alert を出し直す", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+    const { view, button } = renderPage();
+    view().focus();
+    typeAtEnd(view(), "を書き足す");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+
+    let fail: (value: ApiResult<Page>) => void = () => {};
+    vi.mocked(updatePage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        fail = resolve;
+      }),
+    );
+    vi.mocked(isInView).mockReturnValue(true);
+    act(() => button("もう一度保存する").click());
+    await flushAsync();
+    expect(container?.querySelector(".notice")).toBeNull();
+
+    await act(async () => fail({ ok: false, reason: "error", message: "また失敗" }));
+    await flushAsync();
+    expect(container?.querySelector(".notice [role='alert']")?.textContent).toContain(
+      "保存に失敗しました",
+    );
   });
 
   it("もう一度保存してまた失敗すると、失敗の通知を alert として出し直す", async () => {

@@ -1,5 +1,5 @@
 import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import {
   acceptAttachment,
@@ -23,6 +23,7 @@ import {
 } from "./editor-session";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
+import { isInView } from "./in-view";
 import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
@@ -411,7 +412,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   if (failure !== null && !afterFailure) setAfterFailure(true);
   else if (afterFailure && failure === null && state.busy === null) setAfterFailure(false);
   // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
-  const progress =
+  const inProgress =
     afterFailure &&
     failure === null &&
     state.busy !== null &&
@@ -419,8 +420,32 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     state.conflict === null &&
     !state.authLost &&
     !state.gone
-      ? PROGRESS_TITLES[state.busy]
+      ? state.busy
       : null;
+  // 保存の進行は、ページの上端の保存の状態（.save-state）が見えている間はそちらが伝えるので、台には出さない。
+  // 台の通知は、下までスクロールして上端が見えないときの手応えのためにある。保存の間は測り直す
+  const saveStateEl = useRef<HTMLParagraphElement>(null);
+  const [topVisible, setTopVisible] = useState(false);
+  const watchTop = inProgress === "saving";
+  useLayoutEffect(() => {
+    const element = saveStateEl.current;
+    if (!watchTop || element === null) return;
+    const measure = () => setTopVisible(isInView(element));
+    measure();
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    // iOS はキーボードや拡大の間のパンで visualViewport だけを動かし、window の scroll を出さないことがある
+    window.visualViewport?.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("scroll", measure);
+    return () => {
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("scroll", measure);
+    };
+  }, [watchTop]);
+  const progress =
+    inProgress !== null && !(watchTop && topVisible) ? PROGRESS_TITLES[inProgress] : null;
 
   // 削除の再試行は確認を挟まない。ボタン自体が「もう一度削除する」と明示している
   async function retryFailed(op: FailedOp | null) {
@@ -486,7 +511,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             {leaving ? `「${linkPending}」を開いています…` : ""}
           </span>
         )}
-        <p className={`save-state save-state-${status}`} role="status" aria-live="polite">
+        <p
+          ref={saveStateEl}
+          className={`save-state save-state-${status}`}
+          role="status"
+          aria-live="polite"
+        >
           <span className="dot" aria-hidden="true" />
           {STATUS_LABELS[status]}
         </p>

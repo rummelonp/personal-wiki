@@ -238,6 +238,44 @@ test("もう一度保存している間は、下までスクロールしてい�
   await expect(saveState(page)).toHaveText("保存済み");
 });
 
+test("もう一度保存している間、上端の保存の状態が見えていれば台には出さず、下へスクロールすると台に出る", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await openLongPage(page, api, uniqueTitle(testInfo, "上端が見える間"));
+  const pagePath = `**/api/pages/${created.id}`;
+  await failSaveWith500(page, created);
+  await typeAt(page, 0, "、再試行する");
+  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  await expect(alert).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.unroute(pagePath);
+  await page.route(pagePath, async (route) => {
+    if (route.request().method() === "PUT") await gate;
+    await route.fallback();
+  });
+  await alert.getByRole("button", { name: "もう一度保存する" }).click();
+  // 上端の「保存中…」が同じ保存を伝えるので、台に同じ意味の通知を重ねない
+  await expect(saveState(page)).toHaveText("保存中…");
+  await expect(alert).toBeHidden();
+  const saving = dock(page).locator(".notice").filter({ hasText: "保存しています…" });
+  await expect(saving).toHaveCount(0);
+
+  // 保存の途中で上端が見えなくなったら、台が進行を伝える
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(saving).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(saving).toHaveCount(0);
+
+  release();
+  await expect(saveState(page)).toHaveText("保存済み");
+});
+
 test.describe("幅ごとの通知 @widths", () => {
   test("500 の通知は、どの幅でも位置を動かさず、画面に収まる", async ({ page, api }, testInfo) => {
     const created = await openLongPage(page, api, uniqueTitle(testInfo, "幅の通知"));
