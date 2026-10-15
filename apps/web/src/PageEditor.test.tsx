@@ -937,6 +937,23 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(newBackupKeys()).toEqual([]);
   });
 
+  it("削除されたページの退避は、見出しだけで削除されたページの内容と分かる", async () => {
+    seedOrphan({
+      title: "消えた題",
+      body: "消えた本文",
+      baseVersion: 1,
+      savedAt: 0,
+      deletedFrom: ID,
+    });
+    renderNew();
+    expect(container?.querySelector(".notice-title")?.textContent).toBe(
+      "削除されたページで保存できなかった内容があります",
+    );
+    expect(container?.textContent).toContain(
+      "削除されたページ「消えた題」で保存できなかった内容が",
+    );
+  });
+
   it("title を渡して開いた画面は、残った退避を尋ねない", async () => {
     const key = seedOrphan({ title: "残った題", body: "残った本文", baseVersion: 0, savedAt: 0 });
     renderNew("渡した題");

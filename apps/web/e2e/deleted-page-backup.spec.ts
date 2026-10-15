@@ -50,6 +50,10 @@ async function restoreAsNewPage(page: Page, title: string, body: string, api: Ow
   await expect(
     page.getByText(`削除されたページ「${title}」で保存できなかった内容が`, { exact: false }),
   ).toBeVisible();
+  // 通知が重なって本文が畳まれても、見出しだけで削除されたページの内容と分かる
+  await expect(
+    page.getByRole("heading", { name: "削除されたページで保存できなかった内容があります" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "復元する" }).click();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   await expect(saveState(page)).toHaveText("保存済み");

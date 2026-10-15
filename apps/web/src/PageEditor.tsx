@@ -464,7 +464,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         {state.pendingBackup !== null && (
           <Notice
             tone="warn"
-            title="前回、保存できなかった内容があります"
+            // 通知が重なると本文は畳まれ、見出しだけが残る。どのページの内容かは見出しで分かるようにする
+            title={
+              state.pendingBackup.deletedFrom !== undefined
+                ? "削除されたページで保存できなかった内容があります"
+                : "前回、保存できなかった内容があります"
+            }
             actions={
               <>
                 <button
