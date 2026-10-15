@@ -145,6 +145,27 @@ test("一致しない検索は 0 件の案内を出す", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
 });
 
+test("検索結果の見出しは、開き括弧の行頭の空きを詰める", async ({ page }) => {
+  await page.goto(`/?q=${encodeURIComponent("メモ")}`);
+  const heading = page.getByRole("heading", { level: 1, name: "「メモ」の検索結果" });
+  await expect(heading).toBeVisible();
+  const { next, size } = await heading.evaluate((element) => {
+    const text = element.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 1);
+    const style = getComputedStyle(element);
+    const contentLeft = element.getBoundingClientRect().left + Number.parseFloat(style.paddingLeft);
+    return {
+      // 2 字目が始まる位置。text-spacing-trim で詰めても、字下げを戻しても、ここが半角分になる
+      next: range.getBoundingClientRect().right - contentLeft,
+      size: Number.parseFloat(style.fontSize),
+    };
+  });
+  // 詰めないと全角の 1 字分（字の大きさ）の幅を取る
+  expect(next).toBeLessThan(size * 0.75);
+});
+
 test("タグで絞り込める", async ({ page }) => {
   await page.goto("/");
   await page

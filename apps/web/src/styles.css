@@ -424,8 +424,20 @@ a {
   color: var(--color-fg-muted);
 }
 
+/*
+ * 結果の知らせは行の残りに収める。basis を 0 にして折り返しの判定から外すので、狭い幅でも次の行に
+ * 出て下の本文を押し下げない。残りに 1 行で入らなければその中で折り返し、行間を詰めて 2 行まで
+ * 操作の高さに収める。省略すると、375 の幅で「コピーしました。」の末尾が読めなくなる。
+ * 長い案内（コピーできなかったときの手順）は、自分の行に出す。
+ */
 .publish-note {
+  flex: 1 1 0;
   min-width: 0;
+  line-height: var(--line-height-tight);
+}
+
+.publish-note-wrap {
+  flex-basis: 100%;
 }
 
 .publish-url {
@@ -714,6 +726,21 @@ a {
   font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-heading);
+}
+
+/*
+ * 検索の見出しは「」で始まる。全角の開き括弧は字の左半分が空いていて、見出しの文字だけが
+ * 一覧の行の title より右に見える。行頭の空きを詰める。
+ * text-spacing-trim に対応しない描画では、空き（半角分）だけ字下げを戻す。
+ */
+.list-title {
+  text-spacing-trim: trim-start;
+}
+
+@supports not (text-spacing-trim: trim-start) {
+  .list-title-quoted {
+    text-indent: -0.5em; /* token-ok: 全角の開き括弧の空き（字の大きさの半分）に比例させる */
+  }
 }
 
 /*

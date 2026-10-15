@@ -3,7 +3,7 @@ import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
 import { LoadingMoreRows, LoadingStatus, SkeletonEntries, useSkeletonPainted } from "./Loading";
-import { listHeading } from "./list-heading";
+import { listHeading, listTitleClass } from "./list-heading";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
@@ -87,7 +87,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
       >
         {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
         {searching && <SearchBox query={trimmed} />}
-        <h1 className="list-title">{heading}</h1>
+        <h1 className={listTitleClass(heading)}>{heading}</h1>
         {searching && tag !== "" && (
           <p className="muted">
             検索ではタグ「{tag}」で絞り込めないので、全ページから探しています。{" "}
@@ -131,7 +131,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             title="一致するページがありません"
             text={
               owner
-                ? `「${trimmed}」は title にも本文にも見つかりませんでした。語を変えるか、この語で作れます。`
+                ? `「${trimmed}」はタイトルにも本文にも見つかりませんでした。語を変えるか、この語で作れます。`
                 : `「${trimmed}」は見つかりませんでした。上の欄で検索語を変えてください。`
             }
             actions={

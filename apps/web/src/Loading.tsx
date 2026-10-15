@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listHeading } from "./list-heading";
+import { listHeading, listTitleClass } from "./list-heading";
 import { recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
@@ -160,7 +160,7 @@ export function ListSkeleton({ heading }: { heading?: string }) {
             <span className="skeleton skeleton-text skeleton-heading" />
           </div>
         ) : (
-          <h1 className="list-title">{heading}</h1>
+          <h1 className={listTitleClass(heading)}>{heading}</h1>
         )}
         <ul className="skeleton-entries" aria-hidden="true">
           <SkeletonEntryRows count={5} />

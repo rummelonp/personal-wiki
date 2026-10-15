@@ -170,7 +170,7 @@ test.describe("共有の URL", () => {
     await expect(page.locator(".title-input")).toHaveText(title);
 
     await page.getByRole("button", { name: "URL をコピー" }).click();
-    await expect(notice(page)).toHaveText("URL をコピーしました。");
+    await expect(notice(page)).toHaveText("コピーしました。");
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       `${E2E_ORIGIN}${titlePath(title)}`,
     );
@@ -195,7 +195,7 @@ test.describe("共有の URL", () => {
     await page.goto(`/p/${created.id}`);
     await expect(page.locator(".title-input")).toContainText("予約語");
     await page.getByRole("button", { name: "URL をコピー" }).click();
-    await expect(notice(page)).toHaveText("URL をコピーしました。");
+    await expect(notice(page)).toHaveText("コピーしました。");
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       `${E2E_ORIGIN}/p/${created.id}`,
     );
@@ -229,14 +229,63 @@ test.describe("共有の URL", () => {
     await page.getByRole("button", { name: "URL をコピー" }).click();
     await expect(notice(page)).toContainText("コピーできませんでした");
     const url = page.getByRole("textbox", { name: "共有する URL" });
-    await expect(url).toHaveValue(`${E2E_ORIGIN}${titlePath(title)}`);
+    // percent-encoding を戻して読める形で見せる。空白は貼り付け先で切れないよう戻さない
+    const readable = `${E2E_ORIGIN}${decodeURI(titlePath(title)).replace(/\s/g, encodeURIComponent)}`;
+    await expect(url).toHaveValue(readable);
+    expect(readable).not.toContain("%E");
     await expect(url).toBeFocused();
     const selection = await url.evaluate((input: HTMLInputElement) => ({
       start: input.selectionStart,
       end: input.selectionEnd,
       length: input.value.length,
+      direction: input.selectionDirection,
+      scrollLeft: input.scrollLeft,
     }));
-    expect(selection).toEqual({ start: 0, end: selection.length, length: selection.length });
+    expect(selection).toMatchObject({ start: 0, end: selection.length, direction: "backward" });
+    // 長い URL でも、見えているのは先頭（焦点が末尾に移ると先頭が欄の外へ流れる）
+    expect(selection.scrollLeft).toBe(0);
+  });
+
+  test("コピーの知らせは公開の行に収まり、下の内容を動かさない", async ({
+    page,
+    context,
+    api,
+    browserName,
+  }, testInfo) => {
+    test.skip(browserName !== "chromium", "clipboard の権限を与えられるのは Chromium だけ");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: E2E_ORIGIN });
+    await page.setViewportSize({ width: 375, height: 812 });
+    const title = uniqueTitle(testInfo, "共有の URL の幅");
+    await api.createPage({ title, body: "本文", visibility: "public" });
+    await page.goto(titlePath(title));
+    await expect(page.locator(".title-input")).toHaveText(title);
+
+    const boxes = () =>
+      page.evaluate(() => {
+        const box = (selector: string) => {
+          const rect = document.querySelector(selector)?.getBoundingClientRect();
+          return { top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
+        };
+        const note = document.querySelector(".publish-note");
+        return {
+          body: box(".body-editor"),
+          button: box(".publish-bar .button"),
+          note: box(".publish-note"),
+          // 省略や切り取りで文字が欠けていないこと（textContent は欠けても全文を返す）
+          clipped:
+            note === null ||
+            note.scrollWidth > note.clientWidth ||
+            note.scrollHeight > note.clientHeight,
+        };
+      });
+    const before = await boxes();
+    await page.getByRole("button", { name: "URL をコピー" }).click();
+    await expect(notice(page)).toHaveText("コピーしました。");
+    const after = await boxes();
+    expect(after.body.top, "知らせが出ても本文は動かない").toBe(before.body.top);
+    expect(after.note.top, "知らせは操作と同じ行").toBeGreaterThanOrEqual(after.button.top);
+    expect(after.note.bottom, "知らせは操作と同じ行").toBeLessThanOrEqual(after.button.bottom);
+    expect(after.clipped, "知らせの文字は欠けない").toBe(false);
   });
 });
 
@@ -247,4 +296,5 @@ test("作る前のページでは、公開の操作を選べない", async ({ pa
   await expect(option(page, "公開")).toBeDisabled();
   await expect(page.locator(".publish-bar")).toContainText("ページを作ると、公開を選べます。");
   await expect(page.getByRole("button", { name: "URL をコピー" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "このページを削除" })).toHaveCount(0);
 });

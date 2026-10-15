@@ -863,12 +863,9 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(localStorage.getItem(key)).not.toBeNull();
   });
 
-  it("作る前は削除できず、画像を貼ると先に作るよう案内する", async () => {
+  it("作る前は削除の操作を出さず、画像を貼ると先に作るよう案内する", async () => {
     const { view } = renderNew();
-    const remove = [...(container?.querySelectorAll("button") ?? [])].find(
-      (b) => b.textContent === "このページを削除",
-    );
-    expect(remove?.disabled).toBe(true);
+    expect(container?.textContent).not.toContain("このページを削除");
     const data = new DataTransfer();
     data.items.add(new File([new Uint8Array(3)], "cat.png", { type: "image/png" }));
     act(() => {
@@ -1400,7 +1397,7 @@ describe("リンクの書き換えの取り込み", () => {
     typeTitle("新#");
     act(() => titleView().contentDOM.blur());
     await flushAsync();
-    expect(container?.textContent).toContain("この title はリンクに書けないので");
+    expect(container?.textContent).toContain("このタイトルはリンクに書けないので");
     expect(stepLinkRewrites).not.toHaveBeenCalled();
   });
 
@@ -1418,7 +1415,7 @@ describe("リンクの書き換えの取り込み", () => {
     typeTitle("新#");
     act(() => titleView().contentDOM.blur());
     await flushAsync();
-    expect(container?.textContent).toContain("この title はリンクに書けないので");
+    expect(container?.textContent).toContain("このタイトルはリンクに書けないので");
 
     // 本文だけの保存（title が変わらない）では消さない
     view().focus();
@@ -1426,7 +1423,7 @@ describe("リンクの書き換えの取り込み", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(2);
-    expect(container?.textContent).toContain("この title はリンクに書けないので");
+    expect(container?.textContent).toContain("このタイトルはリンクに書けないので");
 
     // リンク元が無い title への変更は、応答に linkRewrites が付かない
     act(() => titleView().focus());
@@ -1434,7 +1431,7 @@ describe("リンクの書き換えの取り込み", () => {
     act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(3);
-    expect(container?.textContent).not.toContain("この title はリンクに書けないので");
+    expect(container?.textContent).not.toContain("このタイトルはリンクに書けないので");
   });
 });
 

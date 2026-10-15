@@ -387,26 +387,28 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           </dl>
         </RailSection>
       )}
-      <div>
-        <button
-          type="button"
-          className="button button-quiet button-danger"
-          disabled={
-            uncreated ||
-            !idle ||
-            state.gone ||
-            state.authLost ||
-            state.conflict !== null ||
-            state.pendingBackup !== null
-          }
-          onClick={() => void handleDelete()}
-        >
-          {deleting ? "削除中…" : "このページを削除"}
-        </button>
-        <span className="visually-hidden" role="status">
-          {deleting ? "削除中…" : ""}
-        </span>
-      </div>
+      {/* 作る前のページには消す対象が無い。押せない操作を置かない */}
+      {!uncreated && (
+        <div>
+          <button
+            type="button"
+            className="button button-quiet button-danger"
+            disabled={
+              !idle ||
+              state.gone ||
+              state.authLost ||
+              state.conflict !== null ||
+              state.pendingBackup !== null
+            }
+            onClick={() => void handleDelete()}
+          >
+            {deleting ? "削除中…" : "このページを削除"}
+          </button>
+          <span className="visually-hidden" role="status">
+            {deleting ? "削除中…" : ""}
+          </span>
+        </div>
+      )}
     </>
   );
 
@@ -562,7 +564,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 </>
               }
             >
-              <p>作成して開くと、この title の新しいページに移ります。</p>
+              <p>作成して開くと、このタイトルの新しいページに移ります。</p>
             </Notice>
           ))}
 
@@ -576,7 +578,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
               </button>
             }
           >
-            <p>この title はリンクに書けないので、旧 title へのリンクは手で直してください。</p>
+            <p>このタイトルはリンクに書けないので、旧タイトルへのリンクは手で直してください。</p>
           </Notice>
         )}
 

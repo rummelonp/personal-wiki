@@ -13,6 +13,29 @@ const PENDING_NOTES: Record<Visibility, string> = {
   draft: "下書きに戻し中…",
 };
 
+/**
+ * 手でコピーしてもらう URL。title の percent-encoding を日本語に戻して読めるようにする。
+ * 空白は戻さない。貼り付け先で URL が空白の手前で切れる。
+ * `%25` も戻さない。decodeURI は `%2F` などは残すが `%25` は `%` に戻すので、`a%2Fb` の title が
+ * `a/b` のページを指す URL に変わる。
+ */
+export function readableUrl(url: string): string {
+  try {
+    return decodeURI(url.replace(/%25/gi, "%2525")).replace(/\s/g, encodeURIComponent);
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * 全体を選び、先頭が見える位置に戻す。選ぶと欄が末尾へスクロールし、長い URL の先頭が
+ * 欄の外へ流れて見えなくなる。
+ */
+function selectAll(input: HTMLInputElement) {
+  input.setSelectionRange(0, input.value.length, "backward");
+  input.scrollLeft = 0;
+}
+
 /** 結果の知らせを出しておく時間。残しすぎると、前の操作の結果が今の状態のように読める */
 const NOTE_MS = 6_000;
 
@@ -111,8 +134,7 @@ export function PublishBar({
     const input = urlInput.current;
     if (manualUrl === null || input === null) return;
     input.focus();
-    input.select();
-    input.setSelectionRange(0, input.value.length);
+    selectAll(input);
   }, [manualUrl]);
 
   async function apply(to: Visibility) {
@@ -139,7 +161,7 @@ export function PublishBar({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setManualUrl(null);
-      setNote("URL をコピーしました。");
+      setNote("コピーしました。");
     } catch {
       // 権限が無い、secure context でない、フォーカスが外れているなど。書き込めない理由は区別しない
       setManualUrl(shareUrl);
@@ -174,14 +196,18 @@ export function PublishBar({
           type="button"
           className="button"
           disabled={titlePending}
-          title={titlePending ? "title を保存してからコピーできます" : undefined}
+          title={titlePending ? "タイトルを保存してからコピーできます" : undefined}
           onClick={() => void copy()}
         >
           URL をコピー
         </button>
       )}
       {uncreated && <span className="publish-hint">ページを作ると、公開を選べます。</span>}
-      <p className="publish-note" role="status" aria-live="polite">
+      <p
+        className={manualShown ? "publish-note publish-note-wrap" : "publish-note"}
+        role="status"
+        aria-live="polite"
+      >
         {pendingShown
           ? PENDING_NOTES[pending as Visibility]
           : manualShown
@@ -194,9 +220,9 @@ export function PublishBar({
           className="publish-url"
           type="text"
           readOnly
-          value={shareUrl}
+          value={readableUrl(shareUrl)}
           aria-label="共有する URL"
-          onFocus={(event) => event.currentTarget.select()}
+          onFocus={(event) => selectAll(event.currentTarget)}
         />
       )}
       {confirming && (

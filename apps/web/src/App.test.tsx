@@ -1028,7 +1028,7 @@ describe("App のリンクの書き換えの再開", () => {
     serve("owner", [PUBLIC, DRAFT]);
     await renderAt("/");
     await vi.waitFor(() =>
-      expect(screenText()).toContain("1 ページのリンクを新しい title に書き換えました"),
+      expect(screenText()).toContain("1 ページのリンクを新しいタイトルに書き換えました"),
     );
     expect(stepLinkRewrites).toHaveBeenCalledTimes(2);
     expect(screenText()).toContain("うち公開 1 ページ");
