@@ -12,21 +12,24 @@ import { byScheme } from "./scheme";
  * 値は view に CSS 変数として置き、`HighlightStyle` からは変数名だけを参照する。`HighlightStyle` が
  * 作る class 名は生成されたもので外から辿れないため、変数名を通してしか test が解決後の色を読めない。
  * 明るい側は白いエディタ面に、暗い側は暗いエディタ面に対して 4.5:1 以上（`theme.test.ts` が測る）。
+ * 選択の地（差し色を混ぜた地）とコードの行の地を重ねた上でも 4.5:1 以上を保つ
+ * （`code-block-contrast.test.ts` が色相を一周させて測る）。選択を薄くして稼ぐと選択範囲が見えにくくなるので、
+ * 構文色の側を濃く（暗い側は明るく）してある。
  */
 const SYNTAX_COLORS = {
-  meta: ["#404740", "#a6b3a6"],
+  meta: ["#404740", "#adb9ad"],
   keyword: ["#7a1ea0", "#d9a2ef"],
   atom: ["#2b31b8", "#9db3ff"],
-  literal: ["#116644", "#6fd08a"],
+  literal: ["#106241", "#6fd08a"],
   string: ["#aa1111", "#ff9e9e"],
-  escape: ["#b34700", "#ffab70"],
-  definition: ["#1d4ed8", "#8ab4ff"],
-  local: ["#5b30c8", "#b39dff"],
-  type: ["#0f766e", "#5ed4cf"],
+  escape: ["#923a00", "#ffab70"],
+  definition: ["#1b49cb", "#8fb7ff"],
+  local: ["#5b30c8", "#bdaaff"],
+  type: ["#0c605a", "#5ed4cf"],
   // style-mod は camelCase の key を dash 区切りに直すので、変数名は小文字とハイフンだけで書く
-  "class-name": ["#116677", "#7fd1e8"],
+  "class-name": ["#105e6e", "#7fd1e8"],
   special: ["#225566", "#9ec7d8"],
-  property: ["#0b5bd3", "#9bb8ff"],
+  property: ["#0a4fb7", "#9bb8ff"],
 } as const satisfies Record<string, readonly [light: string, dark: string]>;
 
 type SyntaxColor = keyof typeof SYNTAX_COLORS;
@@ -38,14 +41,22 @@ export const SYNTAX_COLOR_VARIABLES: readonly string[] = Object.keys(SYNTAX_COLO
 
 const syntaxColor = (name: SyntaxColor) => `var(--cm-syntax-${name})`;
 
+/** comment の色の変数名。構文色と同じく、test が解決後の色を読むために変数を通す */
+export const COMMENT_COLOR_VARIABLE = "--cm-syntax-comment";
+
 // 変数は view の root に置く。切り替え（`--ui-light`、`--ui-dark`）は祖先の領域から継承する
 const syntaxColorVariables = EditorView.baseTheme({
-  "&": Object.fromEntries(
-    Object.entries(SYNTAX_COLORS).map(([name, [light, dark]]) => [
-      `--cm-syntax-${name}`,
-      byScheme(light, dark),
-    ]),
-  ),
+  "&": {
+    ...Object.fromEntries(
+      Object.entries(SYNTAX_COLORS).map(([name, [light, dark]]) => [
+        `--cm-syntax-${name}`,
+        byScheme(light, dark),
+      ]),
+    ),
+    // 補助色のままだと選択の地の上で 4.5:1 を割るので、本文の色を寄せる。
+    // 割合は色相を一周させた最悪の組で 4.5:1 を超える値
+    [COMMENT_COLOR_VARIABLE]: "color-mix(in srgb, var(--ui-color-muted) 60%, var(--ui-color-text))",
+  },
 });
 
 /**
@@ -90,7 +101,7 @@ const codeHighlightStyle = HighlightStyle.define([
   { tag: t.className, color: syntaxColor("class-name") },
   { tag: [t.special(t.variableName), t.macroName], color: syntaxColor("special") },
   { tag: t.definition(t.propertyName), color: syntaxColor("property") },
-  { tag: t.comment, color: "var(--ui-color-muted)" },
+  { tag: t.comment, color: `var(${COMMENT_COLOR_VARIABLE})` },
   { tag: t.invalid, color: "var(--ui-color-danger)" },
 ]);
 
