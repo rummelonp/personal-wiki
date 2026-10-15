@@ -292,6 +292,10 @@ test("補完の窓は画面の右端に接せず、指で押す端末では縁�
   expect(viewport).not.toBeNull();
   const right = (box?.x ?? 0) + (box?.width ?? 0);
   expect(right).toBeLessThanOrEqual((viewport?.width ?? 0) - 12);
+  const columnRight = await bodyEditor(page).evaluate(
+    (element) => element.getBoundingClientRect().right,
+  );
+  expect(right).toBeLessThanOrEqual(columnRight + 0.5);
   expect(box?.x ?? 0).toBeGreaterThanOrEqual(12);
   if (!isMobile) return;
   // 幅の狭い端末では右端へ寄せられたことを確かめる（でないと余白の検査が空振りする）

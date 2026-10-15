@@ -406,6 +406,7 @@ const restartAfterComposition = ViewPlugin.define((view) => ({
  * 余地があると見なされて候補が caret の下に開く。visual viewport の範囲を返せば、下が狭いとき
  * CodeMirror が広い側（caret の上）へ開く。visual viewport の座標は layout viewport からの
  * 位置（offsetTop / offsetLeft）で、tooltip の座標系（client 座標）と揃う。
+ * 右端は本文の列の右端で切り詰めるので、画面の右端より内側になることがある。
  */
 export function tooltipSpace(view: EditorView): {
   top: number;
@@ -415,16 +416,22 @@ export function tooltipSpace(view: EditorView): {
 } {
   const win = view.dom.ownerDocument.defaultView;
   const viewport = win?.visualViewport;
-  if (viewport) {
-    return {
-      top: viewport.offsetTop,
-      bottom: viewport.offsetTop + viewport.height,
-      left: viewport.offsetLeft,
-      right: viewport.offsetLeft + viewport.width,
-    };
-  }
   const root = view.dom.ownerDocument.documentElement;
-  return { top: 0, left: 0, bottom: root.clientHeight, right: root.clientWidth };
+  const space = viewport
+    ? {
+        top: viewport.offsetTop,
+        bottom: viewport.offsetTop + viewport.height,
+        left: viewport.offsetLeft,
+        right: viewport.offsetLeft + viewport.width,
+      }
+    : { top: 0, left: 0, bottom: root.clientHeight, right: root.clientWidth };
+  // 窓の枠（ul）の右端を本文の列の右端に収める。tooltip の箱は枠の右に余白（theme.ts の
+  // AUTOCOMPLETE_EDGE_GAP）を持つので、箱の右端の上限は、その実測値だけ列の右端より外に置く。
+  // 画面の右端まで許すと、列の右に余白のある画面で枠が列からはみ出す。
+  const tooltip = view.dom.querySelector(".cm-tooltip-autocomplete");
+  const edgeGap = tooltip ? Number.parseFloat(getComputedStyle(tooltip).paddingRight) || 0 : 0;
+  const columnRight = view.contentDOM.getBoundingClientRect().right;
+  return { ...space, right: Math.min(space.right, columnRight + edgeGap) };
 }
 
 /**
