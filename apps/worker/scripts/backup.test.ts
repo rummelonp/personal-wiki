@@ -591,6 +591,29 @@ describe("backup の失敗", () => {
     expect(readdirSync(out)).toEqual([]);
   });
 
+  it("--json の失敗は、標準出力のエラーの文だけを表示する", () => {
+    const { io } = ioFor(migratedDb(), {
+      spawn: () => ({
+        status: 1,
+        stdout: JSON.stringify({
+          error: {
+            text: "no such column: x: SQLITE_ERROR",
+            notes: [{ text: "see the docs" }],
+            body: "SECRET-BODY",
+          },
+        }),
+        stderr: "",
+      }),
+    });
+    let message = "";
+    try {
+      backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe("wrangler exited with 1:\nno such column: x: SQLITE_ERROR\nsee the docs");
+  });
+
   it("出力先が既にあれば失敗し、前のバックアップを消さない", () => {
     const out = tmp();
     const existing = join(out, backupDirName(new Date("2026-10-14T12:34:56.789Z"), false));

@@ -485,8 +485,31 @@ export function sanitizeStderr(stderr) {
 }
 
 /**
- * wrangler を実行して標準出力を返す。失敗時は標準出力を出さない（SELECT の結果の本文や、
+ * `--json` の wrangler が失敗時に標準出力へ出す `{"error": {"text", "notes"}}` から、エラーの文だけを取り出す。
+ * 形が違えば空を返し、標準出力のほかの部分は使わない。
+ * @param {string} stdout
+ */
+export function jsonErrorText(stdout) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return "";
+  }
+  const error = parsed?.error;
+  if (typeof error?.text !== "string") return "";
+  const notes = Array.isArray(error.notes)
+    ? error.notes
+        .map((/** @type {{ text?: unknown }} */ n) => n?.text)
+        .filter((/** @type {unknown} */ t) => typeof t === "string")
+    : [];
+  return [error.text, ...notes].join("\n");
+}
+
+/**
+ * wrangler を実行して標準出力を返す。失敗時は標準出力をそのまま出さない（SELECT の結果の本文や、
  * remote の export の署名付き URL を表示しないため）。
+ * `--json` の失敗は標準エラーが空になるので、標準出力のエラーの文だけを表示する。
  * @param {string[]} args
  * @param {Io} io
  */
@@ -500,7 +523,12 @@ function runWrangler(args, io) {
     maxBuffer: 256 * 1024 * 1024,
   });
   if (result.status !== 0) {
-    const detail = sanitizeStderr(result.stderr ?? result.error?.message ?? "");
+    const detail = sanitizeStderr(
+      [result.stderr ?? result.error?.message ?? "", jsonErrorText(result.stdout ?? "")]
+        .map((s) => s.trim())
+        .filter((s) => s !== "")
+        .join("\n"),
+    );
     throw new Error(`wrangler exited with ${result.status}${detail === "" ? "" : `:\n${detail}`}`);
   }
   return result.stdout ?? "";
