@@ -504,6 +504,10 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       <article
         ref={article}
         className={leaving ? "note note-leaving" : "note"}
+        // title 欄は CodeMirror の入力欄で、見出しのように参照できない。aria-labelledby で指すと入力欄の
+        // aria-label（「タイトル」）が名前になってしまうので、見えている title の文字を直接渡す。
+        // title が空の間（作る前のページなど）は名前を付けない
+        aria-label={(state.titleInput ?? state.draft.title) || undefined}
         aria-busy={leaving || undefined}
       >
         {linkPending !== null && (

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { Backlinks } from "./Backlinks";
 import { setDocumentTitle } from "./document-title";
 import { EmptyState } from "./EmptyState";
@@ -46,12 +46,15 @@ interface MissingPageProps {
  * owner は draft も含めて全ページを読めるので、「まだありません」と作成の導線を出す。
  */
 export function MissingPage({ title, owner, onSettled }: MissingPageProps) {
+  const titleId = useId();
   return (
     // owner には、リンク元が 0 件であることが「どこからも張られていない title」という情報になる。
     // 匿名には public のリンク元しか返らず、0 件は何も伝えないので、通常のページと同じく節ごと隠す
     <RailLayout rail={<Backlinks target={{ title }} hideEmpty={!owner} onSettled={onSettled} />}>
-      <section className="note">
-        <h1 className="note-title">{title}</h1>
+      <article className="note" aria-labelledby={titleId}>
+        <h1 id={titleId} className="note-title">
+          {title}
+        </h1>
         {owner ? (
           <>
             <p className="empty-text">まだありません。作成すると下書きのページができます。</p>
@@ -69,7 +72,7 @@ export function MissingPage({ title, owner, onSettled }: MissingPageProps) {
         ) : (
           <p className="empty-text">まだ作られていないか、公開されていないページです。</p>
         )}
-      </section>
+      </article>
     </RailLayout>
   );
 }

@@ -344,7 +344,10 @@ describe("App の匿名の画面", () => {
       expect(main()?.querySelector("h1")?.textContent).toBe(title);
       expect(main()?.querySelectorAll("button")).toHaveLength(0);
       expect(document.title).toBe(`${title} - personal-wiki`);
-      shown.push((main()?.innerHTML ?? "").replaceAll(title, "<title>"));
+      // useId の連番は何回目の描画かで変わるだけで、画面の内容ではない
+      shown.push(
+        (main()?.innerHTML ?? "").replaceAll(title, "<title>").replace(/_r_[0-9a-z]+_/g, "<id>"),
+      );
       act(() => root?.unmount());
       container?.remove();
       root = null;

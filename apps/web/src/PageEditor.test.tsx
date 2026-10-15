@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { page as screen } from "vitest/browser";
 import { isInView } from "./in-view";
 import { setLoadingDelay } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
@@ -1449,6 +1450,24 @@ function pressEnter(isComposing: boolean, keyCode = 13): void {
     );
   });
 }
+
+describe("本文の領域の名前", () => {
+  it("title の文字を名前に持つ article として読め、title を打ち替えると名前も変わる", () => {
+    renderPage();
+    expect(screen.getByRole("article", { name: "題", exact: true }).element()).not.toBeNull();
+    typeTitle("新しい題");
+    expect(screen.getByRole("article", { name: "新しい題", exact: true }).element()).not.toBeNull();
+    expect(screen.getByRole("article", { name: "題", exact: true }).query()).toBeNull();
+  });
+
+  it("title が空の間は名前を付けず、入力した後に付ける", () => {
+    renderPage({ ...PAGE, title: "" });
+    expect(screen.getByRole("article").element()).not.toBeNull();
+    expect(screen.getByRole("article", { name: /./ }).query()).toBeNull();
+    typeTitle("決めた題");
+    expect(screen.getByRole("article", { name: "決めた題", exact: true }).element()).not.toBeNull();
+  });
+});
 
 describe("title の確定", () => {
   it("打っている間は保存せず、Enter で確定して保存し、本文へ移る。変換中の Enter では保存しない", async () => {

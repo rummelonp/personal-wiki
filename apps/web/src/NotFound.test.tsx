@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { page as screen } from "vitest/browser";
 import { MissingPage } from "./NotFound";
 import { listBacklinksByTitle } from "./pages-api";
 
@@ -44,6 +45,11 @@ async function renderMissing(owner: boolean) {
 }
 
 describe("MissingPage", () => {
+  it("本文の領域は、見出しの title を名前に持つ article として読める", async () => {
+    await renderMissing(true);
+    expect(screen.getByRole("article", { name: "まだ無い", exact: true }).element()).not.toBeNull();
+  });
+
   it("匿名には、リンク元が 0 件のとき「このページへのリンク」の節ごと出さない", async () => {
     const view = await renderMissing(false);
     expect(view.querySelector(".rail-section-links")).toBeNull();

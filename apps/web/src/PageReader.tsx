@@ -1,5 +1,5 @@
 import type { WikiLinkClick } from "@personal-wiki/editor";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createAttachmentUrlResolver } from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
@@ -45,6 +45,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
   const editor = useRef<BodyEditorHandle>(null);
   const { goTo } = useFragmentJump(editor);
   const outline = useMemo(() => extractOutline(page.body), [page.body]);
+  const titleId = useId();
   const [links] = useState(() => createWikiLinks({ pageId: () => page.id }));
   const [attachmentUrl] = useState(() =>
     createAttachmentUrlResolver({
@@ -130,7 +131,11 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
 
   return (
     <RailLayout rail={rail}>
-      <article className={leaving ? "note note-leaving" : "note"} aria-busy={leaving || undefined}>
+      <article
+        className={leaving ? "note note-leaving" : "note"}
+        aria-labelledby={titleId}
+        aria-busy={leaving || undefined}
+      >
         {linkPending !== null && (
           <span className="visually-hidden" role="status">
             {leaving ? `「${linkPending}」を開いています…` : ""}
@@ -158,7 +163,9 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
             </p>
           </Notice>
         )}
-        <h1 className="note-title">{page.title}</h1>
+        <h1 id={titleId} className="note-title">
+          {page.title}
+        </h1>
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
           ref={editor}

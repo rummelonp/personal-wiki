@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { page as screen } from "vitest/browser";
 import { setLoadingDelay } from "./Loading";
 import { PageReader } from "./PageReader";
 import { forgetTitles, recallTitle } from "./page-titles";
@@ -121,6 +122,12 @@ describe("PageReader", () => {
     for (const label of ["新規", "公開", "下書き", "削除", "保存"]) {
       expect(buttonTexts().some((text) => text.includes(label))).toBe(false);
     }
+  });
+
+  it("本文の領域は、見出しの title を名前に持つ article として読める", () => {
+    renderReader();
+    expect(screen.getByRole("article", { name: "公開の題", exact: true }).element()).not.toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: "公開の題" }).element()).not.toBeNull();
   });
 
   it("右の列にタグのチップを重ねない。タグは本文の #tag だけに出る", () => {
