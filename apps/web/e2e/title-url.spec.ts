@@ -57,4 +57,35 @@ test.describe("anonymous", () => {
     await expect.poll(() => pathname(page)).toBe(underscored(title));
     expect(await canonical(page)).toBe(`${E2E_ORIGIN}${underscored(title)}`);
   });
+
+  test("直接開いた取得中の帯は `_` を空白にした title を出し、取得後は本当の title になる", async ({
+    page,
+    api,
+  }, testInfo) => {
+    const spaced = uniqueTitle(testInfo, "取得中 空白");
+    const snake = snakeTitle(testInfo);
+    await api.createPage({ title: spaced, body: "本文", visibility: "public" });
+    await api.createPage({ title: snake, body: "本文", visibility: "public" });
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === "/api/pages/by-title",
+      async (route) => {
+        await gate;
+        await route.continue().catch(() => {});
+      },
+    );
+
+    await page.goto(underscored(spaced), { waitUntil: "commit" });
+    await expect(page.locator(".note-title")).toHaveText(spaced);
+    release();
+    await expect(page.getByRole("heading", { level: 1, name: spaced, exact: true })).toBeVisible();
+
+    // `_` を含む title は、取得後に本当の title になる
+    await page.goto(`/${encodeURIComponent(snake)}`);
+    await expect(page.getByRole("heading", { level: 1, name: snake, exact: true })).toBeVisible();
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listHeading, listTitleClass } from "./list-heading";
-import { recallTitle, recallTitleFor } from "./page-titles";
+import { loadingTitleFor, recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
 import { useHoldScrollRestore } from "./scroll-restore";
@@ -260,7 +260,7 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
     case "home":
       return <ListSkeleton heading={listHeading(route.query, route.tag)} />;
     case "title":
-      return <PageSkeleton title={recallTitleFor(route.title) ?? route.title} owner={owner} />;
+      return <PageSkeleton title={loadingTitleFor(route.title)} owner={owner} />;
     case "page":
       return <PageSkeleton title={recallTitle(route.id)} owner={owner} />;
     case "new":

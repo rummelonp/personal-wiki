@@ -27,6 +27,23 @@ export function recallTitleFor(urlTitle: string): string | undefined {
   return titlesByKey.get(foldTitle(urlTitle));
 }
 
+/*
+ * urlTitle（packages/domain の page-path.ts）が空白の並びを 1 つの `_` にした形。先頭、末尾、連続の `_` や
+ * 空白を含む URL は、この形にならないので title の `_` そのものと見る。
+ */
+const UNDERSCORED_WORDS = /^[^\s_]+(?:_[^\s_]+)*$/;
+
+/**
+ * 開く途中の帯に出す title。覚えた表記が無いとき、`_` でつないだ URL は空白の title として出す。
+ * title の空白の方が `_` を含む title より多く、後者は取得後に本当の title へ置き換わる。
+ */
+export function loadingTitleFor(urlTitle: string): string {
+  return (
+    recallTitleFor(urlTitle) ??
+    (UNDERSCORED_WORDS.test(urlTitle) ? urlTitle.replaceAll("_", " ") : urlTitle)
+  );
+}
+
 /** ログアウトの後に、draft だった title を匿名の画面へ持ち越さない。 */
 export function forgetTitles(): void {
   titles.clear();
