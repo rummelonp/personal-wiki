@@ -18,7 +18,7 @@ function subscribeVisibility(onChange: () => void): () => void {
 
 const isDocumentHidden = () => document.visibilityState === "hidden";
 
-/** 終わりか停止の見出し。画面の通知と、支援技術への読み上げで同じ文を使う。 */
+/** 終わりか停止の見出し。画面の通知と、完了の読み上げで同じ文を使う。 */
 function resultTitle({ failed, stopReason }: LinkRewriteState): string {
   if (stopReason === "auth" || stopReason === "error") {
     return "他のページのリンクの書き換えを止めました";
@@ -28,9 +28,12 @@ function resultTitle({ failed, stopReason }: LinkRewriteState): string {
     : "他のページのリンクを書き換えました";
 }
 
+/**
+ * status で読み上げる文。進捗と完了だけで、止まって操作が要る停止は含めない（通知が role=alert で読み上げる）。
+ */
 function announcementOf(state: LinkRewriteState): string {
   if (state.status === "running") return state.total > 0 ? RUNNING_ANNOUNCEMENT : "";
-  return state.status === "done" || state.status === "stopped" ? resultTitle(state) : "";
+  return state.status === "done" ? resultTitle(state) : "";
 }
 
 /** title の変更で他のページのリンクを書き換えている間の進み具合と、終わったあとの結果。 */
@@ -75,8 +78,9 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
 
   return (
     <>
-      {/* 進み具合は 1 ページごとに変わるので、通知自体は読み上げず、始まり、終わり、停止の文だけをここで知らせる。
-          空で置いてから後の frame で文を入れ、変化として伝える */}
+      {/* 進み具合は 1 ページごとに変わるので、進捗と完了の通知自体は読み上げず、始まりと終わりの文だけをここで
+          status として知らせる。空で置いてから後の frame で文を入れ、変化として伝える。
+          止まって再試行やログインし直しが要るときは、通知自体を alert にする */}
       <span className="visually-hidden" role="status">
         {ready ? announcementOf(state) : ""}
       </span>
@@ -114,7 +118,13 @@ function LinkRewriteNotice({
   if (status === "running") {
     if (total === 0) return null;
     return (
-      <Notice tone="info" silent interaction={interaction} title={RUNNING_ANNOUNCEMENT}>
+      <Notice
+        key="report"
+        tone="info"
+        silent
+        interaction={interaction}
+        title={RUNNING_ANNOUNCEMENT}
+      >
         <p>
           {done}/{total}{" "}
           ページを書き換えました。この画面を閉じても、残りは次に開いたときに続きから進みます。
@@ -127,9 +137,13 @@ function LinkRewriteNotice({
   const stoppedForAuth = stopReason === "auth";
   const stoppedForError = stopReason === "error";
   return (
+    // 停止の通知は、進捗や完了の通知から role を切り替えず、別の要素として挿入して alert に読み上げさせる
+    // （既存の要素の role が変わっても、支援技術は読み上げない）
     <Notice
+      key={status === "stopped" ? "stopped" : "report"}
       tone={status === "stopped" || failed.length > 0 ? "warn" : "info"}
-      silent
+      role="alert"
+      silent={status !== "stopped"}
       interaction={interaction}
       title={resultTitle(state)}
       actions={

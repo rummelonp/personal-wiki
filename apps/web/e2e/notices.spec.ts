@@ -549,3 +549,36 @@ test("台の地は余白まで不透明で、余白を押しても後ろの本�
   expect(background).toBe(bodyBackground);
   expect(hit, "台の余白が、後ろの本文の要素に操作を通している").toBe(true);
 });
+
+test("リンクの書き換えが通信の失敗で止まったら、alert の通知に再試行を出し、続きから進めると消える", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "書き換えの停止"),
+    body: BODY,
+  });
+  let failing = true;
+  await page.route("**/api/link-rewrites/step", (route) =>
+    failing
+      ? route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "internal" }),
+        })
+      : route.fallback(),
+  );
+  await page.goto(`/p/${created.id}`);
+  const stopped = page
+    .getByRole("alert")
+    .filter({ hasText: "他のページのリンクの書き換えを止めました" });
+  await expect(stopped).toBeVisible();
+  await expect(stopped.getByRole("button", { name: "再試行" })).toBeVisible();
+  await expectDockOnScreen(page);
+
+  // 再試行が通れば止まった通知は消える。完了の報告は status で、alert ではない
+  failing = false;
+  await stopped.getByRole("button", { name: "再試行" }).click();
+  await expect(stopped).toBeHidden();
+  await expect(page.getByRole("alert").filter({ hasText: "書き換え" })).toHaveCount(0);
+});

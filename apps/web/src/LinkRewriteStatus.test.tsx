@@ -89,13 +89,86 @@ describe("リンクの書き換えの通知", () => {
     expect(container.querySelector(".notice-main")?.getAttribute("role")).toBeNull();
   });
 
-  it("止まったときも、同じ status の文が止まったことを伝える", async () => {
-    const { runner, settled } = setup([]);
-    act(() => runner.start(1));
-    await act(async () => {
-      await settled();
+  describe("止まって操作が要るときは alert、進捗と完了は status", () => {
+    const alerts = () => [...document.querySelectorAll("[role='alert']")];
+    const statusText = () => document.querySelector("[role='status']")?.textContent;
+
+    it("通信の失敗で止まったら、通知が alert になり、再試行を出す。status の文は重ねて読まない", async () => {
+      const { runner, settled } = setup([]);
+      act(() => runner.start(1));
+      await act(async () => {
+        await settled();
+      });
+      expect(runner.getState()).toMatchObject({ status: "stopped", stopReason: "error" });
+      expect(alerts()).toHaveLength(1);
+      expect(alerts()[0]?.textContent).toContain("他のページのリンクの書き換えを止めました");
+      expect(alerts()[0]?.textContent).toContain("再試行");
+      expect(statusText()).toBe("");
     });
-    await vi.waitFor(() => expect(announcement()).toBe("他のページのリンクの書き換えを止めました"));
+
+    it("ログインが切れて止まったときも alert で、ログインし直すを出す", async () => {
+      const { runner, settled } = setup([{ ok: false, kind: "unauthorized" }]);
+      act(() => runner.start(1));
+      await act(async () => {
+        await settled();
+      });
+      expect(alerts()).toHaveLength(1);
+      expect(alerts()[0]?.textContent).toContain("ログインし直す");
+      expect(statusText()).toBe("");
+    });
+
+    it("進行中の通知とは別の要素として挿入され、alert として読み上げられる", async () => {
+      // 既存の要素に role を足しても読み上げられないので、要素ごと挿入し直す
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const step = vi.fn(async (): Promise<StepResult> => {
+        await gate;
+        return { ok: false, kind: "error" };
+      });
+      const runner = new LinkRewriteRunner({ step, sleep: async () => {} });
+      container = document.createElement("div");
+      document.body.append(container);
+      root = createRoot(container);
+      act(() => root?.render(<LinkRewriteStatus runner={runner} />));
+      act(() => runner.start(2));
+      const running = container.querySelector(".notice");
+      expect(running).not.toBeNull();
+      expect(alerts()).toHaveLength(0);
+      await act(async () => release());
+      await vi.waitFor(() => expect(runner.getState().status).toBe("stopped"));
+      const stopped = container.querySelector(".notice");
+      expect(stopped).not.toBeNull();
+      expect(stopped).not.toBe(running);
+      expect(alerts()).toHaveLength(1);
+    });
+
+    it("書き換えられなかったリンクがあっても、完了の報告は status で、alert にしない", async () => {
+      const { runner, settled } = setup([stepOk({ failed: ["x"], remaining: 0 })]);
+      act(() => runner.start(1));
+      await act(async () => {
+        await settled();
+      });
+      expect(alerts()).toHaveLength(0);
+      await vi.waitFor(() => expect(statusText()).toBe("書き換えられなかったリンクがあります"));
+    });
+
+    it("通信が戻って自動で続きから進めたら、alert は消え、完了を status が伝える", async () => {
+      const { runner, step, settled } = setup([]);
+      act(() => runner.start(1));
+      await act(async () => {
+        await settled();
+      });
+      expect(alerts()).toHaveLength(1);
+      step.mockResolvedValueOnce(stepOk({ processed: processed("a"), remaining: 0 }));
+      await act(async () => {
+        window.dispatchEvent(new Event("online"));
+        await settled();
+      });
+      expect(alerts()).toHaveLength(0);
+      await vi.waitFor(() => expect(statusText()).toBe("他のページのリンクを書き換えました"));
+    });
   });
 
   it("失敗の無い完了の報告は、閉じなくても一定時間で下がる", async () => {
