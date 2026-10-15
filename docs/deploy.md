@@ -105,9 +105,10 @@ Access が保護するのは `/_auth/login` だけで、Worker は Access が付
 2. Access のアプリケーションを作る。
    対象は、ホスト名 `WIKI_HOSTNAME` のパス `/_auth/login` だけにします
 3. そのアプリケーションのポリシーで、owner のメールアドレスだけを許可する。
-   ログイン方法には、メールアドレスを検証する IdP（One-time PIN など）を使います。
+   ログイン方法には、メールアドレスを検証する IdP（One-time PIN、Cloudflare アカウントでのログインなど）を使います。
    Worker は JWT の email を信じて owner にするためです
-4. アプリケーションの Application Audience (AUD) タグを `ACCESS_AUD` に書く
+4. アプリケーションの Application Audience (AUD) タグを `ACCESS_AUD` に書く。
+   アプリケーションを作り直すと AUD が変わり、`ACCESS_AUD` を書き直して再デプロイするまでログインできません
 5. owner のメールアドレスを `OWNER_EMAILS` に書く（複数ならカンマ区切り）
 6. `pnpm deploy:remote` を実行する
 7. セッション cookie の署名鍵（32 文字以上）を secret で入れる。
@@ -181,6 +182,19 @@ Cron Trigger はアカウント全体で 5 本までなので、既定は空で�
 積んだ分が無い発火の D1 の読み取りは数行で、毎分でも 1 日 1,500 行ほどに収まります。
 
 Cron を使わないときの進め方と、Cron が飛ばしたページの扱いは [operations.md](./operations.md) の「リンクの書き換え」にあります。
+
+## ゾーンの WAF、レート制限、Bot の設定
+
+ゾーン単位の WAF のルール、レート制限、Bot の設定は wrangler の外にあり、このリポジトリは作りも変えもしません。
+使うときは、wiki への次の影響に気をつけます。
+
+- MCP のクライアントと OAuth の接続は、challenge を解けません。
+  国や IP で challenge をかけるルールでは、`/mcp`、`/.well-known/`、`/_auth/oauth/token`、`/_auth/oauth/register` を除きます。
+  `/_auth/oauth/authorize` の同意画面はブラウザで開くので、challenge を受けても進めます
+- Bot Fight Mode は、パスを除いて外すことができず、MCP と API への接続も challenge します。
+  MCP や REST をエージェントから使うなら無効にします
+- `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続した要求も当たります。
+  当たると `server returned 429` で止まるので、少し待ってから [operations.md](./operations.md) の手順で続きから再開します
 
 ## 更新
 
