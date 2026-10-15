@@ -608,6 +608,12 @@ a {
   border-radius: var(--radius-md);
 }
 
+/* 見出し、本文、操作のまとまり。読み上げの範囲（role）はここで、details は含めない */
+.notice-main {
+  display: grid;
+  gap: var(--space-2);
+}
+
 .notice-warn {
   background: var(--color-warn-bg);
   border-color: var(--color-warn-border);
@@ -668,6 +674,13 @@ a {
 .notice .button {
   white-space: normal;
   text-align: center;
+}
+
+/* 操作の前の確認。問いは操作の上に 1 行で置き、キーボードで本文を畳んでも残す */
+.notice-question {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: var(--font-size-sm);
 }
 
 .notice-details {

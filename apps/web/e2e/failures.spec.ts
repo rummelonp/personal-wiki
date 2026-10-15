@@ -141,11 +141,11 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
 
   await page.unroute(pagePath);
   // 上書きはサーバーの最新を置き換えるので、押す前に確かめる。断れば何も変わらない
-  page.once("dialog", (dialog) => dialog.dismiss());
   await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  await conflict.getByRole("button", { name: "やめる" }).click();
   await expect(conflict).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  await conflict.getByRole("button", { name: "上書きする" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(conflict).toBeHidden();
   await expect(bodyEditor(page)).toBeFocused();

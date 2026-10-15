@@ -1,4 +1,13 @@
-import { createContext, type ReactNode, useContext, useEffect, useId, useState } from "react";
+import {
+  createContext,
+  type HTMLAttributes,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { bindNoticeDock } from "./notice-dock";
 
@@ -32,12 +41,43 @@ interface NoticeProps {
   children?: ReactNode;
   /** 操作。主な操作は button-main、ほかは button にする。塗りの強調（button-primary）は画面の主操作に譲る。 */
   actions?: ReactNode;
-  /** alert は気づかせて操作を求めるもの、status は進み具合や結果の報告。 */
+  /**
+   * alert は気づかせて操作を求めるもの、status は結果の報告。
+   * 読み上げの範囲は見出し、本文、操作までで、details は含めない。
+   */
   role?: "alert" | "status";
+  /**
+   * 通知自体を読み上げない。進み具合のように値が刻々と変わる通知は、変わるたびに読み直されるので、
+   * 別に短い読み上げを置く。
+   */
+  silent?: boolean;
   /** 本文の流れの中にそのまま置く（画面全体の読み込みの失敗など、押し下げる相手がいない場所）。 */
   inline?: boolean;
-  /** 操作の下に続けて置く内容（衝突の差分など）。 */
+  /** 操作の下に続けて置く内容（衝突の差分など）。読み上げには含めない。 */
   details?: ReactNode;
+  /**
+   * 通知が出たとき、見出しへ focus を移す。台は main の外にあり、操作を求める通知へ Tab で届くまでが遠いため。
+   * 本文や title を打っている最中は奪わない（入力を止め、IME の変換を切るので）。その場合は
+   * alert の読み上げだけで知らせる。
+   */
+  claimFocus?: boolean;
+  /**
+   * 通知の要素が受け取る focus と pointer の handler。時間で下げる通知が、読んでいる間や操作している間は
+   * 下げないために使う。台に出る通知も、React の木の上では呼び出し元の中なので、台の外から指定できる。
+   */
+  interaction?: NoticeInteraction;
+}
+
+export type NoticeInteraction = Pick<
+  HTMLAttributes<HTMLElement>,
+  "onFocus" | "onBlur" | "onPointerEnter" | "onPointerLeave"
+>;
+
+/** 文字を打っている最中の要素か。 */
+function isTyping(element: Element | null): boolean {
+  if (element === null) return false;
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return true;
+  return element instanceof HTMLElement && element.isContentEditable;
 }
 
 /**
@@ -50,19 +90,36 @@ export function Notice({
   children,
   actions,
   role = "alert",
+  silent = false,
   inline = false,
   details,
+  claimFocus = false,
+  interaction,
 }: NoticeProps) {
   const dock = useContext(DockContext);
   const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  // dock が undefined（台が無い）なら null でないので、null の間（台の要素を作っている最中）だけ置かない
+  const placed = inline || dock !== null;
+  useEffect(() => {
+    if (!claimFocus || !placed) return;
+    if (!isTyping(document.activeElement)) heading.current?.focus({ preventScroll: true });
+  }, [claimFocus, placed]);
   const notice = (
-    <section className={`notice notice-${tone}`} role={role} aria-labelledby={headingId}>
-      <h2 id={headingId} className="notice-title">
-        <span className="dot" aria-hidden="true" />
-        {title}
-      </h2>
-      {children !== undefined && <div className="notice-text">{children}</div>}
-      {actions !== undefined && <div className="actions">{actions}</div>}
+    <section className={`notice notice-${tone}`} {...interaction}>
+      <div className="notice-main" {...(silent ? {} : { role, "aria-labelledby": headingId })}>
+        <h2
+          id={headingId}
+          className="notice-title"
+          ref={heading}
+          tabIndex={claimFocus ? -1 : undefined}
+        >
+          <span className="dot" aria-hidden="true" />
+          {title}
+        </h2>
+        {children !== undefined && <div className="notice-text">{children}</div>}
+        {actions !== undefined && <div className="actions">{actions}</div>}
+      </div>
       {details}
     </section>
   );

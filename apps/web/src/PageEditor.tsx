@@ -458,6 +458,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           <Notice
             tone="warn"
             title="ログインの期限が切れました"
+            claimFocus
             actions={
               <>
                 <a className="button button-main" href={loginHref(window.location)}>

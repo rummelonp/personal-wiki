@@ -71,6 +71,87 @@ function notices(tones: Array<[NoticeTone, string]>) {
   );
 }
 
+describe("通知の読み上げの範囲", () => {
+  it("role は見出し、本文、操作を包む要素に付き、details は含めない", () => {
+    mount(
+      <Notice
+        inline
+        tone="warn"
+        title="食い違っています"
+        actions={<button type="button">取り込む</button>}
+        details={<pre>長い差分</pre>}
+      >
+        <p>理由</p>
+      </Notice>,
+    );
+    const alert = document.querySelector("[role='alert']");
+    expect(alert?.querySelector("h2")?.textContent).toBe("食い違っています");
+    expect(alert?.querySelector("button")).not.toBeNull();
+    expect(alert?.textContent).not.toContain("長い差分");
+    expect(document.body.textContent).toContain("長い差分");
+    expect(alert?.getAttribute("aria-labelledby")).toBe(alert?.querySelector("h2")?.id);
+  });
+
+  it("silent にすると live region にならない", () => {
+    mount(
+      <Notice inline tone="info" silent title="進み具合">
+        <p>1/3</p>
+      </Notice>,
+    );
+    expect(document.querySelector("[role]")).toBeNull();
+  });
+});
+
+describe("通知が出たときの focus", () => {
+  function mountClaiming(before?: () => HTMLElement) {
+    const anchor = before?.();
+    anchor?.focus();
+    mount(
+      <NoticeDockProvider>
+        <Notice
+          tone="warn"
+          title="操作が要ります"
+          claimFocus
+          actions={<button type="button">選ぶ</button>}
+        />
+      </NoticeDockProvider>,
+    );
+    return anchor;
+  }
+
+  it("文字を打っていなければ、見出しへ移す", () => {
+    mountClaiming();
+    expect(document.activeElement).toBe(noticeOf("操作が要ります").querySelector("h2"));
+  });
+
+  it("本文や title を打っている最中（contenteditable、input）は奪わない", () => {
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+    editable.tabIndex = 0;
+    document.body.append(editable);
+    restore.push(() => editable.remove());
+    mountClaiming(() => editable);
+    expect(document.activeElement).toBe(editable);
+
+    act(() => root?.unmount());
+    container?.remove();
+    const input = document.createElement("input");
+    document.body.append(input);
+    restore.push(() => input.remove());
+    mountClaiming(() => input);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("claimFocus が無い通知は、focus を動かさない", () => {
+    mount(
+      <NoticeDockProvider>
+        <Notice tone="info" title="お知らせ" />
+      </NoticeDockProvider>,
+    );
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
 describe("台の中の並びと畳み方", () => {
   it("重大度の高い通知が、出た順によらず台の上に並ぶ", () => {
     notices([

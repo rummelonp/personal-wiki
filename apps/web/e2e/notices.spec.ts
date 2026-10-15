@@ -256,8 +256,11 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   await expect(conflict).toBeVisible();
   await expectBodyNotShifted(page, before);
   await expectDockOnScreen(page);
+  // 本文を打っている最中に通知が出ても、focus は奪わない（変換中なら IME が切れる）
+  await expect(bodyEditor(page)).toBeFocused();
 
-  const panel = await boxOf(conflict);
+  // 枠は role を持つ内側の要素ではなく、線と余白を持つ通知の要素
+  const panel = await boxOf(page.locator(".notice").filter({ has: conflict }));
   const take = conflict.getByRole("button", { name: "サーバーの版を取り込む" });
   const overwrite = conflict.getByRole("button", { name: "手元で上書き" });
   for (const button of [take, overwrite]) {
@@ -306,14 +309,18 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   expect(orphan, "見出しの最後の 1 文字だけが次の行に落ちている").toBe(false);
 
   // 取り込むと、手元の変更は消えてサーバーの版になる。押す前に確かめ、断れば何も変わらない
-  page.once("dialog", (dialog) => dialog.dismiss());
   await take.click();
+  await expect(conflict.getByRole("button", { name: "やめる" })).toBeFocused();
+  await conflict.getByRole("button", { name: "やめる" }).click();
+  await expect(take).toBeFocused();
   await expect(conflict).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   await take.click();
+  await conflict.getByRole("button", { name: "取り込む", exact: true }).click();
   await expect(conflict).toBeHidden();
   // 押したボタンが消えても、focus は本文に戻る
   await expect(bodyEditor(page)).toBeFocused();
+  // 取り込みで本文が差し替わっても、打っていた位置にいた title は見えたまま
+  await expect(titleBox(page)).toBeInViewport();
   await expect(bodyEditor(page)).toContainText("別の場所で足した行");
   await expect(saveState(page)).toHaveText("保存済み");
 });

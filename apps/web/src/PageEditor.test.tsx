@@ -71,7 +71,7 @@ beforeEach(() => {
     ok({ ...PAGE, ...input, version: version + 1 }),
   );
   vi.mocked(getPage).mockResolvedValue(ok(PAGE));
-  // 衝突の操作は、押す前に window.confirm で確かめる。既定では承認する
+  // 削除は押す前に window.confirm で確かめる。既定では承認する
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
@@ -194,18 +194,23 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.state.readOnly).toBe(true);
     expect(v.state.doc.toString()).toBe("本文の手元の変更");
 
-    // 断れば何も変わらず、衝突の画面が残る
-    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    // 押すと通知の中で確かめる。やめれば何も変わらず、衝突の画面が残る
     act(() => button("サーバーの版を取り込む").click());
+    await flushAsync();
+    expect(container?.textContent).toContain(
+      "手元の変更を破棄して、サーバーの版を取り込みますか？",
+    );
+    expect(document.activeElement).toBe(button("やめる"));
+    act(() => button("やめる").click());
     await flushAsync();
     expect(v.state.readOnly).toBe(true);
     expect(v.state.doc.toString()).toBe("本文の手元の変更");
+    expect(document.activeElement).toBe(button("サーバーの版を取り込む"));
 
     act(() => button("サーバーの版を取り込む").click());
     await flushAsync();
-    expect(window.confirm).toHaveBeenLastCalledWith(
-      "手元の変更を破棄して、サーバーの版を取り込みますか？",
-    );
+    act(() => button("取り込む").click());
+    await flushAsync();
     expect(view()).toBe(v);
     expect(v.state.doc.toString()).toBe("サーバーの本文");
     expect(v.state.readOnly).toBe(false);
@@ -229,6 +234,7 @@ describe("PageEditor と本文のエディタ", () => {
     act(() => v.contentDOM.blur());
     await flushAsync();
     act(() => button("サーバーの版を取り込む").click());
+    act(() => button("取り込む").click());
     await flushAsync();
     expect(v.state.doc.toString()).toBe(server.body);
 
@@ -1288,6 +1294,7 @@ describe("title の確定", () => {
     expect(v.state.readOnly).toBe(true);
 
     act(() => button("サーバーの版を取り込む").click());
+    act(() => button("取り込む").click());
     await flushAsync();
     expect(titleView()).toBe(v);
     expect(titleText()).toBe("サーバーの題");
