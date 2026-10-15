@@ -31,7 +31,6 @@ const TOKENS_CSS = `
   --ui-color-on-accent: var(--ui-light, #ffffff) var(--ui-dark, var(--ui-color-background));
   --ui-color-surface: color-mix(in srgb, var(--ui-color-text) 4%, var(--ui-color-background));
   --ui-color-border: color-mix(in srgb, var(--ui-color-text) 16%, var(--ui-color-background));
-  --ui-color-accent-soft: color-mix(in srgb, var(--ui-color-accent) 12%, var(--ui-color-background));
   --ui-color-selected: color-mix(in srgb, var(--ui-color-text) 6%, var(--ui-color-background));
   --ui-color-danger: var(--ui-light, #b3261e) var(--ui-dark, #ff8f87);
 

@@ -147,7 +147,6 @@
   --ui-color-muted: var(--color-fg-muted);
   --ui-color-border: var(--color-border);
   --ui-color-accent: var(--color-accent);
-  --ui-color-accent-soft: var(--color-tag-bg);
   --ui-color-on-accent: var(--color-accent-fg);
   --ui-color-selected: var(--color-selected);
   --ui-color-danger: var(--color-danger);

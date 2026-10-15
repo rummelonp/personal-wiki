@@ -4,7 +4,7 @@
  *
  * 色と書体はホストの CSS 変数から受け取るので、ホストは editor の祖先（通常は `:root`）に次を置く。
  * - 色: `--ui-color-background`、`-surface`、`-text`、`-muted`、`-border`、`-accent`、
- *   `-accent-soft`、`-on-accent`、`-danger`
+ *   `-on-accent`、`-danger`
  * - 書体: `--ui-font-body`、`--ui-font-heading`、`--ui-font-mono`
  * - 明暗の切り替え: ライトでは `--ui-light: initial; --ui-dark: ;`、ダークでは逆にする。
  *   editor の一部の色は `var(--ui-light, 明) var(--ui-dark, 暗)` の形で、`initial` にした側の

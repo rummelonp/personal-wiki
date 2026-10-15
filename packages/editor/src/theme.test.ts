@@ -3,11 +3,22 @@ import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { calloutAppearance } from "./callout";
 import { createEditor } from "./create-editor";
-import { colorOf, contrastRatio, MIN_CONTRAST, type Rgb, resolve, toRgb } from "./test-contrast";
-import { resetScheme, setScheme } from "./test-tokens";
+import {
+  colorOf,
+  contrastRatio,
+  MIN_CONTRAST,
+  over,
+  type Rgb,
+  resolve,
+  toRgb,
+} from "./test-contrast";
+import { resetEditorHue, resetScheme, setEditorHue, setScheme } from "./test-tokens";
 import { SYNTAX_COLOR_VARIABLES } from "./theme";
 
 const SCHEMES = ["light", "dark"] as const;
+
+// テーマはエディタ面へ色相だけを渡すので、5 度刻みで一周させて今後のテーマも覆う
+const HUES = Array.from({ length: 72 }, (_, index) => index * 5);
 
 const LINK = "既知のページ";
 const UNRESOLVED = "未知のページ";
@@ -42,6 +53,7 @@ afterEach(() => {
   view = null;
   host = null;
   resetScheme();
+  resetEditorHue();
 });
 
 function query(v: EditorView, selector: string): HTMLElement {
@@ -110,7 +122,10 @@ describe("editor colors", () => {
     const v = mount();
     const content = v.contentDOM;
     const accent = resolve(content, "var(--ui-color-accent)");
-    const accentSoft = resolve(content, "var(--ui-color-accent-soft)");
+    const tagGround = over(
+      getComputedStyle(query(v, ".cm-tag")).backgroundColor,
+      resolve(content, "var(--ui-color-background)"),
+    );
     const text = colorOf(content);
 
     v.focus();
@@ -119,9 +134,43 @@ describe("editor colors", () => {
       getComputedStyle(await queryDrawn(v, ".cm-selectionBackground")).backgroundColor,
     );
 
-    expect(contrastRatio(accent, accentSoft)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    expect(contrastRatio(accent, tagGround)).toBeGreaterThanOrEqual(MIN_CONTRAST);
     expect(contrastRatio(text, selection)).toBeGreaterThanOrEqual(MIN_CONTRAST);
   });
+
+  it.each(SCHEMES)(
+    "%s: 選択した tag の文字は、tag の地を選択の地に重ねた上で、focus の有無どちらでもどの色相でも 4.5:1 以上",
+    async (scheme) => {
+      setScheme(scheme);
+      const v = mount();
+      const tag = query(v, ".cm-tag");
+
+      /** tag の半透明の地を選択の地に重ねた色に対する、accent の比が 4.5:1 を割る組 */
+      function failuresOver(label: string): string[] {
+        const selection = query(v, ".cm-selectionBackground");
+        return HUES.flatMap((hue) => {
+          setEditorHue(hue);
+          const ground = over(
+            getComputedStyle(tag).backgroundColor,
+            toRgb(getComputedStyle(selection).backgroundColor),
+          );
+          const ratio = contrastRatio(resolve(v.contentDOM, "var(--ui-color-accent)"), ground);
+          return ratio >= MIN_CONTRAST ? [] : [`${label} hue ${hue}: ${ratio.toFixed(2)}:1`];
+        });
+      }
+
+      v.focus();
+      v.dispatch({ selection: EditorSelection.range(0, v.state.doc.length) });
+      await queryDrawn(v, ".cm-selectionBackground");
+      const focused = failuresOver("focused");
+
+      v.contentDOM.blur();
+      await vi.waitFor(() => expect(v.dom.classList.contains("cm-focused")).toBe(false));
+      const blurred = failuresOver("blurred");
+
+      expect([...focused, ...blurred]).toEqual([]);
+    },
+  );
 
   it.each(SCHEMES)(
     "%s: リンクは accent、未解決リンクは補助色に accent の破線、tag は accent の淡い地、markdown link も accent",
@@ -131,7 +180,7 @@ describe("editor colors", () => {
       const content = v.contentDOM;
       const accent = resolve(content, "var(--ui-color-accent)");
       const muted = resolve(content, "var(--ui-color-muted)");
-      const accentSoft = resolve(content, "var(--ui-color-accent-soft)");
+      const page = resolve(content, "var(--ui-color-background)");
 
       const link = query(v, `[data-wikilink-target="${LINK}"]`);
       const unresolved = query(v, `[data-wikilink-target="${UNRESOLVED}"]`);
@@ -149,7 +198,12 @@ describe("editor colors", () => {
       expect(colorOf(unresolvedText)).toEqual(muted);
       expect(getComputedStyle(unresolvedText).textDecorationLine).toBe("none");
       expect(colorOf(tag)).toEqual(accent);
-      expect(toRgb(getComputedStyle(tag).backgroundColor)).toEqual(accentSoft);
+      // 地は accent を透かした色。地の色そのものと違い、選択範囲の層が透けて見える
+      const tagBackground = getComputedStyle(tag).backgroundColor;
+      expect(() => toRgb(tagBackground)).toThrow(/translucent/);
+      const tagGround = over(tagBackground, page);
+      expect(tagGround).not.toEqual(page);
+      expect(contrastRatio(tagGround, accent)).toBeLessThan(contrastRatio(page, accent));
       expect(colorOf(mdLink)).toEqual(accent);
       expect(getComputedStyle(mdLink).textDecorationLine).toBe("underline");
     },

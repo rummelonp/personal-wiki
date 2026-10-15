@@ -418,7 +418,16 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-autolink": { color: "inherit", textDecoration: "underline", cursor: "pointer" },
   ".cm-tag": {
     color: "var(--ui-color-accent)",
-    backgroundColor: "var(--ui-color-accent-soft)",
+    // 選択範囲は本文の下の層に描かれるので、不透明な地だと tag の上の選択が見えなくなる。地は半透明にする。
+    // accent だけを透かすと、選択の地（accent を混ぜた色）に accent を足し重ねて accent の文字が 4.5:1 を割る。
+    // そこで地の層は、ぼかした選択と同じ 14% の accent をページの色に混ぜた色にする。選択の上では
+    // accent を足さずページの色へ戻す側に働くので、選択の地だけの上より比が下がらない。
+    // 代わりに tag の下の行の地（callout、引用、蛍光ペンなど）も同じだけページの色へ薄まる。
+    // 暗い側は地との差が出にくいので少し濃く重ねる
+    backgroundColor: byScheme(
+      "color-mix(in srgb, color-mix(in srgb, var(--ui-color-accent) 14%, var(--ui-color-background)) 60%, transparent)",
+      "color-mix(in srgb, color-mix(in srgb, var(--ui-color-accent) 14%, var(--ui-color-background)) 70%, transparent)",
+    ),
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0 0.2em",
     cursor: "pointer",

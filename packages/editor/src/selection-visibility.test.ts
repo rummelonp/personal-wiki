@@ -44,9 +44,8 @@ function alphaOf(color: string): number {
 }
 
 /** 背景色が不透明な要素（選択範囲を隠す）の一覧 */
-function opaqueBackgrounds(root: Element, except: string): string[] {
+function opaqueBackgrounds(root: Element): string[] {
   return [...root.querySelectorAll("*")]
-    .filter((element) => !element.matches(except))
     .filter((element) => {
       const { backgroundColor } = getComputedStyle(element);
       return backgroundColor !== "rgba(0, 0, 0, 0)" && alphaOf(backgroundColor) >= 1;
@@ -84,12 +83,8 @@ const RICH_DOC = [
   "段落 ^target",
 ].join("\n");
 
-// 地の色が token そのもので、半透明にできないもの。選択を隠す既知の残りとして検査から外す
-//  - tag の chip: ホストの `--ui-color-accent-soft` が不透明な色として渡される
-const KEPT_OPAQUE = ".cm-tag";
-
 describe("装飾の地は選択範囲を隠さない", () => {
-  it("frontmatter を畳んだ表示と、本文／コード／引用／callout／表の地が不透明でない", () => {
+  it("frontmatter を畳んだ表示と、本文／コード／引用／callout／表／tag の地が不透明でない", () => {
     const v = mount(RICH_DOC);
     v.focus();
     v.dispatch({ selection: EditorSelection.cursor(v.state.doc.length) });
@@ -99,7 +94,8 @@ describe("装飾の地は選択範囲を隠さない", () => {
     expect(v.contentDOM.querySelector(".cm-lp-code")).not.toBeNull();
     expect(v.contentDOM.querySelector(".cm-lp-callout")).not.toBeNull();
     expect(v.contentDOM.querySelector(".cm-lp-table-header")).not.toBeNull();
-    expect(opaqueBackgrounds(v.contentDOM, KEPT_OPAQUE)).toEqual([]);
+    expect(v.contentDOM.querySelector(".cm-tag")).not.toBeNull();
+    expect(opaqueBackgrounds(v.contentDOM)).toEqual([]);
   });
 
   it("frontmatter を開いた source の行の地が不透明でない", () => {
@@ -107,7 +103,7 @@ describe("装飾の地は選択範囲を隠さない", () => {
     v.focus();
     v.dispatch({ selection: EditorSelection.cursor(5) });
     expect(v.contentDOM.querySelector(".cm-frontmatter-source")).not.toBeNull();
-    expect(opaqueBackgrounds(v.contentDOM, KEPT_OPAQUE)).toEqual([]);
+    expect(opaqueBackgrounds(v.contentDOM)).toEqual([]);
   });
 
   it("カーソル行の地が不透明でない", async () => {
