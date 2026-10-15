@@ -193,6 +193,7 @@ interface PageEditorProps {
 export function PageEditor({ page, newTitle = "", attachments = false, onShown }: PageEditorProps) {
   const editor = useRef<BodyEditorHandle>(null);
   const titleEditor = useRef<TitleEditorHandle>(null);
+  const article = useRef<HTMLElement>(null);
   // リンクに書けないと知らされた title。保存の応答は、積んだものも飛ばしたものも無ければ書き換えの
   // 数を返さないので、応答ではなく保存済みの title と比べて、別の title に変えたら案内を消す
   const [pendingVisibility, setPendingVisibility] = useState<"draft" | "public" | null>(null);
@@ -229,11 +230,16 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (!uncreated) onShown?.({ id: pageId, title: savedTitle, visibility: savedVisibility });
   }, [onShown, uncreated, pageId, savedTitle, savedVisibility]);
   const { goTo } = useFragmentJump(editor);
-  // 押したボタンは解決で消えるので、focus が body に落ちないよう本文に戻す。また食い違えば衝突の
-  // 通知が残るので、そのときは動かさない
+  // 押したボタンは解決で消えるので、focus が body に落ちないよう移す。移す先は本文だが、タッチ端末では
+  // 本文に移すと、確認の操作で閉じたキーボードが開き直り、カーソルの行へスクロールして title が見える
+  // 範囲から外れる。そこではキーボードを開かないページの枠に移し、スクロールの位置も動かさない。
+  // また食い違えば衝突の通知が残るので、そのときは動かさない
   async function resolveConflict(resolve: () => void | Promise<void>) {
     await resolve();
-    if (session.getState().conflict === null) editor.current?.view()?.focus();
+    if (session.getState().conflict !== null) return;
+    if (window.matchMedia("(pointer: coarse)").matches)
+      article.current?.focus({ preventScroll: true });
+    else editor.current?.view()?.focus();
   }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
@@ -429,7 +435,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
 
   return (
     <RailLayout rail={rail}>
-      <article className={leaving ? "note note-leaving" : "note"} aria-busy={leaving || undefined}>
+      <article
+        ref={article}
+        className={leaving ? "note note-leaving" : "note"}
+        aria-busy={leaving || undefined}
+        tabIndex={-1}
+      >
         {linkPending !== null && (
           <span className="visually-hidden" role="status">
             {leaving ? `「${linkPending}」を開いています…` : ""}

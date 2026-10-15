@@ -229,6 +229,7 @@ test.describe("幅ごとの通知 @widths", () => {
 test("衝突の通知は、title と本文を動かさず、主操作は取り込みで、操作は枠の中に収まる", async ({
   page,
   api,
+  isMobile,
 }, testInfo) => {
   // 375px で操作が枠を越えないことを測るので、デスクトップの環境は幅を狭める
   if (testInfo.project.name === "chromium-desktop") {
@@ -317,8 +318,10 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   await take.click();
   await conflict.getByRole("button", { name: "取り込む", exact: true }).click();
   await expect(conflict).toBeHidden();
-  // 押したボタンが消えても、focus は本文に戻る
-  await expect(bodyEditor(page)).toBeFocused();
+  // 押したボタンが消えても focus は body に落ちず、本文に戻る。タッチ端末では、確認の操作で閉じた
+  // キーボードを開き直さないよう、ページの枠に移る
+  if (isMobile) await expect(page.locator("article.note")).toBeFocused();
+  else await expect(bodyEditor(page)).toBeFocused();
   // 取り込みで本文が差し替わっても、打っていた位置にいた title は見えたまま
   await expect(titleBox(page)).toBeInViewport();
   await expect(bodyEditor(page)).toContainText("別の場所で足した行");

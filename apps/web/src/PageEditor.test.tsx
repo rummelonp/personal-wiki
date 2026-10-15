@@ -218,6 +218,43 @@ describe("PageEditor と本文のエディタ", () => {
     expect(document.activeElement).toBe(v.contentDOM);
   });
 
+  it("タッチ端末では、衝突を解決しても本文に focus を戻さず、キーボードを開き直さない", async () => {
+    const coarse = vi.spyOn(window, "matchMedia").mockImplementation(
+      (query) =>
+        ({
+          matches: query === "(pointer: coarse)",
+          media: query,
+          addEventListener() {},
+          removeEventListener() {},
+        }) as unknown as MediaQueryList,
+    );
+    try {
+      vi.mocked(updatePage).mockResolvedValue({
+        ok: false,
+        reason: "version_conflict",
+        currentVersion: 2,
+      });
+      vi.mocked(getPage).mockResolvedValue(ok({ ...PAGE, body: "サーバーの本文", version: 2 }));
+      const { view, button } = renderPage();
+      const v = view();
+      v.focus();
+      typeAtEnd(v, "の手元の変更");
+      act(() => v.contentDOM.blur());
+      await flushAsync();
+      const scrolled = window.scrollY;
+
+      act(() => button("サーバーの版を取り込む").click());
+      await flushAsync();
+      act(() => button("取り込む").click());
+      await flushAsync();
+      expect(v.state.doc.toString()).toBe("サーバーの本文");
+      expect(document.activeElement).toBe(container?.querySelector("article"));
+      expect(window.scrollY).toBe(scrolled);
+    } finally {
+      coarse.mockRestore();
+    }
+  });
+
   it("サーバーの版を取り込んだ後の undo で、取り込む前の手元の編集を新しい本文から取り消さない", async () => {
     // 別のタブで同じ編集に続けて書き足した版。手元の編集が新しい本文にも残る
     const server: Page = { ...PAGE, body: "本文の手元の変更と別のタブの追記", version: 2 };

@@ -112,6 +112,7 @@ test("オフラインで保存できないと失敗の案内が出て、戻っ�
 test("別の場所の保存と食い違うと衝突の画面が出て、手元で上書きできる", async ({
   page,
   api,
+  isMobile,
 }, testInfo) => {
   const created = await openFreshPage(page, api, uniqueTitle(testInfo, "衝突"));
   const pagePath = `**/api/pages/${created.id}`;
@@ -148,6 +149,8 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
   await conflict.getByRole("button", { name: "上書きする" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(conflict).toBeHidden();
-  await expect(bodyEditor(page)).toBeFocused();
+  // タッチ端末では、確認の操作で閉じたキーボードを開き直さないよう、本文でなくページの枠に移る
+  if (isMobile) await expect(page.locator("article.note")).toBeFocused();
+  else await expect(bodyEditor(page)).toBeFocused();
   await expectSavedOnServer(api, created.id, FIRST_LINE + typed);
 });
