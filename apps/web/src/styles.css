@@ -1335,7 +1335,8 @@ a {
   background: var(--color-surface);
 }
 
-.diff-legend {
+.diff-legend,
+.conflict-hint {
   margin: 0;
   font-size: var(--font-size-sm);
 }

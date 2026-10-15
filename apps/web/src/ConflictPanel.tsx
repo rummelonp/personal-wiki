@@ -30,7 +30,8 @@ interface ConflictPanelProps {
 /**
  * 差分の欄の最初の変更が見えるようにスクロールする。見えていれば動かさない。
  * 見せる単位は最初の変更の組（− の行と、すぐ後ろの ＋ の行）で、欄に収まらなければ − の行だけにする。
- * 動かすときは、直前の共通の行から始めて文脈を見せる。ただし直前の行から組までが欄に収まらないときは、
+ * 動かすときは、title の比較（欄の先頭にある）から組までが収まれば欄の先頭に戻し、title が違うことも見せる。
+ * 収まらなければ直前の共通の行から始めて文脈を見せる。ただし直前の行から組までも収まらないときは、
  * 組が半端に切れるより文脈を捨てて、最初の変更の行を上端に置く。
  * 欄が隠れている間（キーボードが出ている間など）は測れないので false を返し、呼び出し側が見えてから呼び直す。
  */
@@ -51,6 +52,11 @@ function revealFirstChange(scroller: HTMLElement): boolean {
   const group = spanOf(first, pairEnd) <= room ? pairEnd : first;
   const visibleTop = first.offsetTop - scroller.scrollTop;
   if (visibleTop >= 0 && visibleTop + spanOf(first, group) <= room) return true;
+  const titles = scroller.querySelector<HTMLElement>(":scope > .conflict-titles");
+  if (titles !== null && spanOf(titles, group) <= room) {
+    scroller.scrollTop = 0;
+    return true;
+  }
   const before = first.previousElementSibling;
   const start = before instanceof HTMLElement && spanOf(before, group) <= room ? before : first;
   // offsetTop の基準は position: relative の .notice-details。scrollIntoView は台そのものをスクロールしうる
@@ -129,6 +135,14 @@ export function ConflictPanel({
     if (selected === "take") onTakeServer();
     else if (selected === "overwrite") onOverwrite();
   }
+  const titles = titleChanged && (
+    <dl className="conflict-titles">
+      <dt>サーバーの title</dt>
+      <dd>{server.title}</dd>
+      <dt>手元の title</dt>
+      <dd>{local.title}</dd>
+    </dl>
+  );
   const confirm = choice === null ? null : CONFIRMS[choice];
   return (
     <Notice
@@ -185,15 +199,14 @@ export function ConflictPanel({
       }
       details={
         <>
-          {/* 凡例と title は差分の欄の外に置き、差分をスクロールしても見え続けるようにする */}
+          {/* 凡例は差分の欄の外に置き、差分をスクロールしても見え続けるようにする。title の比較は外に置くと、
+              幅の狭い画面で長い title が欄を押しつぶして差分が 1 行も残らないので、差分の欄の先頭に入れる */}
           <div className="conflict-summary">
-            {titleChanged && (
-              <dl className="conflict-titles">
-                <dt>サーバーの title</dt>
-                <dd>{server.title}</dd>
-                <dt>手元の title</dt>
-                <dd>{local.title}</dd>
-              </dl>
+            {!hasDiff && titles}
+            {/* 欄の先頭の title の比較は、最初の変更を見せるために送ると外へ流れる。上書きは
+                サーバーの title も消すので、見落とさないよう欄の外に手がかりを 1 行置く */}
+            {hasDiff && titleChanged && (
+              <p className="muted conflict-hint">title も食い違っています</p>
             )}
             {hasDiff ? (
               <p className="muted diff-legend">− はサーバーだけにある行、＋ は手元だけにある行</p>
@@ -203,6 +216,7 @@ export function ConflictPanel({
           </div>
           {hasDiff && (
             <div className="notice-details" ref={setScroller}>
+              {titles}
               <div className="diff">
                 {rows.map((row, index) =>
                   row.kind === "skip" ? (

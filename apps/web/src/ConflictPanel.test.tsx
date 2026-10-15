@@ -134,8 +134,10 @@ async function mountInDock(options: {
   detailsMaxHeight?: number;
   /** 差分の欄の高さを、差分の行の数で指定する（罫線の分を足す）。 */
   detailsRows?: number;
+  titleDiffers?: boolean;
+  viewportHeight?: number;
 }) {
-  await browserPage.viewport(393, 500);
+  await browserPage.viewport(393, options.viewportHeight ?? 500);
   let maxHeight = options.detailsMaxHeight;
   if (options.detailsRows !== undefined) {
     const probe = document.createElement("div");
@@ -154,7 +156,7 @@ async function mountInDock(options: {
   }
   const server = { ...SERVER, body: LINES.join("\n") };
   const localAt = (changeAt: number, laterAt?: number) => ({
-    title: "題",
+    title: options.titleDiffers ? "別の題" : "題",
     body: LINES.map((line, index) =>
       index === changeAt || index === laterAt ? `${line}を直した` : line,
     ).join("\n"),
@@ -301,5 +303,39 @@ describe("差分の欄", () => {
   it("先頭の行が変わっていれば、スクロールしない", async () => {
     const { details } = await mountInDock({ changeAt: 0, detailsMaxHeight: 70 });
     expect(details.scrollTop).toBe(0);
+  });
+
+  describe("title も違うとき", () => {
+    it("title の比較から最初の変更の組までが収まるなら、欄の先頭に戻して title も見せる", async () => {
+      const { details } = await mountInDock({
+        changeAt: 25,
+        detailsRows: 14,
+        viewportHeight: 900,
+        titleDiffers: true,
+      });
+      const titles = details.querySelector(".conflict-titles") as Element;
+      expect(within(titles, details)).toBe(true);
+      expect(within(details.querySelector(".diff-delete") as Element, details)).toBe(true);
+      expect(within(details.querySelector(".diff-insert") as Element, details)).toBe(true);
+    });
+
+    it("収まらないときは変更の組を見せ、欄の外の 1 行で title も違うことを知らせる", async () => {
+      const { details } = await mountInDock({
+        changeAt: 25,
+        detailsRows: 2.5,
+        titleDiffers: true,
+      });
+      const hint = document.querySelector(".conflict-hint") as Element;
+      expect(hint.textContent).toContain("title");
+      expect(details.contains(hint)).toBe(false);
+      expect(within(hint, document.querySelector(".notice") as Element)).toBe(true);
+      expect(within(details.querySelector(".diff-delete") as Element, details)).toBe(true);
+      expect(within(details.querySelector(".diff-insert") as Element, details)).toBe(true);
+    });
+
+    it("title が同じなら、知らせの行を出さない", async () => {
+      await mountInDock({ changeAt: 25, detailsRows: 2.5 });
+      expect(document.querySelector(".conflict-hint")).toBeNull();
+    });
   });
 });

@@ -3,7 +3,7 @@ import type { ApiPage, OwnerApi } from "./support/api";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
 
 /*
- * 失敗の通知から衝突に移る流れ。
+ * 失敗の通知から衝突に移る流れと、title も違う衝突の差分の欄。
  */
 
 const LINES = Array.from({ length: 60 }, (_, index) => `${index + 1} 行目の本文`);
@@ -75,3 +75,79 @@ test("失敗の通知からキーボードで再試行して衝突になった�
   await expect(heading).toBeFocused();
   expect(await heading.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
 });
+
+const VIEWPORTS = [
+  { name: "高さ 667", width: 375, height: 667, rows: 2 },
+  // 低い画面は、title の知らせの 1 行の分だけ欄が狭い。変更の行 1 行は見せる
+  { name: "高さ 500", width: 375, height: 500, rows: 1 },
+];
+
+for (const viewport of VIEWPORTS) {
+  test(`title も違う長い差分の衝突でも、${viewport.name} の最初の表示で差分の欄が ${viewport.rows} 行以上残り、title も違うと分かる`, async ({
+    page,
+    api,
+    isMobile,
+  }, testInfo) => {
+    // モバイルの環境は端末の大きさが決まっているので、高さの違う変種は流さない
+    test.skip(isMobile && viewport.height !== 667, "デスクトップの高さを変えて測る");
+    if (!isMobile) await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const created = await openLongPage(page, api, uniqueTitle(testInfo, "title も違う"));
+    const pagePath = `**/api/pages/${created.id}`;
+    let external: Promise<ApiPage> | undefined;
+    await page.route(pagePath, async (route) => {
+      if (route.request().method() !== "PUT") return route.fallback();
+      external ??= api.updatePage(created, {
+        title: `${created.title}を別の場所で長く書き換えた title`,
+        body: LINES.map((line, index) =>
+          index % 7 === 3 ? `${line}を別の場所で直した` : line,
+        ).join("\n"),
+      });
+      const updated = await external.then(
+        () => true,
+        () => false,
+      );
+      return updated ? route.fallback() : route.abort();
+    });
+    await typeAt(page, 30, "、手元の変更");
+    await expect.poll(() => external, "保存が送られない").toBeDefined();
+    await external;
+    const conflict = page.getByRole("alert").filter({
+      has: page.getByRole("heading", { name: CONFLICT_HEADING }),
+    });
+    await expect(conflict).toBeVisible();
+    const notice = page.locator(".notice").filter({ has: conflict });
+    await expect(notice.locator(".conflict-titles")).toBeAttached();
+
+    const measured = await notice.evaluate((element) => {
+      const details = element.querySelector(".notice-details") as HTMLElement;
+      const pane = details.getBoundingClientRect();
+      const inside = (target: Element | null, outer: DOMRect) => {
+        if (target === null) return false;
+        const box = target.getBoundingClientRect();
+        return box.height > 0 && box.top >= outer.top - 0.5 && box.bottom <= outer.bottom + 0.5;
+      };
+      const rowHeight = (details.querySelector(".diff-row") as HTMLElement).getBoundingClientRect()
+        .height;
+      const outer = element.getBoundingClientRect();
+      return {
+        room: details.clientHeight,
+        rowHeight,
+        firstInPane: inside(details.querySelector(".diff-delete"), pane),
+        titlesInPane: inside(details.querySelector(".conflict-titles"), pane),
+        hintInNotice: inside(element.querySelector(".conflict-hint"), outer),
+        hintOutsidePane: !details.contains(element.querySelector(".conflict-hint")),
+        noticeInViewport: outer.top >= -0.5 && outer.bottom <= window.innerHeight + 0.5,
+      };
+    });
+    expect(measured.room, "差分の欄が足りない").toBeGreaterThanOrEqual(
+      measured.rowHeight * viewport.rows,
+    );
+    expect(measured.firstInPane, "最初の変更の行が欄からはみ出している").toBe(true);
+    expect(measured.noticeInViewport, "通知が画面からはみ出している").toBe(true);
+    // 比較が欄の先頭に見えていなくても、欄の外の 1 行で title が違うと分かる
+    expect(
+      measured.titlesInPane || (measured.hintInNotice && measured.hintOutsidePane),
+      "title も違うと分かるものが最初の表示に見えていない",
+    ).toBe(true);
+  });
+}
