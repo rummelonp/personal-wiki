@@ -1250,6 +1250,40 @@ describe("サーバーから消えたページの退避", () => {
     expect(session.getState().conflict).not.toBeNull();
   });
 
+  it("公開設定の 409 のあとに最新を取りにいく間も、busy を保ち、衝突が決まると外す", async () => {
+    const { session, api, server } = setup();
+    server.page = page({ body: "他", version: 2 });
+    let release: (value: ApiResult<Page>) => void = () => {};
+    api.getPage = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
+    const changing = session.changeVisibility("public");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.getState()).toMatchObject({ busy: "visibility", conflict: null });
+    release(ok(server.page));
+    await changing;
+    expect(session.getState()).toMatchObject({ busy: null });
+    expect(session.getState().conflict).not.toBeNull();
+  });
+
+  it("削除の 409 のあとに最新を取りにいく間も、busy を保ち、衝突が決まると外す", async () => {
+    const { session, api, server } = setup();
+    server.page = page({ body: "他", version: 2 });
+    let release: (value: ApiResult<Page>) => void = () => {};
+    api.getPage = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
+    const removing = session.remove();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.getState()).toMatchObject({ busy: "deleting", conflict: null });
+    release(ok(server.page));
+    expect(await removing).toBe(false);
+    expect(session.getState()).toMatchObject({ busy: null });
+    expect(session.getState().conflict).not.toBeNull();
+  });
+
   it("自分の削除では、退避できなかった案内を出さない", async () => {
     const backup = memoryBackup();
     const { session, api } = setup({ backup });

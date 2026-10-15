@@ -315,6 +315,57 @@ describe("PageEditor と本文のエディタ", () => {
     ]);
   });
 
+  describe.each([
+    {
+      name: "ログイン切れ",
+      end: { ok: false, reason: "unauthorized" } as const,
+      remaining: ["ログインの期限が切れました"],
+      latest: null,
+    },
+    {
+      name: "ページの消失",
+      end: { ok: false, reason: "version_conflict", currentVersion: 2 } as const,
+      remaining: ["このページはサーバーにありません"],
+      // 衝突を知らされて最新を取りにいくと 404 で決まる
+      latest: { ok: false, reason: "not_found" } as const,
+    },
+  ])("もう一度保存して $name になるとき", ({ end, remaining, latest }) => {
+    it("保存中の通知は、その通知と並ばずに消える", async () => {
+      vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+      const { view, button } = renderPage();
+      view().focus();
+      typeAtEnd(view(), "を書き足す");
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+
+      let finish: (value: ApiResult<Page>) => void = () => {};
+      vi.mocked(updatePage).mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      if (latest !== null) vi.mocked(getPage).mockResolvedValueOnce(latest);
+      const titles = () =>
+        [...(container?.querySelectorAll(".notice-title") ?? [])].map((h) => h.textContent);
+      act(() => button("もう一度保存する").click());
+      await flushAsync();
+      expect(titles()).toEqual(["保存しています…"]);
+
+      // 描き直しのたびに、通知の並びを残す
+      const seen: Array<Array<string | null>> = [];
+      const observer = new MutationObserver(() => seen.push(titles()));
+      observer.observe(container as HTMLElement, { childList: true, subtree: true });
+      await act(async () => finish(end));
+      await flushAsync();
+      observer.disconnect();
+
+      expect(titles()).toEqual(remaining);
+      for (const snapshot of seen) {
+        expect(snapshot.includes("保存しています…") && snapshot.length > 1).toBe(false);
+      }
+    });
+  });
+
   it("変換中にページを離れても、未確定文字まで退避に残す", async () => {
     vi.mocked(updatePage).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
     const { view } = renderPage();
