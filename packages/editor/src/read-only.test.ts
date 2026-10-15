@@ -104,6 +104,18 @@ describe("setReadOnly", () => {
     expect(v.contentDOM.getAttribute("inputmode")).toBe("none");
   });
 
+  // contenteditable が true のままでも、読み上げが編集できる欄と伝えないよう aria-readonly が要る。
+  // CodeMirror が state.readOnly から付けるので editor 側の実装は無く、切り替えへの追従だけを見張る
+  it("sets aria-readonly on the content only while read-only", () => {
+    const v = mount("本文", { readOnly: true });
+    expect(v.contentDOM.getAttribute("aria-readonly")).toBe("true");
+    expect(v.contentDOM.getAttribute("contenteditable")).toBe("true");
+    setReadOnly(v, false);
+    expect(v.contentDOM.hasAttribute("aria-readonly")).toBe(false);
+    setReadOnly(v, true);
+    expect(v.contentDOM.getAttribute("aria-readonly")).toBe("true");
+  });
+
   it("keeps the change filter when the view is created read-only", () => {
     const v = mount("本文", { readOnly: true });
     v.dispatch({ changes: { from: 2, insert: "!" }, userEvent: "input.type" });

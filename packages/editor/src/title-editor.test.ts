@@ -274,6 +274,15 @@ describe("createTitleEditor", () => {
     expect(titleView.state.doc.toString()).toBe("続新しい題名");
   });
 
+  test("setReadOnly tells assistive technology the title is read-only", () => {
+    const titleView = mount((parent) => createTitleEditor(parent, { doc: "題名", readOnly: true }));
+    expect(titleView.contentDOM.getAttribute("aria-readonly")).toBe("true");
+    setReadOnly(titleView, false);
+    expect(titleView.contentDOM.hasAttribute("aria-readonly")).toBe(false);
+    setReadOnly(titleView, true);
+    expect(titleView.contentDOM.getAttribute("aria-readonly")).toBe("true");
+  });
+
   test("undo does not change a read-only title", () => {
     const titleView = mount((parent) => createTitleEditor(parent, { doc: "題名" }));
     titleView.dispatch({ changes: { from: 2, insert: "追記" }, userEvent: "input.type" });
