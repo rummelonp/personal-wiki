@@ -192,21 +192,25 @@ test("検索結果の見出しは、開き括弧の行頭の空きを詰める",
   await page.goto(`/?q=${encodeURIComponent("メモ")}`);
   const heading = page.getByRole("heading", { level: 1, name: "「メモ」の検索結果" });
   await expect(heading).toBeVisible();
-  const { next, size } = await heading.evaluate((element) => {
-    const text = element.firstChild as Text;
-    const range = document.createRange();
-    range.setStart(text, 0);
-    range.setEnd(text, 1);
-    const style = getComputedStyle(element);
-    const contentLeft = element.getBoundingClientRect().left + Number.parseFloat(style.paddingLeft);
-    return {
-      // 2 字目が始まる位置。text-spacing-trim で詰めても、字下げを戻しても、ここが半角分になる
-      next: range.getBoundingClientRect().right - contentLeft,
-      size: Number.parseFloat(style.fontSize),
-    };
-  });
-  // 詰めないと全角の 1 字分（字の大きさ）の幅を取る
-  expect(next).toBeLessThan(size * 0.75);
+  // 結果が届くと見出しが描き直される。外れた要素を測ると計算済みの style が空で NaN になるので、測り直す
+  await expect
+    .poll(() =>
+      heading.evaluate((element) => {
+        const text = element.firstChild as Text;
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(text, 1);
+        const style = getComputedStyle(element);
+        const contentLeft =
+          element.getBoundingClientRect().left + Number.parseFloat(style.paddingLeft);
+        // 2 字目が始まる位置の、字の大きさに対する割合。text-spacing-trim で詰めても、字下げを戻しても、
+        // 半角分（0.5）になる。詰めないと全角の 1 字分（1）を取る
+        return (
+          (range.getBoundingClientRect().right - contentLeft) / Number.parseFloat(style.fontSize)
+        );
+      }),
+    )
+    .toBeLessThan(0.75);
 });
 
 test("検索結果の title と抜粋で、一致箇所に同じ規則の強調が付く", async ({
