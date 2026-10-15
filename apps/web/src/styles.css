@@ -103,8 +103,10 @@ a {
   cursor: pointer;
 }
 
-.header-search:hover:not(:disabled) {
-  background: var(--color-selected);
+@media (hover: hover) {
+  .header-search:hover:not(:disabled) {
+    background-color: var(--color-selected);
+  }
 }
 
 .header-search:disabled {
@@ -287,8 +289,10 @@ a {
   cursor: pointer;
 }
 
-.outline-link:hover {
-  color: var(--color-accent);
+@media (hover: hover) {
+  .outline-link:hover {
+    color: var(--color-accent);
+  }
 }
 
 /* 目次は overflow で切れる欄の中にあるので、focus の輪は外へはみ出さず内側に引く */
@@ -385,12 +389,12 @@ a {
 .segmented-option[aria-pressed="true"] {
   font-weight: var(--font-weight-medium);
   color: var(--color-fg);
-  background: var(--color-selected);
+  background-color: var(--color-selected);
 }
 
 .segmented-option[aria-pressed="true"][data-value="public"] {
   color: var(--color-tag-fg);
-  background: var(--color-tag-bg);
+  background-color: var(--color-tag-bg);
 }
 
 .segmented-option:disabled {
@@ -468,8 +472,15 @@ a {
   cursor: pointer;
 }
 
-.button:hover:not(:disabled) {
-  background: var(--color-selected);
+/*
+ * hover は、hover できる端末だけに付ける。タッチ端末は押した後も hover が残り、地が残って見える。
+ * 地は background-color で変える。一括指定の background は background-clip を戻し、タッチ端末の
+ * ヘッダーの操作で、透明な border まで地が広がる。
+ */
+@media (hover: hover) {
+  .button:hover:not(:disabled) {
+    background-color: var(--color-selected);
+  }
 }
 
 .button:disabled {
@@ -483,9 +494,11 @@ a {
   border-color: var(--color-accent);
 }
 
-.button-primary:hover:not(:disabled) {
-  background: var(--color-accent);
-  opacity: 0.88;
+@media (hover: hover) {
+  .button-primary:hover:not(:disabled) {
+    background-color: var(--color-accent);
+    opacity: 0.88;
+  }
 }
 
 .button-quiet {
@@ -539,7 +552,7 @@ a {
 
 .chip-link[aria-current="page"] {
   color: var(--color-accent-fg);
-  background: var(--color-accent);
+  background-color: var(--color-accent);
 }
 
 /* 濃さだけで文字より一段控える。これより薄いとチップの地に対し 4.5:1 を割る */
@@ -812,8 +825,10 @@ a {
   white-space: nowrap;
 }
 
-.entry-title:hover {
-  color: var(--color-accent);
+@media (hover: hover) {
+  .entry-title:hover {
+    color: var(--color-accent);
+  }
 }
 
 .entry-time {
@@ -1039,9 +1054,14 @@ a {
   border-bottom: var(--border-width) solid transparent;
 }
 
-.title-input:hover::after,
 .title-input:focus-within::after {
   border-bottom-color: var(--color-border);
+}
+
+@media (hover: hover) {
+  .title-input:hover::after {
+    border-bottom-color: var(--color-border);
+  }
 }
 
 /* title エディタの既定の大きさ（28px）は .cm-editor に直接付くので、同じ要素で上書きする */

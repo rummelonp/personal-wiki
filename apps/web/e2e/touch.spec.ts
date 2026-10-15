@@ -231,6 +231,29 @@ test.describe("タップ対象", () => {
     await expectTapTargets(page, [".toc > summary", ".toc .outline-link"]);
   });
 
+  test("押した後にヘッダーの操作へ hover の地が残らず、現在地のタグの地は押せる箱いっぱいに広がらない", async ({
+    page,
+  }) => {
+    await page.goto(`/?tag=${encodeURIComponent("メモ")}`);
+    const current = page.locator(".rail .chip-link[aria-current='page']");
+    await expect(current).toBeVisible();
+    expect(await page.evaluate(() => matchMedia("(hover: hover)").matches)).toBe(false);
+
+    const backgroundOf = (selector: string) =>
+      page.locator(selector).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { color: style.backgroundColor, clip: style.backgroundClip };
+      });
+    // 透明な border の分まで塗ると、地が 44px の箱いっぱいに広がる
+    expect((await backgroundOf(".rail .chip-link[aria-current='page']")).clip).toBe("padding-box");
+
+    const before = await backgroundOf(".header .header-new");
+    await page.locator(".header .header-new").tap();
+    // 押した後は hover の状態が残る。地は変わらず、塗る範囲も戻らない
+    expect(await backgroundOf(".header .header-new")).toEqual(before);
+    expect(before.clip).toBe("padding-box");
+  });
+
   test.describe("匿名", () => {
     test.use({ role: "anonymous" });
 
@@ -241,9 +264,6 @@ test.describe("タップ対象", () => {
       await page.goto(`/${encodeURIComponent(SEED.server)}`);
       await expect(page.getByRole("heading", { level: 1, name: SEED.server })).toBeVisible();
       await expectTapTargets(page, [".brand"]);
-      await page.goto(`/${encodeURIComponent(SEED.manyTags)}`);
-      await expect(page.getByRole("heading", { level: 1, name: SEED.manyTags })).toBeVisible();
-      await expectTapTargets(page, [".chips .chip-link"]);
     });
   });
 
@@ -276,6 +296,16 @@ test.describe("タップ対象", () => {
 
 test.describe("デスクトップの密度", () => {
   test.skip(({ isMobile }) => isMobile, "pointer: fine の端末だけ");
+
+  test("hover できる端末では、ボタンに hover の地が付く", async ({ page }) => {
+    await page.goto("/");
+    const logout = page.locator(".header .header-logout");
+    await expect(logout).toBeVisible();
+    const color = () => logout.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const before = await color();
+    await logout.hover();
+    await expect.poll(color).not.toBe(before);
+  });
 
   test("タッチ向けに大きくした対象が、デスクトップでは従来の大きさのまま", async ({ page }) => {
     // 一覧の先頭は他の spec が作るタグなしのページで埋まることがあるので、タグで絞った一覧で chip を測る

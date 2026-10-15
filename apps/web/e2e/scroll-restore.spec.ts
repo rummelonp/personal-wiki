@@ -243,6 +243,51 @@ test("owner の編集画面で本文の #tag を押すと、タグの一覧へ�
   await expect(bodyEditor(page)).toBeVisible();
 });
 
+test("長いページを途中までスクロールして本文の #tag を押し、戻ると同じ行が同じ位置に見える", async ({
+  page,
+  api,
+}, testInfo) => {
+  const lines = Array.from({ length: 120 }, (_, i) => `${i + 1} 行目の段落。`);
+  lines.splice(60, 0, "途中にある #復元検査 のタグ。");
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "タグの復元"),
+    body: lines.join("\n\n"),
+  });
+  await page.goto(`/p/${created.id}`);
+  await expect(bodyEditor(page).getByText("1 行目の段落。", { exact: true })).toBeVisible();
+
+  // 先頭にはタグが無い。押せる位置まで途中までスクロールする。本文は画面の外の行を描かないので、
+  // タグが描かれて、ヘッダーの下に見えるまで少しずつ送る
+  const tag = bodyEditor(page).locator(".cm-tag", { hasText: "#復元検査" });
+  const tagIsVisible = () =>
+    tag.evaluateAll((elements) => {
+      const header = document.querySelector("header.header")?.getBoundingClientRect().bottom ?? 0;
+      return elements.some((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top > header && rect.bottom < window.innerHeight;
+      });
+    });
+  for (let y = 600; !(await tagIsVisible()) && y < 20000; y += 400) {
+    await page.evaluate((to) => window.scrollTo(0, to), y);
+    await page.waitForTimeout(150);
+  }
+  expect(await tagIsVisible(), "タグが画面に見えている").toBe(true);
+  await page.waitForTimeout(500);
+  expect(await scrollY(page), "ページの途中").toBeGreaterThan(1000);
+
+  const pageUrl = page.url();
+  await recordLineAtMousedown(page);
+  await openVisibleEntry(page, ".cm-tag");
+  const before = await lineAtMousedown(page);
+  await expect(page).toHaveURL(`/?tag=${encodeURIComponent("復元検査")}`);
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(pageUrl);
+  await expect(bodyEditor(page)).toBeVisible();
+  await expectSameLineAfterBack(page, before);
+});
+
 test("長いページから wikilink で別のページへ移って戻ると、元のページの同じ行が同じ位置に見える", async ({
   page,
   seedIds,

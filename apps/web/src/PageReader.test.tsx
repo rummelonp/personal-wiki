@@ -122,15 +122,13 @@ describe("PageReader", () => {
     }
   });
 
-  it("タグを一覧への link で出す", () => {
-    renderReader();
-    const tag = [...(container?.querySelectorAll("a.chip-link") ?? [])].find(
-      (a) => a.textContent === "タグ",
-    );
-    expect(tag?.getAttribute("href")).toBe(`/?tag=${encodeURIComponent("タグ")}`);
+  it("右の列にタグのチップを重ねない。タグは本文の #tag だけに出る", () => {
+    renderReader({ ...PAGE, body: "本文 #タグ" });
+    expect(container?.querySelector(".chip-link")).toBeNull();
+    expect(container?.querySelectorAll(".cm-tag")).toHaveLength(1);
   });
 
-  it("本文の #tag を押すと、チップと同じタグの一覧へ移る", () => {
+  it("本文の #tag を押すと、タグの一覧へ移る", () => {
     renderReader({ ...PAGE, body: "本文 #タグ" });
     const tag = container?.querySelector(".cm-tag");
     if (!tag) throw new Error("#tag が描かれていない");

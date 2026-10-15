@@ -1,19 +1,17 @@
 import type { WikiLinkClick } from "@personal-wiki/editor";
-import { extractDerived } from "@personal-wiki/markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createAttachmentUrlResolver } from "./attachments";
 import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
-import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import { Notice } from "./Notice";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import type { Page } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
-import { missingPagePath, navigate, openTag, pageHrefFor, tagHref } from "./route";
+import { missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
@@ -46,7 +44,6 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
   const editor = useRef<BodyEditorHandle>(null);
   const { goTo } = useFragmentJump(editor);
   const outline = useMemo(() => extractOutline(page.body), [page.body]);
-  const tags = useMemo(() => extractDerived(page.body).tags.map(({ tag }) => tag), [page.body]);
   const [links] = useState(() => createWikiLinks({ pageId: () => page.id }));
   const [attachmentUrl] = useState(() =>
     createAttachmentUrlResolver({
@@ -114,19 +111,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
   const rail = (
     <>
       <Outline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
-      {tags.length > 0 && (
-        <RailSection title="タグ">
-          <ul className="chips">
-            {tags.map((tag) => (
-              <li key={tag}>
-                <Link className="chip chip-link" href={tagHref(tag)}>
-                  {tag}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </RailSection>
-      )}
+      {/* タグは本文の #tag と frontmatter から押せる。右の列にチップを重ねると、同じタグが別の見た目で 2 か所に出る */}
       <Backlinks target={{ pageId: page.id }} hideEmpty />
       <RailSection title="情報">
         <dl className="facts">
