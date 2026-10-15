@@ -449,15 +449,16 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-autolink": { color: "inherit", textDecoration: "underline", cursor: "pointer" },
   ".cm-tag": {
     color: "var(--ui-color-accent)",
-    // 選択範囲は本文の下の層に描かれるので、不透明な地だと tag の上の選択が見えなくなる。地は半透明にする。
-    // accent だけを透かすと、選択の地（accent を混ぜた色）に accent を足し重ねて accent の文字が 4.5:1 を割る。
-    // そこで地の層は、ぼかした選択と同じ 14% の accent をページの色に混ぜた色にする。選択の上では
-    // accent を足さずページの色へ戻す側に働くので、選択の地だけの上より比が下がらない。
-    // 代わりに tag の下の行の地（callout、引用、蛍光ペンなど）も同じだけページの色へ薄まる。
-    // 暗い側は地との差が出にくいので少し濃く重ねる
+    // 選択範囲は本文の下の層に描かれるので、tag の地は半透明にして選択を透かす。
+    // 選択した tag と選択していない tag の地の差は、選択の地の差の「1 - 層の不透明度」倍になる。
+    // 層が濃いと地の文の選択（比 1.4 前後）より大きく弱まるので、層は薄く（不透明度 20〜25%）し、
+    // 薄くても tag の地が page から見分けられるよう、混ぜる accent を多くする（地の色は accent を
+    // page の色へ混ぜた色）。混ぜる量の上限は、選択した tag の文字（accent）が選択の地の上で 4.5:1 を
+    // 割らない範囲で決まる。暗い側は accent の文字と選択の地の差が小さいので、混ぜる量を減らしている。
+    // tag の下の行の地（callout、引用、蛍光ペンなど）は、残りの不透明度の分だけ透ける。
     backgroundColor: byScheme(
-      "color-mix(in srgb, color-mix(in srgb, var(--ui-color-accent) 14%, var(--ui-color-background)) 60%, transparent)",
-      "color-mix(in srgb, color-mix(in srgb, var(--ui-color-accent) 14%, var(--ui-color-background)) 70%, transparent)",
+      "color-mix(in srgb, color-mix(in srgb, var(--ui-color-accent) 35%, var(--ui-color-background)) 20%, transparent)",
+      "color-mix(in srgb, color-mix(in srgb, var(--ui-color-accent) 25%, var(--ui-color-background)) 25%, transparent)",
     ),
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0 0.2em",

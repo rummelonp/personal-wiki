@@ -173,6 +173,29 @@ describe("editor colors", () => {
   );
 
   it.each(SCHEMES)(
+    "%s: 選択した tag の地は選択していない tag の地と、地の文の選択に近い比で見分けがつき、tag は page からも見分けがつく",
+    async (scheme) => {
+      setScheme(scheme);
+      const v = mount();
+      const page = resolve(v.contentDOM, "var(--ui-color-background)");
+      const tagBackground = getComputedStyle(query(v, ".cm-tag")).backgroundColor;
+
+      v.focus();
+      v.dispatch({ selection: EditorSelection.range(0, v.state.doc.length) });
+      const selection = toRgb(
+        getComputedStyle(await queryDrawn(v, ".cm-selectionBackground")).backgroundColor,
+      );
+
+      const plain = contrastRatio(selection, page);
+      const selectedTag = contrastRatio(over(tagBackground, selection), over(tagBackground, page));
+      // 地の文の選択（約 1.4:1）との差は 1 割までにする。選択した tag が選択に埋もれないための下限
+      expect(selectedTag).toBeGreaterThanOrEqual(plain * 0.9);
+      expect(selectedTag).toBeGreaterThanOrEqual(1.3);
+      expect(contrastRatio(over(tagBackground, page), page)).toBeGreaterThanOrEqual(1.08);
+    },
+  );
+
+  it.each(SCHEMES)(
     "%s: リンクは accent、未解決リンクは補助色に accent の破線、tag は accent の淡い地、markdown link も accent",
     (scheme) => {
       setScheme(scheme);
