@@ -299,9 +299,26 @@ describe("IME invariant 1 (decorations and outside dispatches wait for the compo
   });
 });
 
-// 変換は CodeMirror が DOM の変更を読んで doc にするので、caret の隣の要素の形（インラインコードの中の
-// 折り返しを戻す mark の境目）が変わると、確定した文字の行き先がずれうる
+// 変換は CodeMirror が DOM の変更を読んで doc にするので、caret の隣の要素の形（tag の `<a>`、
+// インラインコードの中の折り返しを戻す mark の境目）が変わると、確定した文字の行き先がずれうる
 describe("conversion next to an inline element", () => {
+  it("extends a tag drawn as <a href> when converting at its end", async () => {
+    const v = mount("#仕事", { hrefForTag: (tag) => `/tags/${encodeURIComponent(tag.name)}` });
+    expect(v.contentDOM.querySelector("a.cm-tag")).not.toBeNull();
+    log = [];
+
+    await compose("ちゅう");
+    await commit("中");
+    await settled(v);
+
+    expect(v.state.doc.toString()).toBe("#仕事中");
+    expectOnlyComposeTransactions(duringComposition());
+    expect(kindsOf(duringComposition(), "decoration-rebuild")).toEqual([]);
+    await expect
+      .poll(() => v.contentDOM.querySelector("a.cm-tag")?.getAttribute("data-tag-name"))
+      .toBe("仕事中");
+  });
+
   it("converts just before the last character of a code followed by a closing bracket", async () => {
     const doc = "設定は `wrangler.jsonc`）の中";
     const v = mount(doc);

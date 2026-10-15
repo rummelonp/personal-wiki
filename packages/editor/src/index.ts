@@ -68,7 +68,7 @@ export { setReadOnly } from "./read-only";
 export { docReplacement, isDocReplacement, replaceDoc } from "./replace-doc";
 export { createRevealTest, type RevealPolicy, revealPolicy, shouldRevealSource } from "./reveal";
 export { dispatchWhenSettled } from "./settled-dispatch";
-export { type TagClick, type TagClickHandler, tags } from "./tag";
+export { type TagClick, type TagClickHandler, type TagHref, tags } from "./tag";
 export { type CreateTitleEditorOptions, createTitleEditor } from "./title-editor";
 export {
   type WikiLinkClick,

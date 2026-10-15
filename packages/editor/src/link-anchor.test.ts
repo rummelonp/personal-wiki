@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 import { type LinkActivation, linkActivator } from "./link-activation";
+import type { TagHref } from "./tag";
 import type { WikiLinkHref } from "./wikilink";
 
 let view: EditorView | null = null;
@@ -87,6 +88,58 @@ describe("WikiLink anchor", () => {
     const link = v.contentDOM.querySelector('[data-wikilink-target="Some Page"]');
     expect(link?.tagName).toBe("SPAN");
     expect(link?.hasAttribute("href")).toBe(false);
+  });
+});
+
+describe("tag anchor", () => {
+  const tagHref: TagHref = (tag) => `/?tag=${encodeURIComponent(tag.name)}`;
+
+  it("renders the tag as a non-draggable <a> pointing at the host url", () => {
+    const v = mount("本文 #仕事 です", { hrefForTag: tagHref });
+    const tag = anchorFor(v, ".cm-tag");
+    expect(tag.getAttribute("href")).toBe(`/?tag=${encodeURIComponent("仕事")}`);
+    expect(tag.getAttribute("draggable")).toBe("false");
+    expect(tag.textContent).toBe("#仕事");
+    // `<a>` にしたことで乗るブラウザ既定の下線は付けない
+    expect(getComputedStyle(tag).textDecorationLine).toBe("none");
+  });
+
+  it("keeps the tag without an <a> when the host gives no url", () => {
+    const v = mount("本文 #仕事 です");
+    const tag = v.contentDOM.querySelector(".cm-tag");
+    expect(tag?.tagName).toBe("SPAN");
+    expect(tag?.hasAttribute("href")).toBe(false);
+  });
+
+  it("sends a modified click and a middle click to the activator", () => {
+    const { extension, seen } = captureActivations();
+    const onTagClick = vi.fn();
+    const v = mount("本文 #仕事 です", { hrefForTag: tagHref, onTagClick, extensions: extension });
+    const tag = anchorFor(v, ".cm-tag");
+    tag.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, metaKey: true }),
+    );
+    click(tag, { metaKey: true });
+    click(tag, { button: 1 });
+
+    expect(onTagClick).not.toHaveBeenCalled();
+    expect(seen.map(({ href, newTab }) => ({ href, newTab }))).toEqual([
+      { href: new URL(`/?tag=${encodeURIComponent("仕事")}`, location.href).href, newTab: false },
+      { href: new URL(`/?tag=${encodeURIComponent("仕事")}`, location.href).href, newTab: true },
+    ]);
+  });
+
+  it("leaves a plain click to the tag handler and stops the native follow", () => {
+    const { extension, seen } = captureActivations();
+    const onTagClick = vi.fn();
+    const v = mount("本文 #仕事 です", { hrefForTag: tagHref, onTagClick, extensions: extension });
+    const tag = anchorFor(v, ".cm-tag");
+    tag.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    const event = click(tag);
+
+    expect(onTagClick).toHaveBeenCalledExactlyOnceWith({ name: "仕事" });
+    expect(seen).toHaveLength(0);
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 

@@ -438,6 +438,8 @@ export const livePreviewTheme = EditorView.baseTheme({
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
     padding: "0 0.2em",
     cursor: "pointer",
+    // href を渡されると `<a>` で描かれる。ブラウザ既定の下線だけを打ち消す
+    textDecoration: "none",
     // tag を 1 塊で次の行へ送る。inline のままだと、`#` と日本語の名前の間（`word-break: keep-all` でも
     // 消えない）や名前の字の間で折り返す。inline-block なら塊の中は、行の幅より長いときだけ
     // 行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。

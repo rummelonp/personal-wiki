@@ -42,7 +42,7 @@ import { readOnlyCompartment, readOnlySafeHistoryKeymap } from "./read-only";
 import { docReplacement, resettableHistory } from "./replace-doc";
 import { type RevealPolicy, revealPolicy } from "./reveal";
 import { tables } from "./table";
-import { type TagClickHandler, tags } from "./tag";
+import { type TagClickHandler, type TagHref, tags } from "./tag";
 import { taskList } from "./task-list";
 import { codeHighlighting, editorSurfaceTheme, livePreviewTheme, typographyTheme } from "./theme";
 import {
@@ -87,6 +87,11 @@ export interface CreateEditorOptions {
   /** 渡したときだけ unresolved link のスタイルを適用する */
   readonly resolveWikiLink?: WikiLinkResolver;
   readonly onTagClick?: TagClickHandler;
+  /**
+   * 渡したときだけ本文の `#tag` を `<a href>` にする。素のクリックは `onTagClick` のままで、
+   * href は修飾クリック、中クリック、リンクのコピーに使う。
+   */
+  readonly hrefForTag?: TagHref;
   /** 渡したときだけクリップボード貼り付け/ドラッグ&ドロップでの画像アップロードを有効にする */
   readonly onUploadAttachment?: UploadAttachment;
   /** アップロードで受け付ける File の判定。既定は `image/*`。`onUploadAttachment` と一緒に渡したときだけ働く */
@@ -174,7 +179,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
       options.hrefForWikiLink,
     ),
     embeds(options.resolveAttachmentUrl, pageEmbeds),
-    tags(options.onTagClick),
+    tags(options.onTagClick, options.hrefForTag),
     externalLinks(),
     linkActivation(),
     blockIdAssignment(),
@@ -238,6 +243,7 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
     hrefForWikiLink,
     resolveWikiLink,
     onTagClick,
+    hrefForTag,
     resolveAttachmentUrl,
   } = options;
   if (!resolvePageEmbed) return undefined;
@@ -257,6 +263,7 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
         ...(hrefForWikiLink ? { hrefForWikiLink: (link) => hrefForWikiLink(own(link)) } : {}),
         ...(resolveWikiLink ? { resolveWikiLink } : {}),
         ...(onTagClick ? { onTagClick } : {}),
+        ...(hrefForTag ? { hrefForTag } : {}),
         ...(resolveAttachmentUrl
           ? {
               resolveAttachmentUrl: (filename: string) =>

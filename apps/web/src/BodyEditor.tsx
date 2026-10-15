@@ -22,6 +22,7 @@ import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } fro
 import { bodyScrollAnchor } from "./body-scroll-anchor";
 import { NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 import type { PageFragment } from "./page-fragment";
+import { tagHref } from "./route";
 import { registerScrollAnchor } from "./scroll-restore";
 import { scrollBelowStickyHeader } from "./sticky-header";
 import type { WikiLinkSources } from "./wiki-links";
@@ -73,7 +74,8 @@ export interface BodyEditorProps {
   onWikiLinkClick?: (link: WikiLinkClick) => void;
   /**
    * 本文の `#tag` と frontmatter の tag の素のクリック（`onWikiLinkClick` と同じく、作った時点で
-   * 渡されているかを見て、呼ぶ関数は最新のものを使う）。
+   * 渡されているかを見て、呼ぶ関数は最新のものを使う）。渡すと本文の `#tag` は tag の一覧を指す
+   * `<a href>` になり、修飾クリックと中クリックで新しいタブなどに開ける。
    */
   onTagClick?: (tag: TagClick) => void;
   /**
@@ -221,9 +223,13 @@ export function BodyEditor({
       ...(initial.onWikiLinkClick === undefined
         ? {}
         : { onWikiLinkClick: (link: WikiLinkClick) => latest.current.onWikiLinkClick?.(link) }),
+      // href は修飾クリックと中クリックで新しいタブに開くためのもの。素のクリックの遷移先と同じ一覧を指す
       ...(initial.onTagClick === undefined
         ? {}
-        : { onTagClick: (tag: TagClick) => latest.current.onTagClick?.(tag) }),
+        : {
+            onTagClick: (tag: TagClick) => latest.current.onTagClick?.(tag),
+            hrefForTag: (tag: TagClick) => tagHref(tag.name),
+          }),
       // 渡さなければ貼り付けと drop に触れない。どちらも作った時点のものを使い続ける
       ...(initial.onUploadAttachment === undefined
         ? {}

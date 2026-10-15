@@ -122,7 +122,7 @@ const activationHandlers = EditorView.domEventHandlers({
 });
 
 /**
- * `<a href>` として描いたリンク（WikiLink、markdown link、autolink）の起動を editor が握る。
+ * `<a href>` として描いたリンク（WikiLink、markdown link、autolink、tag）の起動を editor が握る。
  * 素のクリックは各 extension の JS 経路に残し、修飾クリックと中クリックだけを
  * `linkActivator` へ渡す。
  */

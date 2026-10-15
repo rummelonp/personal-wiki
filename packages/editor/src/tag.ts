@@ -11,7 +11,18 @@ export interface TagClick {
 
 export type TagClickHandler = (tag: TagClick) => void;
 
+/**
+ * tag の遷移先 URL。返すと `<a href>` として描かれ、修飾クリックと中クリックで新しいタブなどに
+ * 開けるようになる（起動は `link-activation.ts`）。素のクリックは href でなく `TagClickHandler` が処理する。
+ * null を返すと href の無い装飾になる。
+ */
+export type TagHref = (tag: TagClick) => string | null;
+
 const tagClickHandler = Facet.define<TagClickHandler>();
+
+const tagHref = Facet.define<TagHref, TagHref | null>({
+  combine: (values) => values[0] ?? null,
+});
 
 /**
  * tag の名前を DOM に載せる属性。`clickToNavigate` はこの属性だけを見るので、構文木の `Tag` で
@@ -23,6 +34,7 @@ function build(view: EditorView): BuiltDecorations {
   const { state } = view;
   const decorations: Range<Decoration>[] = [];
   const seen = new Set<number>();
+  const hrefFor = state.facet(tagHref);
 
   const tree = syntaxTree(state);
   for (const { from, to } of view.visibleRanges) {
@@ -37,11 +49,20 @@ function build(view: EditorView): BuiltDecorations {
         const nameNode = node.node.getChild(tagNodes.name);
         if (!nameNode) return false;
         const name = state.doc.sliceString(nameNode.from, nameNode.to);
+        const attributes: Record<string, string> = { [TAG_NAME_ATTR]: name };
+        const href = hrefFor?.({ name }) ?? null;
+        if (href !== null) {
+          attributes.href = href;
+          // contenteditable の中では `<a>` が既定でドラッグ可能になり、tag を選択しようとした
+          // ドラッグが本文の移動になってしまう（wikilink.ts と同じ）
+          attributes.draggable = "false";
+        }
         decorations.push(
-          Decoration.mark({ class: "cm-tag", attributes: { [TAG_NAME_ATTR]: name } }).range(
-            node.from,
-            node.to,
-          ),
+          Decoration.mark({
+            class: "cm-tag",
+            ...(href === null ? {} : { tagName: "a" }),
+            attributes,
+          }).range(node.from, node.to),
         );
         return false;
       },
@@ -52,9 +73,10 @@ function build(view: EditorView): BuiltDecorations {
 }
 
 /**
- * 素のクリックでナビゲーションする（`wikilink.ts` と同じ規約）。修飾クリックは取らず、Shift の
- * 範囲選択などエディタの既定に任せる。tag は `<a href>` を持たないので、wikilink と違って
- * 修飾クリックで別タブには開けない。
+ * 素のクリックでナビゲーションする（`wikilink.ts` と同じ規約）。修飾クリックは取らない。
+ * `TagHref` を渡して `<a href>` にした tag の修飾クリックと中クリックは `link-activation.ts` が起動する。
+ * そのため Shift+クリックも、wikilink と同じく選択を広げずに新しいウィンドウで開く。
+ * href の無い tag では Shift の範囲選択などエディタの既定に任せる。
  */
 const clickToNavigate = EditorView.domEventHandlers({
   mousedown(event, view) {
@@ -72,10 +94,11 @@ const clickToNavigate = EditorView.domEventHandlers({
 });
 
 /** `#tag` の装飾。構文は `@personal-wiki/markdown` の `Tag` が定義する。 */
-export function tags(onClick?: TagClickHandler): Extension {
+export function tags(onClick?: TagClickHandler, href?: TagHref): Extension {
   return [
     decorationPlugin({ name: "tag", build }),
     clickToNavigate,
     onClick ? tagClickHandler.of(onClick) : [],
+    href ? tagHref.of(href) : [],
   ];
 }

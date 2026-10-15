@@ -947,3 +947,20 @@ describe("wikilink のクリック", () => {
     });
   });
 });
+
+describe("本文の tag", () => {
+  it("onTagClick を渡すと、tag の一覧を指す <a> にして、素のクリックは onTagClick に渡す", () => {
+    const onTagClick = vi.fn();
+    const { view } = controlled("本文 #仕事 です", { onTagClick });
+    const tag = view().contentDOM.querySelector(".cm-tag");
+    if (!(tag instanceof HTMLAnchorElement)) throw new Error("tag が <a> でない");
+    expect(tag.getAttribute("href")).toBe(`/?tag=${encodeURIComponent("仕事")}`);
+    tag.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    expect(onTagClick).toHaveBeenCalledExactlyOnceWith({ name: "仕事" });
+  });
+
+  it("onTagClick を渡さなければ <a> にしない", () => {
+    const { view } = controlled("本文 #仕事 です");
+    expect(view().contentDOM.querySelector(".cm-tag")?.tagName).toBe("SPAN");
+  });
+});
