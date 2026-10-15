@@ -18,9 +18,9 @@ function server(existing: string[]) {
   }));
 }
 
-function setup(fetchTitles: FetchTitles) {
+function setup(fetchTitles: FetchTitles, options: { maxEntries?: number } = {}) {
   const onChange = vi.fn();
-  const resolver = createTitleResolver({ fetchTitles, onChange });
+  const resolver = createTitleResolver({ fetchTitles, onChange, ...options });
   return { resolver, onChange };
 }
 
@@ -133,6 +133,58 @@ describe("存在の印", () => {
     resolver.isResolved("a");
     await flush();
     expect(fetchTitles).toHaveBeenCalledTimes(1);
+  });
+
+  it("上限を超えても、参照し続けている title の印は残し、使われていない title から忘れる", async () => {
+    const fetchTitles = server(["有る"]);
+    const { resolver } = setup(fetchTitles, { maxEntries: 3 });
+    resolver.isResolved("無い");
+    resolver.isResolved("有る");
+    await flush();
+    expect(fetchTitles).toHaveBeenCalledTimes(1);
+
+    // 打ちかけの target が溜まる間も、表示中の link は組み直しのたびに参照される
+    for (const typed of ["a", "ab", "abc", "abcd", "abcde"]) {
+      resolver.isResolved(typed);
+      expect(resolver.isResolved("無い"), typed).toBe(false);
+      expect(resolver.resolvedPage("有る")).toEqual(page("有る"));
+      await flush();
+    }
+    expect(resolver.isResolved("無い")).toBe(false);
+    expect(resolver.resolvedPage("有る")).toEqual(page("有る"));
+    expect(
+      fetchTitles.mock.calls.flatMap(([titles]) => titles).filter((t) => t === "無い"),
+    ).toHaveLength(1);
+    expect(
+      fetchTitles.mock.calls.flatMap(([titles]) => titles).filter((t) => t === "有る"),
+    ).toHaveLength(1);
+
+    // 使われていない target は忘れる。見直すと問い合わせ直す
+    const before = fetchTitles.mock.calls.length;
+    resolver.isResolved("a");
+    await flush();
+    expect(fetchTitles.mock.calls.length).toBe(before + 1);
+    expect(fetchTitles.mock.calls[before]?.[0]).toEqual(["a"]);
+  });
+
+  it("上限に達しても、問い合わせ中の title は忘れない", async () => {
+    let release: (() => void) | undefined;
+    const fetchTitles = vi.fn<FetchTitles>(
+      (titles) =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: true, value: titles.map(() => null) });
+        }),
+    );
+    const { resolver } = setup(fetchTitles, { maxEntries: 2 });
+    resolver.isResolved("a");
+    resolver.isResolved("b");
+    await flush();
+    resolver.isResolved("c");
+    resolver.isResolved("d");
+    release?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolver.isResolved("a")).toBe(false);
+    expect(resolver.isResolved("b")).toBe(false);
   });
 
   it("Worker の上限の件数ごとに分けて問い合わせる", async () => {

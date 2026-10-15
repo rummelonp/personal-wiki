@@ -26,6 +26,8 @@ export interface TitleResolverOptions {
   debounceMs?: number;
   maxWaitMs?: number;
   failureCooldownMs?: number;
+  /** 覚えておく target の数。超えたら、最後に使ってから最も経つものから忘れる */
+  maxEntries?: number;
   now?: () => number;
 }
 
@@ -62,7 +64,7 @@ export const TITLE_RESOLVE_DEBOUNCE_MS = 250;
 export const TITLE_RESOLVE_MAX_WAIT_MS = 1_000;
 /** 失敗した target を次の組み直しで問い合わせ直すまでの間隔。編集のたびに 5xx を叩き直さない */
 export const TITLE_RESOLVE_FAILURE_COOLDOWN_MS = 10_000;
-/** 覚えておく target の数。超えたら古いものから忘れる（打ちかけの target が溜まる分） */
+/** 覚えておく target の既定の数。打ちかけの target が溜まる分を見込む */
 const MAX_ENTRIES = 1_000;
 
 interface Entry {
@@ -90,8 +92,11 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
   const debounceMs = options.debounceMs ?? TITLE_RESOLVE_DEBOUNCE_MS;
   const maxWaitMs = options.maxWaitMs ?? TITLE_RESOLVE_MAX_WAIT_MS;
   const cooldownMs = options.failureCooldownMs ?? TITLE_RESOLVE_FAILURE_COOLDOWN_MS;
+  const maxEntries = options.maxEntries ?? MAX_ENTRIES;
   const now = options.now ?? Date.now;
 
+  // Map の挿入順を「最後に使った順」として使う。表示中の link の印を、打ちかけの target に
+  // 押し出されて一度消し、問い合わせ直して付け直すことのないようにする
   const entries = new Map<string, Entry>();
   // 問い合わせ待ちの target。key は foldTitle、値は送る文字列
   const pending = new Map<string, string>();
@@ -113,7 +118,7 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
   const entryOf = (key: string): Entry => {
     let entry = entries.get(key);
     if (entry === undefined) {
-      if (entries.size >= MAX_ENTRIES) {
+      if (entries.size >= maxEntries) {
         for (const [oldKey, old] of entries) {
           if (!old.inFlight) {
             entries.delete(oldKey);
@@ -122,8 +127,10 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
         }
       }
       entry = { status: "unknown", page: null, generation: -1, inFlight: false, retryAt: 0 };
-      entries.set(key, entry);
+    } else {
+      entries.delete(key);
     }
+    entries.set(key, entry);
     return entry;
   };
 
@@ -158,7 +165,9 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
     const mine = epoch;
     const startedAt = generation;
     const titles = targets.map(([, target]) => target);
-    for (const [key] of targets) entryOf(key).inFlight = true;
+    // 問い合わせを始めるだけでは使ったことにせず、既にある entry の並びは動かさない。待つ間に
+    // 忘れられた entry だけは作り直し、最後に使った位置に入る（queue したときに使っている）
+    for (const [key] of targets) (entries.get(key) ?? entryOf(key)).inFlight = true;
     await Promise.all(
       splitResolveBatches(titles).map(async (indices) => {
         const controller = new AbortController();
@@ -178,7 +187,8 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
         let stale = false;
         const ok = result.ok && result.value.length === indices.length;
         indices.forEach((titleIndex, i) => {
-          const entry = entryOf((targets[titleIndex] as [string, string])[0]);
+          // 問い合わせ中の entry は忘れないので必ずある。結果を書くだけでは使ったことにしない
+          const entry = entries.get((targets[titleIndex] as [string, string])[0]) as Entry;
           entry.inFlight = false;
           if (result.ok && ok) {
             if (store(entry, result.value[i] ?? null, startedAt)) changed = true;
@@ -211,8 +221,10 @@ export function createTitleResolver(options: TitleResolverOptions): TitleResolve
     },
 
     resolvedPage(target) {
-      const entry = entries.get(foldTitle(target));
-      return entry?.status === "found" ? entry.page : null;
+      const key = foldTitle(target);
+      if (!entries.has(key)) return null;
+      const entry = entryOf(key);
+      return entry.status === "found" ? entry.page : null;
     },
 
     async lookup(target, signal) {
