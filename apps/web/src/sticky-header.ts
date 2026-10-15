@@ -1,7 +1,7 @@
 import { Prec } from "@codemirror/state";
-import { EditorView, tooltips } from "@codemirror/view";
+import { EditorView, repositionTooltips, tooltips, ViewPlugin } from "@codemirror/view";
 import { tooltipSpace } from "@personal-wiki/editor";
-import { noticeDockRect } from "./notice-dock";
+import { NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 
 /**
  * ヘッダーの下端の位置（viewport の上端から）。ヘッダーは画面の上端に残るので、本文のスクロール先は
@@ -71,4 +71,20 @@ const tooltipSpaceBelowChrome = Prec.high(
   }),
 );
 
-export const scrollBelowStickyHeader = [markScrolling, scrollMargins, tooltipSpaceBelowChrome];
+/**
+ * 台が出入りしたり高さが変わったりしても、visual viewport は動かないので、開いている窓は置き直されない。
+ * 台の上端が変わったときに置き直し、窓が台の下に残らないようにする。
+ */
+const repositionOnDockChange = ViewPlugin.define((view) => {
+  const doc = view.dom.ownerDocument;
+  const reposition = () => repositionTooltips(view);
+  doc.addEventListener(NOTICE_DOCK_RESIZE, reposition);
+  return { destroy: () => doc.removeEventListener(NOTICE_DOCK_RESIZE, reposition) };
+});
+
+export const scrollBelowStickyHeader = [
+  markScrolling,
+  scrollMargins,
+  tooltipSpaceBelowChrome,
+  repositionOnDockChange,
+];

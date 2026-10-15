@@ -675,6 +675,37 @@ describe("jumpToFragment", () => {
             expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT);
           });
         });
+
+        it("窓を開いた後に台が出たら、窓は台の上へ置き直される", async () => {
+          dock?.replaceChildren();
+          const { view } = controlled(long, { pageIndex });
+          const v = view();
+          act(() => v.focus());
+          const at = long.indexOf("## 末尾の見出し");
+          v.dispatch({
+            changes: { from: at, insert: "[[No\n\n" },
+            selection: { anchor: at + 4 },
+            userEvent: "input.type",
+          });
+          // 台が出れば覆う位置（台の上端より下）に窓が開くよう、カーソルの行を画面の下寄りに置く
+          const caretTop = v.coordsAtPos(at + 4)?.top ?? Number.NaN;
+          window.scrollBy(0, caretTop - (window.innerHeight - DOCK_HEIGHT - 60));
+          await vi.waitFor(() => {
+            const rect = tooltipRect();
+            expect(rect.top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+            expect(rect.bottom).toBeGreaterThan(window.innerHeight - DOCK_HEIGHT);
+          });
+
+          // スクロールの後の再測定が済むまで待つ。台の出入りだけを契機にして置き直されることを確かめる
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          dock?.append(document.createElement("div"));
+          document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
+          await vi.waitFor(() => {
+            const rect = tooltipRect();
+            expect(rect.top).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+            expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT);
+          });
+        });
       });
     });
   });
