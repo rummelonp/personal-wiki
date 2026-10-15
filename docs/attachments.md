@@ -9,7 +9,22 @@
 ## 保存
 
 画像は `POST /api/attachments` に、本文を画像のバイト列、`Content-Type` を画像の種類にして送ります。
-`Content-Length` は必須で、無ければ 411 を返します。
+成功すると 201 で、`name`、`contentType`、`size` を返します。
+本文には、返った `name` を `![[<名前>]]` の形で貼ります。
+
+受け付ける種類は PNG、JPEG、GIF、WebP、AVIF（`image/png`、`image/jpeg`、`image/gif`、`image/webp`、`image/avif`）です。
+SVG は、直接開くと同じオリジンでスクリプトが動くので受け付けません。
+1 枚の上限は 10 MiB です。
+
+受け付けないときは、次の状態と `error` を返します。
+
+- 400 `invalid_content_length`: `Content-Length` が整数として読めないとき
+- 411 `length_required`: `Content-Length` が無いとき
+- 413 `attachment_too_large`: `Content-Length` か実際の本文が上限を超えたとき。
+  `max` に上限のバイト数が入ります
+- 415 `unsupported_media_type`: `Content-Type` が上の種類でないとき。
+  `accepted` に受け付ける種類が入ります
+- 415 `content_mismatch`: 本文の先頭のバイト列が `Content-Type` の種類と合わないとき
 
 ## 参照と配信
 
