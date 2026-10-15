@@ -47,8 +47,9 @@ interface MissingPageProps {
  */
 export function MissingPage({ title, owner, onSettled }: MissingPageProps) {
   return (
-    // 空のページでは欄が本文の代わりになり、リンク元が 0 件であること自体が情報になるので、hideEmpty を渡さない
-    <RailLayout rail={<Backlinks target={{ title }} onSettled={onSettled} />}>
+    // owner には、リンク元が 0 件であることが「どこからも張られていない title」という情報になる。
+    // 匿名には public のリンク元しか返らず、0 件は何も伝えないので、通常のページと同じく節ごと隠す
+    <RailLayout rail={<Backlinks target={{ title }} hideEmpty={!owner} onSettled={onSettled} />}>
       <section className="note">
         <h1 className="note-title">{title}</h1>
         {owner ? (
