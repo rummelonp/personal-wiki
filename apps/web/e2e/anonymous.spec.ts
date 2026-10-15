@@ -77,9 +77,14 @@ test("トップの一覧とタグに draft が出ない @smoke", async ({ page, 
 test("draft の title の URL は存在しないページと同じ空のページになる", async ({ page }) => {
   const shown: string[] = [];
   for (const title of [SEED.draftSecret, "本当に存在しないページ"]) {
+    // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことは応答で待つ
+    const backlinks = page.waitForResponse((res) =>
+      res.url().includes("/api/pages/by-title/backlinks"),
+    );
     await page.goto(titlePath(title));
+    await backlinks;
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
-    await expect(page.locator(".rail-section-links")).toContainText("ありません。");
+    await expect(page.locator(".rail")).toBeHidden();
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
     shown.push((await page.getByRole("main").innerText()).replaceAll(title, "<title>"));
   }

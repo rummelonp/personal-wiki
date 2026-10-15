@@ -209,11 +209,16 @@ const SCENES: Scene[] = [
     state: "存在しないページ",
     role: "anonymous",
     async show({ page }) {
+      // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことは応答で待つ
+      const backlinks = page.waitForResponse((res) =>
+        res.url().includes("/api/pages/by-title/backlinks"),
+      );
       await page.goto(`/${encodeURIComponent("本当に存在しないページ")}`);
+      await backlinks;
       await expect(
         page.getByRole("heading", { level: 1, name: "本当に存在しないページ" }),
       ).toBeVisible();
-      await expect(page.locator(".rail-section-links")).toContainText("ありません。");
+      await expect(page.locator(".rail")).toBeHidden();
     },
   },
 ];
