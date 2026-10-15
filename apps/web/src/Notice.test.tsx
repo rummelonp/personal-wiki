@@ -389,7 +389,7 @@ describe("キーボードと拡大", () => {
   });
 
   it("URL バーの伸縮ほどの差では畳まない", async () => {
-    await browserPage.viewport(375, 800);
+    await browserPage.viewport(375, 700);
     const viewport = fakeViewport({ height: 700 });
     notices([["error", "失敗"]]);
     expect(dock()?.hasAttribute("data-keyboard")).toBe(false);
@@ -407,19 +407,61 @@ describe("キーボードと拡大", () => {
     expect(dock()?.style.getPropertyValue("--notice-inset")).toBe("0px");
   });
 
-  it("差分の欄の上限は、見えている高さ（visual viewport）に対する割合で決まる", async () => {
-    await browserPage.viewport(375, 800);
-    const viewport = fakeViewport({ height: 400 });
+  it("details を持つ通知は台の上限に自分で収まり、スクロールするのは details の欄だけ", async () => {
+    await browserPage.viewport(375, 659);
+    fakeViewport({ height: 659 });
     mount(
       <NoticeDockProvider>
-        <Notice tone="warn" title="食い違い" details={<div className="diff">差分</div>} />
+        <Notice
+          tone="warn"
+          title="食い違い"
+          actions={<button type="button">操作</button>}
+          details={
+            <div className="notice-details">
+              <div style={{ height: 1000 }}>差分</div>
+            </div>
+          }
+        >
+          <p>理由</p>
+        </Notice>
       </NoticeDockProvider>,
     );
-    const limit = () =>
-      Number.parseFloat(getComputedStyle(document.querySelector(".diff") as Element).maxHeight);
-    expect(limit()).toBeCloseTo(100, 0);
-    viewport.set({ height: 600 });
-    expect(limit()).toBeCloseTo(150, 0);
+    const el = dock() as HTMLElement;
+    const details = document.querySelector(".notice-details") as HTMLElement;
+    const notice = noticeOf("食い違い");
+    expect(notice.getBoundingClientRect().height).toBeLessThanOrEqual(
+      el.getBoundingClientRect().height - 24 + 1,
+    );
+    expect(details.scrollHeight).toBeGreaterThan(details.clientHeight);
+    expect(el.scrollHeight).toBeLessThanOrEqual(el.clientHeight + 1);
+    expect(el.hasAttribute("data-more-below")).toBe(false);
+    // 見出しと操作は details の上に残り、details をスクロールしても動かない
+    const action = notice.querySelector("button") as HTMLElement;
+    const before = action.getBoundingClientRect().top;
+    details.scrollTop = 200;
+    expect(action.getBoundingClientRect().top).toBe(before);
+  });
+});
+
+describe("details の欄の高さ", () => {
+  it("短い details は、内容の高さのまま。下限の高さで余白を足さない", async () => {
+    await browserPage.viewport(375, 659);
+    fakeViewport({ height: 659 });
+    mount(
+      <NoticeDockProvider>
+        <Notice
+          tone="warn"
+          title="食い違い"
+          details={
+            <div className="notice-details">
+              <div style={{ height: 40 }}>差分</div>
+            </div>
+          }
+        />
+      </NoticeDockProvider>,
+    );
+    const details = document.querySelector(".notice-details") as HTMLElement;
+    expect(details.getBoundingClientRect().height).toBeCloseTo(40, 0);
   });
 });
 
@@ -433,12 +475,57 @@ describe("台の高さの上限", () => {
     viewport.set({ height: 600 });
     expect(limit()).toBeCloseTo(360, 0);
   });
+
+  it("details を持つ通知の下限の高さが収まる分だけ、台の上限を広げる。広げる先にも限りがある", async () => {
+    await browserPage.viewport(375, 700);
+    const viewport = fakeViewport({ height: 700 });
+    mount(
+      <NoticeDockProvider>
+        <Notice
+          tone="warn"
+          title="食い違い"
+          details={
+            <div className="notice-details">
+              <div style={{ height: 1000 }}>差分</div>
+            </div>
+          }
+        />
+      </NoticeDockProvider>,
+    );
+    const limit = () => Number.parseFloat(getComputedStyle(dock() as Element).maxHeight);
+    // 下限の高さ（20rem）と台の余白（上下 0.75rem ずつ）を足した 344px
+    expect(limit()).toBeCloseTo(420, 0);
+    await browserPage.viewport(375, 500);
+    viewport.set({ height: 500 });
+    expect(limit()).toBeCloseTo(344, 0);
+    // 見える高さの 0.85 でも収まらない低さでは、限りで止めて台の中をスクロールさせる
+    await browserPage.viewport(375, 360);
+    viewport.set({ height: 360 });
+    expect(limit()).toBeCloseTo(306, 0);
+  });
 });
 
-describe("台の上限に達したとき", () => {
-  it("溢れている間だけ台が操作を受け取り、スクロールバーを掴める", async () => {
-    await browserPage.viewport(375, 400);
-    vi.stubGlobal("devicePixelRatio", 1);
+describe("台の外形", () => {
+  it("台の地は余白まで不透明で、後ろの本文を透かさず、余白の操作も後ろへ通さない", () => {
+    document.body.style.cssText = "margin:0";
+    mount(
+      <>
+        <p id="behind">後ろの本文</p>
+        <NoticeDockProvider>
+          <Notice tone="error" title="失敗" />
+        </NoticeDockProvider>
+      </>,
+    );
+    const style = getComputedStyle(dock() as Element);
+    expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(style.backgroundColor).toBe(getComputedStyle(document.body).backgroundColor);
+    expect(style.pointerEvents).toBe("auto");
+    document.body.style.cssText = "";
+  });
+});
+
+describe("台の上限に達して中でスクロールするとき", () => {
+  function tall() {
     mount(
       <NoticeDockProvider>
         <Notice tone="error" title="失敗">
@@ -446,14 +533,117 @@ describe("台の上限に達したとき", () => {
         </Notice>
       </NoticeDockProvider>,
     );
-    await vi.waitFor(() => expect(dock()?.hasAttribute("data-scrollable")).toBe(true));
-    expect(getComputedStyle(dock() as Element).pointerEvents).toBe("auto");
-    vi.unstubAllGlobals();
+  }
+  const hint = (edge: "before" | "after") =>
+    getComputedStyle(dock() as Element, `::${edge}`).content;
+  const hintRect = (edge: "before" | "after") => {
+    const style = getComputedStyle(dock() as Element, `::${edge}`);
+    return { height: Number.parseFloat(style.height), position: style.position };
+  };
+
+  it("続きのある側の端だけに、淡くぼかす手がかりを出す", async () => {
+    await browserPage.viewport(375, 400);
+    tall();
+    const el = dock() as HTMLElement;
+    await vi.waitFor(() => expect(el.hasAttribute("data-more-below")).toBe(true));
+    expect(el.hasAttribute("data-more-above")).toBe(false);
+    expect(hint("after")).not.toBe("none");
+    expect(hint("before")).toBe("none");
+    expect(hintRect("after").position).toBe("sticky");
+
+    el.scrollTop = 60;
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    expect(el.hasAttribute("data-more-above")).toBe(true);
+    expect(el.hasAttribute("data-more-below")).toBe(true);
+    expect(hint("before")).not.toBe("none");
+
+    el.scrollTop = el.scrollHeight;
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    expect(el.hasAttribute("data-more-above")).toBe(true);
+    expect(el.hasAttribute("data-more-below")).toBe(false);
+    expect(hint("after")).toBe("none");
   });
 
-  it("溢れていなければ、台は操作を通す", async () => {
+  it("手がかりは通知の配置と台の高さを動かさず、操作を覆っても押せる", async () => {
+    await browserPage.viewport(375, 400);
+    tall();
+    const el = dock() as HTMLElement;
+    await vi.waitFor(() => expect(el.hasAttribute("data-more-below")).toBe(true));
+    // 手がかりが負の margin で打ち消されていなければ、先頭の手がかりは通知を押し下げ、
+    // 末尾の手がかりは台のスクロールの長さを伸ばす。両方を出した状態と出さない状態を比べる
+    el.setAttribute("data-more-above", "");
+    const notice = noticeOf("失敗");
+    expect(getComputedStyle(el, "::before").content).not.toBe("none");
+    expect(getComputedStyle(el, "::after").content).not.toBe("none");
+    const withHints = { top: notice.offsetTop, scrollHeight: el.scrollHeight };
+    expect(getComputedStyle(el, "::after").pointerEvents).toBe("none");
+    expect(getComputedStyle(el, "::before").pointerEvents).toBe("none");
+    el.removeAttribute("data-more-above");
+    el.removeAttribute("data-more-below");
+    expect({ top: notice.offsetTop, scrollHeight: el.scrollHeight }).toEqual(withHints);
+  });
+
+  it("先頭の手がかりは、台の端に届いた details の上に描かれる", async () => {
+    await browserPage.viewport(375, 280);
+    fakeViewport({ height: 280 });
+    mount(
+      <NoticeDockProvider>
+        <Notice
+          tone="warn"
+          title="食い違い"
+          actions={<button type="button">操作</button>}
+          details={
+            <div className="notice-details">
+              <div style={{ height: 1000, background: "rgb(255, 0, 0)" }}>差分</div>
+            </div>
+          }
+        />
+      </NoticeDockProvider>,
+    );
+    const el = dock() as HTMLElement;
+    const details = document.querySelector(".notice-details") as HTMLElement;
+    el.scrollTop = el.scrollHeight;
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    expect(el.hasAttribute("data-more-above")).toBe(true);
+    // 台の先頭の端に details が届いている状態で、手がかりが details に隠れていないかを見る
+    const edge = el.getBoundingClientRect().top;
+    expect(details.getBoundingClientRect().top).toBeLessThanOrEqual(edge);
+    expect(details.getBoundingClientRect().bottom).toBeGreaterThan(edge + 40);
+
+    const shot = await browserPage.screenshot({ save: false });
+    const bitmap = await createImageBitmap(
+      await (await fetch(`data:image/png;base64,${shot}`)).blob(),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+    context.drawImage(bitmap, 0, 0);
+    const scale = bitmap.width / window.innerWidth;
+    const x = Math.round((details.getBoundingClientRect().left + 40) * scale);
+    const y = Math.round((edge + 2) * scale);
+    const [r = 0, g = 0, b = 0] = context.getImageData(x, y, 1, 1).data;
+    const [br = 0, bg = 0, bb = 0] = (
+      getComputedStyle(document.body).backgroundColor.match(/\d+/g) ?? []
+    ).map(Number);
+    const distance = (to: [number, number, number]) => Math.hypot(r - to[0], g - to[1], b - to[2]);
+    expect(distance([br, bg, bb]), "手がかりが details の背後に回っている").toBeLessThan(
+      distance([255, 0, 0]),
+    );
+  });
+
+  it("上限に達していなければ、何も出さない", () => {
     notices([["error", "失敗"]]);
-    expect(dock()?.hasAttribute("data-scrollable")).toBe(false);
-    expect(getComputedStyle(dock() as Element).pointerEvents).toBe("none");
+    const el = dock() as HTMLElement;
+    expect(el.hasAttribute("data-more-above")).toBe(false);
+    expect(el.hasAttribute("data-more-below")).toBe(false);
+    expect(hint("before")).toBe("none");
+    expect(hint("after")).toBe("none");
   });
 });

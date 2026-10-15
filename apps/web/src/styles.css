@@ -599,7 +599,8 @@ a {
  * 台（.notice-dock）に出る通知は、本文の流れから外れて画面の下端に重なる。
  */
 .notice {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   color: var(--color-fg);
@@ -611,6 +612,7 @@ a {
 /* 見出し、本文、操作のまとまり。読み上げの範囲（role）はここで、details は含めない */
 .notice-main {
   display: grid;
+  flex: none;
   gap: var(--space-2);
 }
 
@@ -683,15 +685,31 @@ a {
   font-size: var(--font-size-sm);
 }
 
+/*
+ * 台に収まらないとき、スクロールするのは見出しと操作の下のこの欄だけにする。差分の欄と台の両方が
+ * スクロールすると、二重になって操作が届きにくい。
+ */
 .notice-details {
-  display: grid;
+  /* 差分の行の visually-hidden（absolute）を含める。台（fixed）が基準だと、スクロールの外にはみ出して台の高さを押し上げる */
+  position: relative;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.notice-details > * {
+  flex: none;
 }
 
 /*
  * 通知の台。画面の下端（キーボードが出ている間はその上）に固定し、本文の流れに高さを取らない。
  * title と本文は通知の出入りで動かず、本文のスクロールは台の高さを避ける（sticky-header.ts）。
  * 文書の末尾には台の高さの余白を足し、最後の行も台の上までスクロールできるようにする。
+ *
+ * 台の地は余白まで不透明にする。透かすと、通知の上下の余白に本文の行が半端に見える。
+ * 余白も台の一部なので、操作も受け取り、後ろの本文には届かせない。
  */
 .notice-dock {
   position: fixed;
@@ -699,7 +717,9 @@ a {
   bottom: var(--notice-inset, 0px);
   left: 0;
   z-index: var(--z-notice);
-  display: grid;
+  /* 続きがあることを示す sticky の疑似要素（下記）が、行間（gap）を足さずに通知に重なれるよう、grid でなく flex にする */
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
   max-width: calc(var(--prose-width) + 2 * var(--space-3));
   max-height: calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio));
@@ -709,7 +729,7 @@ a {
   padding: var(--space-3);
   overflow-y: auto;
   overscroll-behavior: contain;
-  pointer-events: none;
+  background: var(--color-bg);
 }
 
 .notice-dock:empty {
@@ -717,13 +737,64 @@ a {
 }
 
 .notice-dock > .notice {
-  pointer-events: auto;
+  flex: none;
   box-shadow: var(--shadow-popover);
 }
 
-/* 台の上限に達して中でスクロールするときは、スクロールバーを掴めるよう台も操作を受ける */
-.notice-dock[data-scrollable] {
-  pointer-events: auto;
+/*
+ * 差分などの details を持つ通知は、台の上限（padding を除く）に自分で収め、details の欄が縮む。見える高さが
+ * 足りず台の上限がこの通知の下限を下回る低い画面では、通知は下限の高さのままにする。
+ * 台の上限は、その下限の高さが収まる分だけ広げる（見える高さに対する割合の限りまで）。広げないと、
+ * 上限をわずかに下回る高さで台が数十 px だけスクロールし、details の欄と二重にスクロールする。
+ * 限りでも収まらない低い画面では、台の中をスクロールさせる。
+ */
+.notice-dock:not([data-keyboard]):has(> .notice > .notice-details) {
+  max-height: max(
+    calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio)),
+    min(
+      calc(var(--notice-with-details-min-height) + 2 * var(--space-3)),
+      calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio-with-details))
+    )
+  );
+}
+
+.notice-dock > .notice:has(> .notice-details) {
+  max-height: max(
+    var(--notice-with-details-min-height),
+    calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio) - 2 * var(--space-3))
+  );
+}
+
+/*
+ * 台の上限に達して中でスクロールするとき、続きのある側の端を地の色へ淡く溶かす。iOS ではスクロールバーが
+ * 隠れ、台の端が画面の下端で切れたように見えるため。mask では台の地も透けて本文が見えるので、
+ * 端に貼りつく sticky の疑似要素を通知に重ねる。続きのある側にだけ置く（notice-dock.ts の data-more-*）。
+ * 高さ分を負の margin で戻し、通知の配置を動かさない。
+ */
+.notice-dock::before,
+.notice-dock::after {
+  content: none;
+  flex: none;
+  position: sticky;
+  /* 通知の中の details（position: relative）は疑似要素より後に描かれるので、z-index なしでは先頭の手がかりが隠れる */
+  z-index: var(--z-notice-edge);
+  height: var(--space-5);
+  pointer-events: none;
+}
+
+.notice-dock[data-more-above]::before {
+  content: "";
+  /* sticky は台の padding の内側に貼りつくので、padding の分を戻して台の端に合わせる */
+  top: calc(-1 * var(--space-3));
+  margin-bottom: calc(-1 * (var(--space-5) + var(--space-2)));
+  background: linear-gradient(to bottom, var(--color-bg), transparent);
+}
+
+.notice-dock[data-more-below]::after {
+  content: "";
+  bottom: calc(-1 * var(--space-3));
+  margin-top: calc(-1 * (var(--space-5) + var(--space-2)));
+  background: linear-gradient(to top, var(--color-bg), transparent);
 }
 
 /*
@@ -1201,7 +1272,11 @@ a {
 
 /* 衝突 */
 
+/* 名前と title を 1 行に並べ、狭い画面でも通知の高さを取りすぎない */
 .conflict-titles {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--space-3);
   margin: 0;
 }
 
@@ -1211,14 +1286,11 @@ a {
 }
 
 .conflict-titles dd {
-  margin: 0 0 var(--space-2);
+  margin: 0;
 }
 
 .diff {
-  /* 通知の台の上限（見えている高さの 6 割）に、見出しと操作と一緒に収める */
-  max-height: calc(var(--notice-room, var(--viewport-height)) * var(--diff-room-ratio));
   margin: 0;
-  overflow: auto;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   line-height: var(--line-height);

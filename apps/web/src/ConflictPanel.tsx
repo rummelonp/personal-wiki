@@ -171,9 +171,6 @@ export function ConflictPanel({
         このページは別の場所で更新されました（{formatTime(server.updatedAt)}
         ）。どちらを残すか選んでください。
       </p>
-      <p>
-        サーバーの版を取り込むと手元の変更は消え、手元で上書きするとサーバーの版が置き換わります。
-      </p>
     </Notice>
   );
 }

@@ -149,6 +149,19 @@ function markFolded(notices: Element[]): void {
     notice.toggleAttribute("data-folded", notices.length > 1 && notice !== keep);
 }
 
+/**
+ * 台の上限に達して中でスクロールするとき、続きのある側を data-more-above / data-more-below で示す
+ * （CSS が端を淡くぼかす）。iOS ではスクロールバーが隠れるので、これが続きの手がかりになる。
+ * 小数のずれで端に着いても点き続けないよう、1px の余裕を見る。
+ */
+function markScrollEdges(dock: HTMLElement): void {
+  dock.toggleAttribute("data-more-above", dock.scrollTop > 1);
+  dock.toggleAttribute(
+    "data-more-below",
+    dock.scrollTop + dock.clientHeight < dock.scrollHeight - 1,
+  );
+}
+
 /** 台の位置を visual viewport に合わせ、高さの変化を文書の余白とイベントで知らせる。戻り値で解除する。 */
 export function bindNoticeDock(dock: HTMLElement): () => void {
   const root = document.documentElement;
@@ -157,9 +170,7 @@ export function bindNoticeDock(dock: HTMLElement): () => void {
   const sync = () => {
     sortBySeverity(dock);
     markFolded([...dock.querySelectorAll(":scope > .notice")]);
-    // 台の上限に達すると台の中でスクロールする。台は pointer-events を通すので、スクロールバーを
-    // 掴めるよう、溢れている間だけ受け取る
-    dock.toggleAttribute("data-scrollable", dock.scrollHeight > dock.clientHeight + 1);
+    markScrollEdges(dock);
   };
   const announce = () => {
     sync();
@@ -194,6 +205,8 @@ export function bindNoticeDock(dock: HTMLElement): () => void {
     }
   };
   observer?.observe(dock);
+  const onScroll = () => markScrollEdges(dock);
+  dock.addEventListener("scroll", onScroll, { passive: true });
   // 子の増減（display: none との切り替え）は大きさの変化として届かない場合があるので、併せて見る
   const children = new MutationObserver(() => {
     observeNotices();
@@ -207,7 +220,9 @@ export function bindNoticeDock(dock: HTMLElement): () => void {
     observer?.disconnect();
     children.disconnect();
     toneChanges.disconnect();
-    dock.removeAttribute("data-scrollable");
+    dock.removeEventListener("scroll", onScroll);
+    dock.removeAttribute("data-more-above");
+    dock.removeAttribute("data-more-below");
     for (const notice of dock.querySelectorAll(":scope > .notice"))
       notice.removeAttribute("data-folded");
     root.style.removeProperty("--notice-height");

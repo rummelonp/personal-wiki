@@ -373,3 +373,179 @@ test("未作成のリンクの通知も、本文を動かさず、塗りの主�
   await expect(notice.locator(".button-primary")).toHaveCount(0);
   await expect(page.locator(".button-primary:visible")).toHaveCount(1);
 });
+
+/** 保存の間に別の場所で多くの行と title を書き換えて、差分の長い衝突の通知を出す。 */
+async function provokeLongConflict(page: Page, api: OwnerApi, title: string): Promise<Locator> {
+  const created = await openLongPage(page, api, title);
+  const pagePath = `**/api/pages/${created.id}`;
+  const changed = LINES.map((line, index) =>
+    index % 4 === 0 ? `${line}を別の場所で直した` : line,
+  );
+  let external: Promise<ApiPage> | undefined;
+  await page.route(pagePath, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    external ??= api.updatePage(created, {
+      title: `${created.title}（別の場所）`,
+      body: changed.join("\n"),
+    });
+    const updated = await external.then(
+      () => true,
+      () => false,
+    );
+    return updated ? route.fallback() : route.abort();
+  });
+  await typeAt(page, 0, "、手元の変更");
+  await expect.poll(() => external, "保存が送られない").toBeDefined();
+  await external;
+  const conflict = page.getByRole("alert").filter({
+    has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+  });
+  await expect(conflict).toBeVisible();
+  return conflict;
+}
+
+test.describe("差分の長い衝突の通知は、台の中と差分の欄が二重にスクロールしない", () => {
+  // iPhone 15 の layout viewport は 393x659。キーボードが無くても、台の上限（0.6）は 395 ほどになる
+  const SIZES = [
+    { width: 375, height: 667 },
+    { width: 393, height: 659 },
+  ];
+  for (const size of SIZES) {
+    test(`幅 ${size.width}`, async ({ page, api }, testInfo) => {
+      test.skip(
+        testInfo.project.name === "webkit-iphone" && size.width !== 393,
+        "iPhone の WebKit は自分の幅（393）で測る",
+      );
+      if (testInfo.project.name === "chromium-desktop") await page.setViewportSize(size);
+      const conflict = await provokeLongConflict(page, api, uniqueTitle(testInfo, "差分の長さ"));
+      await expect(page.locator(".diff")).toBeVisible();
+      const { detailsScrolls, dockScrolls } = await page.evaluate(() => {
+        const dockEl = document.querySelector(".notice-dock") as HTMLElement;
+        const detailsEl = document.querySelector(".notice-details") as HTMLElement;
+        return {
+          dockScrolls: dockEl.scrollHeight > dockEl.clientHeight + 1,
+          detailsScrolls: detailsEl.scrollHeight > detailsEl.clientHeight + 1,
+        };
+      });
+      expect(detailsScrolls, "差分が長いので、差分を含む欄の中でスクロールする").toBe(true);
+      expect(dockScrolls, "台の中がスクロールしている（二重のスクロール）").toBe(false);
+      await expect(dock(page)).not.toHaveAttribute("data-more-below");
+      await expectDockOnScreen(page);
+      for (const name of ["サーバーの版を取り込む", "手元で上書き"]) {
+        await expect(conflict.getByRole("button", { name })).toBeInViewport({ ratio: 1 });
+      }
+    });
+  }
+});
+
+test("台の上限に達して中でスクロールするとき、続きのある端に手がかりが出る", async ({
+  page,
+  api,
+}, testInfo) => {
+  const conflict = await provokeLongConflict(page, api, uniqueTitle(testInfo, "続きの手がかり"));
+  // 台の上限が、通知の下限の高さを収められる限りも下回る低い画面にする。通知は下限の高さのまま、台の中をスクロールする
+  await page.setViewportSize({ width: 393, height: 360 });
+  const edge = (name: "before" | "after") =>
+    dock(page).evaluate(
+      (element, pseudo) => getComputedStyle(element, `::${pseudo}`).content,
+      name,
+    );
+  await expect(dock(page)).toHaveAttribute("data-more-below", "");
+  await expect(dock(page)).not.toHaveAttribute("data-more-above");
+  // 通知が台より高くても、details の欄は通知の枠の中に収まる
+  const notice = await boxOf(page.locator(".notice"));
+  const details = await boxOf(page.locator(".notice-details"));
+  expect(details.y + details.height, "details が通知の枠の下にはみ出している").toBeLessThanOrEqual(
+    notice.y + notice.height,
+  );
+  expect(await edge("after")).not.toBe("none");
+  expect(await edge("before")).toBe("none");
+
+  await dock(page).evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(dock(page)).toHaveAttribute("data-more-above", "");
+  await expect(dock(page)).not.toHaveAttribute("data-more-below");
+  expect(await edge("before")).not.toBe("none");
+  expect(await edge("after")).toBe("none");
+  // 先頭へ戻れば、操作が見える
+  await dock(page).evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(dock(page)).not.toHaveAttribute("data-more-above");
+  await expect(conflict.getByRole("button", { name: "手元で上書き" })).toBeInViewport({
+    ratio: 1,
+  });
+
+  // 確認の段でも、実行とやめるの両方が台の中に見えて押せる
+  await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  const dockBox = await boxOf(dock(page));
+  for (const name of ["上書きする", "やめる"]) {
+    const button = conflict.getByRole("button", { name });
+    await expect(button).toBeInViewport({ ratio: 1 });
+    await button.click({ trial: true });
+    const box = await boxOf(button);
+    expect(box.y, `${name} が台の上にはみ出している`).toBeGreaterThanOrEqual(dockBox.y);
+    expect(box.y + box.height, `${name} が台の下にはみ出している`).toBeLessThanOrEqual(
+      dockBox.y + dockBox.height,
+    );
+  }
+});
+
+test("台の上限の手前の低さでは、台が数 px だけスクロールして details の欄と二重にならない", async ({
+  page,
+  api,
+}, testInfo) => {
+  await provokeLongConflict(page, api, uniqueTitle(testInfo, "低い画面"));
+  // 通知の下限の高さ（20rem）が、台の既定の上限（0.6）に収まらなくなる高さから、広げた上限（0.85）の手前まで
+  for (const height of [560, 500, 440, 420]) {
+    await page.setViewportSize({ width: 393, height });
+    await expect
+      .poll(
+        () =>
+          dock(page).evaluate((element) => ({
+            dockScrolls: element.scrollHeight > element.clientHeight + 1,
+            detailsScrolls: (() => {
+              const details = element.querySelector(".notice-details") as HTMLElement;
+              return details.scrollHeight > details.clientHeight + 1;
+            })(),
+          })),
+        { message: `高さ ${height}` },
+      )
+      .toEqual({ dockScrolls: false, detailsScrolls: true });
+    await expect(dock(page)).not.toHaveAttribute("data-more-below");
+    await expectDockOnScreen(page);
+  }
+});
+
+test("上限に達していない台には、手がかりを出さない", async ({ page, api }, testInfo) => {
+  const created = await openLongPage(page, api, uniqueTitle(testInfo, "手がかりなし"));
+  await failSaveWith500(page, created);
+  await typeAt(page, 0, "、足す");
+  await expect(page.getByRole("alert").filter({ hasText: "保存に失敗しました" })).toBeVisible();
+  await expect(dock(page)).not.toHaveAttribute("data-more-above");
+  await expect(dock(page)).not.toHaveAttribute("data-more-below");
+});
+
+test("台の地は余白まで不透明で、余白を押しても後ろの本文に届かない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await openLongPage(page, api, uniqueTitle(testInfo, "台の地"));
+  await failSaveWith500(page, created);
+  await typeAt(page, 0, "、足す");
+  await expect(page.getByRole("alert").filter({ hasText: "保存に失敗しました" })).toBeVisible();
+  const { background, bodyBackground, hit } = await page.evaluate(() => {
+    const dockEl = document.querySelector(".notice-dock") as HTMLElement;
+    const rect = dockEl.getBoundingClientRect();
+    // 通知の枠の外、台の余白の中の点（左上の隅の内側）
+    const target = document.elementFromPoint(rect.left + 3, rect.top + 3);
+    return {
+      background: getComputedStyle(dockEl).backgroundColor,
+      bodyBackground: getComputedStyle(document.body).backgroundColor,
+      hit: target === dockEl,
+    };
+  });
+  expect(background).toBe(bodyBackground);
+  expect(hit, "台の余白が、後ろの本文の要素に操作を通している").toBe(true);
+});
