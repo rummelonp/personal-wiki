@@ -19,7 +19,8 @@ const USER_AGENT = "personal-wiki-derived-rebuild";
 const PROGRESS_EVERY = 25;
 
 const USAGE = `usage:
-  WIKI_TOKEN=<write の token> derived-rebuild [--remote] [--url <base>] [--after <id>]`;
+  derived-rebuild [--remote] [--url <base>] [--after <id>]
+  環境変数 WIKI_TOKEN に write の token を入れておく（read -rs WIKI_TOKEN && export WIKI_TOKEN）`;
 
 /**
  * @typedef {{ remote: boolean; url: string | undefined; after: string | null }} ParsedArgs

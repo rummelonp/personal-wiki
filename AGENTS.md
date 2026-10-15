@@ -69,11 +69,14 @@ pnpm deploy:remote      # deploy.env から設定を合成してデプロイ
 pnpm db:migrate:remote  # 本番の D1 に migration を適用
 pnpm api-token issue <name> --scopes read|read,write [--remote]
 pnpm api-token revoke <name> [--remote]
-WIKI_TOKEN=<write の token> pnpm derived:rebuild [--remote]  # 全ページの派生データを作り直す
-WIKI_TOKEN=<write の token> pnpm link-rewrites [--remote] [--target <page id>]  # title の変更で待っているリンクの書き換えを最後まで進める
+pnpm derived:rebuild [--remote]  # 全ページの派生データを作り直す
+pnpm link-rewrites [--remote] [--target <page id>]  # title の変更で待っているリンクの書き換えを最後まで進める
 pnpm backup [--remote] [--out <dir>] [--with-tokens]  # D1 の本文を SQL のダンプにして手元に残す
 pnpm backup load <dir> [--remote]  # ダンプを新しい D1 に流し込む
 ```
+
+`derived:rebuild` と `link-rewrites` は、環境変数 `WIKI_TOKEN` から write の token を読む。
+平文をコマンド行に書くとシェルの履歴に残るので、`read -rs WIKI_TOKEN && export WIKI_TOKEN` で入れる。
 
 本番の hostname と D1 の ID は `apps/worker/deploy.env`（コミットしない。`deploy.env.example` を写して作る）に置く。
 
@@ -85,7 +88,8 @@ Worker を前の版に戻したときも `derived:rebuild` が要る。
 ```sh
 pnpm db:migrate:remote
 pnpm deploy:remote
-WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
+read -rs WIKI_TOKEN && export WIKI_TOKEN  # write の token を入れる
+pnpm derived:rebuild --remote
 ```
 
 token の平文は発行時に標準出力へ 1 度だけ出る。

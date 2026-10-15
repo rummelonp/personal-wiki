@@ -21,7 +21,8 @@ const PROGRESS_EVERY = 25;
 export const MAX_CONSECUTIVE_CONFLICTS = 5;
 
 const USAGE = `usage:
-  WIKI_TOKEN=<write の token> link-rewrites [--remote] [--url <base>] [--target <page id>]`;
+  link-rewrites [--remote] [--url <base>] [--target <page id>]
+  環境変数 WIKI_TOKEN に write の token を入れておく（read -rs WIKI_TOKEN && export WIKI_TOKEN）`;
 
 /**
  * @typedef {{ remote: boolean; url: string | undefined; target: string | null }} ParsedArgs

@@ -58,9 +58,11 @@ export const HELP = `usage:
 更新のとき（migration を含む版をデプロイするとき）は、次の順に実行する:
   pnpm db:migrate:remote
   pnpm deploy:remote
-  WIKI_TOKEN=<write の token> pnpm derived:rebuild --remote
+  read -rs WIKI_TOKEN && export WIKI_TOKEN
+  pnpm derived:rebuild --remote
   デプロイが migration より先だと、保存と一覧が表の無いエラーで止まる。
   derived:rebuild は全ページの派生データ（links、tags、一覧の抜粋、検索の索引）を作り直す。
+  write の token は環境変数 WIKI_TOKEN から読む。
   Worker を前の版に戻して再デプロイしたあとも実行する。前の版は新しい派生データ（抜粋など）を
   書かないので、戻している間に保存したページの分が古いまま残る
 
