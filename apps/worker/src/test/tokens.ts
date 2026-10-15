@@ -17,11 +17,19 @@ export interface InsertTokenOptions {
   lastUsedAt?: number;
 }
 
-/** api_tokens に行を作り、平文のトークンを返す。 */
-export async function insertToken(options: InsertTokenOptions): Promise<string> {
+export interface InsertedToken {
+  /** 平文のトークン */
+  token: string;
+  id: number;
+  /** このトークンで書いたときの actor */
+  actor: string;
+}
+
+/** api_tokens に行を作る。 */
+export async function insertApiToken(options: InsertTokenOptions): Promise<InsertedToken> {
   const token = generateTestToken();
-  await env.DB.prepare(
-    "INSERT INTO api_tokens (name, token_hash, scopes, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?)",
+  const row = await env.DB.prepare(
+    "INSERT INTO api_tokens (name, token_hash, scopes, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
   )
     .bind(
       options.name,
@@ -31,14 +39,20 @@ export async function insertToken(options: InsertTokenOptions): Promise<string> 
       options.lastUsedAt ?? null,
       options.revokedAt ?? null,
     )
-    .run();
-  return token;
+    .first<{ id: number }>();
+  if (row === null) throw new Error(`token not inserted: ${options.name}`);
+  return { token, id: row.id, actor: `token:${row.id}:${options.name}` };
 }
 
-export async function lastUsedAt(name: string): Promise<number | null> {
-  const row = await env.DB.prepare("SELECT last_used_at FROM api_tokens WHERE name = ?")
-    .bind(name)
+/** api_tokens に行を作り、平文のトークンを返す。 */
+export async function insertToken(options: InsertTokenOptions): Promise<string> {
+  return (await insertApiToken(options)).token;
+}
+
+export async function lastUsedAt(id: number): Promise<number | null> {
+  const row = await env.DB.prepare("SELECT last_used_at FROM api_tokens WHERE id = ?")
+    .bind(id)
     .first<{ last_used_at: number | null }>();
-  if (row === null) throw new Error(`token not found: ${name}`);
+  if (row === null) throw new Error(`token not found: ${id}`);
   return row.last_used_at;
 }

@@ -72,7 +72,7 @@ describe("rename で書き換えを積む", () => {
     expect(renamed.linkRewrites).toEqual({ queued: 2 });
     expect(await jobs()).toEqual(
       [a.id, b.id]
-        .map((source) => ({ source, target: target.id, oldKey: "target", actor: "token:agent" }))
+        .map((source) => ({ source, target: target.id, oldKey: "target", actor: client.actor }))
         .sort((x, y) => (x.source < y.source ? -1 : 1)),
     );
   });
@@ -151,15 +151,15 @@ describe("POST /api/link-rewrites/step", () => {
       "[[New Title|ラベル]] [[New Title#見出し]] [[New Title^id]]",
     );
     expect(await actorsOf(a.id)).toEqual([
-      { version: 1, actor: "token:agent" },
-      { version: 2, actor: "token:agent" },
+      { version: 1, actor: client.actor },
+      { version: 2, actor: client.actor },
     ]);
     expect(await linksFrom(a.id)).toEqual([{ key: "new title", target: target.id }]);
     expect(await jobs()).toEqual([]);
     expect(other.metrics.map(({ op, actor, pageId }) => ({ op, actor, pageId }))).toEqual(
       expect.arrayContaining([
-        { op: "link_rewrite", actor: "token:agent", pageId: a.id },
-        { op: "link_rewrite", actor: "token:agent", pageId: b.id },
+        { op: "link_rewrite", actor: client.actor, pageId: a.id },
+        { op: "link_rewrite", actor: client.actor, pageId: b.id },
       ]),
     );
     expect(other.metrics).toHaveLength(2);
@@ -331,7 +331,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect(steps[0]?.processed).toMatchObject({ sourcePageId: s.id, rewritten: 2, version: 2 });
     expect((await read(client, s)).body).toBe("[[X2]] [[Y2]] [[Z]]");
     // 後に積んだ rename の呼び出し元を actor にする
-    expect((await actorsOf(s.id)).at(-1)).toEqual({ version: 2, actor: "token:other" });
+    expect((await actorsOf(s.id)).at(-1)).toEqual({ version: 2, actor: other.actor });
   });
 
   it("同じ旧 key に 2 つの対象が積まれていれば、先に積んだ方の title に書き換える", async () => {

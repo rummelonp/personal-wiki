@@ -261,7 +261,7 @@ describe("rows_written の記録", () => {
   }
 
   it("作成、本文だけの更新、全入れ替えの書き込み行数を計測値として出す", async () => {
-    const { request, metrics } = await buildClient();
+    const { request, metrics, actor } = await buildClient();
     const body = largeBody("最初", "L", "t");
     const created = await request("/api/pages", {
       method: "POST",
@@ -282,7 +282,7 @@ describe("rows_written の記録", () => {
     expect(replaced.status).toBe(200);
 
     expect(metrics.map((m) => m.op)).toEqual(["create", "update", "update"]);
-    for (const m of metrics) expect(m).toMatchObject({ actor: "token:agent", pageId: page.id });
+    for (const m of metrics) expect(m).toMatchObject({ actor, pageId: page.id });
     for (const m of metrics) expect(m.rowsWritten).toBeGreaterThan(0);
     const [create, update, replace] = metrics.map((m) => m.rowsWritten);
     console.log(`rows_written: create=${create} body-only=${update} replace-all=${replace}`);

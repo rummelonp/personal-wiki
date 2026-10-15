@@ -284,7 +284,13 @@ const apiTokenResolver: BearerResolver = {
     // waitUntil に回さず待つ。書くのは 1 トークンあたり 1 時間に 1 回なので遅延は小さく、
     // 応答の時点で記録が終わっている方がテストと運用で扱いやすい。
     await recordApiTokenUse(c.env.DB, found, now());
-    return { kind: "token", issuer: "api", name: found.name, scopes: found.scopes };
+    return {
+      kind: "token",
+      issuer: "api",
+      id: found.id,
+      name: found.name,
+      scopes: found.scopes,
+    };
   },
 };
 

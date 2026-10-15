@@ -54,7 +54,13 @@ describe("tool の呼び出しの認可", () => {
   });
 
   it("scope の足りない token は scope の名前を添えて拒み、足りていれば動かす", async () => {
-    const reader = await callAs({ kind: "token", issuer: "api", name: "r", scopes: ["read"] });
+    const reader = await callAs({
+      kind: "token",
+      issuer: "api",
+      id: 1,
+      name: "r",
+      scopes: ["read"],
+    });
     expect(errorJson(reader)).toEqual({
       error: "forbidden",
       message: "この token には write の scope が無い",
@@ -62,6 +68,7 @@ describe("tool の呼び出しの認可", () => {
     const writer = await callAs({
       kind: "token",
       issuer: "api",
+      id: 2,
       name: "w",
       scopes: ["read", "write"],
     });

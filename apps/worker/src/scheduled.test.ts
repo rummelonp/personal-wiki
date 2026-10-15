@@ -107,8 +107,8 @@ describe("scheduled", () => {
       .bind(a.id, b.id)
       .all<{ pageId: string; actor: string }>();
     expect(results).toHaveLength(1);
-    expect(results[0]?.actor).toBe("token:renamer");
-    expect(metrics).toMatchObject([{ op: "link_rewrite", actor: "token:renamer" }]);
+    expect(results[0]?.actor).toBe(client.actor);
+    expect(metrics).toMatchObject([{ op: "link_rewrite", actor: client.actor }]);
 
     await handler(controller(), env);
     const rest = await env.DB.prepare("SELECT count(*) AS n FROM link_rewrites").first<{

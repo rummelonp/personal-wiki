@@ -6,7 +6,7 @@ import type { Bindings } from "../env";
 import { generatePageId } from "../pages/id";
 import { ownerCookie, ownerEnv, ownerEnvWithoutBucket } from "../test/owner";
 import { type PageJson, T0 } from "../test/pages";
-import { insertToken } from "../test/tokens";
+import { insertApiToken, insertToken } from "../test/tokens";
 
 const ORIGIN = "http://localhost";
 
@@ -50,7 +50,8 @@ async function setup(bindings: Bindings = ownerEnv()) {
   const clock = { now: T0 };
   const app = createApp({ now: () => clock.now, recordWrite: () => {} });
   const cookie = await ownerCookie(T0);
-  const writeToken = await insertToken({ name: "writer", scopes: "read write" });
+  const writer = await insertApiToken({ name: "writer", scopes: "read write" });
+  const writeToken = writer.token;
   const readToken = await insertToken({ name: "reader", scopes: "read" });
   const call = (path: string, init: RequestInit = {}, over: Bindings = bindings) =>
     app.request(path, init, over);
@@ -126,6 +127,7 @@ async function setup(bindings: Bindings = ownerEnv()) {
     ownerHeaders,
     bearer,
     writeToken,
+    writerActor: writer.actor,
     readToken,
     upload,
     uploaded,
@@ -161,7 +163,7 @@ describe("添付の名前", () => {
 
 describe("POST /api/attachments", () => {
   it("write の token で保存し、名前、種類、大きさを返す。R2 と D1 に入る", async () => {
-    const { upload } = await setup();
+    const { upload, writerActor } = await setup();
     const res = await upload();
     expect(res.status).toBe(201);
     const body = await res.json<{ name: string; contentType: string; size: number }>();
@@ -176,7 +178,7 @@ describe("POST /api/attachments", () => {
       content_type: "image/png",
       size: PNG.length,
       created_at: T0,
-      created_by: "token:writer",
+      created_by: writerActor,
     });
     const object = await bucketOf(env).get(`attachments/${body.name}`);
     expect(object?.httpMetadata?.contentType).toBe("image/png");

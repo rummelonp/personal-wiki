@@ -5,7 +5,7 @@ import { createMiddleware } from "hono/factory";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { AppEnv } from "../env";
-import { generateTestToken, insertToken, lastUsedAt } from "../test/tokens";
+import { generateTestToken, insertApiToken, insertToken, lastUsedAt } from "../test/tokens";
 import { LAST_USED_UPDATE_INTERVAL_MS } from "./api-tokens";
 import {
   allowAnonymous,
@@ -43,12 +43,30 @@ describe("GET /api/healthz", () => {
 
 describe("requireToken", () => {
   it("read のトークンで read のルートが 200 になり、principal が渡る", async () => {
-    const token = await insertToken({ name: "laptop", scopes: "read" });
+    const { token, id } = await insertApiToken({ name: "laptop", scopes: "read" });
     const res = await buildApp().request("/api/test/read", bearer(token));
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await res.json()).toEqual({
-      principal: { kind: "token", issuer: "api", name: "laptop", scopes: ["read"] },
+      principal: { kind: "token", issuer: "api", id, name: "laptop", scopes: ["read"] },
+    });
+  });
+
+  it("同じ名前のトークンは id で区別し、失効させた方だけが通らない", async () => {
+    const old = await insertApiToken({ name: "laptop", scopes: "read", revokedAt: T0 - 1 });
+    const current = await insertApiToken({ name: "laptop", scopes: "read write" });
+    expect(current.id).not.toBe(old.id);
+    const { request } = buildApp();
+    expect((await request("/api/test/read", bearer(old.token))).status).toBe(401);
+    const res = await request("/api/test/read", bearer(current.token));
+    expect(await res.json()).toEqual({
+      principal: {
+        kind: "token",
+        issuer: "api",
+        id: current.id,
+        name: "laptop",
+        scopes: ["read", "write"],
+      },
     });
   });
 
@@ -117,15 +135,15 @@ describe("無効なトークン", () => {
   });
 
   it("失効したトークンの last_used_at は書き換えない", async () => {
-    const revoked = await insertToken({ name: "old", scopes: "read", revokedAt: T0 - 1 });
-    await buildApp().request("/api/test/read", bearer(revoked));
-    expect(await lastUsedAt("old")).toBeNull();
+    const revoked = await insertApiToken({ name: "old", scopes: "read", revokedAt: T0 - 1 });
+    await buildApp().request("/api/test/read", bearer(revoked.token));
+    expect(await lastUsedAt(revoked.id)).toBeNull();
   });
 });
 
 describe("Cookie と Bearer の併用", () => {
   it("有効なトークンでも自前のセッション cookie と一緒なら 400", async () => {
-    const token = await insertToken({ name: "laptop", scopes: "read" });
+    const { token, id } = await insertApiToken({ name: "laptop", scopes: "read" });
     const res = await buildApp().request("/api/test/read", {
       ...bearer(token),
       Cookie: `${SESSION_COOKIE_NAME}=anything`,
@@ -133,7 +151,7 @@ describe("Cookie と Bearer の併用", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "ambiguous_credentials" });
     // 拒否したリクエストは使用として記録しない
-    expect(await lastUsedAt("laptop")).toBeNull();
+    expect(await lastUsedAt(id)).toBeNull();
   });
 
   it("第三者の cookie なら Bearer の妨げにしない", async () => {
@@ -413,19 +431,19 @@ describe("キャッシュの制御", () => {
 
 describe("last_used_at", () => {
   it("初回に記録し、間隔が空くまでは書き直さない", async () => {
-    const token = await insertToken({ name: "laptop", scopes: "read" });
+    const { token, id } = await insertApiToken({ name: "laptop", scopes: "read" });
     const clock = { now: T0 };
     const { request } = buildApp(clock);
 
     await request("/api/test/read", bearer(token));
-    expect(await lastUsedAt("laptop")).toBe(T0);
+    expect(await lastUsedAt(id)).toBe(T0);
 
     clock.now = T0 + LAST_USED_UPDATE_INTERVAL_MS - 1;
     await request("/api/test/read", bearer(token));
-    expect(await lastUsedAt("laptop")).toBe(T0);
+    expect(await lastUsedAt(id)).toBe(T0);
 
     clock.now = T0 + LAST_USED_UPDATE_INTERVAL_MS;
     await request("/api/test/read", bearer(token));
-    expect(await lastUsedAt("laptop")).toBe(T0 + LAST_USED_UPDATE_INTERVAL_MS);
+    expect(await lastUsedAt(id)).toBe(T0 + LAST_USED_UPDATE_INTERVAL_MS);
   });
 });

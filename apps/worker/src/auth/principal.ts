@@ -5,15 +5,17 @@ export type Scope = "read" | "write";
  * anonymous の staleSession は、セッション cookie を送ったが検証できなかったこと（期限切れ、署名の
  * 不一致、OWNER_EMAILS から外れたなど）を表す。権限は cookie が無い anonymous と同じ。
  *
- * token の issuer は資格情報の発行元。`api` は api_tokens のトークンで name はその名前、`oauth` は
- * OAuth のアクセストークンで name は client_id。名前空間が別なので、actor（revisions.ts）でも区別する。
+ * token の issuer は資格情報の発行元。`api` は api_tokens のトークンで、id がトークンを識別し、name は
+ * 重複してよいラベル。`oauth` は OAuth のアクセストークンで name は client_id。名前空間が別なので、
+ * actor（revisions.ts）でも区別する。
  */
 export type Principal =
   | { kind: "anonymous"; staleSession?: true }
   | { kind: "owner" }
-  | { kind: "token"; issuer: TokenIssuer; name: string; scopes: Scope[] };
+  | { kind: "token"; issuer: "api"; id: number; name: string; scopes: Scope[] }
+  | { kind: "token"; issuer: "oauth"; name: string; scopes: Scope[] };
 
-export type TokenIssuer = "api" | "oauth";
+export type TokenIssuer = Extract<Principal, { kind: "token" }>["issuer"];
 
 /** write は read を含む（作成、更新の前に読み直す流れを 1 つのトークンで済ませるため）。 */
 export function hasScope(granted: readonly Scope[], required: Scope): boolean {

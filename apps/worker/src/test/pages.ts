@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createApp } from "../app";
 import type { WriteMetric } from "../pages/operations";
-import { insertToken } from "./tokens";
+import { insertApiToken } from "./tokens";
 
 export const T0 = Date.UTC(2026, 9, 1);
 
@@ -17,7 +17,7 @@ export interface PageJson {
 
 /** write のトークンで API を呼ぶ。書き込みの計測値は metrics に溜まる。 */
 export async function buildClient(options: { scopes?: "read" | "read write"; name?: string } = {}) {
-  const token = await insertToken({
+  const { token, actor } = await insertApiToken({
     name: options.name ?? "agent",
     scopes: options.scopes ?? "read write",
   });
@@ -53,7 +53,7 @@ export async function buildClient(options: { scopes?: "read" | "read write"; nam
       json: { title, body },
     });
   }
-  return { request, create, update, clock, metrics };
+  return { request, create, update, clock, metrics, actor };
 }
 
 /** DB 全体の派生データとページを丸ごと取り、書き込みが一切起きなかったことの比較に使う。 */

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
-import { insertToken } from "../test/tokens";
+import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";
 import type { WikiToolContext } from "./tool";
 
@@ -384,7 +384,7 @@ describe("tool の中の例外", () => {
 
 describe("ページの tool", () => {
   it("create_page は draft で作り、/p/<id> の URL だけを返す", async () => {
-    const { call, metrics } = await mcpClient();
+    const { call, metrics, actor } = await mcpClient();
     const created = await call("create_page", { title: "  New  Page ", body: "本文" });
     expect(created.isError).toBe(false);
     const id = created.json.id as string;
@@ -397,9 +397,7 @@ describe("ページの tool", () => {
       url: `${ORIGIN}/p/${id}`,
       titleUrl: null,
     });
-    expect(metrics).toEqual([
-      { op: "create", actor: "token:agent", pageId: id, rowsWritten: expect.any(Number) },
-    ]);
+    expect(metrics).toEqual([{ op: "create", actor, pageId: id, rowsWritten: expect.any(Number) }]);
     const row = await env.DB.prepare("SELECT visibility FROM pages WHERE id = ?1")
       .bind(id)
       .first<{ visibility: string }>();
@@ -468,7 +466,7 @@ describe("ページの tool", () => {
   });
 
   it("update_page は版が合えば置き換え、版が古ければ最新の本文と版を返して何も書かない", async () => {
-    const { call, metrics } = await mcpClient();
+    const { call, metrics, actor } = await mcpClient();
     const { json: created } = await call("create_page", { title: "Doc", body: "v1" });
     const updated = await call("update_page", {
       id: created.id,
@@ -479,7 +477,7 @@ describe("ページの tool", () => {
     expect(updated).toMatchObject({ isError: false, json: { id: created.id, version: 2 } });
     expect(metrics.at(-1)).toEqual({
       op: "update",
-      actor: "token:agent",
+      actor,
       pageId: created.id,
       rowsWritten: expect.any(Number),
     });
@@ -552,14 +550,14 @@ describe("ページの tool", () => {
   });
 
   it("append_to_page は版を渡さずに末尾へ足す", async () => {
-    const { call, metrics } = await mcpClient();
+    const { call, metrics, actor } = await mcpClient();
     const { json: created } = await call("create_page", { title: "Log", body: "- a" });
     const appended = await call("append_to_page", { id: created.id, text: "- b" });
     expect(appended).toMatchObject({ isError: false, json: { id: created.id, version: 2 } });
     expect((await call("read_page", { id: created.id })).json.body).toBe("- a\n- b");
     expect(metrics.at(-1)).toEqual({
       op: "append",
-      actor: "token:agent",
+      actor,
       pageId: created.id,
       rowsWritten: expect.any(Number),
       attempts: 1,
@@ -855,8 +853,8 @@ describe("リクエストをまたいだ状態", () => {
     const metrics: WriteMetric[] = [];
     const app = createApp({ now: () => T0, recordWrite: (m) => metrics.push(m) });
     const tokens = {
-      alice: await insertToken({ name: "alice", scopes: "read write" }),
-      bob: await insertToken({ name: "bob", scopes: "read" }),
+      alice: await insertApiToken({ name: "alice", scopes: "read write" }),
+      bob: await insertApiToken({ name: "bob", scopes: "read" }),
     };
     let nextId = 1;
     async function rpc(who: keyof typeof tokens, method: string, params?: unknown) {
@@ -866,7 +864,7 @@ describe("リクエストをまたいだ状態", () => {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${tokens[who]}`,
+            Authorization: `Bearer ${tokens[who].token}`,
             "Content-Type": "application/json",
             Accept: "application/json, text/event-stream",
           },
@@ -884,11 +882,11 @@ describe("リクエストをまたいだ状態", () => {
       });
       return result as { isError?: boolean; content: { text: string }[] };
     };
-    return { rpc, create, metrics };
+    return { rpc, create, metrics, tokens };
   }
 
   it("write と read の principal を交互に流しても、scope と actor が混ざらない", async () => {
-    const { create, metrics } = await sharedApp();
+    const { create, metrics, tokens } = await sharedApp();
     for (let i = 0; i < 4; i++) {
       const a = await create("alice", `A${i}`);
       expect(a.isError).toBeUndefined();
@@ -897,11 +895,11 @@ describe("リクエストをまたいだ状態", () => {
       expect(JSON.parse(b.content[0]?.text ?? "")).toMatchObject({ error: "forbidden" });
     }
     expect(metrics).toHaveLength(4);
-    expect(metrics.every((m) => m.actor === "token:alice")).toBe(true);
+    expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
   it("同時に流した要求でも、principal ごとの結果が入れ替わらない", async () => {
-    const { create, metrics } = await sharedApp();
+    const { create, metrics, tokens } = await sharedApp();
     const results = await Promise.all(
       Array.from({ length: 6 }, (_, i) => create(i % 2 === 0 ? "alice" : "bob", `P${i}`)),
     );
@@ -909,7 +907,7 @@ describe("リクエストをまたいだ状態", () => {
       expect(r.isError === true).toBe(i % 2 === 1);
     });
     expect(metrics).toHaveLength(3);
-    expect(metrics.every((m) => m.actor === "token:alice")).toBe(true);
+    expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
   it("tools/call のあとの tools/list は 7 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {

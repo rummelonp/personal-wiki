@@ -14,7 +14,7 @@ async function revisionsOf(pageId: string) {
 
 describe("POST /api/pages", () => {
   it("draft で作り、版 1 と ETag と revision を返す", async () => {
-    const { request, metrics } = await buildClient();
+    const { request, metrics, actor } = await buildClient();
     const res = await request("/api/pages", {
       method: "POST",
       json: { title: "  First  Page ", body: "本文" },
@@ -34,10 +34,10 @@ describe("POST /api/pages", () => {
       updatedAt: T0,
     });
     expect(await revisionsOf(page.id)).toEqual([
-      { version: 1, title: "First  Page", body: "本文", actor: "token:agent" },
+      { version: 1, title: "First  Page", body: "本文", actor },
     ]);
     expect(metrics).toEqual([
-      { op: "create", actor: "token:agent", pageId: page.id, rowsWritten: expect.any(Number) },
+      { op: "create", actor, pageId: page.id, rowsWritten: expect.any(Number) },
     ]);
   });
 
@@ -320,7 +320,7 @@ describe("PUT /api/pages/:id", () => {
 
 describe("POST /api/pages/:id/append", () => {
   it("最新版の末尾に行を足し、版を進める", async () => {
-    const { create, request, metrics } = await buildClient();
+    const { create, request, metrics, actor } = await buildClient();
     const page = await create("memo", "一行目");
     const res = await request(`/api/pages/${page.id}/append`, {
       method: "POST",
@@ -337,7 +337,7 @@ describe("POST /api/pages/:id/append", () => {
     expect((await second.json<PageJson>()).body).toBe("一行目\n- 追記\n- 次");
     expect(metrics.at(-1)).toEqual({
       op: "append",
-      actor: "token:agent",
+      actor,
       pageId: page.id,
       rowsWritten: expect.any(Number),
       attempts: 1,
@@ -377,7 +377,7 @@ describe("POST /api/pages/:id/append", () => {
 
 describe("DELETE /api/pages/:id", () => {
   it("If-Match が合えば論理削除し、title を空ける", async () => {
-    const { create, request, metrics } = await buildClient();
+    const { create, request, metrics, actor } = await buildClient();
     const page = await create("gone", "#t [[x]] 消える本文です");
     const res = await request(`/api/pages/${page.id}`, {
       method: "DELETE",
@@ -386,7 +386,7 @@ describe("DELETE /api/pages/:id", () => {
     expect(res.status).toBe(204);
     expect(metrics.at(-1)).toEqual({
       op: "delete",
-      actor: "token:agent",
+      actor,
       pageId: page.id,
       rowsWritten: expect.any(Number),
     });
@@ -396,7 +396,7 @@ describe("DELETE /api/pages/:id", () => {
     )
       .bind(page.id)
       .first();
-    expect(row).toEqual({ deleted_at: T0, deleted_by: "token:agent", version: 1 });
+    expect(row).toEqual({ deleted_at: T0, deleted_by: actor, version: 1 });
     const again = await create("gone");
     expect(again.id).not.toBe(page.id);
   });

@@ -4,7 +4,7 @@ import { createApp } from "../app";
 import type { Bindings } from "../env";
 import { fakeJwks, generateSigningKey, ownerCookie, ownerEnv, signAccessJwt } from "../test/owner";
 import { T0 } from "../test/pages";
-import { insertToken } from "../test/tokens";
+import { insertApiToken, insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
 import { consentPage, describeRegistration, registrationTimeOf } from "./oauth-routes";
 import { oauthServerFor } from "./oauth-server";
@@ -802,13 +802,13 @@ describe("OAuth のトークンでの /mcp", () => {
   it("api_tokens の Bearer は OAuth と並んで動き、actor は token: のまま", async () => {
     const { request } = setup();
     await connect(request, "write");
-    const token = await insertToken({ name: "laptop", scopes: "read write" });
+    const { token, id } = await insertApiToken({ name: "laptop", scopes: "read write" });
     const created = await callTool(request, token, "create_page", { title: "By Token", body: "" });
     expect(created.isError).toBe(false);
     const row = await env.DB.prepare("SELECT actor FROM revisions WHERE page_id = ?")
       .bind(created.json.id)
       .first<{ actor: string }>();
-    expect(row?.actor).toBe("token:laptop");
+    expect(row?.actor).toBe(`token:${id}:laptop`);
   });
 });
 
