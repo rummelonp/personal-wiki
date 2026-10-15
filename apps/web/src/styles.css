@@ -15,6 +15,14 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* macOS の既定の描き方は字の線を太らせ、暗い地の明るい字では明るい地より太って見える */
+@media (prefers-color-scheme: dark) {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
 *,
 *::before,
 *::after {
