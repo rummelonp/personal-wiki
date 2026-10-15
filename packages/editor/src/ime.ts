@@ -55,6 +55,10 @@ const settleMeasureKey = Symbol("compositionSettled");
  * DOM に書き戻される。続けて打つと、その選択ごと確定文字列が置き換わる。
  * そこで measure の後ろへ回す。@codemirror/view の measure は、frame から走るときは read の前に
  * 保留中の DOM 変更を読む。measure の中では dispatch できないので、dispatch は microtask へ送る。
+ * microtask は write ではなく read の中で頼む。read の後の更新が例外で抜けると write は呼ばれず、
+ * request も measure から外れる。write で頼むと settle が来ず、次の `compositionend` まで `settling`
+ * が残る。microtask は measure 全体が（例外で抜ける場合も）終わってから走るので、read で頼んでも
+ * dispatch の時期は変わらない。
  * ただし、frame の前に `posAtCoords` などの読み取りが measure を同期に走らせると、その measure は
  * DOM 変更を読まないので、settle が遅れた flush より先に走りうる。
  *
@@ -73,8 +77,10 @@ export const compositionSettledNotifier = ViewPlugin.fromClass(
       settling.add(this.view);
       this.view.requestMeasure({
         key: settleMeasureKey,
-        read: () => null,
-        write: () => queueMicrotask(() => this.settle()),
+        read: () => {
+          queueMicrotask(() => this.settle());
+          return null;
+        },
       });
     }
 

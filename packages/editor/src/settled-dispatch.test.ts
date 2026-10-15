@@ -135,6 +135,23 @@ describe("dispatchWhenSettled", () => {
     expect(action).not.toHaveBeenCalled();
   });
 
+  it("releases held actions even when the measure skips its write phase", async () => {
+    const v = mount();
+    const action = vi.fn();
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    dispatchWhenSettled(v, "a", action);
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    // read と write の間で更新が例外を投げると、CodeMirror は write を呼ばずに measure を抜ける。
+    // その状況を、保留中の request から write を外して作る
+    const requests = (v as unknown as { measureRequests: { key?: unknown; write?: unknown }[] })
+      .measureRequests;
+    const request = requests.find((r) => String(r.key) === "Symbol(compositionSettled)");
+    expect(request).toBeDefined();
+    (request as { write?: unknown }).write = undefined;
+
+    await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+  });
+
   it("refuses a view without the extension", () => {
     host = document.createElement("div");
     document.body.append(host);
