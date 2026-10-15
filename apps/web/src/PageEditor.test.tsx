@@ -1004,9 +1004,12 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(container?.querySelector(".notice-title")?.textContent).toBe(
       "削除されたページで保存できなかった内容があります",
     );
-    expect(container?.textContent).toContain(
-      "削除されたページ「消えた題」で保存できなかった内容が",
+    // 本文は見出しを繰り返さず、選んだ後に何が起きるかから始まる
+    const text = container?.querySelector(".notice-text")?.textContent ?? "";
+    expect(text).toMatch(
+      /^復元すると、「消えた題」の内容が新しいページになります。破棄すると、この端末に退避した内容（[^）]+）は消えます。$/,
     );
+    expect(text).not.toContain("削除されたページ");
   });
 
   it("title を渡して開いた画面は、残った退避を尋ねない", async () => {

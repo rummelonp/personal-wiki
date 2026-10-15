@@ -48,7 +48,7 @@ async function deleteFromRail(page: Page): Promise<void> {
 
 async function restoreAsNewPage(page: Page, title: string, body: string, api: OwnerApi) {
   await expect(
-    page.getByText(`削除されたページ「${title}」で保存できなかった内容が`, { exact: false }),
+    page.getByText(`復元すると、「${title}」の内容が新しいページになります。`, { exact: false }),
   ).toBeVisible();
   // 通知が重なって本文が畳まれても、見出しだけで削除されたページの内容と分かる
   await expect(

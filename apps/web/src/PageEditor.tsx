@@ -508,17 +508,21 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
               </>
             }
           >
-            <p>
-              {state.pendingBackup.deletedFrom !== undefined
-                ? `削除されたページ「${state.pendingBackup.title}」で保存できなかった内容が、この端末に退避されています（`
-                : state.pendingBackup.createFailed
+            {state.pendingBackup.deletedFrom !== undefined ? (
+              // 見出しがどのページの内容かを言い切っているので、本文は選んだ後に何が起きるかから始める。
+              // 文字列を 1 つにするのは、JSX の改行が文の間に半角の空白を入れるため
+              <p>
+                {`復元すると、「${state.pendingBackup.title}」の内容が新しいページになります。破棄すると、この端末に退避した内容（${formatTime(state.pendingBackup.savedAt)}）は消えます。`}
+              </p>
+            ) : (
+              <p>
+                {state.pendingBackup.createFailed
                   ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に退避されています（`
                   : "保存できなかった内容が、この端末に退避されています（"}
-              {formatTime(state.pendingBackup.savedAt)}
-              {state.pendingBackup.deletedFrom !== undefined
-                ? "）。新しいページとして復元するか、破棄してください。"
-                : "）。復元して続けるか、破棄してください。"}
-            </p>
+                {formatTime(state.pendingBackup.savedAt)}
+                ）。復元して続けるか、破棄してください。
+              </p>
+            )}
           </Notice>
         )}
 
