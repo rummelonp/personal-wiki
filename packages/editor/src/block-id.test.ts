@@ -1,3 +1,4 @@
+import { syntaxTree } from "@codemirror/language";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -152,6 +153,21 @@ describe("revealBlockId", () => {
       expect(v.contentDOM.querySelector(".cm-block-ref-highlight")).not.toBeNull();
     },
   );
+
+  it("parses a screen or more below a distant target before moving there", () => {
+    const filler = Array.from({ length: 3000 }, (_, i) => `段落 ${i} の本文。\n`).join("\n");
+    const DOC = `${filler}\n対象の段落 ^target\n\n${filler}`;
+    const v = mount(DOC);
+    const targetLine = v.state.doc.lineAt(DOC.indexOf("対象の段落"));
+    expect(syntaxTree(v.state).length).toBeLessThan(targetLine.from);
+
+    expect(revealBlockId(v, "target")).toBe(true);
+    v.dispatch({});
+
+    const reached = v.state.doc.lineAt(syntaxTree(v.state).length);
+    const screenLines = Math.ceil(window.innerHeight / v.defaultLineHeight);
+    expect(reached.number - targetLine.number).toBeGreaterThanOrEqual(screenLines);
+  });
 
   it("returns false when no block in the document has the given id", () => {
     const DOC = "Title\n\nBody paragraph ^other";

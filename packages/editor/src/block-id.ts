@@ -12,6 +12,7 @@ import {
 import type { Tree } from "@lezer/common";
 import { extractBlockIds, taskListNodes } from "@personal-wiki/markdown";
 import { compositionSettled, isComposing, isCompositionUnsettled } from "./ime";
+import { parseAhead } from "./parse-ahead";
 
 /** 構文木の parse が間に合わなかった場合、その場では諦めて既存の（不完全な）木で妥協する。 */
 const ENSURE_SYNTAX_TREE_TIMEOUT_MS = 100;
@@ -226,6 +227,9 @@ export function revealBlockId(view: EditorView, blockId: string): boolean {
   const paragraph = findEnclosingParagraph(tree, ref.from, REVEAL_TARGET);
   if (!paragraph) return false;
 
+  // ref.to までの解析では、移した先の画面の下側がまだ解析されず、背景の解析が追いつくまで
+  // Markdown の記号のまま見える。移す前に、見える範囲を解析しておく。
+  parseAhead(view, paragraph.from);
   view.dispatch({
     selection: { anchor: paragraph.from },
     effects: [
