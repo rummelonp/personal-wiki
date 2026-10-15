@@ -226,7 +226,7 @@ test("もう一度保存している間は、下までスクロールしてい�
     await route.fallback();
   });
   await alert.getByRole("button", { name: "もう一度保存する" }).click();
-  const saving = dock(page).getByRole("status").filter({ hasText: "保存しています…" });
+  const saving = dock(page).locator(".notice").filter({ hasText: "保存しています…" });
   await expect(saving).toBeVisible();
   await expect(alert).toBeHidden();
   await expectDockOnScreen(page);

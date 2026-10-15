@@ -28,7 +28,7 @@ const SERVER: Page = {
   updatedAt: 0,
 };
 
-function mount() {
+function mount(localBody = "手元の本文") {
   const onOverwrite = vi.fn();
   const onTakeServer = vi.fn();
   container = document.createElement("div");
@@ -39,7 +39,7 @@ function mount() {
       root?.render(
         <ConflictPanel
           server={SERVER}
-          local={{ title: "題", body: "手元の本文" }}
+          local={{ title: "題", body: localBody }}
           busy={busy}
           onOverwrite={onOverwrite}
           onTakeServer={onTakeServer}
@@ -110,5 +110,11 @@ describe("衝突の操作の確認", () => {
     expect(legend?.textContent).toContain("サーバーだけにある行");
     expect(diff).not.toBeNull();
     expect(legend?.compareDocumentPosition(diff as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("本文に差分が無いときは、凡例を出さない", () => {
+    mount(SERVER.body);
+    expect(document.body.textContent).toContain("本文に差分はありません。");
+    expect(document.querySelector(".diff-legend")).toBeNull();
   });
 });

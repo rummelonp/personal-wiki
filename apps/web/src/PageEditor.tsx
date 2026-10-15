@@ -597,11 +597,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         )}
 
         {progress !== null ? (
-          // 失敗の通知と同じ位置の同じ部品なので、台の中で動かず、色と見出しだけが変わる
-          <Notice tone="info" role="status" title={progress} />
+          // 進行は上端の保存の状態や公開と削除の表示がすでに読み上げるので、ここでは読み上げない。
+          // key を失敗の通知と分け、再び失敗したときに alert を新しく挿入して確実に読み上げさせる
+          <Notice key="progress" tone="info" title={progress} silent />
         ) : (
           failure !== null && (
             <Notice
+              key="failure"
               tone="error"
               title={
                 failure.kind === "save" && isDirty(state) && state.backupFailed

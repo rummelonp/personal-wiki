@@ -173,11 +173,38 @@ describe("PageEditor と本文のエディタ", () => {
     expect(titleOf()).toBe("保存しています…");
     expect(container?.querySelectorAll(".notice")).toHaveLength(1);
     expect(container?.querySelector("[role='alert']")).toBeNull();
-    expect(container?.querySelector(".notice [role='status']")).not.toBeNull();
+    // 進行は上端の保存の状態が読み上げるので、通知では重ねて読み上げない
+    expect(container?.querySelector(".notice [role]")).toBeNull();
 
     await act(async () => finish(ok({ ...PAGE, body: "本文を書き足す", version: 2 })));
     await flushAsync();
     expect(container?.querySelector(".notice")).toBeNull();
+  });
+
+  it("もう一度保存してまた失敗すると、失敗の通知を alert として出し直す", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+    const { view, button } = renderPage();
+    view().focus();
+    typeAtEnd(view(), "を書き足す");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+
+    let fail: (value: ApiResult<Page>) => void = () => {};
+    vi.mocked(updatePage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        fail = resolve;
+      }),
+    );
+    act(() => button("もう一度保存する").click());
+    await flushAsync();
+    const progress = container?.querySelector(".notice");
+    expect(progress?.querySelector(".notice-title")?.textContent).toBe("保存しています…");
+
+    await act(async () => fail({ ok: false, reason: "error", message: "また失敗" }));
+    await flushAsync();
+    const alert = container?.querySelector(".notice [role='alert']");
+    expect(alert?.textContent).toContain("保存に失敗しました");
+    expect(container?.querySelector(".notice")).not.toBe(progress);
   });
 
   it("変換中にページを離れても、未確定文字まで退避に残す", async () => {
