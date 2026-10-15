@@ -102,6 +102,8 @@ test("quick switcher で ↓ を押して「作成」を選べば、キーボー
 }, testInfo) => {
   const title = uniqueTitle(testInfo, "矢印で作る");
   const { switcher, input } = await openSwitcherAndType(page, title);
+  // 「作成」は title の一覧を取り終えてから並ぶ。その前に ↓ を押すと選択が動かない
+  await expect(switcher.getByRole("option", { name: `「${title}」を作成` })).toBeVisible();
   await input.press("ArrowDown");
   await expect(switcher.getByRole("option", { selected: true })).toHaveText(`「${title}」を作成`);
   await input.press("Enter");
