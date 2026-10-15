@@ -42,10 +42,30 @@ describe("createLocalBackupStore", () => {
     ["baseTitle", { baseTitle: 1 }],
     ["baseBody", { baseBody: null }],
     ["createFailed", { createFailed: "yes" }],
+    ["owner", { owner: 1 }],
   ])("%s の型が違う退避は読まない", (_, extra) => {
     const storage = memoryStorage();
     storage.setItem(KEY, JSON.stringify({ ...OLD, ...extra }));
     expect(createLocalBackupStore(() => storage).load(ID)).toBeNull();
+  });
+
+  it("持ち主の目印を含めて書いたものを読み戻し、欄の無い退避も読む", () => {
+    const storage = memoryStorage();
+    const store = createLocalBackupStore(() => storage);
+    store.save(ID, { ...OLD, owner: "abc" });
+    expect(store.load(ID)?.owner).toBe("abc");
+    storage.setItem(KEY, JSON.stringify(OLD));
+    expect(store.load(ID)?.owner).toBeUndefined();
+  });
+
+  it("持ち主の目印を足しても、欄を増やす前の版の判定（必須の欄だけ）を満たす", () => {
+    const storage = memoryStorage();
+    createLocalBackupStore(() => storage).save(ID, { ...OLD, owner: "abc" });
+    const value = JSON.parse(storage.getItem(KEY) ?? "null");
+    expect(typeof value.title).toBe("string");
+    expect(typeof value.body).toBe("string");
+    expect(typeof value.baseVersion).toBe("number");
+    expect(typeof value.savedAt).toBe("number");
   });
 
   it("prefix で始まる退避の key を、load に渡す形で返す", () => {

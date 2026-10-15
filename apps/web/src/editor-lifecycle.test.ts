@@ -28,7 +28,10 @@ function memoryBackup(): BackupStore & { saved: Map<string, Backup> } {
   return {
     saved,
     load: (id) => saved.get(id) ?? null,
-    save: (id, backup) => void saved.set(id, backup),
+    save: (id, backup) => {
+      saved.set(id, backup);
+      return true;
+    },
     remove: (id) => void saved.delete(id),
     list: (prefix) => [...saved.keys()].filter((key) => key.startsWith(prefix)),
   };

@@ -93,8 +93,23 @@ const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
   delete: "削除できませんでした",
 };
 
-/** 保存や作成が失敗しても、打った内容は画面に残り、session が端末にも退避する（editor-session の stashIfDirty） */
-const KEPT_CONTENT = "入力した内容はこの画面に残り、この端末にも退避してあります。";
+/**
+ * 保存や作成が失敗しても、打った内容は画面に残り、session が端末にも退避する（editor-session の stashIfDirty）。
+ * 退避は容量超過や private window で書けないことがあり、そのときは画面を閉じると内容が失われる。
+ */
+const keptContent = (backupFailed: boolean) =>
+  backupFailed
+    ? "入力した内容はこの画面に残っていますが、この端末には退避できませんでした。画面を閉じる前に、内容をコピーして残してください。"
+    : "入力した内容はこの画面に残り、この端末にも退避してあります。";
+
+/**
+ * 退避が書けなかったときは、見出しに内容を失う恐れを入れる。通知を畳むと本文の段落は隠れ、
+ * 見出しだけが残るので、失う恐れが見出しに無いと畳んだまま見落とす。
+ */
+const UNKEPT_TITLES = {
+  create: "作成できず、内容を端末に退避できませんでした",
+  save: "保存できず、内容を端末に退避できませんでした",
+};
 
 function retryLabel(op: FailedOp): string {
   switch (op.kind) {
@@ -457,7 +472,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         {state.authLost && (
           <Notice
             tone="warn"
-            title="ログインの期限が切れました"
+            title={
+              isDirty(state) && state.backupFailed
+                ? "ログインの期限が切れ、内容を端末に退避できませんでした"
+                : "ログインの期限が切れました"
+            }
             claimFocus
             actions={
               <>
@@ -472,7 +491,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           >
             <p>
               {isDirty(state)
-                ? "未保存の内容はこの端末に退避してあります。ログインし直すと、続きから保存できます。"
+                ? state.backupFailed
+                  ? "未保存の内容をこの端末に退避できませんでした。ログインし直す前に、内容をコピーして残してください。"
+                  : "未保存の内容はこの端末に退避してあります。ログインし直すと、続きから保存できます。"
                 : "未保存の変更はありません。ログインし直してください。"}
             </p>
           </Notice>
@@ -502,7 +523,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         {state.error !== null && state.failedOp !== null && state.failedOp.kind !== "create" && (
           <Notice
             tone="error"
-            title={FAILURE_TITLES[state.failedOp.kind]}
+            title={
+              state.failedOp.kind === "save" && isDirty(state) && state.backupFailed
+                ? UNKEPT_TITLES.save
+                : FAILURE_TITLES[state.failedOp.kind]
+            }
             actions={
               <button
                 type="button"
@@ -516,7 +541,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           >
             <p>
               {state.error}
-              {state.failedOp.kind === "save" && isDirty(state) && KEPT_CONTENT}
+              {state.failedOp.kind === "save" && isDirty(state) && keptContent(state.backupFailed)}
             </p>
           </Notice>
         )}
@@ -622,7 +647,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         {state.error !== null && state.failedOp?.kind === "create" && (
           <Notice
             tone="error"
-            title={FAILURE_TITLES.create}
+            title={state.backupFailed ? UNKEPT_TITLES.create : FAILURE_TITLES.create}
             actions={
               state.failedOp.titleTaken ? undefined : (
                 <button
@@ -648,7 +673,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 )}
               </p>
             ) : (
-              <p>{KEPT_CONTENT}</p>
+              <p>{keptContent(state.backupFailed)}</p>
             )}
           </Notice>
         )}

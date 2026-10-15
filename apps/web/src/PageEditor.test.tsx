@@ -837,6 +837,33 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(createPage).toHaveBeenLastCalledWith({ title: "題", body: "残る本文" });
   });
 
+  it("退避が端末に書けないときは、退避してあるとは言わず、内容をコピーするよう案内する", async () => {
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "error",
+      message: "通信できない",
+    });
+    // 容量超過や private window では localStorage への書き込みが例外になる
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    try {
+      const { view } = renderNew();
+      act(() => typeAtEnd(view(), "残る本文"));
+      typeTitle("題");
+      pressEnter(false);
+      await vi.waitFor(() =>
+        expect(container?.querySelector(".notice-title")?.textContent).toBe(
+          "作成できず、内容を端末に退避できませんでした",
+        ),
+      );
+      expect(container?.textContent).toContain("この端末には退避できませんでした");
+      expect(container?.textContent).not.toContain("この端末にも退避してあります");
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it("作れずに残った退避は、作れなかったことを示して復元を尋ね、復元すると作る", async () => {
     seedOrphan({
       title: "残った題",

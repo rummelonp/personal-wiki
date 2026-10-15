@@ -26,16 +26,24 @@ function page(patch: Partial<Page> = {}): Page {
   };
 }
 
-function memoryBackup(initial?: Backup): BackupStore & { saved: Map<string, Backup> } {
+function memoryBackup(
+  initial?: Backup,
+): BackupStore & { saved: Map<string, Backup>; failWrites: boolean } {
   const saved = new Map<string, Backup>();
   if (initial) saved.set(ID, initial);
-  return {
+  const store = {
     saved,
-    load: (id) => saved.get(id) ?? null,
-    save: (id, backup) => void saved.set(id, backup),
-    remove: (id) => void saved.delete(id),
-    list: (prefix) => [...saved.keys()].filter((key) => key.startsWith(prefix)),
+    failWrites: false,
+    load: (id: string) => saved.get(id) ?? null,
+    save: (id: string, backup: Backup) => {
+      if (store.failWrites) return false;
+      saved.set(id, backup);
+      return true;
+    },
+    remove: (id: string) => void saved.delete(id),
+    list: (prefix: string) => [...saved.keys()].filter((key) => key.startsWith(prefix)),
   };
+  return store;
 }
 
 const ok = <T>(value: T): ApiResult<T> => ({ ok: true, value });
@@ -503,6 +511,7 @@ describe("ログイン切れ", () => {
         baseTitle: "題",
         baseBody: "[[旧]] 本文",
         savedAt: expect.any(Number),
+        owner: expect.any(String),
       });
     });
 
@@ -802,6 +811,145 @@ describe("削除と離脱", () => {
     const { session, api } = setup();
     await session.leave();
     expect(api.calls).toEqual([]);
+  });
+});
+
+describe("退避が書けなかったとき", () => {
+  const failSave = (api: EditorApi) => {
+    api.updatePage = async () => ({ ok: false, reason: "error", message: "失敗" });
+  };
+
+  it("退避が書けなかったことを状態に出し、書けたら戻す", async () => {
+    const backup = memoryBackup();
+    const { session, api } = setup({ backup });
+    failSave(api);
+    backup.failWrites = true;
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    expect(session.getState().backupFailed).toBe(true);
+    expect(backup.saved.size).toBe(0);
+
+    backup.failWrites = false;
+    session.edit({ title: "題", body: "手元 2" });
+    await session.flush();
+    expect(session.getState().backupFailed).toBe(false);
+    expect(backup.load(ID)?.body).toBe("手元 2");
+  });
+
+  it("退避が書けていれば、失敗にならない", async () => {
+    const { session, api } = setup();
+    failSave(api);
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    expect(session.getState().backupFailed).toBe(false);
+  });
+});
+
+describe("別のタブが書いた退避", () => {
+  it("自分が書いていない退避は、保存に成功しても消さない", async () => {
+    const backup = memoryBackup();
+    const { session } = setup({ backup });
+    // 別のタブが、同じページの編集中に退避を書いた
+    const other = { title: "題", body: "別タブの編集", baseVersion: 1, savedAt: 123 };
+    backup.saved.set(ID, other);
+    session.edit({ title: "題", body: "こちらの編集" });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(session.getState().base.body).toBe("こちらの編集");
+    expect(backup.load(ID)).toEqual(other);
+  });
+
+  it("自分が書いた退避は、保存に成功したら消す", async () => {
+    const backup = memoryBackup();
+    const { session, api } = setup({ backup });
+    const real = api.updatePage;
+    api.updatePage = async () => ({ ok: false, reason: "error", message: "失敗" });
+    session.edit({ title: "題", body: "手元" });
+    await session.flush();
+    expect(backup.load(ID)?.body).toBe("手元");
+    api.updatePage = real;
+    await session.flush();
+    expect(session.getState().base.body).toBe("手元");
+    expect(backup.load(ID)).toBeNull();
+  });
+});
+
+describe("同じページを開いた複数のタブの退避", () => {
+  // 閉じたタブ B の退避は、B の未保存の内容の唯一の写しである。開いたままのタブ A の退避が上書きしない
+  const failSave = (api: EditorApi) => {
+    api.updatePage = async () => ({ ok: false, reason: "error", message: "失敗" });
+  };
+
+  async function twoTabs() {
+    const backup = memoryBackup();
+    const a = setup({ backup });
+    const b = setup({ backup, server: a.server.page });
+    failSave(b.api);
+    b.session.edit({ title: "題", body: "B の編集" });
+    await b.session.flush();
+    await b.session.leave();
+    await vi.advanceTimersByTimeAsync(10);
+    failSave(a.api);
+    a.session.edit({ title: "題", body: "A の編集" });
+    await a.session.flush();
+    return { backup, a, b };
+  }
+
+  it("閉じたタブの退避を、別のタブの退避が上書きしない", async () => {
+    const { backup } = await twoTabs();
+    const bodies = [...backup.saved.values()].map((saved) => saved.body).sort();
+    expect(bodies).toEqual(["A の編集", "B の編集"]);
+    expect(backup.load(ID)?.body).toBe("B の編集");
+  });
+
+  it("次に開くと、新しい退避から順に復元を尋ね、破棄すると次を尋ねる", async () => {
+    const { backup, a } = await twoTabs();
+    const next = setup({ backup, server: a.server.page });
+    expect(next.session.getState().pendingBackup?.body).toBe("A の編集");
+    next.session.discardBackup();
+    expect(next.session.getState().pendingBackup?.body).toBe("B の編集");
+    next.session.discardBackup();
+    expect(next.session.getState().pendingBackup).toBeNull();
+    expect(backup.saved.size).toBe(0);
+  });
+
+  it("保存に成功しても、別のタブの退避は消さず、自分の退避だけ消す", async () => {
+    const { backup, a } = await twoTabs();
+    a.api.updatePage = fakeApi(a.server).updatePage;
+    await a.session.flush();
+    expect(a.session.getState().base.body).toBe("A の編集");
+    expect([...backup.saved.values()].map((saved) => saved.body)).toEqual(["B の編集"]);
+  });
+
+  it("共有の key が空いたあとに書くと、自分の key の前の写しを消す", async () => {
+    const { backup, a } = await twoTabs();
+    // 閉じたタブの退避を、別の画面で破棄した
+    backup.saved.delete(ID);
+    a.session.edit({ title: "題", body: "A の編集 2" });
+    await a.session.flush();
+    expect([...backup.saved.keys()]).toEqual([ID]);
+    expect(backup.load(ID)?.body).toBe("A の編集 2");
+  });
+
+  it("復元した退避は、書いたセッションが 2 か所に残した写しも含めて、保存に成功したら消す", async () => {
+    const backup = memoryBackup();
+    const saved = { title: "題", body: "x", baseVersion: 1, owner: "X" };
+    backup.saved.set(ID, { ...saved, body: "x1", savedAt: 1 });
+    backup.saved.set(`${ID}@X`, { ...saved, body: "x2", savedAt: 2 });
+    const { session } = setup({ backup });
+    expect(session.getState().pendingBackup?.body).toBe("x2");
+    session.restoreBackup();
+    await session.flush();
+    expect(session.getState().base.body).toBe("x2");
+    expect(backup.saved.size).toBe(0);
+  });
+
+  it("復元した退避は、保存に成功したら消す", async () => {
+    const { backup, a } = await twoTabs();
+    const next = setup({ backup, server: a.server.page });
+    next.session.restoreBackup();
+    await next.session.flush();
+    expect(next.session.getState().base.body).toBe("A の編集");
+    expect([...backup.saved.values()].map((saved) => saved.body)).toEqual(["B の編集"]);
   });
 });
 

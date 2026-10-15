@@ -85,6 +85,36 @@ function issueNewBackupKey(): string {
   return `${NEW_PAGE_BACKUP_PREFIX}${Date.now().toString(36)}-${newKeyCount}-${random}`;
 }
 
+function issueNonce(): string {
+  const random = Math.random().toString(36).slice(2, 10);
+  return `${Date.now().toString(36)}-${random}`;
+}
+
+/**
+ * 同じページの退避の key。共有の key（page id）を別のタブが使っているときだけ、セッションごとの
+ * key に書く。前の版は共有の key しか読まないので、そちらには出ないが消えもしない。
+ * page id は `@` を含まない。
+ */
+const sessionKeyOf = (pageId: string, nonce: string) => `${pageId}@${nonce}`;
+const sessionKeyPrefix = (pageId: string) => `${pageId}@`;
+
+/**
+ * 開いたページに対して復元を尋ねる退避を、新しいものから並べて返す。サーバーと同じ内容になった退避
+ * （離脱の保存が成立し、その後に step が本文を書き換えたものを含む）は、尋ねる意味が無いので消す。
+ */
+function loadBackups(store: BackupStore, page: Page): Array<{ key: string; backup: Backup }> {
+  const found: Array<{ key: string; backup: Backup }> = [];
+  for (const key of [page.id, ...store.list(sessionKeyPrefix(page.id))]) {
+    const saved = store.load(key);
+    if (saved === null) continue;
+    const differs =
+      (saved.title !== page.title || saved.body !== page.body) && !savedBeforeLeaving(saved, page);
+    if (differs) found.push({ key, backup: saved });
+    else store.remove(key);
+  }
+  return found.sort((a, b) => b.backup.savedAt - a.backup.savedAt);
+}
+
 export interface EditorState {
   /**
    * サーバーで最後に確認した内容。保存済みかどうかはこれと draft の比較で決まる。
@@ -108,6 +138,8 @@ export interface EditorState {
   gone: boolean;
   /** 前回退避した内容。復元か破棄を選ばせる。 */
   pendingBackup: Backup | null;
+  /** 直近の退避が書けなかった（容量超過、private window など）。この間、画面を閉じると未保存の内容が失われる。 */
+  backupFailed: boolean;
   /**
    * title 欄に打っている途中の、まだ確定していない title。null なら draft.title を表示する。
    * 確定（commitTitle、離脱）するまで draft に入れず、保存にも退避にも含めない。title の変更は
@@ -216,6 +248,15 @@ export class EditorSession {
   private newKey = "";
   /** pendingBackup に出している、別の画面が残した作る前の退避の key */
   private adoptedKey: string | null = null;
+  /**
+   * このセッションの目印。退避の key は page id で、別のタブも同じページの退避を書く。退避に
+   * この目印を入れ、他人の退避を上書きしたり消したりしない。
+   */
+  private readonly nonce = issueNonce();
+  /** 復元して手元の内容にした退避。その写しは、このセッションが引き継いだものとして扱う */
+  private adopted: { owner: string | undefined; savedAt: number } | null = null;
+  /** pendingBackup を読んだ key。共有の key（page id）か、別のセッションの key */
+  private pendingKey: string | null = null;
 
   /**
    * page に null を渡すと、まだ作っていないページ（新規作成の画面）として始める。title は
@@ -243,18 +284,14 @@ export class EditorSession {
         authLost: false,
         gone: false,
         pendingBackup: null,
+        backupFailed: false,
         titleInput: null,
         externalBases: 0,
       };
       return;
     }
-    const saved = this.backup.load(page.id);
-    // 離脱の保存が成立し、その後に step が本文を書き換えた退避は、サーバーと同じ内容として消す
-    const differs =
-      saved !== null &&
-      (saved.title !== page.title || saved.body !== page.body) &&
-      !savedBeforeLeaving(saved, page);
-    if (saved !== null && !differs) this.backup.remove(page.id);
+    const [pending] = loadBackups(this.backup, page);
+    this.pendingKey = pending?.key ?? null;
     this.state = {
       base: page,
       uncreated: false,
@@ -264,7 +301,8 @@ export class EditorSession {
       conflict: null,
       authLost: false,
       gone: false,
-      pendingBackup: differs ? saved : null,
+      pendingBackup: pending?.backup ?? null,
+      backupFailed: false,
       titleInput: null,
       externalBases: 0,
     };
@@ -307,11 +345,36 @@ export class EditorSession {
   }
 
   /**
-   * 退避が未決の間は、localStorage の内容が前回の唯一の写しなので消さない。
+   * 保存できた内容の退避を消す。消すのは、このセッションが書いた退避と、復元して引き継いだ退避だけ。
+   * 別のタブが残した退避は、そのタブの未保存の内容の唯一の写しかもしれないので残す。
+   * 退避が未決の間も、localStorage の内容が前回の唯一の写しなので消さない。
    * 復元か破棄の操作（restoreBackup、discardBackup）だけが未決を解く。
    */
   private removeBackup(pageId: string): void {
-    if (this.state.pendingBackup === null) this.backup.remove(pageId);
+    if (this.state.pendingBackup !== null) return;
+    this.removeOwnedBackups(pageId, null);
+  }
+
+  /** except の key は残して、このセッションの退避を消す */
+  private removeOwnedBackups(pageId: string, except: string | null): void {
+    for (const key of [pageId, ...this.backup.list(sessionKeyPrefix(pageId))]) {
+      if (key === except) continue;
+      const stored = this.backup.load(key);
+      if (stored !== null && this.owns(stored)) this.backup.remove(key);
+    }
+  }
+
+  /**
+   * このセッションの退避か。復元した退避は、書いた別のセッションの owner が一致すれば、その
+   * セッションが 2 か所に残した写しも含めて引き継ぐ。owner の無い古い退避は savedAt の一致で見分ける。
+   */
+  private owns(stored: Backup): boolean {
+    if (stored.owner === this.nonce) return true;
+    const { adopted } = this;
+    if (adopted === null) return false;
+    return adopted.owner !== undefined
+      ? stored.owner === adopted.owner
+      : stored.owner === undefined && stored.savedAt === adopted.savedAt;
   }
 
   private backupKey(): string {
@@ -323,15 +386,25 @@ export class EditorSession {
     if (this.state.pendingBackup !== null) return;
     const { base, draft, uncreated, failedOp, authLost } = this.state;
     const createFailed = uncreated && (failedOp?.kind === "create" || authLost);
-    this.backup.save(this.backupKey(), {
+    const savedAt = this.now();
+    const key = this.backupKey();
+    // 共有の key に他人の退避があるときは、そこへ上書きせず、このセッションの key に書く
+    const stored = uncreated ? null : this.backup.load(key);
+    const target = stored !== null && !this.owns(stored) ? sessionKeyOf(key, this.nonce) : key;
+    const written = this.backup.save(target, {
       title: draft.title,
       body: draft.body,
       baseVersion: base.version,
       baseTitle: base.title,
       baseBody: base.body,
-      savedAt: this.now(),
+      savedAt,
+      owner: this.nonce,
       ...(createFailed ? { createFailed } : {}),
     });
+    // 書けたら、同じセッションの前の写し（共有の key と自分の key の両方に残りうる）を消す。
+    // 書けなかったときは、前の写しが唯一の写しなので残す
+    if (written && !uncreated) this.removeOwnedBackups(key, target);
+    if (this.state.backupFailed === written) this.set({ backupFailed: !written });
   }
 
   /** 保存できなかった手元の内容を localStorage に残す。 */
@@ -864,6 +937,8 @@ export class EditorSession {
     const saved = this.state.pendingBackup;
     if (saved === null) return;
     this.markActive();
+    this.adopted = { owner: saved.owner, savedAt: saved.savedAt };
+    this.pendingKey = null;
     const draft = { title: saved.title, body: saved.body };
     this.set({ pendingBackup: null, titleInput: null });
     if (this.state.uncreated) {
@@ -901,9 +976,17 @@ export class EditorSession {
 
   discardBackup(): void {
     if (this.state.pendingBackup === null) return;
-    this.backup.remove(this.adoptedKey ?? this.backupKey());
-    this.adoptedKey = null;
-    this.set({ pendingBackup: null });
+    if (this.adoptedKey !== null || this.state.uncreated) {
+      this.backup.remove(this.adoptedKey ?? this.backupKey());
+      this.adoptedKey = null;
+      this.set({ pendingBackup: null });
+      return;
+    }
+    if (this.pendingKey !== null) this.backup.remove(this.pendingKey);
+    // 別のタブの退避が残っていれば、続けて復元を尋ねる
+    const [next] = loadBackups(this.backup, this.state.base);
+    this.pendingKey = next?.key ?? null;
+    this.set({ pendingBackup: next?.backup ?? null });
   }
 
   /** 未保存の変更を先に保存してから変える。保存できなければ visibility は変えない。 */

@@ -12,11 +12,17 @@ export interface Backup {
   savedAt: number;
   /** まだ作っていないページの退避で、作成を試みて失敗した内容。復元の案内の文言を変える。 */
   createFailed?: boolean;
+  /**
+   * 退避を書いたセッションの乱数。同じページの退避は key を共有するので、別のタブの退避を上書きしたり
+   * 消したりしないための持ち主の目印。この欄を足す前の退避には無く、その持ち主は誰でもない。
+   */
+  owner?: string;
 }
 
 export interface BackupStore {
   load(pageId: string): Backup | null;
-  save(pageId: string, backup: Backup): void;
+  /** 書けたら true。容量超過や private window では false になり、退避は残らない。 */
+  save(pageId: string, backup: Backup): boolean;
   remove(pageId: string): void;
   /** prefix で始まる key（load に渡す形）の一覧。 */
   list(prefix: string): string[];
@@ -35,7 +41,8 @@ function isBackup(value: unknown): value is Backup {
     typeof v.savedAt === "number" &&
     (v.baseTitle === undefined || typeof v.baseTitle === "string") &&
     (v.baseBody === undefined || typeof v.baseBody === "string") &&
-    (v.createFailed === undefined || typeof v.createFailed === "boolean")
+    (v.createFailed === undefined || typeof v.createFailed === "boolean") &&
+    (v.owner === undefined || typeof v.owner === "string")
   );
 }
 
@@ -58,8 +65,10 @@ export function createLocalBackupStore(storage: () => Storage = () => localStora
     save(pageId, backup) {
       try {
         storage().setItem(keyOf(pageId), JSON.stringify(backup));
+        return true;
       } catch {
-        // 退避できなくても編集は続けられる
+        // 退避できなくても編集は続けられる。書けなかったことは戻り値で知らせる
+        return false;
       }
     },
     remove(pageId) {
