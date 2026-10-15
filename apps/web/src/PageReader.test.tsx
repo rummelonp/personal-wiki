@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLoadingDelay } from "./Loading";
 import { PageReader } from "./PageReader";
+import { forgetTitles, recallTitle } from "./page-titles";
 import {
   type ApiResult,
   createPage,
@@ -200,6 +201,18 @@ describe("PageReader", () => {
     await flushAsync();
     clickLink("有る");
     await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("有る")}`));
+  });
+
+  it("link で移る前に、行き先の page の id に対する title を覚える", async () => {
+    forgetTitles();
+    renderReader();
+    await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
+    await flushAsync();
+    expect(recallTitle("BBBBBBBBBBBBBBBBBBBBBB")).toBeUndefined();
+    clickLink("有る");
+    await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("有る")}`));
+    expect(recallTitle("BBBBBBBBBBBBBBBBBBBBBB")).toBe("有る");
+    forgetTitles();
   });
 
   it("link の行き先を調べている間は、画面を薄くして開いている途中だと伝える", async () => {

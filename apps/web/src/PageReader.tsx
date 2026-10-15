@@ -9,6 +9,7 @@ import { useDelayedWhile } from "./Loading";
 import { Notice } from "./Notice";
 import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
+import { rememberTitle } from "./page-titles";
 import type { Page } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
 import { missingPagePath, navigate, openTag, pageHrefFor } from "./route";
@@ -100,7 +101,10 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
     if (found.kind === "found") {
       const hash = hashOfLink(link);
       if (found.page.id === page.id && hash !== "") goTo(hash);
-      else navigate(`${pageHrefFor(found.page)}${hash}`);
+      else {
+        rememberTitle(found.page.id, found.page.title);
+        navigate(`${pageHrefFor(found.page)}${hash}`);
+      }
     } else if (found.kind === "missing") {
       const path = missingPagePath(link.target);
       if (path !== null) navigate(path);
