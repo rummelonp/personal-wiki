@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { focusAfterInput, trackInputModality } from "./input-modality";
 import { bindNoticeDock } from "./notice-dock";
 
 /**
@@ -21,6 +22,7 @@ const DockContext = createContext<HTMLElement | null | undefined>(undefined);
 export function NoticeDockProvider({ children }: { children: ReactNode }) {
   const [dock, setDock] = useState<HTMLElement | null>(null);
   useEffect(() => (dock === null ? undefined : bindNoticeDock(dock)), [dock]);
+  useEffect(() => trackInputModality(), []);
   return (
     <DockContext value={dock}>
       {children}
@@ -103,7 +105,8 @@ export function Notice({
   const placed = inline || dock !== null;
   useEffect(() => {
     if (!claimFocus || !placed) return;
-    if (!isTyping(document.activeElement)) heading.current?.focus({ preventScroll: true });
+    if (isTyping(document.activeElement)) return;
+    if (heading.current !== null) focusAfterInput(heading.current, { preventScroll: true });
   }, [claimFocus, placed]);
   const notice = (
     <section className={`notice notice-${tone}`} {...interaction}>

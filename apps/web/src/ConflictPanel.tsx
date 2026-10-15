@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import { conflictRows } from "./conflict-diff";
 import type { Draft } from "./editor-session";
 import { formatTime } from "./format";
+import { focusAfterInput } from "./input-modality";
 import { Notice } from "./Notice";
 import type { Page } from "./pages-api";
 
@@ -97,7 +98,7 @@ export function ConflictPanel({
     const button = (back.button === "take" ? take : overwrite).current;
     // 取り込み中などで押せないボタンには focus が入らず、body に落ちる。そのときは通知の見出しに戻す
     if (button !== null && !button.disabled) button.focus();
-    else back.heading?.focus();
+    else if (back.heading !== null) focusAfterInput(back.heading);
   }, [choice]);
   // 差分の最初の変更の前に共通の行が続くと、最初の表示に − と ＋ が見えない。最初の変更の位置か中身が
   // 変わったときだけ送り、確認の操作や本文の打鍵で描き直しても動かさない。欄が隠れる（キーボードや畳み）

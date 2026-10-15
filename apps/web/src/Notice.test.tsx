@@ -124,6 +124,42 @@ describe("通知が出たときの focus", () => {
     expect(document.activeElement).toBe(noticeOf("操作が要ります").querySelector("h2"));
   });
 
+  describe("見出しの focus の枠", () => {
+    const heading = () => noticeOf("操作が要ります").querySelector("h2") as HTMLElement;
+
+    /** 台が先に描かれ、操作があってから通知が出る。 */
+    function claimAfter(input: Event[]) {
+      const render = (shown: boolean) =>
+        act(() =>
+          root?.render(
+            <NoticeDockProvider>
+              {shown && <Notice tone="warn" title="操作が要ります" claimFocus />}
+            </NoticeDockProvider>,
+          ),
+        );
+      container = document.createElement("div");
+      document.body.append(container);
+      root = createRoot(container);
+      render(false);
+      for (const event of input) window.dispatchEvent(event);
+      render(true);
+    }
+    const pointer = () => new PointerEvent("pointerdown", { bubbles: true });
+    const key = () => new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+
+    it("直前の操作が pointer なら、枠を出さない", () => {
+      claimAfter([key(), pointer()]);
+      expect(document.activeElement).toBe(heading());
+      expect(heading().matches(":focus-visible")).toBe(false);
+    });
+
+    it("直前の操作が keyboard なら、枠で移り先を示す", () => {
+      claimAfter([pointer(), key()]);
+      expect(document.activeElement).toBe(heading());
+      expect(heading().matches(":focus-visible")).toBe(true);
+    });
+  });
+
   it("本文や title を打っている最中（contenteditable、input）は奪わない", () => {
     const editable = document.createElement("div");
     editable.contentEditable = "true";
