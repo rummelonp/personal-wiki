@@ -116,7 +116,8 @@ function loadBackups(store: BackupStore, page: Page): Array<{ key: string; backu
 }
 
 /** 同じ退避の写しか。移した退避は、書いたセッションの目印と時刻をそのまま持つ */
-const sameBackup = (a: Backup, b: Backup | null): boolean =>
+const sameBackup = (a: Backup | null, b: Backup | null): boolean =>
+  a !== null &&
   b !== null &&
   a.owner === b.owner &&
   a.savedAt === b.savedAt &&
@@ -437,7 +438,8 @@ export class EditorSession {
    * 消えたページの退避は page id の key に残しても、ページを開けないので二度と案内に出ない。
    * サーバーに保存できていた内容と同じ退避だけを消し、ほかは作る前の退避の key に移して、新規作成の
    * 画面で新しいページとして復元するか破棄するかを選ばせる。別のタブや閉じたタブの退避も移す。
-   * 別の場所での削除なら、手元の未保存の内容も同じ形で残す。
+   * 別の場所での削除なら、手元の未保存の内容も同じ形で残す。自分の削除では、削除を選ぶ前に別のタブが
+   * 移していた自分の写しも捨てる。
    */
   private markGone(by: "self" | "elsewhere"): void {
     const { base } = this.state;
@@ -447,8 +449,12 @@ export class EditorSession {
     // 消えたページは保存できず、ここで復元しても続けられない
     this.pendingKey = null;
     this.set({ gone: true, pendingBackup: null });
-    if (by === "self") this.removeOwnedBackups(base.id, null);
-    else if (isDirty(this.state)) this.stashGone();
+    if (by === "self") {
+      this.removeOwnedBackups(base.id, null);
+      this.removeDeletedCopies(base.id, (stored) => this.owns(stored));
+      // 捨てると決めた内容なので、退避できなかった案内を出さない
+      if (this.state.backupFailed) this.set({ backupFailed: false });
+    } else if (isDirty(this.state)) this.stashGone();
     for (const key of [base.id, ...this.backup.list(sessionKeyPrefix(base.id))]) {
       const stored = this.backup.load(key);
       if (stored === null) continue;
@@ -502,17 +508,30 @@ export class EditorSession {
   }
 
   /**
-   * 別のタブが退避を書き換えた（storage イベント）。localStorage には比べて書く操作が無く、2 つの
-   * タブがほぼ同時に空の共有の key を読んで書くと、後から書いた方が先の退避を上書きする。上書きを
-   * 知ったら、手元の内容をこのセッションの key に書き直す。書いた直後に読み直しても防げないのは、
-   * 別のタブの書き込みが届くのが非同期で、読み直した時点ではまだ見えないため。
+   * 別のタブが退避を書き換えた（storage イベント）。このセッションが書いた退避が消えていたら、消えた
+   * 理由を問わず、画面に残っている未保存の内容をこのセッションの key に書き直す。画面の内容は退避の
+   * 唯一の写しになりうるので、別のタブでの破棄も取り消す。
    *
-   * 防げないのは、書いたタブが上書きのイベントを受け取る前に閉じたとき（離脱の退避を書いてすぐに
-   * タブを閉じ、同じ時に別のタブが同じページの退避を書いた場合）。
+   * 消える理由の 1 つは、2 つのタブがほぼ同時に空の共有の key を読んで書き、後から書いた方が先の
+   * 退避を上書きすること（localStorage には比べて書く操作が無い）。書いた直後に読み直しても防げない
+   * のは、別のタブの書き込みが届くのが非同期で、読み直した時点ではまだ見えないため。防げないのは、
+   * 書いたタブが上書きのイベントを受け取る前に閉じたとき。
+   *
+   * 例外として、別のタブがページの削除を知って自分の写しを作る前の退避の key に移していたら、ページの
+   * key には書き直さず、削除の知らせとして扱う。手元の内容はその写しの側に書き直す。
    */
   backupsChanged(): void {
     const { uncreated, gone, pendingBackup, base } = this.state;
     if (!this.holdsBackup || uncreated || gone || pendingBackup !== null) return;
+    const moved = this.backup.list(NEW_PAGE_BACKUP_PREFIX).find((key) => {
+      const stored = this.backup.load(key);
+      return stored?.deletedFrom === base.id && this.owns(stored);
+    });
+    if (moved !== undefined) {
+      this.goneKey ??= moved;
+      this.markGone("elsewhere");
+      return;
+    }
     const kept = [base.id, ...this.backup.list(sessionKeyPrefix(base.id))].some((key) => {
       const stored = this.backup.load(key);
       return stored !== null && this.owns(stored);
@@ -860,8 +879,7 @@ export class EditorSession {
         if (stash) this.stashIfDirty();
         return;
       case "not_found":
-        // stash を渡さないのは削除の失敗だけで、消そうとしたページが既に無かった
-        this.markGone(stash ? "elsewhere" : "self");
+        this.markGone(op.kind === "delete" ? "self" : "elsewhere");
         return;
       case "version_conflict": {
         const latest = await this.api.getPage(this.state.base.id);
@@ -889,7 +907,7 @@ export class EditorSession {
           this.set({ conflict: server });
         } else if (latest.reason === "unauthorized") this.set({ authLost: true });
         else if (latest.reason === "not_found") {
-          this.markGone(stash ? "elsewhere" : "self");
+          this.markGone(op.kind === "delete" ? "self" : "elsewhere");
           return;
         } else
           this.set({
@@ -1095,7 +1113,12 @@ export class EditorSession {
       this.set({ pendingBackup: null });
       return;
     }
-    if (this.pendingKey !== null) this.backup.remove(this.pendingKey);
+    // 案内を出している間に、書いたタブがまだ生きていて同じ key へ新しい内容を書き直していれば、
+    // それは破棄を選んだ内容ではないので残し、続けて尋ねる
+    const { pendingKey } = this;
+    if (pendingKey !== null && sameBackup(this.backup.load(pendingKey), this.state.pendingBackup)) {
+      this.backup.remove(pendingKey);
+    }
     // 案内を出している間に別のタブがこのページを削除していれば、退避は作る前の退避の key に移っている。
     // 破棄を選んだ内容を、新規作成の画面でもう一度尋ねない
     this.removeDeletedCopies(this.state.base.id, (stored) =>

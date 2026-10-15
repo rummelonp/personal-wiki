@@ -98,9 +98,8 @@ test("開いていたタブは、別のタブの削除を知ると、未保存�
   const typed = "、削除されたタブで打った";
   await typeUnsaved(other, created, typed);
 
+  // 削除したタブが退避を移したことを storage イベントで知るので、保存を試み直さなくても通知が変わる
   await deleteFromRail(page);
-  await other.unroute(`**/api/pages/${created.id}`);
-  await other.getByRole("button", { name: "もう一度保存する" }).click();
   const gone = other.getByRole("alert").filter({
     has: other.getByRole("heading", { name: "このページはサーバーにありません" }),
   });
@@ -113,5 +112,7 @@ test("開いていたタブは、別のタブの削除を知ると、未保存�
   // 削除したタブが移した写しと、削除を知ったタブの写しを二重に残さない
   await other.getByRole("button", { name: "新規作成" }).click();
   await expect(other).toHaveURL(/\/\?new$/);
+  // 画面が描かれる前の toBeHidden は、案内が出る前に通ってしまう
+  await expect(other.locator(".title-input .cm-content")).toBeVisible();
   await expect(other.getByRole("button", { name: "復元する" })).toBeHidden();
 });
