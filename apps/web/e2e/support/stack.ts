@@ -130,6 +130,7 @@ export async function timed<T>(label: string, task: () => Promise<T>): Promise<T
 /** 一時ディレクトリに設定と秘密を書き、migration を当てて wrangler dev を起動する。 */
 async function launch(
   dir: string,
+  build: Promise<void>,
 ): Promise<{ child: ChildProcess; sessionSecret: string; log: () => string }> {
   const sessionSecret = randomBytes(32).toString("base64");
   const config = writeConfig(dir);
@@ -145,6 +146,8 @@ async function launch(
       { cwd: dir, env: { ...process.env, CI: "1" } },
     ),
   );
+  // wrangler dev は起動時に assets のディレクトリを読むので、build の出力がそろってから起動する
+  await build;
 
   let output = "";
   const child = spawn(
@@ -187,16 +190,19 @@ export async function startStack(): Promise<Stack> {
     throw new Error(`ポート ${E2E_PORT} が使用中。前の E2E のサーバーが残っていないか確かめる`);
   }
   // 繰り返し実行するときにビルドを省く（web のソースを変えていないときだけ使う）
-  if (process.env.E2E_SKIP_BUILD !== "1") {
-    await timed("build", () =>
-      run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR }),
-    );
-  }
+  const build =
+    process.env.E2E_SKIP_BUILD === "1"
+      ? Promise.resolve()
+      : timed("build", async () => {
+          await run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR });
+        });
+  // migration が先に失敗すると build は待たれないまま終わるので、未処理の reject にしない
+  build.catch(() => {});
 
   const dir = mkdtempSync(join(tmpdir(), "personal-wiki-e2e-"));
   let launched: { child: ChildProcess; sessionSecret: string; log: () => string };
   try {
-    launched = await launch(dir);
+    launched = await launch(dir, build);
   } catch (error) {
     // secrets.env を含む一時ディレクトリを残さない
     rmSync(dir, { recursive: true, force: true });
