@@ -2,8 +2,8 @@ import type {
   ClientRegistrationCallbackOptions,
   ClientRegistrationCallbackResult,
 } from "@cloudflare/workers-oauth-provider";
-import { readBounded } from "../attachments/read-bounded";
 import type { Bindings } from "../env";
+import { readBounded } from "../read-bounded";
 
 /*
  * client の登録（DCR）は匿名で呼べ、通れば KV に 1 回書き込む。KV の無料枠（1 日に書き込み 1,000 回）を

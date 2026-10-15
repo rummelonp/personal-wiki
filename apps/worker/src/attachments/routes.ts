@@ -14,7 +14,7 @@ import { uploadContentTypeOf } from "../media-type";
 import { generatePageId, isPageId } from "../pages/id";
 import { actorOf } from "../pages/revisions";
 import { ATTACHMENT_UPLOAD_PATH } from "../paths";
-import { readBounded } from "./read-bounded";
+import { readBounded } from "../read-bounded";
 
 export interface AttachmentRoutesOptions {
   now: () => number;
