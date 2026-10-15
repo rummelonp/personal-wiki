@@ -210,7 +210,7 @@ export function PublishBar({
             publicOption.current?.focus();
           }}
         >
-          <p>公開すると、このページが匿名の一覧・検索・タグに載り、誰でも読めるようになります。</p>
+          <p>公開すると、このページが匿名の一覧、検索、タグに載り、誰でも読めるようになります。</p>
           <div className="actions">
             <button
               type="button"

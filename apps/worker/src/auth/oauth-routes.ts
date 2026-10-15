@@ -443,7 +443,7 @@ ${loopback}
 <fieldset>
 <legend>許可する権限</legend>
 <label><input type="radio" name="access" value="read" checked> 読み取り（read）: draft を含むページを読む</label>
-<label><input type="radio" name="access" value="write"> 読み書き（read と write）: ページを作成・更新する。公開範囲は変えられない</label>
+<label><input type="radio" name="access" value="write"> 読み書き（read と write）: ページを作成、更新する。公開範囲は変えられない</label>
 </fieldset>
 <p><button name="decision" value="approve">許可する</button> <button name="decision" value="deny">拒否する</button></p>
 </form>`,
