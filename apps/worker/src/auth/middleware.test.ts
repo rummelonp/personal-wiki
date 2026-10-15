@@ -2,6 +2,7 @@ import { SELF } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { type Context, Hono } from "hono";
 import { createMiddleware } from "hono/factory";
+import { mount } from "hono/mount";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { AppEnv } from "../env";
@@ -318,7 +319,7 @@ describe("同じパスに付けた宣言", () => {
 
   it("use() の宣言で、同じパスに mount したアプリを守る", async () => {
     const token = await insertToken({ name: "agent", scopes: "read" });
-    const app = createApp().use("/mcp/*", requireToken("read")).mount("/mcp", mcp);
+    const app = createApp().use("/mcp/*", requireToken("read")).all("/mcp/*", mount(mcp));
     const ok = await app.request("/mcp/tools", { headers: bearer(token) }, env);
     expect(ok.status).toBe(200);
     expect(await ok.text()).toBe("mcp /tools");
