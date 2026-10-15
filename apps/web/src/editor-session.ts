@@ -94,7 +94,7 @@ export interface EditorState {
   /** まだサーバーに無いページ。title の確定（commitTitle）で作る。 */
   uncreated: boolean;
   draft: Draft;
-  /** 書き込み中の操作。作成・保存・visibility・削除は直列に走るので 1 つだけ。 */
+  /** 書き込み中の操作。作成、保存、visibility、削除は直列に走るので 1 つだけ。 */
   busy: "creating" | "saving" | "visibility" | "deleting" | null;
   /** 直近の失敗の説明。次の編集か再試行で消える。どの操作の失敗かは failedOp が持つ。 */
   error: string | null;
@@ -178,8 +178,9 @@ const DEFAULT_STASH_MS = 1000;
 /**
  * ページ 1 件の編集状態。React から切り離してあり、タイマーと API は注入できる。
  *
- * 書き込みを伴う操作（保存・visibility・削除・フォーカス復帰の確認）は 1 本の列に並べて直列に
- * 実行する。保存中に版が進むと次の If-Match が古くなるので、並行させると自分自身と衝突する。
+ * 書き込みを伴う操作（作成、保存、visibility、削除、フォーカス復帰の確認、リンクの書き換えの
+ * 取り込み）は 1 本の列に並べて直列に実行する。保存中に版が進むと次の If-Match が古くなるので、
+ * 並行させると自分自身と衝突する。
  */
 export class EditorSession {
   private state: EditorState;
@@ -476,8 +477,8 @@ export class EditorSession {
    * 描画の中（constructor）で読むと、前の画面が unmount で書く退避より先に読んでしまう。
    *
    * 出すのは、このタブが持っていない key のもの（閉じた画面と前のタブが残したもの。heldNewKeys を
-   * 参照）。いくつもあれば新しいものから 1 つずつ出す。title を渡して
-   * 開いた画面と、打ち始めた画面では出さない。その退避は次の素の新規作成の画面まで残る。
+   * 参照）。いくつもあれば新しいものから 1 つずつ出す。
+   * title を渡して開いた画面と、打ち始めた画面では出さない。その退避は次の素の新規作成の画面まで残る。
    */
   adoptPendingBackup(): void {
     const { uncreated, pendingBackup, draft, titleInput } = this.state;

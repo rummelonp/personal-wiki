@@ -40,7 +40,7 @@ interface PublishBarProps {
 /**
  * title のすぐ下の、公開の状態と操作の行。
  *
- * draft から public への変化だけ、確定の前に確認を挟む。public にすると匿名の一覧・検索・タグに載り、
+ * draft から public への変化だけ、確定の前に確認を挟む。public にすると匿名の一覧、検索、タグに載り、
  * 取り消してもすでに見た人の手元には残るため。public から draft へは、見えなくなる側なので確認しない。
  *
  * 共有の URL をコピーする操作は public のときだけ出す。draft の URL（`/p/<id>`）も知っていれば

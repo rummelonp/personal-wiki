@@ -33,7 +33,7 @@ function subscribe(listener: () => void): () => void {
 const onNewPageRoute = () =>
   parseRoute(window.location.pathname, window.location.search).name === "new";
 
-// 戻る・進むで `/?new` に来たとき、表示中の新規作成の画面が作れていれば、新しい画面に作り直す。
+// 戻る操作や進む操作で `/?new` に来たとき、表示中の新規作成の画面が作れていれば、新しい画面に作り直す。
 // 作ったページを `/?new` の URL のまま出さない（作った後に hash を移ってから戻ると起きる）。
 // 作れていなければ serial を変えない。変えると、`/?new` のまま hash だけ戻ったときに打ちかけの画面が
 // 作り直される
@@ -73,13 +73,13 @@ export function registerNewPageScreen(keep: KeepScreen): () => void {
 
 /**
  * 新規作成の画面を開く。title を渡すと本文に、渡さなければ title 欄にカーソルを置く。
- * `/?new` から開き直すときは履歴を置き換え、戻るで同じ `/?new` を何度もたどらせない。
+ * `/?new` から開き直すときは履歴を置き換え、戻る操作で同じ `/?new` を何度もたどらせない。
  * replace を渡すと、今の画面の履歴を置き換える。作った後に戻ると、その画面の 1 つ前へ戻る。
  *
  * `/?new` で title なしに開き直すときは、表示中の画面が引き受ければ（内容があるとき）開き直さない。
  * 開き直すと、閉じた画面の内容を次の画面が復元の案内に出し、title 欄にカーソルが入らない。
  *
- * クリックなどの操作の中で呼ぶこと。iOS の Safari は、操作の中で focus した入力欄にだけ
+ * クリックなどの操作の中で呼ぶ必要がある。iOS の Safari は、操作の中で focus した入力欄にだけ
  * キーボードを出すので、flushSync で画面と editor の mount（autoFocus）までを
  * この呼び出しの中で済ませる。
  */

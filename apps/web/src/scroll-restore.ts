@@ -10,7 +10,7 @@ import { useEffect, useLayoutEffect } from "react";
  * history.scrollRestoration は auto のままにする。画面が残ったままの戻り（同じページの hash の移動）は、
  * ブラウザの復元が正しいので任せる。
  *
- * 位置はスクロールが止まるたびにも書く。戻る・進む（popstate）で離れるときは、その時点の
+ * 位置はスクロールが止まるたびにも書く。戻る操作や進む操作（popstate）で離れるときは、その時点の
  * history.state がもう移った先のものなので、離れる側のエントリには書けない。
  */
 
@@ -66,15 +66,15 @@ function writeCurrentEntry(): void {
   }
 }
 
-/** 履歴に積む遷移の直前に呼ぶ。この後で先頭へ戻す前の位置を、今のエントリに書く。 */
+/** 履歴に積む遷移の直前に呼ぶ。遷移で離れる前の位置を、今のエントリに書く。 */
 export function rememberScroll(): void {
   pending = null;
   writeCurrentEntry();
 }
 
 /**
- * 置き換えの遷移で書き込む state。位置は URL に紐づくので、パスかクエリが変わるときは捨てる
- * （正の URL への置き換えで、別の画面の位置を持ち越さない）。
+ * 置き換えの遷移で書き込む state。位置は URL に紐づくので、パスかクエリが変わるときは捨てる。
+ * 捨てないと、正の URL への置き換えで別の画面になったとき、前の画面の位置が残る。
  */
 export function stateForReplace(href: string): unknown {
   const state: unknown = history.state ?? null;
@@ -169,7 +169,7 @@ export function useHoldScrollRestore(): void {
 }
 
 /**
- * 一覧の画面で呼ぶ。件数を履歴に残し、戻る・進む・再読み込みで開いた一覧が描かれたとき
+ * 一覧の画面で呼ぶ。件数を履歴に残し、戻る、進む、再読み込みで開いた一覧が描かれたとき
  * （ready が true になったとき）、覚えていた位置へ戻す。位置は描画の前に戻して、先頭が一瞬見えるのを避ける。
  * 一覧の下に続く内容（狭い画面のタグ）が描かれる前は、短い画面に丸められるので、
  * 続く内容が済むまで settled を false にして待つ。
@@ -191,7 +191,7 @@ export function useRestoreScrollAfterMount(ready: boolean): void {
   useLayoutEffect(enter, []);
   useLayoutEffect(() => publish(ready, undefined), [ready]);
   useEffect(() => {
-    // 描いてからこの effect までに戻るで前の画面へ移っていたら、その画面の復元を使わずに残す。
+    // 描いてからこの effect までの間に戻る操作で前の画面へ移っていたら、その画面の復元を使わずに残す。
     // ここで使うと、短いページの画面で位置を戻した上、続けて描かれる一覧が件数も位置も戻せなくなる
     if (ready && settledUrl === currentUrl()) restoreNow();
   }, [ready]);

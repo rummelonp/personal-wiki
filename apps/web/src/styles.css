@@ -1427,7 +1427,7 @@ a {
   }
 
   /*
-   * ヘッダーの操作は箱を 44px にしつつ、塗りと枠は従来の大きさ（--header-control-visual）で止め、
+   * ヘッダーの操作は箱を 44px にしつつ、塗りと枠は --header-control-visual の大きさで止め、
    * 残りは透明な border にする。
    * 枠は border でなく inset の影で描く（border は透明にして当たり判定の側に回すため）。
    */
@@ -1435,7 +1435,7 @@ a {
     --edge: var(--color-border-strong);
     --inset: calc((var(--tap-size) - var(--header-control-visual)) / 2);
 
-    /* 角の丸みは border の内側（見える側）で測られるので、border の分を足して従来の丸みに保つ */
+    /* 角の丸みは border の内側（見える側）で測られるので、border の分を足して --radius-md の丸みに保つ */
     border-block: var(--inset) solid transparent;
     border-radius: calc(var(--radius-md) + var(--inset));
     border-inline-color: transparent;
@@ -1551,7 +1551,7 @@ a {
   }
 }
 
-/* アイコンだけのヘッダーの操作は、見た目を従来の正方形にし、左右も透明な border で 44px に広げる */
+/* アイコンだけのヘッダーの操作は、見た目を正方形に保ち、左右も透明な border で 44px に広げる */
 @media (pointer: coarse) and (max-width: 40rem) {
   .header .header-new,
   .header .header-logout {
