@@ -167,11 +167,12 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("429 は 5xx と同じく、時間をおくよう伝える", async () => {
+  it("429 は障害ではなく制限と読める文で、少し待つよう伝える", async () => {
     const { fetchFn } = failing(429, {});
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
-      message: "サーバーで問題が起きました（HTTP 429）。時間をおいて、もう一度試してください。",
+      message:
+        "リクエストが多すぎて、いったん制限されています（HTTP 429）。少し待ってから、もう一度試してください。",
     });
   });
 

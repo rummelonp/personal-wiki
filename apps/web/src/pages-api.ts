@@ -93,10 +93,13 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 /**
  * サーバーが message も既知の code も返さなかったときの文。5xx と 429 は待てば通ることがあり、
- * それ以外の 4xx は待っても変わらない。
+ * それ以外の 4xx は待っても変わらない。429 は障害ではなく混雑による制限なので、文を分ける。
  */
 function statusMessage(status: number): string {
-  return status >= 500 || status === 429
+  if (status === 429) {
+    return "リクエストが多すぎて、いったん制限されています（HTTP 429）。少し待ってから、もう一度試してください。";
+  }
+  return status >= 500
     ? `サーバーで問題が起きました（HTTP ${status}）。${RETRY_LATER}`
     : `サーバーに受け付けられませんでした（HTTP ${status}）。${RELOAD}`;
 }
