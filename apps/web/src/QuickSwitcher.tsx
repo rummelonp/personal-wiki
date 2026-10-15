@@ -315,7 +315,7 @@ function SwitcherBody({
           >
             {row.kind === "page" && (
               <span className="switcher-option-label">
-                {highlightMatches(row.candidate.title, terms)}
+                {highlightMatches(row.candidate.title, terms, { underscoreAsSpace: true })}
               </span>
             )}
             {row.kind === "create" && (

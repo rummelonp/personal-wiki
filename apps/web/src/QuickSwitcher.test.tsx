@@ -139,6 +139,27 @@ describe("QuickSwitcher の候補", () => {
     expect(optionElements()[1]?.querySelector("mark")?.textContent).toBe("買");
   });
 
+  it("`_` と空白の違いを越えて一致した箇所も強調する", async () => {
+    vi.mocked(listPageTitles).mockResolvedValue(
+      ok({
+        pages: [
+          summary("EEEEEEEEEEEEEEEEEEEEEE", "週次 ふりかえり"),
+          summary("FFFFFFFFFFFFFFFFFFFFFF", "snake_case"),
+        ],
+        nextCursor: null,
+      }),
+    );
+    await renderSwitcher(true);
+    const markedText = (title: string) => {
+      const option = optionElements().find((el) => el.textContent === title);
+      return option?.querySelector("mark")?.textContent;
+    };
+    typeText("週次_ふり");
+    expect(markedText("週次 ふりかえり")).toBe("週次 ふり");
+    typeText("snake_case");
+    expect(markedText("snake_case")).toBe("snake_case");
+  });
+
   it("owner には title が完全に一致するページが無いときだけ「作成」を出す", async () => {
     await renderSwitcher(true);
     typeText("メ");

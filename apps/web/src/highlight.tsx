@@ -21,7 +21,7 @@ const nfkc = (text: string) => text.normalize("NFKC");
  * 半角の濁点 U+FF9E は一般カテゴリが Lm で結合文字（\p{M}）に当たらないので、合成の有無で判定する。
  * 分けると、畳んだ「が」の位置を元の文字の範囲に戻せず、強調が外れる。
  */
-function unitsOf(text: string): Unit[] {
+function unitsOf(text: string, fold: (text: string) => string): Unit[] {
   const units: Unit[] = [];
   let offset = 0;
   for (const char of text) {
@@ -36,14 +36,36 @@ function unitsOf(text: string): Unit[] {
     offset = end;
   }
   for (const unit of units) {
-    unit.folded = caseFold(nfkc(text.slice(unit.start, unit.end)));
+    unit.folded = fold(text.slice(unit.start, unit.end));
   }
   return units;
 }
 
+export interface MatchOptions {
+  /**
+   * `_` を空白と同じ文字として比べる。title の比較（foldTitle）の規則で、`a_b` の語が "a b" に当たる。
+   * 検索 API は `_` を区別するので、API の結果の強調には付けない。
+   */
+  underscoreAsSpace?: boolean;
+}
+
+/**
+ * foldTitle と同じ順で畳む。`_` を空白にするのは、語の trim の後（"_a" の先頭の `_` は残る）。
+ * 文字ごとに畳むので、空白の並びの畳み込みは行わない。
+ */
+const folding = (underscoreAsSpace: boolean) => (text: string) => {
+  const folded = caseFold(nfkc(text));
+  return underscoreAsSpace ? folded.replaceAll("_", " ") : folded;
+};
+
 /** 語は空白を含めて文字どおりに当てる。検索 API の trigram も、空白を含む語を 1 つの並びとして照合する。 */
-function foldNeedles(needles: readonly string[]): string[] {
-  return needles.map((needle) => caseFold(nfkc(needle)).trim()).filter((needle) => needle !== "");
+function foldNeedles(needles: readonly string[], underscoreAsSpace: boolean): string[] {
+  return needles
+    .map((needle) => {
+      const trimmed = caseFold(nfkc(needle)).trim();
+      return underscoreAsSpace ? trimmed.replaceAll("_", " ") : trimmed;
+    })
+    .filter((needle) => needle !== "");
 }
 
 /**
@@ -53,11 +75,15 @@ function foldNeedles(needles: readonly string[]): string[] {
  * 検索 API は ß や ς を畳まないので、検索結果ではそれらの語だけ API の一致より広く塗ることがある。
  * 畳むと長さが変わる文字があるので、畳んだ文字列での位置を元の文字の範囲に戻して切る。
  */
-export function splitMatches(text: string, needles: readonly string[]): TextSegment[] {
-  const folds = foldNeedles(needles);
+export function splitMatches(
+  text: string,
+  needles: readonly string[],
+  { underscoreAsSpace = false }: MatchOptions = {},
+): TextSegment[] {
+  const folds = foldNeedles(needles, underscoreAsSpace);
   if (folds.length === 0 || text === "") return [{ text, marked: false }];
 
-  const units = unitsOf(text);
+  const units = unitsOf(text, folding(underscoreAsSpace));
   const folded = units.map((unit) => unit.folded).join("");
   // 畳んだ文字列の位置から、それを作った unit の番号を引く
   const owner: number[] = [];
@@ -97,8 +123,12 @@ export function splitMatches(text: string, needles: readonly string[]): TextSegm
 }
 
 /** 当たった部分を `<mark>` で囲む。要素で組むので、text が HTML として解釈されることはない。 */
-export function highlightMatches(text: string, needles: readonly string[]): ReactNode {
-  const segments = splitMatches(text, needles);
+export function highlightMatches(
+  text: string,
+  needles: readonly string[],
+  options?: MatchOptions,
+): ReactNode {
+  const segments = splitMatches(text, needles, options);
   if (segments.length === 1 && !(segments[0] as TextSegment).marked) return text;
   return segments.map((segment, i) => {
     const key = `${i}-${segment.text}`;

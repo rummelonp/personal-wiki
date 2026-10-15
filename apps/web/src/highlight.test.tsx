@@ -84,6 +84,29 @@ describe("splitMatches", () => {
   });
 });
 
+describe("splitMatches の underscoreAsSpace", () => {
+  const markedAsTitle = (text: string, needles: string[]) =>
+    splitMatches(text, needles, { underscoreAsSpace: true })
+      .filter((segment) => segment.marked)
+      .map((segment) => segment.text);
+
+  it("`_` と空白を同じ文字として当て、元の表記のまま塗る", () => {
+    expect(markedAsTitle("My Note", ["my_note"])).toEqual(["My Note"]);
+    expect(markedAsTitle("my_note", ["my note"])).toEqual(["my_note"]);
+    expect(markedAsTitle("snake_case", ["e_c"])).toEqual(["e_c"]);
+  });
+
+  it("語の端の `_` は、trim せず空白として当てる", () => {
+    expect(markedAsTitle("a b", ["a_"])).toEqual(["a "]);
+    expect(markedAsTitle("ab", ["a_"])).toEqual([]);
+  });
+
+  it("指定が無ければ `_` と空白を区別する", () => {
+    expect(marked("My Note", ["my_note"])).toEqual([]);
+    expect(marked("snake_case", ["snake case"])).toEqual([]);
+  });
+});
+
 describe("highlightMatches", () => {
   it("当たった箇所を mark の要素にし、HTML として解釈させない", () => {
     const html = renderToStaticMarkup(
