@@ -77,12 +77,62 @@ function followVisualViewport(dock: HTMLElement): () => void {
   };
 }
 
-/** 重大度の高い順。台の中の並び（styles.css の order）と、畳まずに残す通知の選び方で同じ順を使う。 */
+/** 重大度の高い順。台の中の並びと、畳まずに残す通知の選び方で同じ順を使う。 */
 const TONE_RANK = ["notice-error", "notice-warn", "notice-info"];
 
 function rankOf(notice: Element): number {
   const rank = TONE_RANK.findIndex((name) => notice.classList.contains(name));
   return rank === -1 ? TONE_RANK.length : rank;
+}
+
+/** 通知を台で初めて見た順。同じ重大度の中の順に使い、重大度が往復しても出た順に戻す。 */
+const arrival = new WeakMap<Element, number>();
+let arrivals = 0;
+
+function compareNotices(a: Element, b: Element): number {
+  return rankOf(a) - rankOf(b) || (arrival.get(a) ?? 0) - (arrival.get(b) ?? 0);
+}
+
+/**
+ * 台の中の DOM の順を重大度の高い順に直す（同じ重大度の中は台で初めて見た順）。CSS の order で見た目だけを
+ * 並べ替えると、Tab と読み上げの順が見た目とずれるため、DOM の順そのものを揃える。
+ *
+ * DOM で動かしてよいのは、通知ごとに別の createPortal で台に足しているため。React は台の兄弟を基準に
+ * insertBefore せず、追加は appendChild、削除は対象の removeChild だけなので、順を入れ替えても食い違わない。
+ * 1 つの portal に map で並べる形に変えると、React の想定する順と衝突する。
+ *
+ * 後ろにあって手前に出るべき通知（たいてい出たばかりのもの）だけを動かし、ほかの通知は動かさない。
+ * ただし重大度が変わった既存の通知も動く。moveBefore は focus と状態を保つが、無い環境の insertBefore は
+ * 削除と再挿入になり、focus が外れる（戻す）うえ、role=alert の通知は再び読み上げられうる。
+ */
+function sortBySeverity(dock: HTMLElement): void {
+  const notices = [...dock.querySelectorAll<HTMLElement>(":scope > .notice")];
+  for (const notice of notices) {
+    if (!arrival.has(notice)) arrival.set(notice, arrivals++);
+  }
+  for (let i = 1; i < notices.length; i++) {
+    const notice = notices[i];
+    if (notice === undefined) continue;
+    let target = i;
+    while (target > 0 && compareNotices(notices[target - 1] as Element, notice) > 0) target--;
+    if (target === i) continue;
+    const before = notices[target] as HTMLElement;
+    const focused = notice.contains(document.activeElement)
+      ? (document.activeElement as HTMLElement)
+      : null;
+    const { moveBefore } = dock as HTMLElement & {
+      moveBefore?: (node: Node, child: Node | null) => void;
+    };
+    if (moveBefore !== undefined) {
+      moveBefore.call(dock, notice, before);
+    } else {
+      dock.insertBefore(notice, before);
+      if (focused !== null && document.activeElement !== focused)
+        focused.focus({ preventScroll: true });
+    }
+    notices.splice(i, 1);
+    notices.splice(target, 0, notice);
+  }
 }
 
 /**
@@ -105,6 +155,7 @@ export function bindNoticeDock(dock: HTMLElement): () => void {
   const stopFollowing = followVisualViewport(dock);
   let last = -1;
   const sync = () => {
+    sortBySeverity(dock);
     markFolded([...dock.querySelectorAll(":scope > .notice")]);
     // 台の上限に達すると台の中でスクロールする。台は pointer-events を通すので、スクロールバーを
     // 掴めるよう、溢れている間だけ受け取る
