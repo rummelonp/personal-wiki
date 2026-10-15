@@ -13,14 +13,23 @@ REST と MCP の認証に使います。
 
 ```sh
 pnpm api-token issue <name> --scopes read|read,write [--remote]
-pnpm api-token revoke <name> [--remote]
+pnpm api-token revoke <name> | --id <id> [--remote]
+pnpm api-token list [--remote]
 ```
 
+- token を識別するのは id です。
+  name は重複してよいラベルで、失効させた token と同じ名前でも発行し直せます
 - 平文は発行時に標準出力へ 1 度だけ出ます。
+  発行した id と、同じ名前でほかに有効な token の id は標準エラー出力に出ます。
   D1 に入るのは hash だけです。
   標準出力をパイプに渡すときは、pnpm の表示が混ざらないよう `pnpm -s api-token` で呼びます
-- 失効した token の名前は再利用できません。
-  再利用すると、`revisions.actor` の `token:<名前>` が前の token と新しい token のどちらの操作か区別できなくなるためです
+- `revoke <name>` は、その名前で有効な token が 1 本だけのときに失効させます。
+  2 本以上あるときは何も変えずに id を並べて止まるので、`list` で確かめて `revoke --id <id>` で選びます
+- `list` は id、name、scope と、発行、最後に使った、失効の各時刻を出します。
+  hash は出しません。
+  最後に使った時刻は 1 時間ごとにしか更新しないので、最大 1 時間遅れます
+- `revisions.actor` などに残る書き手は `token:<id>:<name>` です。
+  name が一意だったころに書いた行は `token:<name>` のままで、その名前を持っていた最初の token を指します
 - `read` の token は、write が要る REST の操作（403）と MCP のツール（エラー）を呼べません
 
 token を使うスクリプト（`derived:rebuild`、`link-rewrites`）は、環境変数 `WIKI_TOKEN` から write の token を読みます。
@@ -106,7 +115,8 @@ pnpm backup load <dir> [--remote]
   残さないには、`pnpm backup --remote` の前に `pnpm link-rewrites --remote` で残りを 0 にします
 - `api_tokens` は token の hash を含むので、既定では出しません。
   復元後に token を発行し直します。
-  失効済みの名前は再利用できず、`revisions.actor` の `token:<名前>` が指す先でもあるので、前と違う名前を使います。
+  このとき id は 1 から振り直されるので、前と同じ名前で発行すると `revisions.actor` の `token:<id>:<name>` が前の token の操作と重なることがあります。
+  前と違う名前を使うか、`--with-tokens` で戻します。
   hash ごと戻したいときだけ `--with-tokens` を付け、ダンプを秘密として扱います。
   この場合は `api-token issue` を省けます
 - `manifest.json` に、読んだ時点の migration の一覧と、表ごとの行数と全列の SHA-256 を書きます

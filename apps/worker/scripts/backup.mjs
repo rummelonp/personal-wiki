@@ -107,8 +107,8 @@ export const TABLES = {
     key: ["name"],
   },
   // token_hash を含み、ダンプの流出がそのまま token の流出になる。既定で出さないのは、復元後に
-  // 発行し直せば済むため。ただし失効済みの名前は再利用できず、revisions.actor（token:<名前>）の
-  // 指す先でもあるので、発行し直す名前は以前と変えること
+  // 発行し直せば済むため。ただし出さずに戻した D1 では id が 1 から振り直され、revisions.actor などの
+  // token:<id>:<name> と重なりうるので、発行し直す名前は以前と変えること
   api_tokens: {
     columns: [
       int("id"),

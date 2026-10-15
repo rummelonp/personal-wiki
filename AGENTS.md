@@ -74,7 +74,8 @@ pnpm dev                # apps/web を build してから wrangler dev
 pnpm deploy:remote      # deploy.env から設定を合成してデプロイ
 pnpm db:migrate:remote  # 本番の D1 に migration を適用
 pnpm api-token issue <name> --scopes read|read,write [--remote]
-pnpm api-token revoke <name> [--remote]
+pnpm api-token revoke <name> | --id <id> [--remote]
+pnpm api-token list [--remote]
 pnpm derived:rebuild [--remote]  # 全ページの派生データを作り直す
 pnpm link-rewrites [--remote] [--target <page id>]  # title の変更で待っているリンクの書き換えを最後まで進める
 pnpm backup [--remote] [--out <dir>] [--with-tokens]  # D1 の本文を SQL のダンプにして手元に残す
@@ -98,8 +99,8 @@ read -rs WIKI_TOKEN && export WIKI_TOKEN  # write の token を入れる
 pnpm derived:rebuild --remote
 ```
 
-token の平文は発行時に標準出力へ 1 度だけ出る。
-失効した token の名前は再利用できない。
+token の平文は発行時に標準出力へ 1 度だけ出る（id は標準エラー出力に出る）。
+token を識別するのは id で、name は重複してよい。
 バックアップの `data.sql` は draft の本文を含むので、`--out` を追跡される場所に向けない。
 
 ## 規約

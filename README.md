@@ -81,7 +81,7 @@ Cloudflare アカウントと、そのアカウントの DNS にあるホスト�
 ## 運用
 
 - 更新: 新しい版では、`apps/worker` で `pnpm db:migrate:remote`、`pnpm deploy:remote`、`pnpm derived:rebuild --remote` を順に実行します（[docs/deploy.md](./docs/deploy.md)）
-- API token の発行と失効、派生データの作り直し、リンクの書き換え、バックアップと復元: [docs/operations.md](./docs/operations.md)
+- API token の発行、失効、一覧、派生データの作り直し、リンクの書き換え、バックアップと復元: [docs/operations.md](./docs/operations.md)
 - 画像の添付の使い方と公開範囲: [docs/attachments.md](./docs/attachments.md)
 
 Time Travel で遡れるのは Free で 7 日までなので、定期的に `pnpm backup --remote` で手元にダンプを残します。

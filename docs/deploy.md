@@ -85,6 +85,7 @@ pnpm -s api-token issue <name> --scopes read,write --remote
 ```
 
 token の平文は標準出力に 1 度だけ出るので控えます。
+token の id は標準エラー出力に出ます。
 token の扱いは [operations.md](./operations.md) の「API token」を参照してください。
 
 ここまでで REST と MCP が使えます（MCP の接続は [README](../README.md) の「MCP への接続」）。
@@ -262,3 +263,6 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
   pnpm exec wrangler d1 execute DB --remote --config wrangler.deploy.json --command \
     "UPDATE pages SET title_key = replace(title_key, '_', ' ') WHERE instr(title_key, '_') > 0; UPDATE OR REPLACE link_rewrites SET old_title_key = replace(old_title_key, '_', ' ') WHERE instr(old_title_key, '_') > 0"
   ```
+- `0009_api_token_names.sql` を当てたまま、API token を id で識別しない版に戻すと、同じ名前の token の書き込みはどれも actor が `token:<name>` になり、どの token が書いたか区別できません。
+  前の版の `pnpm api-token revoke <name>` は、同じ名前の有効な token をすべて失効させます。
+  戻している間は同じ名前の token を発行せず、失効は今の版のスクリプトの `revoke --id` で行います

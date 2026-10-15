@@ -366,6 +366,32 @@ describe("backup と load の往復", () => {
     expect(log.stderr).toBe("");
   });
 
+  it("--with-tokens は同じ名前の token を id ごと戻し、name の UNIQUE を外す前のバックアップも戻せる", () => {
+    const BEFORE_NAMES = MIGRATION_FILES.filter((f) => f < "0009_api_token_names.sql");
+    const tokens = (db: DatabaseSync) =>
+      db.prepare("SELECT id, name, revoked_at FROM api_tokens ORDER BY id").all();
+    const seed = (db: DatabaseSync, rows: string) => {
+      seedNasty(db);
+      db.exec(
+        `INSERT INTO api_tokens (id, name, token_hash, scopes, created_at, revoked_at) VALUES ${rows}`,
+      );
+    };
+
+    const current = migratedDb();
+    seed(current, "(4, 'laptop', 'aa', 'read', 1, 2), (9, 'laptop', 'bb', 'read write', 3, NULL)");
+    const old = migratedDb(BEFORE_NAMES);
+    seed(old, "(4, 'laptop', 'aa', 'read', 1, 2)");
+    for (const source of [current, old]) {
+      const { dir } = backup(
+        { command: "backup", remote: false, out: tmp(), withTokens: true },
+        ioFor(source).io,
+      );
+      const dest = migratedDb();
+      load({ command: "load", remote: false, dir }, ioFor(dest).io);
+      expect(tokens(dest)).toEqual(tokens(source));
+    }
+  });
+
   it("既定では api_tokens を出さない", () => {
     const source = migratedDb();
     seedNasty(source);

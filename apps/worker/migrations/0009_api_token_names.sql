@@ -3,7 +3,8 @@
 -- 行を id ごと移す。api_tokens を参照する外部キーとトリガーは無い。列の並びは backup.mjs の TABLES と一致させる。
 --
 -- actor（revisions.actor など）に残る 'token:<name>' は書き換えない。そのころ name は一意だったので、
--- 1 本の token を指したまま読める。新しく書く actor の形は revisions.ts の actorOf にある。
+-- この migration の時点でその名前を持っていた 1 本（その名前で最も小さい id）を指す。
+-- 新しく書く actor の形は revisions.ts の actorOf にある。
 CREATE TABLE api_tokens_new (
   -- 失効後も行を消さないので、id は最大値の次から振られ、使い回されない。
   -- 例外は api_tokens を含めずにバックアップから戻した D1 で、id が 1 から振り直される（docs/operations.md）。
