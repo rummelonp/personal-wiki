@@ -689,7 +689,7 @@ a {
   display: grid;
   gap: var(--space-2);
   max-width: calc(var(--prose-width) + 2 * var(--space-3));
-  max-height: calc(var(--notice-room, 100%) * 0.6);
+  max-height: calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio));
   /* 影が overflow で切れないよう、台の内側に余白を取り、その分だけ外へ出して通知の左端を本文の列に合わせる */
   margin: 0 calc(var(--gutter) - var(--space-3)) 0
     calc(var(--frame-start) + var(--gutter) - var(--space-3));
@@ -706,6 +706,37 @@ a {
 .notice-dock > .notice {
   pointer-events: auto;
   box-shadow: var(--shadow-popover);
+}
+
+/* 台の上限に達して中でスクロールするときは、スクロールバーを掴めるよう台も操作を受ける */
+.notice-dock[data-scrollable] {
+  pointer-events: auto;
+}
+
+/* 重大度の高い通知を台の上に置く。台の上限に達して切れるときも、重大な通知から見える */
+.notice-dock > .notice-error {
+  order: -2;
+}
+
+.notice-dock > .notice-warn {
+  order: -1;
+}
+
+/*
+ * 通知を見出しと操作だけに畳む。キーボードが出ている間は見える高さが半分ほどで、本文や差分まで
+ * 出すと入力中の行を覆う。狭い画面で通知が重なるときは、最も重大な 1 つ以外を畳む（notice-dock.ts）。
+ * 理由の文は畳むが、見出しが何が起きたかを言い切り、操作の名前が次の手を示す。
+ */
+.notice-dock[data-keyboard] .notice-text,
+.notice-dock[data-keyboard] .notice-details {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .notice-dock > .notice[data-folded] .notice-text,
+  .notice-dock > .notice[data-folded] .notice-details {
+    display: none;
+  }
 }
 
 .link-rewrites-pages {
@@ -1180,7 +1211,8 @@ a {
 }
 
 .diff {
-  max-height: var(--diff-max-height);
+  /* 通知の台の上限（見えている高さの 6 割）に、見出しと操作と一緒に収める */
+  max-height: calc(var(--notice-room, var(--viewport-height)) * var(--diff-room-ratio));
   margin: 0;
   overflow: auto;
   font-family: var(--font-mono);
