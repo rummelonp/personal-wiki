@@ -507,6 +507,16 @@ describe("jumpToFragment", () => {
     expect(view().state.selection.main.head).toBe(BODY.indexOf("### 入れ子"));
   });
 
+  it("見出しの大文字小文字が違っても移り、完全一致があればそちらを選ぶ", () => {
+    const text = "## Foo\n\n大文字\n\n## foo\n\n小文字\n\n## Bar";
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(text, { ref });
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "BAR" }));
+    expect(view().state.selection.main.head).toBe(text.indexOf("## Bar"));
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "foo" }));
+    expect(view().state.selection.main.head).toBe(text.indexOf("## foo"));
+  });
+
   it("block の段落へ移り、一時的にハイライトする。focus はせず、focus 中なら外す", () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled(BODY, { ref });
