@@ -1,4 +1,9 @@
+# JS を実行するクローラーが本文まで読めるよう、ページの描画で読む API だけを許す。
+# API の JSON には X-Robots-Tag: noindex が付くので、JSON 自体は検索結果に載らない。
 User-agent: *
+Allow: /api/me
+Allow: /api/pages/
+Allow: /api/tags
 Disallow: /api/
 Disallow: /mcp
 Disallow: /_auth/
