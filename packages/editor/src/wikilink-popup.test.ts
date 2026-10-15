@@ -32,17 +32,28 @@ function mount(): EditorView {
   return view;
 }
 
-/** ソフトキーボードで縮んだ visual viewport を模す */
-function shrinkVisualViewport(height: number, offsetTop = 0): void {
+type FakeViewport = EventTarget & {
+  offsetTop: number;
+  offsetLeft: number;
+  height: number;
+  width: number;
+};
+
+/** ソフトキーボードで縮んだ visual viewport を模す。返した値を書き換えて event を送ると、その後の変化を模せる */
+function shrinkVisualViewport(height: number, offsetTop = 0): FakeViewport {
   const original = Object.getOwnPropertyDescriptor(window, "visualViewport");
-  Object.defineProperty(window, "visualViewport", {
-    configurable: true,
-    value: { offsetTop, offsetLeft: 0, height, width: window.innerWidth },
+  const viewport: FakeViewport = Object.assign(new EventTarget(), {
+    offsetTop,
+    offsetLeft: 0,
+    height,
+    width: window.innerWidth,
   });
+  Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
   restoreViewport = () => {
     if (original) Object.defineProperty(window, "visualViewport", original);
     else Reflect.deleteProperty(window, "visualViewport");
   };
+  return viewport;
 }
 
 async function openCompletion(v: EditorView): Promise<HTMLElement> {
@@ -55,6 +66,24 @@ async function openCompletion(v: EditorView): Promise<HTMLElement> {
   const tooltip = document.querySelector(".cm-tooltip-autocomplete");
   if (!(tooltip instanceof HTMLElement)) throw new Error("the completion tooltip is not rendered");
   return tooltip;
+}
+
+/**
+ * 窓を開いた直後の更新（候補の選択など）が終わるのを待つ。それらの更新でも tooltip は測り直されるので、
+ * 待たずに visual viewport を変えると、その event を拾わなくても窓が動いて test が素通りする。
+ */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+}
+
+/**
+ * visual viewport の値だけを変えて event を送らずに待ち、窓が下に残ることを確かめる。
+ * 遅い環境などで開いた直後の測り直しが settle の後まで残ると、event を送る前に窓が動く。
+ * そのときは test を素通りさせず、ここで落とす。
+ */
+async function expectStaysBelowWithoutEvent(tooltip: HTMLElement): Promise<void> {
+  await settle();
+  expect(tooltip.classList.contains("cm-tooltip-below")).toBe(true);
 }
 
 describe("the completion popup position", () => {
@@ -86,6 +115,48 @@ describe("the completion popup position", () => {
     const tooltip = await openCompletion(v);
     await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-above")).toBe(true));
     expect(tooltip.getBoundingClientRect().top).toBeGreaterThanOrEqual(100);
+  });
+
+  it("moves above the caret when the visual viewport shrinks after the popup opened", async () => {
+    const viewport = shrinkVisualViewport(window.innerHeight);
+    const v = mount();
+    const tooltip = await openCompletion(v);
+    await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-below")).toBe(true));
+    await settle();
+    // 窓を開いた後にキーボードが出て、caret の下が 30px ほどしか残らなくなる
+    viewport.height = 210;
+    await expectStaysBelowWithoutEvent(tooltip);
+    viewport.dispatchEvent(new Event("resize"));
+    await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-above")).toBe(true));
+  });
+
+  it("moves into view when the visual viewport scrolls after the popup opened", async () => {
+    const viewport = shrinkVisualViewport(window.innerHeight);
+    const v = mount();
+    const tooltip = await openCompletion(v);
+    await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-below")).toBe(true));
+    await settle();
+    // 画面が上へずれ、layout viewport の 100px から 210px までが見える。高さを変えずに offsetTop だけを
+    // 増やすと caret の下の余地が増え、上へ移る形を作れないので、キーボードが出た分の高さも縮める
+    viewport.height = 110;
+    viewport.offsetTop = 100;
+    await expectStaysBelowWithoutEvent(tooltip);
+    viewport.dispatchEvent(new Event("scroll"));
+    await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-above")).toBe(true));
+    expect(tooltip.getBoundingClientRect().top).toBeGreaterThanOrEqual(100);
+  });
+
+  it("stops following the visual viewport when the editor is destroyed", () => {
+    const viewport = shrinkVisualViewport(window.innerHeight);
+    const add = vi.spyOn(viewport, "addEventListener");
+    const remove = vi.spyOn(viewport, "removeEventListener");
+    const v = mount();
+    const added = add.mock.calls.map(([type, listener]) => [type, listener]);
+    expect(added.map(([type]) => type)).toEqual(expect.arrayContaining(["resize", "scroll"]));
+    v.destroy();
+    view = null;
+    const removed = remove.mock.calls.map(([type, listener]) => [type, listener]);
+    for (const pair of added) expect(removed).toContainEqual(pair);
   });
 });
 

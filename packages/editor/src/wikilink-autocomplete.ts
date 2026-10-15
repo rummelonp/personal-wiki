@@ -19,7 +19,14 @@ import {
   type StateEffect,
   type TransactionSpec,
 } from "@codemirror/state";
-import { type Command, type EditorView, keymap, tooltips, ViewPlugin } from "@codemirror/view";
+import {
+  type Command,
+  type EditorView,
+  keymap,
+  repositionTooltips,
+  tooltips,
+  ViewPlugin,
+} from "@codemirror/view";
 import { extractLinkTargets, type LinkTargets } from "@personal-wiki/markdown";
 import { compositionSettled, compositionSettledNotifier, isComposing } from "./ime";
 import type { PageCandidate, PageIndex } from "./page-index";
@@ -398,6 +405,25 @@ export function tooltipSpace(view: EditorView): {
   return { top: 0, left: 0, bottom: root.clientHeight, right: root.clientWidth };
 }
 
+/**
+ * visual viewport が動いたら tooltip を置き直す。CodeMirror は window の resize や本文のスクロール、
+ * 本文の更新などで測り直すが、visual viewport の変化は拾わない。iOS では窓を開いた後に
+ * キーボードの高さが変わったり画面がずれたりして、visual viewport だけが動くことがある。
+ * 置き直さないと、窓は古い範囲に合わせた位置に残ってキーボードの裏に切れる。
+ */
+const followVisualViewport = ViewPlugin.define((view) => {
+  const viewport = view.dom.ownerDocument.defaultView?.visualViewport;
+  const reposition = () => repositionTooltips(view);
+  viewport?.addEventListener("resize", reposition);
+  viewport?.addEventListener("scroll", reposition);
+  return {
+    destroy() {
+      viewport?.removeEventListener("resize", reposition);
+      viewport?.removeEventListener("scroll", reposition);
+    },
+  };
+});
+
 export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Extension {
   return [
     compositionSettledNotifier,
@@ -412,6 +438,7 @@ export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Exte
       icons: false,
     }),
     tooltips({ tooltipSpace }),
+    followVisualViewport,
     Prec.highest(keymap.of(imeSafeCompletionKeymap)),
   ];
 }
