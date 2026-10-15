@@ -32,7 +32,7 @@ const frame = () =>
 
 const doc = Array.from({ length: 120 }, (_, i) => `段落 ${i}\n`).join("\n");
 
-async function mountBody() {
+async function mountBody(value = doc) {
   await browserPage.viewport(375, 600);
   container = document.createElement("div");
   document.body.append(container);
@@ -44,7 +44,7 @@ async function mountBody() {
           <span className="brand">personal-wiki</span>
         </header>
         <article className="note">
-          <BodyEditor value={doc} readOnly={false} />
+          <BodyEditor value={value} readOnly={false} />
         </article>
       </>,
     ),
@@ -170,6 +170,34 @@ describe("合わせ直し", () => {
     if (note === null) throw new Error("article.note が無い");
     note.style.paddingTop = "200px";
     await vi.waitFor(() => expect(Math.abs(lineOffsetFromTarget())).toBeLessThan(1.5));
+  });
+});
+
+describe("遠くの行へ戻す", () => {
+  /** 作った直後に解析される先頭の数千字より、ずっと先まで続く本文 */
+  const longDoc = Array.from(
+    { length: 2000 },
+    (_, i) => `${i % 10 === 0 ? `## 見出し ${i}` : `段落 ${i} の本文。`}\n`,
+  ).join("\n");
+
+  it("背景の解析を待たずに、戻した先の見出しを最初の描画から装飾する", async () => {
+    const { view, headerBottom } = await mountBody(longDoc);
+    const { doc: text } = view.state;
+    let target = text.lineAt(text.length / 2);
+    while (!target.text.startsWith("## ")) target = text.line(target.number + 1);
+    expect(bodyScrollAnchor(view).apply({ offset: target.from, delta: 0 })).toBe(true);
+    // measure を同期に走らせ、背景の解析（idle を待つ）が動く前に、移した先の描画を見る
+    view.coordsAtPos(target.from, 1);
+    const line = [...view.contentDOM.querySelectorAll(".cm-line")].find(
+      (element) => element.textContent?.trim() === target.text.slice(3),
+    );
+    if (line === undefined) throw new Error(`${target.text} の行が装飾されていない`);
+    expect(line.classList).toContain("cm-lp-h2");
+    // 先に解析して行の高さが変わっても、行はヘッダーの下端に揃う
+    await vi.waitFor(() => {
+      const rect = view.coordsAtPos(target.from, 1);
+      expect(Math.abs((rect?.top ?? Number.NaN) - headerBottom())).toBeLessThan(1.5);
+    });
   });
 });
 

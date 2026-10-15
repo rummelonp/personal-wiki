@@ -1,6 +1,6 @@
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { dispatchWhenSettled, isCompositionUnsettled } from "@personal-wiki/editor";
+import { dispatchWhenSettled, isCompositionUnsettled, parseAhead } from "@personal-wiki/editor";
 import type { ScrollAnchor, ScrollAnchorSource } from "./scroll-restore";
 import { stickyHeaderBottom } from "./sticky-header";
 
@@ -84,6 +84,8 @@ function applyAnchor(view: EditorView, anchor: ScrollAnchor): boolean {
     dispatchWhenSettled(view, moveKey, () => {
       // 保留している間に止めた移動は、落ち着いた後に実行するとスクロールを奪い返す
       if (stopped) return;
+      // 遠くの行へ移すと、背景の解析が追いつくまで Markdown の記号のまま見えるので、先に解析しておく
+      parseAhead(view, offset);
       ownMoveUntil = performance.now() + OWN_MOVE_MS;
       view.dispatch({
         // 位置の測定（coordsAtPos(offset, 1)）と同じ側に合わせる

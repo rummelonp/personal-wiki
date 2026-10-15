@@ -10,6 +10,7 @@ import {
   type LinkTargetSource,
   type PageEmbedContent,
   type PageIndex,
+  parseAhead,
   replaceDoc,
   revealBlockId,
   setReadOnly,
@@ -128,6 +129,8 @@ function caretUnderNoticeDock(editor: EditorView): boolean {
 function moveTo(editor: EditorView, offset: number): void {
   const at = Math.min(offset, editor.state.doc.length);
   leaveEditing(editor);
+  // 遠くの見出しへ移ると、背景の解析が追いつくまで Markdown の記号のまま見えるので、先に解析しておく
+  parseAhead(editor, at);
   editor.dispatch({
     selection: EditorSelection.cursor(at),
     effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 16 }),

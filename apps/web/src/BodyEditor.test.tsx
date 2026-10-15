@@ -520,6 +520,25 @@ describe("jumpToFragment", () => {
     });
   });
 
+  it("背景の解析を待たずに、遠くの見出しを移した直後の描画から装飾する", () => {
+    // 作った直後に解析される先頭の数千字より、ずっと先まで続く本文
+    const body = Array.from(
+      { length: 2000 },
+      (_, i) => `${i % 10 === 0 ? `## 見出し ${i}` : `段落 ${i} の本文。`}\n`,
+    ).join("\n");
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled(body, { ref });
+    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "見出し 1990" }));
+    const v = view();
+    // measure を同期に走らせ、背景の解析（idle を待つ）が動く前に、移した先の描画を見る
+    v.coordsAtPos(body.indexOf("## 見出し 1990"), 1);
+    const line = [...v.contentDOM.querySelectorAll(".cm-line")].find(
+      (element) => element.textContent?.trim() === "見出し 1990",
+    );
+    if (line === undefined) throw new Error("見出し 1990 の行が装飾されていない");
+    expect(line.classList).toContain("cm-lp-h2");
+  });
+
   describe("画面の上端に残るヘッダーがあるとき", () => {
     const HEADER_HEIGHT = 80;
     let stickyHeader: HTMLElement | null = null;
