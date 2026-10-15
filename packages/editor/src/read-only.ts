@@ -1,7 +1,7 @@
 import { closeCompletion } from "@codemirror/autocomplete";
 import { historyKeymap } from "@codemirror/commands";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import type { EditorView, KeyBinding } from "@codemirror/view";
+import { EditorView, type KeyBinding } from "@codemirror/view";
 import { isDocReplacement } from "./replace-doc";
 import { dispatchWhenSettled } from "./settled-dispatch";
 
@@ -13,10 +13,14 @@ const readOnlyMode = new Compartment();
  * `replaceDoc`（ホストからの差し替え）だけは通す。`replaceDoc` と `setReadOnly` はどちらも変換が
  * 落ち着くまで保留され、最初に保留した順に実行されるので、readOnly に切り替えた後に差し替えが
  * 届くことがある。ここで差し替えを落とすと、ホストの本文と view の doc がずれたまま残る。
+ *
+ * readOnly の間も reveal のために `contenteditable` を残すので、タッチ端末では押すと仮想キーボードが出て、
+ * 打っても何も入らない。`inputmode="none"` でキーボードだけを止め、focus と caret は残す。
  */
 const readOnlyOn: Extension = [
   EditorState.readOnly.of(true),
   EditorState.changeFilter.of((tr) => isDocReplacement(tr)),
+  EditorView.contentAttributes.of({ inputmode: "none" }),
 ];
 const readOnlyOff: Extension = [];
 

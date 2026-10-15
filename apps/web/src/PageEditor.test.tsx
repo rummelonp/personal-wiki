@@ -312,12 +312,14 @@ describe("PageEditor と本文のエディタ", () => {
     const { view, button } = renderPage();
     const v = view();
     expect(v.state.readOnly).toBe(true);
+    expect(v.contentDOM.getAttribute("inputmode")).toBe("none");
     expect(v.state.doc.toString()).toBe("本文");
 
     act(() => button("復元する").click());
     await flushAsync();
     expect(v.state.doc.toString()).toBe("退避した本文");
     expect(v.state.readOnly).toBe(false);
+    expect(v.contentDOM.hasAttribute("inputmode")).toBe(false);
   });
 
   it("[[ の title の候補に title の一覧を使う", async () => {
@@ -1318,6 +1320,7 @@ describe("title の確定", () => {
     const { button } = renderPage();
     const v = titleView();
     expect(v.state.readOnly).toBe(true);
+    expect(v.contentDOM.getAttribute("inputmode")).toBe("none");
     typeTitle("打てない");
     expect(titleText()).toBe("題");
 
@@ -1326,6 +1329,7 @@ describe("title の確定", () => {
     expect(titleView()).toBe(v);
     expect(titleText()).toBe("退避した題");
     expect(v.state.readOnly).toBe(false);
+    expect(v.contentDOM.hasAttribute("inputmode")).toBe(false);
     typeTitle("打てる");
     expect(titleText()).toBe("打てる");
   });

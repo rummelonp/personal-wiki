@@ -129,7 +129,9 @@ export interface CreateEditorOptions {
    *
    * `EditorView.editable` は既定で true のままにする（false にすると `contenteditable` が
    * 外れて focus できなくなり、閲覧者がカーソルを置けず Live Preview の reveal（`reveal.ts`）も
-   * 一生使えなくなる）。focus 自体を止めたい呼び出し元は `readOnlyFocusable: false` を渡す。
+   * 一生使えなくなる）。readOnly の間は `inputmode="none"` を付けるので、focus はできても、
+   * タッチ端末で押して仮想キーボードが出ることはない。focus 自体を止めたい呼び出し元は
+   * `readOnlyFocusable: false` を渡す。
    *
    * `EditorState.readOnly` が拒むのは CodeMirror 自身の入力経路（コマンド、貼り付け、drop、
    * IME の確定）だけで、`EditorView.domEventHandlers` などで doc を直接書く自前の extension

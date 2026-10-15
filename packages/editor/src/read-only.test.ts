@@ -94,6 +94,16 @@ describe("setReadOnly", () => {
     expect(v.state.doc.toString()).toBe("本文");
   });
 
+  it("sets inputmode=none on the content only while read-only, keeping it focusable", () => {
+    const v = mount("本文", { readOnly: true });
+    expect(v.contentDOM.getAttribute("inputmode")).toBe("none");
+    expect(v.contentDOM.getAttribute("contenteditable")).toBe("true");
+    setReadOnly(v, false);
+    expect(v.contentDOM.hasAttribute("inputmode")).toBe(false);
+    setReadOnly(v, true);
+    expect(v.contentDOM.getAttribute("inputmode")).toBe("none");
+  });
+
   it("keeps the change filter when the view is created read-only", () => {
     const v = mount("本文", { readOnly: true });
     v.dispatch({ changes: { from: 2, insert: "!" }, userEvent: "input.type" });
