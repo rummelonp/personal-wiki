@@ -1648,4 +1648,21 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(statusOf()).toBe("");
     expect(button("もう一度削除する")).toBeDefined();
   });
+
+  it("未保存の変更があるときだけ、削除の確認で変更も捨てることを伝える", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { view, button } = renderPage();
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    expect(confirm).toHaveBeenLastCalledWith(
+      `「${PAGE.title}」を削除します。元に戻せません。よろしいですか？`,
+    );
+
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => button("このページを削除").click());
+    expect(confirm).toHaveBeenLastCalledWith(
+      `「${PAGE.title}」を削除します。保存していない変更も捨てます。元に戻せません。よろしいですか？`,
+    );
+    expect(deletePage).not.toHaveBeenCalled();
+  });
 });
