@@ -12,7 +12,7 @@ import {
 } from "./scroll-restore";
 
 /*
- * 履歴のエントリは本物の history に書く。戻る・進む（popstate）は、移った先のエントリの state を
+ * 履歴のエントリは本物の history に書く。戻る操作と進む操作（popstate）は、移った先のエントリの state を
  * replaceState で置いてから popstate を投げて再現する（ブラウザは移った時点で history.state が
  * 移った先のものになる）。
  */

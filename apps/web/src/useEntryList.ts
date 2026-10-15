@@ -36,7 +36,7 @@ export interface EntryListSource {
 const RESTORE_MAX_LIMIT = 100;
 
 /**
- * 戻る・進むで開いた一覧は、離れたときに読み込んでいた件数を最初の 1 回で読み直し、
+ * 戻る操作や進む操作で開いた一覧は、離れたときに読み込んでいた件数を最初の 1 回で読み直し、
  * 「さらに表示」で読み足した位置まで戻れるようにする。上限（100 件）を超えて読み足していた分は戻れない。
  */
 function restoreLimit(): { limit?: number } {
