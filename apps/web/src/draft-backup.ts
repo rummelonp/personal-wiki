@@ -31,6 +31,9 @@ export interface BackupStore {
 const KEY_PREFIX = "personal-wiki:draft:";
 const keyOf = (pageId: string) => `${KEY_PREFIX}${pageId}`;
 
+/** localStorage の key（storage イベントの key）が退避のものか。 */
+export const isBackupStorageKey = (key: string): boolean => key.startsWith(KEY_PREFIX);
+
 function isBackup(value: unknown): value is Backup {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;

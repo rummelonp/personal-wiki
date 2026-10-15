@@ -106,6 +106,19 @@ describe("bindLifecycle", () => {
     expect(backup.load(ID)?.body).toBe("手元");
   });
 
+  it("別のタブが退避の key を書き換えたら、セッションに退避を確かめさせる", () => {
+    const { session } = setup();
+    const { doc, win } = targets();
+    const changed = vi.spyOn(session, "backupsChanged");
+    bindLifecycle(session, doc, win);
+    const storage = (key: string | null) => Object.assign(new Event("storage"), { key });
+    win.dispatchEvent(storage("theme"));
+    expect(changed).not.toHaveBeenCalled();
+    win.dispatchEvent(storage(`personal-wiki:draft:${ID}`));
+    win.dispatchEvent(storage(null));
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
   it("解いた後はイベントに反応しない", () => {
     const { session, backup } = setup();
     const { doc, win } = targets();

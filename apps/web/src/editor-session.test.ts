@@ -920,6 +920,51 @@ describe("同じページを開いた複数のタブの退避", () => {
     expect([...backup.saved.values()].map((saved) => saved.body)).toEqual(["B の編集"]);
   });
 
+  describe("2 つのタブがほぼ同時に空の共有の key へ書いたとき", () => {
+    // B のタブには A の書き込みがまだ届いておらず、共有の key を空と読んで上書きする
+    async function raced() {
+      const backup = memoryBackup();
+      const a = setup({ backup });
+      const staleForB: BackupStore = {
+        ...backup,
+        load: (key) => (key === ID ? null : backup.load(key)),
+      };
+      const b = setup({ backup: staleForB, server: a.server.page });
+      failSave(a.api);
+      a.session.edit({ title: "題", body: "A の編集" });
+      await a.session.flush();
+      failSave(b.api);
+      b.session.edit({ title: "題", body: "B の編集" });
+      await b.session.flush();
+      return { backup, a, b };
+    }
+
+    it("上書きされた方は、上書きを知ったら手元の内容を自分の key に書き直す", async () => {
+      const { backup, a } = await raced();
+      expect([...backup.saved.values()].map((saved) => saved.body)).toEqual(["B の編集"]);
+      a.session.backupsChanged();
+      const bodies = [...backup.saved.values()].map((saved) => saved.body).sort();
+      expect(bodies).toEqual(["A の編集", "B の編集"]);
+      expect(backup.load(ID)?.body).toBe("B の編集");
+    });
+
+    it("上書きした方は、自分の退避が残っているので書き直さない", async () => {
+      const { backup, a, b } = await raced();
+      a.session.backupsChanged();
+      const before = [...backup.saved.entries()];
+      b.session.backupsChanged();
+      expect([...backup.saved.entries()]).toEqual(before);
+    });
+
+    it("保存に成功して退避を消した後は、書き直さない", async () => {
+      const { backup, a } = await raced();
+      a.api.updatePage = fakeApi(a.server).updatePage;
+      await a.session.flush();
+      a.session.backupsChanged();
+      expect([...backup.saved.values()].map((saved) => saved.body)).toEqual(["B の編集"]);
+    });
+  });
+
   it("共有の key が空いたあとに書くと、自分の key の前の写しを消す", async () => {
     const { backup, a } = await twoTabs();
     // 閉じたタブの退避を、別の画面で破棄した

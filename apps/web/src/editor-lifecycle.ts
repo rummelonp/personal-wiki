@@ -1,9 +1,11 @@
+import { isBackupStorageKey } from "./draft-backup";
 import { type EditorState, hasPendingTitle, isDirty } from "./editor-session";
 
 export interface LifecycleSession {
   getState(): EditorState;
   leave(): Promise<void>;
   checkFreshness(): Promise<void>;
+  backupsChanged(): void;
 }
 
 /** document の代わりに渡せる最小の形。テストでは EventTarget に visibilityState を足して使う。 */
@@ -31,6 +33,11 @@ export function bindLifecycle(
   };
   const onFocus = () => void session.checkFreshness();
   const onPageHide = () => void session.leave();
+  // 別のタブが localStorage を書き換えたときだけ届く。key が null なのは clear()
+  const onStorage = (event: Event) => {
+    const { key } = event as StorageEvent;
+    if (key === null || isBackupStorageKey(key)) session.backupsChanged();
+  };
   const onBeforeUnload = (event: Event) => {
     const state = session.getState();
     if (isDirty(state) || hasPendingTitle(state) || state.busy === "saving") {
@@ -41,11 +48,13 @@ export function bindLifecycle(
   win.addEventListener("focus", onFocus);
   win.addEventListener("pagehide", onPageHide);
   win.addEventListener("beforeunload", onBeforeUnload);
+  win.addEventListener("storage", onStorage);
   return () => {
     doc.removeEventListener("visibilitychange", onVisibility);
     win.removeEventListener("focus", onFocus);
     win.removeEventListener("pagehide", onPageHide);
     win.removeEventListener("beforeunload", onBeforeUnload);
+    win.removeEventListener("storage", onStorage);
   };
 }
 

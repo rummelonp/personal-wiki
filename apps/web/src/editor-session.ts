@@ -257,6 +257,8 @@ export class EditorSession {
   private adopted: { owner: string | undefined; savedAt: number } | null = null;
   /** pendingBackup を読んだ key。共有の key（page id）か、別のセッションの key */
   private pendingKey: string | null = null;
+  /** ページの key に書いた退避が、まだ残っているはず。保存の成功などで消したら外す */
+  private holdsBackup = false;
 
   /**
    * page に null を渡すと、まだ作っていないページ（新規作成の画面）として始める。title は
@@ -357,6 +359,7 @@ export class EditorSession {
 
   /** except の key は残して、このセッションの退避を消す */
   private removeOwnedBackups(pageId: string, except: string | null): void {
+    if (except === null) this.holdsBackup = false;
     for (const key of [pageId, ...this.backup.list(sessionKeyPrefix(pageId))]) {
       if (key === except) continue;
       const stored = this.backup.load(key);
@@ -403,8 +406,30 @@ export class EditorSession {
     });
     // 書けたら、同じセッションの前の写し（共有の key と自分の key の両方に残りうる）を消す。
     // 書けなかったときは、前の写しが唯一の写しなので残す
-    if (written && !uncreated) this.removeOwnedBackups(key, target);
+    if (written && !uncreated) {
+      this.removeOwnedBackups(key, target);
+      this.holdsBackup = true;
+    }
     if (this.state.backupFailed === written) this.set({ backupFailed: !written });
+  }
+
+  /**
+   * 別のタブが退避を書き換えた（storage イベント）。localStorage には比べて書く操作が無く、2 つの
+   * タブがほぼ同時に空の共有の key を読んで書くと、後から書いた方が先の退避を上書きする。上書きを
+   * 知ったら、手元の内容をこのセッションの key に書き直す。書いた直後に読み直しても防げないのは、
+   * 別のタブの書き込みが届くのが非同期で、読み直した時点ではまだ見えないため。
+   *
+   * 防げないのは、書いたタブが上書きのイベントを受け取る前に閉じたとき（離脱の退避を書いてすぐに
+   * タブを閉じ、同じ時に別のタブが同じページの退避を書いた場合）。
+   */
+  backupsChanged(): void {
+    const { uncreated, gone, pendingBackup, base } = this.state;
+    if (!this.holdsBackup || uncreated || gone || pendingBackup !== null) return;
+    const kept = [base.id, ...this.backup.list(sessionKeyPrefix(base.id))].some((key) => {
+      const stored = this.backup.load(key);
+      return stored !== null && this.owns(stored);
+    });
+    if (!kept) this.stashIfDirty();
   }
 
   /** 保存できなかった手元の内容を localStorage に残す。 */
