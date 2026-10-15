@@ -196,9 +196,21 @@ export const editorSurfaceTheme = EditorView.baseTheme({
     color: "var(--ui-color-text)",
     boxShadow: "inset 2px 0 0 var(--ui-color-accent)",
   },
-  // 取得に失敗した案内の行は選べないので、先頭の行でも選択の地と線を付けない
+  // 取得に失敗した案内の行は選べないので、先頭の行でも選択の地と線を付けない。
+  // 次の行動まで書くので、狭い窓では折り返して全文を見せる（省略記号で切ると行動が読めない）。
+  // 色は quick switcher の失敗の案内と同じ danger
+  "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li.cm-completion-notice":
+    {
+      color: "var(--ui-color-danger)",
+      cursor: "default",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
+      // 対応するブラウザでは文節の切れ目で折り返す
+      wordBreak: "auto-phrase",
+      lineHeight: "1.5",
+    },
   "&light .cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li.cm-completion-notice[aria-selected]":
-    { background: "none", boxShadow: "none", cursor: "default" },
+    { background: "none", boxShadow: "none", color: "var(--ui-color-danger)" },
   "&light .cm-tooltip-autocomplete .cm-completionMatchedText": {
     textDecoration: "none",
     fontWeight: "700",
@@ -227,6 +239,11 @@ export const editorSurfaceTheme = EditorView.baseTheme({
       paddingLeft: "var(--ui-space-3, 0.75rem)",
       paddingRight: "var(--ui-space-3, 0.75rem)",
       lineHeight: TOUCH_ROW_HEIGHT,
+    },
+    // 案内の行は折り返すので、1 行分の高さ（44px）でなく上下の余白で高さを取る
+    ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-autocomplete > ul > li.cm-completion-notice": {
+      paddingTop: "var(--ui-space-2, 0.5rem)",
+      paddingBottom: "var(--ui-space-2, 0.5rem)",
     },
   },
 });

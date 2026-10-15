@@ -132,11 +132,33 @@ function candidateOption(candidate: PageCandidate): Completion {
 /**
  * 選べない案内の行。選択の見た目（theme.ts）と、Enter と Tab を取らない扱い（`acceptUnlessComposing`）は
  * この集合で見分ける。
- * 先頭の行には CodeMirror が `aria-selected` を付けるので、読み上げは選択された候補として伝える。
- * 行の属性は `optionClass` では変えられず、選択なしで開く設定（`selectOnOpen`）は
- * 通常の候補の先頭選択まで外してしまうため、そのままにしている。案内の文は行の中身として読まれる。
+ * CodeMirror は先頭の行に `aria-selected` を付けるが、案内の行は選べないので、描いた後で `deselectNotices` が外す。
+ * 付ける前に止める手段は無い。行の属性は `optionClass` では変えられず、選択なしで開く設定（`selectOnOpen`）は
+ * 通常の候補の先頭選択まで外してしまう。
  */
 const notices = new WeakSet<Completion>();
+
+/**
+ * 案内の行から `aria-selected` を外し、`aria-disabled` を付ける。選べない行を、読み上げが選べる候補と
+ * 誤認しないようにする。CodeMirror は選択が変わる更新の度に `aria-selected` を付け直すので、
+ * 更新の度に、DOM が落ち着いた後の write で外す。
+ */
+const deselectNotices = ViewPlugin.define(() => ({
+  update(update) {
+    const selected = selectedCompletion(update.state);
+    if (selected === null || !notices.has(selected)) return;
+    update.view.requestMeasure({
+      key: deselectNotices,
+      read: () => null,
+      write: (_, view) => {
+        for (const row of view.dom.querySelectorAll(".cm-completion-notice[aria-selected]")) {
+          row.removeAttribute("aria-selected");
+          row.setAttribute("aria-disabled", "true");
+        }
+      },
+    });
+  },
+}));
 
 /**
  * 候補の取得に失敗して候補が空のときに出す案内。何も出さないと、失敗なのか一致なしなのか区別できない。
@@ -144,7 +166,7 @@ const notices = new WeakSet<Completion>();
  */
 function failureNotice(): Completion {
   const notice: Completion = {
-    label: "候補を取得できません",
+    label: "候補を取得できません。少し待って、打ち直してください。",
     type: "text",
     apply: (view) => {
       closeCompletion(view);
@@ -439,6 +461,7 @@ export function wikiLinkAutocomplete(options: WikiLinkAutocompleteOptions): Exte
     }),
     tooltips({ tooltipSpace }),
     followVisualViewport,
+    deselectNotices,
     Prec.highest(keymap.of(imeSafeCompletionKeymap)),
   ];
 }

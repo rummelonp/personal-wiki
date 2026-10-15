@@ -246,8 +246,24 @@ test("title の一覧を取れなかったときの [[ の補完は失敗を案�
   );
   const popup = page.locator(".cm-tooltip-autocomplete");
   // 失敗なのか一致なしなのか区別できるよう、案内の行を出す。「作成」は出さない
-  await expect(popup.getByText("候補を取得できません")).toBeVisible();
+  const notice = popup.getByText("候補を取得できません");
+  await expect(notice).toBeVisible();
   await expect(popup.getByText(/を作成$/)).toHaveCount(0);
+  // 待つか打ち直すかを案内し、窓の幅（iOS 幅を含む）に収まって 2 行までで読める。選べる候補としては伝えない
+  await expect(notice).toContainText("打ち直してください");
+  const row = popup.locator("li");
+  await expect(row).not.toHaveAttribute("aria-selected", /.*/);
+  const fit = await row.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+    return {
+      overflowX: element.scrollWidth - element.clientWidth,
+      lines:
+        (element.getBoundingClientRect().height - padding) / Number.parseFloat(style.lineHeight),
+    };
+  });
+  expect(fit.overflowX).toBeLessThanOrEqual(0);
+  expect(fit.lines).toBeLessThanOrEqual(2);
 
   // 取り直しは失敗の直後を避けて間隔を空けるので、API が戻った後、間隔が過ぎてから打つ
   await page.unroute(titles);

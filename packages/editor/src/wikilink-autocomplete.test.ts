@@ -10,6 +10,7 @@ import type { LinkTargets } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "./create-editor";
 import { createMemoryPageIndex, type PageIndex } from "./page-index";
+import { resolve, toRgb } from "./test-contrast";
 import { type LinkTargetSource, wikiLinkAutocomplete } from "./wikilink-autocomplete";
 
 let view: EditorView | null = null;
@@ -119,7 +120,7 @@ describe("the create option", () => {
     };
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Code");
-    expect(labels(v)).toEqual(["候補を取得できません"]);
+    expect(labels(v)).toEqual(["候補を取得できません。少し待って、打ち直してください。"]);
 
     failed = false;
     await typeQuery(v, "Code");
@@ -178,11 +179,38 @@ describe("the failure notice", () => {
   it("is not selectable: Enter and Tab do not pick it, and are left to the editor", async () => {
     const { view: v } = mount("", undefined, failingIndex());
     await typeQuery(v, "Co");
-    expect(labels(v)).toEqual(["候補を取得できません"]);
+    expect(labels(v)).toEqual(["候補を取得できません。少し待って、打ち直してください。"]);
     await afterInteractionDelay();
     runScopeHandlers(v, new KeyboardEvent("keydown", { key: "Enter" }), "editor");
     // 案内が Enter を取ると改行できない（選んでも何も書かない）。取らなければ、editor の改行になる
     expect(v.state.doc.toString()).toBe("[[Co\n");
+  });
+
+  it("is not exposed as a selected option, and stays so after the selection updates", async () => {
+    const { view: v } = mount("", undefined, failingIndex());
+    await typeQuery(v, "Co");
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const row = () => host?.querySelector(".cm-tooltip-autocomplete li");
+    await vi.waitFor(() => expect(row()?.hasAttribute("aria-selected")).toBe(false));
+    expect(row()?.getAttribute("aria-disabled")).toBe("true");
+
+    // 打ち足して候補が作り直されても、CodeMirror が付け直した aria-selected を外す
+    await typeQuery(v, "Cod");
+    await nextFrame();
+    await nextFrame();
+    expect(row()).not.toBeNull();
+    expect(row()?.hasAttribute("aria-selected")).toBe(false);
+  });
+
+  it("is danger-colored and wraps instead of truncating", async () => {
+    const { view: v } = mount("", undefined, failingIndex());
+    await typeQuery(v, "Co");
+    const row = host?.querySelector(".cm-tooltip-autocomplete li");
+    if (!row) throw new Error("notice row is missing");
+    const style = getComputedStyle(row);
+    const danger = resolve(v.contentDOM, "var(--ui-color-danger)");
+    expect(toRgb(style.color)).toEqual(danger);
+    expect(style.whiteSpace).toBe("normal");
   });
 
   it("gets a class that the theme uses to drop the selected look", async () => {
@@ -228,7 +256,7 @@ describe("the index retry", () => {
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Co");
     expect(state.retries).toBe(1);
-    expect(labels(v)).toEqual(["候補を取得できません"]);
+    expect(labels(v)).toEqual(["候補を取得できません。少し待って、打ち直してください。"]);
   });
 
   it("is also awaited while the first load has not finished, then offers create for a missing page", async () => {
