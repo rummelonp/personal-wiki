@@ -1,8 +1,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { page as browserPage } from "vitest/browser";
 import { ConflictPanel } from "./ConflictPanel";
+import { NoticeDockProvider } from "./Notice";
 import type { Page } from "./pages-api";
+import "./theme.css";
+import "./styles.css";
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -11,11 +15,13 @@ beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
 
-afterEach(() => {
+afterEach(async () => {
   act(() => root?.unmount());
   container?.remove();
   root = null;
   container = null;
+  for (const style of document.querySelectorAll("style[data-test]")) style.remove();
+  await browserPage.viewport(414, 800);
 });
 
 const SERVER: Page = {
@@ -103,18 +109,97 @@ describe("衝突の操作の確認", () => {
     expect(onTakeServer).not.toHaveBeenCalled();
   });
 
-  it("凡例は、差分の前に置く（下端では最初の表示で見えない）", () => {
+  it("凡例は、差分の前にあり、差分をスクロールする欄の外に置く", () => {
     mount();
     const legend = document.querySelector(".diff-legend");
     const diff = document.querySelector(".diff");
     expect(legend?.textContent).toContain("サーバーだけにある行");
     expect(diff).not.toBeNull();
     expect(legend?.compareDocumentPosition(diff as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(document.querySelector(".notice-details")?.contains(legend as Node)).toBe(false);
   });
 
   it("本文に差分が無いときは、凡例を出さない", () => {
     mount(SERVER.body);
     expect(document.body.textContent).toContain("本文に差分はありません。");
     expect(document.querySelector(".diff-legend")).toBeNull();
+  });
+});
+
+const LINES = Array.from({ length: 40 }, (_, index) => `${index + 1} 行目`);
+
+/** 台の中に置く。差分の欄の高さは、台と通知の CSS で決まる。 */
+async function mountInDock(options: { changeAt: number; detailsMaxHeight?: number }) {
+  await browserPage.viewport(393, 500);
+  if (options.detailsMaxHeight !== undefined) {
+    const style = document.createElement("style");
+    style.dataset.test = "";
+    style.textContent = `.notice-details { max-height: ${options.detailsMaxHeight}px !important; }`;
+    document.head.append(style);
+  }
+  const server = { ...SERVER, body: LINES.join("\n") };
+  const local = {
+    title: "題",
+    body: LINES.map((line, index) => (index === options.changeAt ? `${line}を直した` : line)).join(
+      "\n",
+    ),
+  };
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  const render = (busy: boolean) =>
+    act(() =>
+      root?.render(
+        <NoticeDockProvider>
+          <ConflictPanel
+            server={server}
+            local={local}
+            busy={busy}
+            onOverwrite={vi.fn()}
+            onTakeServer={vi.fn()}
+          />
+        </NoticeDockProvider>,
+      ),
+    );
+  render(false);
+  const details = document.querySelector(".notice-details") as HTMLElement;
+  return { render, details };
+}
+
+const within = (inner: Element, outer: Element) => {
+  const a = inner.getBoundingClientRect();
+  const b = outer.getBoundingClientRect();
+  return a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5;
+};
+
+describe("差分の欄", () => {
+  it("最初の変更の前に共通の行が続いても、最初の表示で変更の行が見える", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsMaxHeight: 70 });
+    expect(details.scrollHeight).toBeGreaterThan(details.clientHeight);
+    const first = details.querySelector(".diff-delete") as Element;
+    expect(within(first, details)).toBe(true);
+  });
+
+  it("操作で描き直しても、利用者がスクロールした位置を動かさない", async () => {
+    const { render, details } = await mountInDock({ changeAt: 25, detailsMaxHeight: 70 });
+    details.scrollTop = 5;
+    render(true);
+    expect(details.scrollTop).toBe(5);
+    act(() => button("手元で上書き").click());
+    expect(details.scrollTop).toBe(5);
+  });
+
+  it("差分をスクロールしても、凡例は動かず見え続ける", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsMaxHeight: 70 });
+    const legend = document.querySelector(".diff-legend") as HTMLElement;
+    const before = legend.getBoundingClientRect().top;
+    details.scrollTop = details.scrollHeight;
+    expect(legend.getBoundingClientRect().top).toBe(before);
+    expect(within(legend, document.querySelector(".notice") as Element)).toBe(true);
+  });
+
+  it("先頭の行が変わっていれば、スクロールしない", async () => {
+    const { details } = await mountInDock({ changeAt: 0, detailsMaxHeight: 70 });
+    expect(details.scrollTop).toBe(0);
   });
 });

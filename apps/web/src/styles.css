@@ -703,6 +703,14 @@ a {
   flex: none;
 }
 
+/* 差分の欄（.notice-details）の外に置く。スクロールの領域に入れると、差分を送ると流れて見えなくなる */
+.conflict-summary {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 /*
  * 通知の台。画面の下端（キーボードが出ている間はその上）に固定し、本文の流れに高さを取らない。
  * title と本文は通知の出入りで動かず、本文のスクロールは台の高さを避ける（sticky-header.ts）。
@@ -803,12 +811,14 @@ a {
  * 理由の文は畳むが、見出しが何が起きたかを言い切り、操作の名前が次の手を示す。
  */
 .notice-dock[data-keyboard] .notice-text,
+.notice-dock[data-keyboard] .conflict-summary,
 .notice-dock[data-keyboard] .notice-details {
   display: none;
 }
 
 @media (max-width: 40rem) {
   .notice-dock > .notice[data-folded] .notice-text,
+  .notice-dock > .notice[data-folded] .conflict-summary,
   .notice-dock > .notice[data-folded] .notice-details {
     display: none;
   }

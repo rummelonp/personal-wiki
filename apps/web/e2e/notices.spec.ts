@@ -468,15 +468,64 @@ test.describe("差分の長い衝突の通知は、台の中と差分の欄が�
           detailsScrolls: detailsEl.scrollHeight > detailsEl.clientHeight + 1,
         };
       });
-      expect(detailsScrolls, "差分が長いので、差分を含む欄の中でスクロールする").toBe(true);
+      expect(detailsScrolls, "差分が長いので、差分の欄の中でスクロールする").toBe(true);
       expect(dockScrolls, "台の中がスクロールしている（二重のスクロール）").toBe(false);
       await expect(dock(page)).not.toHaveAttribute("data-more-below");
       await expectDockOnScreen(page);
       for (const name of ["サーバーの版を取り込む", "手元で上書き"]) {
         await expect(conflict.getByRole("button", { name })).toBeInViewport({ ratio: 1 });
       }
+      // 凡例は差分をスクロールする欄の外にあり、差分を送っても同じ位置で見え続ける
+      const legend = dock(page).locator(".diff-legend");
+      const legendBefore = await boxOf(legend);
+      await dock(page)
+        .locator(".notice-details")
+        .evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+      expect((await boxOf(legend)).y, "差分を送ると凡例が動いた").toBe(legendBefore.y);
+      await expect(legend).toBeInViewport({ ratio: 1 });
     });
   }
+});
+
+test("最初の変更の前に共通の行が続いても、最初の表示で変更の行が見える", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await openLongPage(page, api, uniqueTitle(testInfo, "差分の最初の変更"));
+  const pagePath = `**/api/pages/${created.id}`;
+  let external: Promise<ApiPage> | undefined;
+  await page.route(pagePath, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    external ??= api.updatePage(created, {
+      body: LINES.map((line, index) => (index === 40 ? `${line}を別の場所で直した` : line)).join(
+        "\n",
+      ),
+    });
+    const updated = await external.then(
+      () => true,
+      () => false,
+    );
+    return updated ? route.fallback() : route.abort();
+  });
+  // 手元の変更も遠い行にして、差分の先頭に共通の行を続ける
+  await typeAt(page, 20, "、手元の変更");
+  await expect.poll(() => external, "保存が送られない").toBeDefined();
+  await external;
+  await expect(
+    page.getByRole("alert").filter({
+      has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+    }),
+  ).toBeVisible();
+  const details = await boxOf(dock(page).locator(".notice-details"));
+  const first = await boxOf(dock(page).locator(".diff-delete, .diff-insert").first());
+  expect(first.y, "最初の変更の行が差分の欄の上にはみ出している").toBeGreaterThanOrEqual(
+    details.y - 0.5,
+  );
+  expect(first.y + first.height, "最初の変更の行が差分の欄に見えていない").toBeLessThanOrEqual(
+    details.y + details.height + 0.5,
+  );
 });
 
 test("台の上限に達して中でスクロールするとき、続きのある端に手がかりが出る", async ({

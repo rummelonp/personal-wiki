@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { conflictRows } from "./conflict-diff";
 import type { Draft } from "./editor-session";
 import { formatTime } from "./format";
@@ -26,6 +26,21 @@ interface ConflictPanelProps {
   onTakeServer: () => void;
 }
 
+/**
+ * 差分の欄の最初の変更の行が見えるようにスクロールする。見えなければ、直前の共通の行を欄の上端に置く。
+ * 欄が隠れている間（キーボードが出ている間など）は測れないので false を返し、呼び出し側が見えてから呼び直す。
+ */
+function revealFirstChange(scroller: HTMLElement): boolean {
+  const first = scroller.querySelector<HTMLElement>(".diff-insert, .diff-delete");
+  if (first === null) return true;
+  if (scroller.clientHeight === 0) return false;
+  if (first.offsetTop + first.offsetHeight <= scroller.clientHeight) return true;
+  const before = first.previousElementSibling;
+  // offsetTop の基準は position: relative の .notice-details。scrollIntoView は台そのものをスクロールしうる
+  scroller.scrollTop = (before instanceof HTMLElement ? before : first).offsetTop;
+  return true;
+}
+
 /** 保存しようとした版が古かったとき、サーバーの版と手元の差分を見せて選ばせる。 */
 export function ConflictPanel({
   server,
@@ -34,12 +49,15 @@ export function ConflictPanel({
   onOverwrite,
   onTakeServer,
 }: ConflictPanelProps) {
-  const rows = conflictRows(server.body, local.body);
+  const rows = useMemo(() => conflictRows(server.body, local.body), [server.body, local.body]);
+  const hasDiff = rows.some((row) => row.kind !== "skip");
   const titleChanged = server.title !== local.title;
   // どちらの選択も、選ばなかった側の内容が唯一の写しごと消える。どちらを主操作にもせず、
   // 押す前に両方とも確かめる。確認は window.confirm ではなく通知の中で行う。ブラウザが
   // ダイアログを抑止していると confirm は何も出さずに false を返し、操作が理由なく止まるため
   const [choice, setChoice] = useState<Choice | null>(null);
+  // 通知は台の用意ができてから描かれるので、要素が現れたときに送れるよう state で持つ
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const take = useRef<HTMLButtonElement>(null);
   const overwrite = useRef<HTMLButtonElement>(null);
@@ -58,6 +76,17 @@ export function ConflictPanel({
     if (button !== null && !button.disabled) button.focus();
     else back.heading?.focus();
   }, [choice]);
+  // 差分の最初の変更の前に共通の行が続くと、最初の表示に − と ＋ が見えない。差分が決まったときだけ送り、
+  // 確認の操作などで描き直しても動かさない。隠れている間は、見えるようになってから 1 度だけ送る
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rows が変わったときに送り直す
+  useLayoutEffect(() => {
+    if (scroller === null || revealFirstChange(scroller)) return;
+    const observer = new ResizeObserver(() => {
+      if (revealFirstChange(scroller)) observer.disconnect();
+    });
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [rows, scroller]);
   function leave(): void {
     if (choice === null) return;
     returnTo.current = {
@@ -128,21 +157,25 @@ export function ConflictPanel({
         )
       }
       details={
-        <div className="notice-details">
-          {titleChanged && (
-            <dl className="conflict-titles">
-              <dt>サーバーの title</dt>
-              <dd>{server.title}</dd>
-              <dt>手元の title</dt>
-              <dd>{local.title}</dd>
-            </dl>
-          )}
-          {rows.every((row) => row.kind === "skip") ? (
-            <p className="notice-text muted">本文に差分はありません。</p>
-          ) : (
-            <>
-              {/* 差分の欄は長くなり、下端の凡例は最初の表示で見えない。記号の意味は読み始める前に要る */}
+        <>
+          {/* 凡例と title は差分の欄の外に置き、差分をスクロールしても見え続けるようにする */}
+          <div className="conflict-summary">
+            {titleChanged && (
+              <dl className="conflict-titles">
+                <dt>サーバーの title</dt>
+                <dd>{server.title}</dd>
+                <dt>手元の title</dt>
+                <dd>{local.title}</dd>
+              </dl>
+            )}
+            {hasDiff ? (
               <p className="muted diff-legend">− はサーバーだけにある行、＋ は手元だけにある行</p>
+            ) : (
+              <p className="notice-text muted">本文に差分はありません。</p>
+            )}
+          </div>
+          {hasDiff && (
+            <div className="notice-details" ref={setScroller}>
               <div className="diff">
                 {rows.map((row, index) =>
                   row.kind === "skip" ? (
@@ -168,9 +201,9 @@ export function ConflictPanel({
                   ),
                 )}
               </div>
-            </>
+            </div>
           )}
-        </div>
+        </>
       }
     >
       <p>
