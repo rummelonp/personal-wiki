@@ -98,22 +98,62 @@ export function App() {
     if (route.name === "home") setDocumentTitle(null);
   }, [route.name]);
 
+  // ログイン状態を取れなかったままだと、通信が戻っても再読み込みまで画面も書き換えのループも戻らない。
+  // 通信の復帰と画面の再表示で取り直す（ポーリングはしない）
+  const sessionFailed = session.status === "error";
+  useEffect(() => {
+    if (!sessionFailed) return;
+    let cancelled = false;
+    let fetching = false;
+    function recover() {
+      if (fetching || document.visibilityState === "hidden") return;
+      fetching = true;
+      fetchMe()
+        .then((me) => {
+          if (cancelled) return;
+          if (me.kind === "anonymous") {
+            // 取れなかった間にログアウトが済んでいたか、初めから匿名だった。書き換えが止まって
+            // 残っていれば捨て、匿名の画面に移る
+            linkRewrites.stop();
+            forgetTitles();
+          }
+          setSession({ status: "ready", me });
+        })
+        .catch(() => {})
+        .finally(() => {
+          fetching = false;
+        });
+    }
+    window.addEventListener("online", recover);
+    document.addEventListener("visibilitychange", recover);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", recover);
+      document.removeEventListener("visibilitychange", recover);
+    };
+  }, [sessionFailed]);
+
   async function handleLogout() {
     setLoggingOut(true);
     try {
       await saveAllEditors();
-      linkRewrites.stop();
+      linkRewrites.suspend();
       try {
         await logout();
       } catch {
         // 失敗の応答でも、サーバーでは済んでいることがある。ログイン状態を確かめ、続いていれば
-        // 止めた書き換えを再開する（匿名ならそのまま匿名の画面に移る）
+        // 止めた書き換えを再開する（匿名ならそのまま匿名の画面に移る）。確かめられなければ
+        // エラーの画面にし、ログイン状態が分かるまで書き換えは止めたままにする
         const me = await fetchMe();
-        if (me.kind === "anonymous") forgetTitles();
+        if (me.kind === "anonymous") {
+          linkRewrites.stop();
+          forgetTitles();
+        }
         setSession({ status: "ready", me });
-        if (me.kind === "owner" && me.features.linkRewrites) linkRewrites.start();
+        if (me.kind === "owner" && me.features.linkRewrites) linkRewrites.resume();
         return;
       }
+      linkRewrites.stop();
       forgetTitles();
       // features は環境の性質で、ログアウトでは変わらない
       setSession((current) => ({
@@ -139,7 +179,11 @@ export function App() {
   // 前の起動やエージェントの改名で残った書き換えを、owner が開いたときに進める。止めるのはログアウトだけで、
   // effect の後片付けでは止めない（StrictMode の 2 回目の実行で step を 2 本走らせない）
   useEffect(() => {
-    if (canRewriteLinks) linkRewrites.start();
+    if (!canRewriteLinks) return;
+    // ログアウトの結果が分からなかったあとに owner と分かったときは、止めた書き換えを続きから走らせる。
+    // start は見せている結果を消して最初から始めるので、結果が残っている間は呼ばない
+    linkRewrites.resume();
+    if (linkRewrites.getState().status === "idle") linkRewrites.start();
   }, [canRewriteLinks]);
 
   // owner の + で開く新規作成の画面が suspend しないよう、owner と分かった時点で読み込んでおく
@@ -175,7 +219,9 @@ export function App() {
           {session.status === "error" && (
             <RailLayout rail={null}>
               <Notice inline tone="error" title="ログインの状態を取得できませんでした">
-                <p>通信を確かめて、ページを再読み込みしてください。</p>
+                <p>
+                  通信が戻ると自動で取り直します。戻らないときは、ページを再読み込みしてください。
+                </p>
               </Notice>
             </RailLayout>
           )}

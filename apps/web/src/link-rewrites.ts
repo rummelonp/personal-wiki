@@ -63,6 +63,12 @@ export class LinkRewriteRunner {
   private active = false;
   /** 走っている間に start が来た。残りが 0 になっても、もう一度呼んで確かめる */
   private rerun = false;
+  /** suspend から resume までの間。この間は新しい step を送らない */
+  private suspended = false;
+  /** suspend の間、ループが次の step を送る前に待っている。resume と stop が起こす */
+  private readonly wakers = new Set<() => void>();
+  /** ループが無い間の suspend に来た start の queued の和。resume で送る */
+  private deferred = 0;
 
   constructor(private readonly deps: LinkRewriteRunnerDeps) {}
 
@@ -100,12 +106,18 @@ export class LinkRewriteRunner {
       }
       return;
     }
+    if (this.suspended) {
+      // ログアウトの間に届いた保存の応答でも step は送らない。ログアウトに失敗して owner のままなら、
+      // resume で送る
+      this.deferred += queued;
+      return;
+    }
     this.run({ ...IDLE, status: queued > 0 ? "running" : "idle", total: queued });
   }
 
   /** 止まった書き換えを手で再開する。それまでに書き換えたページと失敗したページの一覧は残す。 */
   retry(): void {
-    if (this.active) return;
+    if (this.active || this.suspended) return;
     this.run({ ...this.state, status: "running", stopReason: null });
   }
 
@@ -130,12 +142,49 @@ export class LinkRewriteRunner {
     this.set(state);
   }
 
-  /** ログアウトなどで書き換えを止め、結果も消す。 */
+  /**
+   * ログアウトの結果が分かるまで、新しい step を送らずに待つ。通信中の step は捨てずに応答を取り込む
+   * （サーバーでは処理済みで、failed や公開ページの件数が二度と戻らなくなる）。結果は消さず、
+   * ループは次の step の前で待つ。ログアウトに失敗して owner のままなら、止まった理由の通知の根拠
+   * （failed と stopReason）が要る。
+   */
+  suspend(): void {
+    this.suspended = true;
+  }
+
+  /** owner のまま書き込める状態に戻ったとき、待っていたループを起こし、待たせていた start を送る。 */
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    this.wake();
+    const deferred = this.deferred;
+    this.deferred = 0;
+    if (deferred > 0) this.start(deferred);
+  }
+
+  /**
+   * ログアウトが済んだことが分かったとき、書き換えを止めて結果も消す。step を送らない状態は
+   * suspend が作るので、ログアウトの前に suspend を呼んでおく（stop だけでは start を止めない）。
+   */
   stop(): void {
     this.generation++;
     this.active = false;
     this.rerun = false;
+    this.deferred = 0;
     this.set(IDLE);
+    this.wake();
+  }
+
+  private wake(): void {
+    const wakers = [...this.wakers];
+    this.wakers.clear();
+    for (const wake of wakers) wake();
+  }
+
+  private async untilResumed(generation: number): Promise<void> {
+    while (this.suspended && generation === this.generation) {
+      await new Promise<void>((resolve) => this.wakers.add(resolve));
+    }
   }
 
   /** 終わった結果を閉じる。 */
@@ -170,6 +219,11 @@ export class LinkRewriteRunner {
     const stopWith = (stopReason: "auth" | "error") =>
       this.finish({ ...this.state, status: "stopped", stopReason });
     for (;;) {
+      // 待たないときは await を挟まない（start の同じ同期区間で最初の step を送る）
+      if (this.suspended) {
+        await this.untilResumed(generation);
+        if (!current()) return;
+      }
       const result = await this.runStep();
       if (!current()) return;
       if (!result.ok) {

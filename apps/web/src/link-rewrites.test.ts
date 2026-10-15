@@ -260,6 +260,124 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState().status).toBe("idle");
   });
 
+  it("suspend と resume は、失敗したページの一覧と止まった理由を残し、step を送らない", async () => {
+    const { runner, step } = setup([
+      ok({ processed: processed("a"), failed: ["x"], remaining: 1 }),
+      { ok: false, kind: "unauthorized" },
+    ]);
+    runner.start(2);
+    await vi.waitFor(() => expect(runner.getState().status).toBe("stopped"));
+    runner.suspend();
+    runner.resume();
+    expect(runner.getState()).toMatchObject({
+      status: "stopped",
+      stopReason: "auth",
+      failed: ["x"],
+      rewritten: [{ id: "a" }],
+    });
+    expect(step).toHaveBeenCalledTimes(2);
+  });
+
+  it("suspend の間は start も再試行も step を送らず、resume で積まれた分を送る", async () => {
+    const { runner, step, settled } = setup([ok({ processed: processed("a"), remaining: 0 })]);
+    runner.suspend();
+    runner.start(1);
+    runner.retry();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(step).not.toHaveBeenCalled();
+    expect(runner.getState().status).toBe("idle");
+    runner.resume();
+    expect(runner.getState()).toMatchObject({ status: "running", done: 0, total: 1 });
+    await settled();
+    expect(step).toHaveBeenCalledTimes(1);
+    expect(runner.getState()).toMatchObject({ status: "done", rewritten: [{ id: "a" }] });
+  });
+
+  it("通信中に suspend しても応答は取り込み、次の step は resume まで送らない", async () => {
+    let release: () => void = () => {};
+    const { runner, step, settled } = setup([ok({ processed: processed("b"), remaining: 0 })]);
+    step.mockImplementationOnce(async () => ok({ processed: processed("a"), remaining: 1 }));
+    step.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve(ok({ processed: processed("late", "public"), failed: ["f"], remaining: 1 }));
+        }),
+    );
+    runner.start(3);
+    await vi.waitFor(() => expect(step).toHaveBeenCalledTimes(2));
+    runner.suspend();
+    release();
+    await vi.waitFor(() => expect(runner.getState().done).toBe(2));
+    expect(step).toHaveBeenCalledTimes(2);
+    expect(runner.getState()).toMatchObject({
+      status: "running",
+      done: 2,
+      total: 3,
+      failed: ["f"],
+      rewritten: [{ id: "a" }, { id: "late", visibility: "public" }],
+    });
+    runner.resume();
+    await settled();
+    expect(step).toHaveBeenCalledTimes(3);
+    expect(runner.getState()).toMatchObject({
+      status: "done",
+      done: 3,
+      failed: ["f"],
+      rewritten: [{ id: "a" }, { id: "late" }, { id: "b" }],
+    });
+  });
+
+  it("通信中の step の応答を待たずに resume しても、step を並べて送らない", async () => {
+    let release: () => void = () => {};
+    const { runner, step, settled } = setup([ok({ processed: processed("b"), remaining: 0 })]);
+    step.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(ok({ processed: processed("a"), remaining: 1 }));
+        }),
+    );
+    runner.start(2);
+    runner.suspend();
+    runner.resume();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(step).toHaveBeenCalledTimes(1);
+    release();
+    await settled();
+    expect(step).toHaveBeenCalledTimes(2);
+    expect(runner.getState()).toMatchObject({ status: "done", done: 2 });
+  });
+
+  it("suspend の間に応答で残りが無くなれば、そのまま終わった結果を見せる", async () => {
+    let release: () => void = () => {};
+    const { runner, step } = setup([]);
+    step.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(ok({ failed: ["f"], remaining: 0 }));
+        }),
+    );
+    runner.start(1);
+    runner.suspend();
+    release();
+    await vi.waitFor(() => expect(runner.getState().status).toBe("done"));
+    expect(runner.getState().failed).toEqual(["f"]);
+    runner.resume();
+    expect(step).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop のあとに resume しても、止める前の結果は戻らない", async () => {
+    const { runner, step } = setup([ok({ processed: processed("a"), remaining: 1 })]);
+    runner.start(2);
+    runner.suspend();
+    runner.start(1);
+    runner.stop();
+    runner.resume();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runner.getState().status).toBe("idle");
+    expect(step).toHaveBeenCalledTimes(1);
+  });
+
   it("書き換えたページを開いているエディタに知らせ、取り込みの完了は待たずに次を呼ぶ", async () => {
     const { runner, step, settled } = setup([
       ok({ processed: processed("a"), remaining: 1 }),
