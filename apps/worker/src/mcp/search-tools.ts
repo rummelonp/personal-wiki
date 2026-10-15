@@ -7,6 +7,7 @@ import {
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
   listBacklinks,
+  listBacklinksByTitle,
   listRecentPages,
   type PageList,
   type PageSummary,
@@ -113,23 +114,45 @@ export const listBacklinksTool = defineTool({
   name: "list_backlinks",
   scope: "read",
   title: "参照元",
-  description:
-    "本文の `[[title]]` で id のページへリンクしているページを、更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
+  description: [
+    "本文の `[[title]]` でそのページへリンクしているページを、更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
+    "id と title はどちらか一方だけを指定する。title で引くと、まだ作られていないページ（`[[title]]` のリンク先が無いもの）のリンク元も返る。title は大文字小文字と全角半角を区別しない。",
+    "id で引くとき、id のページが無ければ not_found。",
+  ].join("\n"),
   inputSchema: z.strictObject({
-    id: pageIdSchema,
+    id: pageIdSchema.optional(),
+    title: z.string().describe("リンク先のページの title。まだ無いページでもよい").optional(),
     limit: limitSchema(LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT),
     cursor: cursorSchema,
   }),
   annotations: READ_ONLY,
-  async run({ id, limit, cursor }, ctx) {
-    if (!isPageId(id)) return toolError({ error: "not_found" });
+  async run({ id, title, limit, cursor }, ctx) {
+    if ((id === undefined) === (title === undefined)) {
+      return toolError({
+        error: "invalid_arguments",
+        message: "id と title のどちらか一方だけを指定する",
+      });
+    }
+    if (id !== undefined && !isPageId(id)) return toolError({ error: "not_found" });
     const paging = readCursor(cursor);
     if (!paging.ok) return invalidCursor();
-    const list = await listBacklinks(ctx.db, id, {
+    const options = {
       limit: limit ?? LIST_DEFAULT_LIMIT,
       cursor: paging.cursor,
       readable: readableVisibilityOf(ctx.principal),
-    });
+    };
+    if (id === undefined) {
+      const list = await listBacklinksByTitle(ctx.db, title as string, options);
+      if (list === null) {
+        return toolError({
+          error: "invalid_field",
+          field: "title",
+          message: "title が空か、空白だけになっている",
+        });
+      }
+      return listResult(list, ctx.origin);
+    }
+    const list = await listBacklinks(ctx.db, id, options);
     if (list === null) return toolError({ error: "not_found" });
     return listResult(list, ctx.origin);
   },

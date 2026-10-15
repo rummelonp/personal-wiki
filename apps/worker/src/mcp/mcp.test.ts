@@ -263,7 +263,11 @@ describe("tools/list", () => {
     });
     expect(byName.list_recent?.inputSchema.required ?? []).toEqual([]);
     expect(byName.list_recent?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
-    expect(byName.list_backlinks?.inputSchema.required).toEqual(["id"]);
+    expect(byName.list_backlinks?.inputSchema.required ?? []).toEqual([]);
+    expect(Object.keys(byName.list_backlinks?.inputSchema.properties ?? {})).toEqual(
+      expect.arrayContaining(["id", "title"]),
+    );
+    expect(byName.list_backlinks?.description).toContain("まだ作られていないページ");
     for (const name of ["search", "list_recent", "list_backlinks", "read_page"]) {
       expect(byName[name]?.annotations.readOnlyHint).toBe(true);
     }
@@ -726,6 +730,100 @@ describe("検索と一覧の tool", () => {
       isError: true,
       json: { field: "cursor" },
     });
+  });
+
+  it("list_backlinks は title でも引け、まだ無いページのリンク元を返す", async () => {
+    const { call, clock } = await mcpClient({ name: "writer" });
+    const { json: target } = await call("create_page", { title: "Target", body: "" });
+    clock.now += 1000;
+    const { json: viaTarget } = await call("create_page", {
+      title: "Via Target",
+      body: "[[Target]]",
+    });
+    clock.now += 1000;
+    const { json: viaMissing } = await call("create_page", {
+      title: "Via Missing",
+      body: "[[Ghost Page]]",
+    });
+    clock.now += 1000;
+    const { json: viaBoth } = await call("create_page", {
+      title: "Via Both",
+      body: "[[ghost page]] と [[Target]]",
+    });
+    await call("create_page", { title: "Ghost Page Self", body: "[[Ghost Page Self]]" });
+
+    const reader = await mcpClient({ name: "reader", scopes: "read" });
+    const ids = (outcome: ToolOutcome) => (outcome.json.pages as { id: string }[]).map((p) => p.id);
+
+    // 作られていないページの title でも、全角半角と大文字小文字を区別せずにリンク元が返る
+    const missing = await reader.call("list_backlinks", { title: "ＧＨＯＳＴ Page" });
+    expect(missing.isError).toBe(false);
+    expect(ids(missing)).toEqual([viaBoth.id, viaMissing.id]);
+    expect(missing.json.nextCursor).toBeNull();
+    expect(await reader.call("list_backlinks", { title: "Nobody Links Here" })).toEqual({
+      isError: false,
+      json: { pages: [], nextCursor: null },
+    });
+
+    // 作られているページを title で引いた結果は、id で引いた結果と同じ
+    const byTitle = await reader.call("list_backlinks", { title: "target" });
+    expect(ids(byTitle)).toEqual([viaBoth.id, viaTarget.id]);
+    expect(byTitle).toEqual(await reader.call("list_backlinks", { id: target.id }));
+
+    const first = await reader.call("list_backlinks", { title: "Ghost Page", limit: 1 });
+    expect(ids(first)).toEqual([viaBoth.id]);
+    const rest = await reader.call("list_backlinks", {
+      title: "Ghost Page",
+      limit: 1,
+      cursor: first.json.nextCursor,
+    });
+    expect(ids(rest)).toEqual([viaMissing.id]);
+    expect(rest.json.nextCursor).toBeNull();
+
+    // 自分自身へのリンクはリンク元に含めない
+    expect(ids(await reader.call("list_backlinks", { title: "Ghost Page Self" }))).toEqual([]);
+  });
+
+  it("list_backlinks は id と title の指定の誤りを invalid_arguments か invalid_field で返す", async () => {
+    const { call } = await mcpClient({ scopes: "read write" });
+    const { json: target } = await call("create_page", { title: "Target", body: "" });
+
+    for (const args of [{}, { id: target.id, title: "Target" }, { limit: 5 }]) {
+      expect(await call("list_backlinks", args)).toMatchObject({
+        isError: true,
+        json: { error: "invalid_arguments", message: expect.any(String) },
+      });
+    }
+    for (const title of ["", "  　 "]) {
+      expect(await call("list_backlinks", { title })).toMatchObject({
+        isError: true,
+        json: { error: "invalid_field", field: "title" },
+      });
+    }
+    expect(await call("list_backlinks", { title: "Target", cursor: "x" })).toMatchObject({
+      isError: true,
+      json: { error: "invalid_field", field: "cursor" },
+    });
+    expect((await call("list_backlinks", { title: 1 })).isError).toBe(true);
+  });
+
+  it("list_backlinks の title 引きは、read の token で REST の by-title と同じリンク元を返す", async () => {
+    const writer = await mcpClient({ name: "writer" });
+    const { json: open } = await writer.call("create_page", { title: "Open", body: "[[Ghost]]" });
+    const { json: hidden } = await writer.call("create_page", {
+      title: "Hidden",
+      body: "[[Ghost]]",
+    });
+    await setVisibility(open.id as string, "public");
+
+    // read の token は draft も読める（id で引く list_backlinks と同じ）。REST の by-title も同じ集合を返す
+    const reader = await mcpClient({ name: "reader", scopes: "read" });
+    const viaMcp = await reader.call("list_backlinks", { title: "Ghost" });
+    const viaRest = await reader.request("/api/pages/by-title/backlinks?title=Ghost");
+    const restIds = ((await viaRest.json()) as { pages: { id: string }[] }).pages.map((p) => p.id);
+    const mcpIds = (viaMcp.json.pages as { id: string }[]).map((p) => p.id);
+    expect(mcpIds).toEqual(restIds);
+    expect([...mcpIds].sort()).toEqual([open.id, hidden.id].sort());
   });
 });
 

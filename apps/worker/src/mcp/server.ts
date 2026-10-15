@@ -27,7 +27,7 @@ const INSTRUCTIONS = [
   "- メモや調べた結果は append_to_page で末尾に足す。update_page での本文全体の書き換えは構成を直すときだけ。",
   "- 作るノートは draft。draft も URL を知っていれば誰でも読めるので、パスワード、API キー、トークン、個人情報などの秘密を書かない。",
   "- 公開範囲は tool から変えられない。公開はオーナーがブラウザで行うので、頼まれたらオーナーに伝える。frontmatter に書いても反映されない。",
-  "- 本文の `[[title]]` は別ノートへのリンク。参照元は list_backlinks、最近の動きは list_recent で見る。",
+  "- 本文の `[[title]]` は別ノートへのリンク。参照元は list_backlinks（id か title で引く。まだ無いノートの title でもよい）、最近の動きは list_recent で見る。",
   "- title を変えても、他のノートの `[[旧 title]]` はすぐには書き換わらず、それまで新しい title の backlink に出ない。オーナーが wiki を開いたときなどに順に書き換わり、そのノート（title を変えたノート自身を含む）の version が進む。",
 ].join("\n");
 
