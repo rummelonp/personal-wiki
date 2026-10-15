@@ -1,11 +1,4 @@
-import {
-  type ComponentProps,
-  type ComponentType,
-  lazy,
-  Suspense,
-  useEffect,
-  useState,
-} from "react";
+import { Suspense, useEffect, useState } from "react";
 import { fetchMe, logout, NO_FEATURES } from "./api";
 import { setDocumentTitle } from "./document-title";
 import { saveAllEditors } from "./editor-lifecycle";
@@ -18,59 +11,11 @@ import { NotFound } from "./NotFound";
 import { Notice, NoticeDockProvider } from "./Notice";
 import { useNewPageRequest } from "./new-page";
 import { forgetTitles } from "./page-titles";
+import { PageView, preloadPageView } from "./page-view-loader";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { RailLayout } from "./Rail";
-import { parseRoute, useRoute } from "./route";
+import { useRoute } from "./route";
 import { isSwitcherShortcut } from "./shortcut";
-
-type PageViewModule = typeof import("./PageView");
-type PageViewProps = ComponentProps<PageViewModule["PageView"]>;
-
-let loadedPageView: PageViewModule | null = null;
-
-// エディタ（CodeMirror）はページの画面でしか使わないので、トップと検索の初回の読み込みから外す。
-// 読み込みの失敗（デプロイで古い版の chunk が消えた後の遷移など）は、画面全体を壊さず再読み込みを促す
-const loadPageView = () =>
-  import("./PageView").then((module) => {
-    loadedPageView = module;
-    return module;
-  });
-
-// 読み込み済みなら、then を同期で呼ぶ thenable を返す。lazy はこれを待たずに描画するので、
-// 新規作成の画面を開く操作（openNewPage の flushSync）の中で editor の mount と focus まで済む。
-// Promise を返すと、読み込み済みでも最初の描画が 1 度 suspend し、iOS でキーボードが出ない
-type PageViewExport = { default: ComponentType<PageViewProps> };
-const PageView = lazy((): Promise<PageViewExport> => {
-  const loaded = loadedPageView;
-  if (loaded !== null) {
-    const ready: PromiseLike<PageViewExport> = {
-      // biome-ignore lint/suspicious/noThenProperty: 同期に解決する thenable がここでの目的
-      then: (resolve) => resolve?.({ default: loaded.PageView }) as never,
-    };
-    // lazy が呼ぶのは then だけ
-    return ready as Promise<PageViewExport>;
-  }
-  return loadPageView().then(
-    (module) => ({ default: module.PageView }),
-    () => ({ default: PageViewLoadFailed }),
-  );
-});
-
-// ページの URL で開いたときは、/api/me の応答を待つ間にエディタも読み込んでおく
-const initialRoute = parseRoute(window.location.pathname, window.location.search);
-if (initialRoute.name === "page" || initialRoute.name === "title" || initialRoute.name === "new") {
-  loadPageView().catch(() => {});
-}
-
-function PageViewLoadFailed() {
-  return (
-    <RailLayout rail={null}>
-      <Notice inline tone="error" title="画面を読み込めませんでした">
-        <p>通信を確かめて、ページを再読み込みしてください。</p>
-      </Notice>
-    </RailLayout>
-  );
-}
 
 export function App() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
@@ -188,7 +133,7 @@ export function App() {
 
   // owner の + で開く新規作成の画面が suspend しないよう、owner と分かった時点で読み込んでおく
   useEffect(() => {
-    if (isOwner) loadPageView().catch(() => {});
+    if (isOwner) preloadPageView();
   }, [isOwner]);
 
   // ⌘K（Mac）/ Ctrl+K で quick switcher を開閉する。ほかのダイアログが開いている間は奪わない
