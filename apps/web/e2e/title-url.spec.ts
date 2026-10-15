@@ -58,7 +58,7 @@ test.describe("anonymous", () => {
     expect(await canonical(page)).toBe(`${E2E_ORIGIN}${underscored(title)}`);
   });
 
-  test("直接開いた取得中の帯は `_` を空白にした title を出し、取得後は本当の title になる", async ({
+  test("直接開いた取得中の帯は `_` でつないだ URL を空白にした title で出し、取得後は本当の title になる", async ({
     page,
     api,
   }, testInfo) => {
@@ -81,11 +81,23 @@ test.describe("anonymous", () => {
 
     await page.goto(underscored(spaced), { waitUntil: "commit" });
     await expect(page.locator(".note-title")).toHaveText(spaced);
+
+    // `_` を含む title も、覚えていなければ取得中は空白で出て、取得後に本当の title になる
+    const reopened = await page.context().newPage();
+    await reopened.route(
+      (url) => url.pathname === "/api/pages/by-title",
+      async (route) => {
+        await gate;
+        await route.continue().catch(() => {});
+      },
+    );
+    await reopened.goto(`/${encodeURIComponent(snake)}`, { waitUntil: "commit" });
+    await expect(reopened.locator(".note-title")).toHaveText(snake.replaceAll("_", " "));
+
     release();
     await expect(page.getByRole("heading", { level: 1, name: spaced, exact: true })).toBeVisible();
-
-    // `_` を含む title は、取得後に本当の title になる
-    await page.goto(`/${encodeURIComponent(snake)}`);
-    await expect(page.getByRole("heading", { level: 1, name: snake, exact: true })).toBeVisible();
+    await expect(
+      reopened.getByRole("heading", { level: 1, name: snake, exact: true }),
+    ).toBeVisible();
   });
 });

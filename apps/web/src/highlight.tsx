@@ -49,16 +49,16 @@ export interface MatchOptions {
   underscoreAsSpace?: boolean;
 }
 
-/**
- * foldTitle と同じ順で畳む。`_` を空白にするのは、語の trim の後（"_a" の先頭の `_` は残る）。
- * 文字ごとに畳むので、空白の並びの畳み込みは行わない。
- */
+/** text を文字ごとに畳む。空白の並びは畳まない（text の位置を元の範囲に戻すため）。 */
 const folding = (underscoreAsSpace: boolean) => (text: string) => {
   const folded = caseFold(nfkc(text));
   return underscoreAsSpace ? folded.replaceAll("_", " ") : folded;
 };
 
-/** 語は空白を含めて文字どおりに当てる。検索 API の trigram も、空白を含む語を 1 つの並びとして照合する。 */
+/**
+ * 語は空白を含めて文字どおりに当てる。検索 API の trigram も、空白を含む語を 1 つの並びとして照合する。
+ * `_` を空白にするのは trim の後で、foldTitle と同じ順。"_a" の先頭の `_` は空白として残る。
+ */
 function foldNeedles(needles: readonly string[], underscoreAsSpace: boolean): string[] {
   return needles
     .map((needle) => {

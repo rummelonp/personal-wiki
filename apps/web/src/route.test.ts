@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { forgetTitles, loadingTitleFor } from "./page-titles";
 import {
   homeHref,
   missingPagePath,
@@ -89,6 +90,19 @@ describe("href", () => {
   it("まだ無いページへのリンクは、空白を `_` にしない", () => {
     expect(missingPagePath("a b")).toBe("/a%20b");
     expect(parseRoute("/a%20b", "")).toEqual({ name: "title", title: "a b" });
+  });
+
+  it("まだ無いページの `_` を含む title は、移った先の取得中の帯でも空白に読み替えない", () => {
+    try {
+      expect(missingPagePath("snake_case")).toBe("/snake_case");
+      expect(loadingTitleFor("snake_case")).toBe("snake_case");
+      // 覚えていない URL は空白の title として読む
+      expect(loadingTitleFor("other_note")).toBe("other note");
+      // path にならない title は移らないので覚えない
+      expect(missingPagePath("api")).toBeNull();
+    } finally {
+      forgetTitles();
+    }
   });
 });
 
