@@ -1,4 +1,4 @@
-import { foldTitle } from "./title";
+import { foldKeepingUnderscore } from "./title";
 
 /*
  * ページの URL（`/p/<id>` と `/<title>`）の規則。Worker の配信と OGP、SPA のルーティングが
@@ -21,7 +21,7 @@ export const WORKER_PATH_SEGMENTS: readonly string[] = [
 ];
 
 /**
- * `/<title>` の URL に使わない先頭の segment（foldTitle で畳んだ形）。
+ * `/<title>` の URL に使わない先頭の segment（foldKeepingUnderscore で畳んだ形）。
  * - Worker の分と、SPA が開く `/p/<id>` の `p`
  * - Static Assets が Worker より先に応答するパス。`/index.html` と `/index` は、Static Assets の
  *   html_handling（auto-trailing-slash）が `/` への 307 にするので、同じ title のページを開けない。
@@ -49,13 +49,13 @@ export const pageIdPath = (id: string): string => `/p/${id}`;
  *
  * パスでは `/` もエンコードするが、プロキシや配信の層が `%2F` を戻しても別のパスに入らないよう、
  * title_key と同じ畳み方（大文字小文字、全角半角を区別しない）をしてから `/` で区切って判定する。
- * 畳んでから区切るのは、NFKC で全角の `／` が `/` になるため。
+ * 畳んでから区切るのは、NFKC で全角の `／` が `/` になるため。`_` は空白にしない（`/_auth` を予約語として拒む）。
  * ただし末尾が `/` の title だけは、`%2F` を戻された URL（`/Foo/`）が末尾の `/` を除いた `Foo` を開く。
  * - 先頭が予約語か空（`/api` が `//api` になる）なら使わない。
  * - `.` と `..` の segment は URL の解決で消えたり前の segment を消したりするので、どこにあっても使わない。
  */
 export function titlePath(title: string): string | null {
-  const segments = foldTitle(title).split("/");
+  const segments = foldKeepingUnderscore(title).split("/");
   const head = segments[0] ?? "";
   if (head === "" || RESERVED_TITLE_SEGMENTS.includes(head)) return null;
   if (segments.some((segment) => segment === "." || segment === "..")) return null;

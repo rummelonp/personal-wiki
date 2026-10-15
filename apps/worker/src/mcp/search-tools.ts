@@ -116,7 +116,7 @@ export const listBacklinksTool = defineTool({
   title: "参照元",
   description: [
     "本文の `[[title]]` でそのページへリンクしているページを、更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
-    "id と title はどちらか一方だけを指定する。title で引くと、まだ作られていないページ（`[[title]]` のリンク先が無いもの）のリンク元も返る。title は大文字小文字と全角半角を区別しない。",
+    "id と title はどちらか一方だけを指定する。title で引くと、まだ作られていないページ（`[[title]]` のリンク先が無いもの）のリンク元も返る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "id で引くとき、id のページが無ければ not_found。",
   ].join("\n"),
   inputSchema: z.strictObject({

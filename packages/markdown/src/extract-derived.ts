@@ -1,4 +1,4 @@
-import { foldTitle, normalizeTitleKey } from "@personal-wiki/domain";
+import { foldKeepingUnderscore, normalizeTitleKey } from "@personal-wiki/domain";
 import { isAttachmentTarget } from "./embed";
 import { frontmatterEnd } from "./frontmatter";
 import { parseFrontmatterFields } from "./frontmatter-fields";
@@ -62,7 +62,7 @@ export function extractDerived(body: string): DerivedData {
   const tags: DerivedTag[] = [];
   const seenTags = new Set<string>();
   for (const name of [...frontmatterTags, ...extractTags(body)]) {
-    const tagKey = foldTitle(name);
+    const tagKey = foldKeepingUnderscore(name);
     if (seenTags.has(tagKey)) continue;
     seenTags.add(tagKey);
     tags.push({ tag: name, tagKey });

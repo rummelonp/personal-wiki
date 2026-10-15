@@ -2,11 +2,13 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { foldKeepingUnderscore, foldTitle } from "@personal-wiki/domain/title";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   backup,
   backupDirName,
   countSql,
+  DATA_MIGRATIONS,
   DATA_TABLES,
   defaultIo,
   EXCLUDED_TABLES,
@@ -505,6 +507,139 @@ describe("attachments の表を足す前の D1", () => {
     );
     expect(() => load(args(result.dir), ioFor(dest).io)).toThrow("not empty (attachments)");
     expect(dest.prepare("SELECT count(*) AS n FROM pages").get()).toEqual({ n: 0 });
+  });
+});
+
+describe("title_key の `_` を空白にする前のバックアップ", () => {
+  const BEFORE_UNDERSCORE = MIGRATION_FILES.filter((f) => f < "0008_title_key_underscore.sql");
+  const args = (dir: string) => ({ command: "load", remote: false, dir }) as const;
+
+  function backedUp(titles: string[]) {
+    const source = migratedDb(BEFORE_UNDERSCORE);
+    titles.forEach((title, i) => {
+      const id = String.fromCharCode(97 + i).repeat(22);
+      source.exec(
+        `INSERT INTO pages (id, visibility, version, created_at, updated_at, title_key, title, body) VALUES (${lit(id)}, 'draft', 1, 1, 1, ${lit(title.toLowerCase())}, ${lit(title)}, '')`,
+      );
+    });
+    return backup(
+      { command: "backup", remote: false, out: tmp(), withTokens: false },
+      ioFor(source).io,
+    ).dir;
+  }
+  const keys = (db: DatabaseSync) =>
+    db
+      .prepare("SELECT title_key AS k FROM pages ORDER BY id")
+      .all()
+      .map((r) => r.k);
+
+  it("migration を当てた D1 へ load すると、title_key を新しい規則に書き換える", () => {
+    const dir = backedUp(["A_B", "__init__", "c d"]);
+    const dest = migratedDb();
+    load(args(dir), ioFor(dest).io);
+    expect(keys(dest)).toEqual(["a b", "  init  ", "c d"]);
+
+    const same = migratedDb(BEFORE_UNDERSCORE);
+    load(args(dir), ioFor(same).io);
+    expect(keys(same)).toEqual(["a_b", "__init__", "c d"]);
+  });
+
+  it("新しい規則で生きたページの key が重なると、行を残したまま書き換えの SQL を示して止まる", () => {
+    const dir = backedUp(["a_b", "a b"]);
+    const dest = migratedDb();
+    expect(() => load(args(dir), ioFor(dest).io)).toThrow(
+      /0008_title_key_underscore\.sql.*\(a{22} "a_b", b{22} "a b"\).*UPDATE pages SET title_key/,
+    );
+    expect(keys(dest)).toEqual(["a_b", "a b"]);
+  });
+});
+
+describe("0008_title_key_underscore.sql のデータの書き換え", () => {
+  const FILE = "0008_title_key_underscore.sql";
+  const BEFORE = MIGRATION_FILES.filter((f) => f < FILE);
+  const A = "a".repeat(22);
+  const B = "b".repeat(22);
+  const C = "c".repeat(22);
+  const S = "s".repeat(22);
+  const DELETED = "d".repeat(22);
+
+  /** 旧規則（`_` を区別する）の key で pages を入れる */
+  function seedOld(db: DatabaseSync, id: string, title: string, deleted = false) {
+    db.exec(
+      `INSERT INTO pages (id, visibility, version, created_at, updated_at, deleted_at, deleted_by, title_key, title, body) VALUES (${lit(id)}, 'draft', 1, 1, 1, ${deleted ? 2 : "NULL"}, ${deleted ? "'owner'" : "NULL"}, ${lit(foldKeepingUnderscore(title))}, ${lit(title)}, '')`,
+    );
+  }
+  const apply = (db: DatabaseSync) => db.exec(readFileSync(new URL(FILE, MIGRATIONS_DIR), "utf8"));
+
+  it("DATA_MIGRATIONS の文は migration の SQL に含まれる", () => {
+    const sql = readFileSync(new URL(FILE, MIGRATIONS_DIR), "utf8").replace(/\s+/g, " ");
+    const statement = DATA_MIGRATIONS[FILE] as string;
+    expect(statement).toBeDefined();
+    expect(sql).toContain(`${statement};`);
+  });
+
+  it("pages の key を foldTitle に一致させ、links と link_rewrites の重なりを 1 行に畳んで解決先を付け直す", () => {
+    const db = migratedDb(BEFORE);
+    seedOld(db, A, "Foo_Bar");
+    seedOld(db, B, "__Init__");
+    seedOld(db, C, "plain");
+    seedOld(db, S, "source");
+    // 削除済みは key が重なっても一意制約の対象外
+    seedOld(db, DELETED, "foo bar", true);
+    db.exec(
+      `INSERT INTO links (source_page_id, target_title_key, target_page_id) VALUES
+         (${lit(S)}, 'foo bar', NULL),
+         (${lit(S)}, 'foo_bar', ${lit(A)}),
+         (${lit(S)}, '__init__', ${lit(B)}),
+         (${lit(S)}, 'plain', ${lit(C)})`,
+    );
+    db.exec(
+      `INSERT INTO link_rewrites (source_page_id, target_page_id, old_title_key, actor, created_at) VALUES
+         (${lit(S)}, ${lit(A)}, 'old name', 'owner', 1),
+         (${lit(S)}, ${lit(A)}, 'old_name', 'owner', 2),
+         (${lit(S)}, ${lit(B)}, 'x_y', 'owner', 3)`,
+    );
+
+    apply(db);
+
+    const pages = db.prepare("SELECT title, title_key AS k FROM pages").all();
+    for (const p of pages) expect(p.k).toBe(foldTitle(String(p.title)));
+    expect(pages.map((p) => p.k)).toContain("  init  ");
+
+    const links = db
+      .prepare("SELECT target_title_key AS k, target_page_id AS t FROM links ORDER BY k")
+      .all();
+    expect(links).toEqual([
+      { k: "  init  ", t: B },
+      { k: "foo bar", t: A },
+      { k: "plain", t: C },
+    ]);
+
+    const rewrites = db
+      .prepare("SELECT target_page_id AS t, old_title_key AS k FROM link_rewrites ORDER BY k")
+      .all();
+    expect(rewrites).toEqual([
+      { t: A, k: "old name" },
+      { t: B, k: "x y" },
+    ]);
+  });
+
+  it("生きたページ同士の key が重なると一意制約で失敗し、何も書き換わらない", () => {
+    const db = migratedDb(BEFORE);
+    seedOld(db, A, "a_b");
+    seedOld(db, B, "a b");
+    seedOld(db, C, "c_d");
+    db.exec(
+      `INSERT INTO links (source_page_id, target_title_key, target_page_id) VALUES (${lit(C)}, 'a_b', ${lit(A)})`,
+    );
+    const snapshot = () => [
+      db.prepare("SELECT id, title_key FROM pages ORDER BY id").all(),
+      db.prepare("SELECT * FROM links").all(),
+    ];
+    const before = snapshot();
+
+    expect(() => apply(db)).toThrow(/UNIQUE constraint failed/);
+    expect(snapshot()).toEqual(before);
   });
 });
 

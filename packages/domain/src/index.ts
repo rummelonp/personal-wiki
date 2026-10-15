@@ -26,6 +26,7 @@ export {
   TRIGRAM_MIN_CHARS,
 } from "./search";
 export {
+  foldKeepingUnderscore,
   foldTitle,
   normalizeTitleKey,
   singleLineTitle,

@@ -214,6 +214,29 @@ migration は派生データの表を足すことがあります。
 migration の前からあるページは、これを回すまで一覧に抜粋が出ません。
 作り直しの内容は [operations.md](./operations.md) の「派生データの作り直し」にあります。
 
+### title の `_` と空白をそろえる migration
+
+`0008_title_key_underscore.sql` から、title の重複の検査と title での参照は `_` と空白を同じ文字として扱います。
+この migration は保存済みの title_key を新しい規則に書き換えます。
+`a_b` と `a b` のように `_` と空白だけが違う title のページが両方あると、`UNIQUE constraint failed` で止まります。
+止まったときは migration 全体が巻き戻り、D1 は前のままです。
+どちらかのページの title を変えてから、`pnpm db:migrate:remote` をもう一度実行します。
+重なるページは次で探せます。
+
+```sh
+node scripts/deploy.mjs config
+pnpm exec wrangler d1 execute DB --remote --config wrangler.deploy.json --command \
+  "SELECT id, title FROM pages WHERE deleted_at IS NULL AND replace(title_key, '_', ' ') IN (SELECT replace(title_key, '_', ' ') FROM pages WHERE deleted_at IS NULL GROUP BY 1 HAVING count(*) > 1)"
+```
+
+links と待っているリンクの書き換えの key もこの migration が書き換えます。
+タグは `_` と空白を区別したままなので変わりません。
+
+migration からデプロイまでの間は前の版の Worker が動いていて、この間のページの保存は title_key を古い規則で計算し直します。
+本文だけの保存でも、`_` を含む title の key が `a_b` に戻ります。
+戻った key は title の変更とみなされ、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれます。
+この migration を当てる更新では、デプロイのあとに「前の版に戻す」の項の SQL を 1 回実行して key をそろえ直し、そのあとに `derived:rebuild` を実行します。
+
 ## 前の版に戻す
 
 Worker を前の版に戻して再デプロイしたあとは、次の点に注意します。
@@ -227,3 +250,15 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
   前の版の deploy は予約に触れないので、外すならダッシュボードで外します
 - 新規作成が `/?new` の画面でない版に戻すと、web は localStorage の `personal-wiki:draft:new:` で始まる key（作れなかった新規作成の内容の退避）を読みません。
   退避はブラウザに残り、今の版に戻すと、次に + で開いた新規作成の画面で復元を尋ねます
+- `0008_title_key_underscore.sql` を当てたまま、`_` を空白と同じに扱わない版に戻すと、`_` を含む title のページを title で引けず、`[[a_b]]` も解決しません。
+  重複の検査も `a b` があるのに `a_b` を作れるようになります。
+  title_key は title を正規化した値で SQL では元の形に作り直せないので、戻さずに前へ進めて直します。
+  戻している間は、`_` を含む title のページを保存するたびに（本文だけの保存でも）title_key が `a_b` に戻り、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれます。
+  今の版に戻したら、戻している間に保存したページと、その間に積まれたリンクの書き換えの key を次の SQL でもう一度そろえ、`derived:rebuild` を実行します。
+  `UNIQUE constraint failed` で止まったら、上の migration の項と同じくどちらかの title を変えてから再実行します
+
+  ```sh
+  node scripts/deploy.mjs config
+  pnpm exec wrangler d1 execute DB --remote --config wrangler.deploy.json --command \
+    "UPDATE pages SET title_key = replace(title_key, '_', ' ') WHERE instr(title_key, '_') > 0; UPDATE OR REPLACE link_rewrites SET old_title_key = replace(old_title_key, '_', ' ') WHERE instr(old_title_key, '_') > 0"
+  ```

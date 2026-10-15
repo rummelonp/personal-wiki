@@ -138,6 +138,17 @@ export const TOKEN_TABLES = ["api_tokens"];
 export const TABLE_MIGRATIONS = { attachments: "0006_attachments.sql" };
 
 /**
+ * ダンプする表の保存値を書き換えた migration と、その書き換えの SQL。バックアップの後にこの migration を
+ * 当てた D1 へ load すると、値はバックアップの時点の規則のまま入るので、load の後に同じ書き換えを当てる。
+ * ダンプしない表（links など）の分は derived:rebuild が作り直すので含めない。
+ * @type {Record<string, string>}
+ */
+export const DATA_MIGRATIONS = {
+  "0008_title_key_underscore.sql":
+    "UPDATE pages SET title_key = replace(title_key, '_', ' ') WHERE instr(title_key, '_') > 0",
+};
+
+/**
  * 適用済みの migration が migrations である D1 から、ダンプする表。
  * @param {boolean} withTokens
  * @param {string[]} migrations
@@ -784,7 +795,39 @@ export function load(args, io) {
         .join(", ")}`,
     );
   }
-  return { tables: after, ahead: applied.slice(manifest.migrations.length) };
+  const ahead = applied.slice(manifest.migrations.length);
+  for (const name of ahead) {
+    const sql = DATA_MIGRATIONS[name];
+    if (sql === undefined) continue;
+    try {
+      query(sql, target, io);
+    } catch (error) {
+      // 生きたページ同士が新しい規則で同じ title_key になると、一意索引で止まる。行は入ったまま残る
+      throw new Error(
+        `loaded the backup, but could not apply the data change of ${name}: ${error instanceof Error ? error.message : error}. Rename one of the conflicting pages (open it by /p/<id>)${conflictingPages(target, io)}, then run this SQL with wrangler d1 execute: ${sql}`,
+      );
+    }
+  }
+  return { tables: after, ahead };
+}
+
+/**
+ * `_` と空白だけが違う title で重なる生きたページ。エラーの案内に付けるだけなので、読めなければ空にする
+ * @param {Target} target
+ * @param {Io} io
+ */
+function conflictingPages(target, io) {
+  try {
+    const rows = query(
+      "SELECT id, title FROM pages WHERE deleted_at IS NULL AND replace(title_key, '_', ' ') IN (SELECT replace(title_key, '_', ' ') FROM pages WHERE deleted_at IS NULL GROUP BY 1 HAVING count(*) > 1) ORDER BY replace(title_key, '_', ' '), id",
+      target,
+      io,
+    );
+    if (rows.length === 0) return "";
+    return ` (${rows.map((r) => `${r.id} ${JSON.stringify(r.title)}`).join(", ")})`;
+  } catch {
+    return "";
+  }
 }
 
 /**

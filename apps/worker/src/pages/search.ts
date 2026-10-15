@@ -1,6 +1,6 @@
 import {
   foldForSearch,
-  foldTitle,
+  foldKeepingUnderscore,
   normalizeTitleKey,
   TRIGRAM_MIN_CHARS,
 } from "@personal-wiki/domain";
@@ -159,12 +159,12 @@ export type TagFilter = { ok: true; key: string } | { ok: false };
 const TAG_MAX_LENGTH = 200;
 
 /**
- * 表記を tags.tag_key と同じ畳み方（foldTitle）にする。ページをまたぐ照合はこの値で行う。
+ * 表記を tags.tag_key と同じ畳み方（foldKeepingUnderscore）にする。ページをまたぐ照合はこの値で行う。
  * 先頭の `#` は畳んだ後に 1 つだけ剥がす（frontmatter の tags と同じ許容）。畳む前に剥がすと、
  * 前に空白がある ` #a` や全角の `＃a` が、`#` を含む key になって何にも一致しない。
  */
 export function prepareTagFilter(raw: string): TagFilter {
-  const folded = foldTitle(raw);
+  const folded = foldKeepingUnderscore(raw);
   const key = folded.startsWith("#") ? folded.slice(1) : folded;
   return key === "" || key.length > TAG_MAX_LENGTH ? { ok: false } : { ok: true, key };
 }

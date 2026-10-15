@@ -28,14 +28,26 @@ export function caseFold(text: string): string {
 }
 
 /**
+ * `foldTitle` から `_` と空白の同一視だけを除いた畳み方。`_` を空白と区別したい比較に使う。
+ * タグは空白を含まない語なので、`#snake_case` を `snake case` と同じタグにしない。
+ */
+export function foldKeepingUnderscore(text: string): string {
+  return caseFold(text.normalize("NFKC").trim().replace(/\s+/g, " "));
+}
+
+/**
  * title_key と同じ比較規則で文字列を畳む。空文字列も返す全域関数。
  *
  * NFKC 正規化で全角/半角の英数や記号のゆれ（例: "Ａ" -> "A", "ｱ" -> "ア"）を吸収し、
  * 前後の空白を trim、連続する空白を単一スペースへ畳んでから case fold する。
+ * 最後に `_` を空白にする。URL では title の空白を `_` で書くので、`/a_b` で "a b" のページを引ける。
+ * `_` を置き換えるのは trim と空白の畳み込みの後で、`_` の並びは畳まず端も削らない
+ * （"__init__" は "init" と別の key になる）。この順にしておくと、`_` を区別していた旧規則の key に
+ * SQL の `replace(title_key, '_', ' ')` を当てるだけで新規則の key になり、D1 の保存値を SQL だけで移せる。
  * autocomplete の入力途中の query のように、空でありうる文字列を title と突き合わせるときに使う。
  */
 export function foldTitle(text: string): string {
-  return caseFold(text.normalize("NFKC").trim().replace(/\s+/g, " "));
+  return foldKeepingUnderscore(text).replace(/_/g, " ");
 }
 
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/g;

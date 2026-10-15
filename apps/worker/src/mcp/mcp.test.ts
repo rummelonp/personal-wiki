@@ -825,6 +825,28 @@ describe("検索と一覧の tool", () => {
     expect(mcpIds).toEqual(restIds);
     expect([...mcpIds].sort()).toEqual([open.id, hidden.id].sort());
   });
+
+  it("title で引く tool は `_` と空白を同じ文字として扱い、重複も同じ規則で検査する", async () => {
+    const { call } = await mcpClient({ name: "writer" });
+    const { json: target } = await call("create_page", { title: "a b", body: "" });
+    const { json: source } = await call("create_page", { title: "source", body: "[[a_b]]" });
+
+    expect(await call("read_page", { title: "A_B" })).toMatchObject({
+      isError: false,
+      json: { id: target.id, title: "a b" },
+    });
+    for (const title of ["a_b", "a b"]) {
+      const listed = await call("list_backlinks", { title });
+      expect(
+        (listed.json.pages as { id: string }[]).map((p) => p.id),
+        title,
+      ).toEqual([source.id]);
+    }
+    expect(await call("create_page", { title: "a_b", body: "" })).toMatchObject({
+      isError: true,
+      json: { error: "title_conflict" },
+    });
+  });
 });
 
 describe("リクエストをまたいだ状態", () => {

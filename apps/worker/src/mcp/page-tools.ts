@@ -49,7 +49,7 @@ export const readPageTool = defineTool({
   title: "ページを読む",
   description: [
     "ページを id か title で 1 件読み、本文（Markdown）、version、visibility、URL を返す。",
-    "id と title はどちらか一方だけを指定する。本文の `[[title]]` のリンクは title を渡して辿る。title は大文字小文字と全角半角を区別しない。",
+    "id と title はどちらか一方だけを指定する。本文の `[[title]]` のリンクは title を渡して辿る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "titleUrl は public のページで、title が予約語と重ならないときだけ返る。",
   ].join("\n"),
   inputSchema: z.strictObject({
@@ -88,7 +88,7 @@ export const createPageTool = defineTool({
   title: "ページを作る",
   description: [
     "ページを新しく作る。作る前に search で同じ主題を探し、あれば作らずに append_to_page か update_page を使う。",
-    "ページは常に draft で作られる。title は wiki 全体で一意で、重なると title_conflict になる。",
+    "ページは常に draft で作られる。title は wiki 全体で一意で、重なると title_conflict になる。`_` と空白だけが違う title も重なるとみなす。",
     LIMITS,
     NO_SECRETS,
   ].join("\n"),

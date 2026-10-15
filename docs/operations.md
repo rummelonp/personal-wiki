@@ -135,6 +135,11 @@ export の形式は、本文にもとからある 2 文字の `\n` を、改行�
 - 復元先の migration の一覧が、バックアップの時点のものを先頭に含まなければ止めます（復元先が先に進んでいるのは許します）
 - 対象の表が空でなければ止めます
 - 流し込んだあとに、復元先から読み直して行数と SHA-256 を `manifest.json` と照合します
+- バックアップより後の migration が保存値の規則を変えていれば、照合のあとにその書き換えを当てます（`0008_title_key_underscore.sql` の title_key）。
+  `_` と空白だけが違う title のページが両方あると止まり、流し込んだ行は残ります。
+  エラーに重なっているページの id と title が出ます。
+  `deploy:remote` のあとに `/p/<id>` からどちらかの title を変え、表示された SQL を `wrangler d1 execute` で実行し、最後に `derived:rebuild` を実行します。
+  重なりを探し直す SQL は [deploy.md](./deploy.md) の「title の `_` と空白をそろえる migration」にあります
 
 ```sh
 pnpm exec wrangler d1 create <名前> --update-config=false  # 表示された database_id と <名前> を deploy.env の D1_DATABASE_ID と D1_DATABASE_NAME に書く

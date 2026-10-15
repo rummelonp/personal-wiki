@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isErr, isOk } from "./result";
-import { foldTitle, normalizeTitleKey, wikiLinkUnsafeChars } from "./title";
+import { foldKeepingUnderscore, foldTitle, normalizeTitleKey, wikiLinkUnsafeChars } from "./title";
 
 describe("wikiLinkUnsafeChars", () => {
   it("returns nothing for a title a WikiLink can target", () => {
@@ -24,6 +24,23 @@ describe("wikiLinkUnsafeChars", () => {
 describe("foldTitle", () => {
   it("returns an empty string instead of failing for blank input", () => {
     expect(foldTitle("   ")).toBe("");
+  });
+
+  it("treats `_` as a space after trimming and collapsing whitespace", () => {
+    expect(foldTitle("a_b")).toBe(foldTitle("a b"));
+    expect(foldTitle("A_B")).toBe("a b");
+    expect(foldTitle("a__b")).toBe("a  b");
+    expect(foldTitle("a__b")).not.toBe(foldTitle("a b"));
+    expect(foldTitle("__init__")).toBe("  init  ");
+    expect(foldTitle("__init__")).not.toBe(foldTitle("init"));
+    // 全角の `＿` も NFKC で `_` になる
+    expect(foldTitle("a＿b")).toBe("a b");
+  });
+
+  it("equals replacing `_` with a space in the key that keeps `_`", () => {
+    for (const title of ["a_b", " a  _ b ", "__x__", "Ａ＿Ｂ", "a\t_b"]) {
+      expect(foldTitle(title)).toBe(foldKeepingUnderscore(title).replaceAll("_", " "));
+    }
   });
 
   it("applies the same folding as normalizeTitleKey", () => {
