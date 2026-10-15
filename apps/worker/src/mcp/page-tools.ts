@@ -20,7 +20,10 @@ import {
 import { pageUrls } from "../pages/urls";
 import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool";
 
-const LIMITS = `上限は UTF-8 で title が ${MAX_TITLE_BYTES} バイト、body が ${MAX_BODY_BYTES} バイト。`;
+const LIMITS = [
+  `上限は UTF-8 で title が ${MAX_TITLE_BYTES} バイト、body が ${MAX_BODY_BYTES} バイト。`,
+  "title の改行とタブは空白に置き換わる。title に NUL などの制御文字、body と text に NUL を含めると invalid_field になる。",
+].join("");
 /** instructions を AI に渡さないクライアントもあるので、書き込みの tool ごとに description にも書く */
 const NO_SECRETS =
   "draft も URL を知っていれば誰でも読めるので、パスワードやトークンなどの秘密を書かない。";
