@@ -169,7 +169,7 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     probe.remove();
   });
 
-  it("最も長い文言（衝突）でも、ノートの幅と画面の幅からはみ出さない", async () => {
+  it("最も長い文言（衝突）でも、ノートの幅と画面の幅からはみ出さず、同時に出る通知の注意の色にそろう", async () => {
     await browserPage.viewport(width, 800);
     vi.mocked(updatePage).mockResolvedValue({
       ok: false,
@@ -198,5 +198,16 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     expect(rect.right).toBeLessThanOrEqual(note.right + 0.5);
     expect(state.scrollWidth).toBeLessThanOrEqual(state.clientWidth + 1);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+
+    // 同時に出る通知は warn。状態の行も赤にせず、点だけを通知の枠と同じ注意の色にする
+    const notice = query(".notice-warn");
+    expect(getComputedStyle(query(".save-state-conflict .dot")).backgroundColor).toBe(
+      getComputedStyle(notice).borderTopColor,
+    );
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-fg)";
+    query(".note").append(probe);
+    expect(getComputedStyle(state).color).toBe(getComputedStyle(probe).color);
+    probe.remove();
   });
 });
