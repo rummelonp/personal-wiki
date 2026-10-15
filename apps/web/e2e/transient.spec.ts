@@ -63,7 +63,8 @@ test.describe("ページを開く途中", () => {
       expect(await page.locator(".note .skeleton-body .skeleton").count()).toBeGreaterThanOrEqual(
         3,
       );
-      await expect(page.getByRole("status")).toHaveText("読み込み中…");
+      // リンクの書き換えの空の status も同じ role を持つので、読み込みの文で絞る
+      await expect(page.getByRole("status").filter({ hasText: "読み込み中…" })).toHaveCount(1);
 
       hold.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });

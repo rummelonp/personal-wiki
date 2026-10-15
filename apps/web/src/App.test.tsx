@@ -735,7 +735,7 @@ describe("App の owner の画面", () => {
         });
       });
     };
-    const statusText = () => main()?.querySelector("[role='status']")?.textContent;
+    const statusText = () => main()?.querySelector(".save-state")?.textContent;
     const newBackupKeys = () =>
       Object.keys(localStorage).filter((key) => key.startsWith("personal-wiki:draft:new:"));
 

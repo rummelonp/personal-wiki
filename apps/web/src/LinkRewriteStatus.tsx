@@ -1,20 +1,120 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import { Link } from "./Link";
-import { type LinkRewriteRunner, linkRewrites } from "./link-rewrites";
-import { Notice } from "./Notice";
+import { useAfterFrames } from "./Loading";
+import { type LinkRewriteRunner, type LinkRewriteState, linkRewrites } from "./link-rewrites";
+import { Notice, type NoticeInteraction } from "./Notice";
 import { pageHref, pageHrefFor } from "./route";
+
+/** 成功だけで終わった報告を、閉じられなくても下げるまでの時間 */
+export const DONE_VISIBLE_MS = 10_000;
+
+const RUNNING_ANNOUNCEMENT = "他のページのリンクを書き換えています";
+
+function subscribeVisibility(onChange: () => void): () => void {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+const isDocumentHidden = () => document.visibilityState === "hidden";
+
+/** 終わりか停止の見出し。画面の通知と、支援技術への読み上げで同じ文を使う。 */
+function resultTitle({ failed, stopReason }: LinkRewriteState): string {
+  if (stopReason === "auth" || stopReason === "error") {
+    return "他のページのリンクの書き換えを止めました";
+  }
+  return failed.length > 0
+    ? "書き換えられなかったリンクがあります"
+    : "他のページのリンクを書き換えました";
+}
+
+function announcementOf(state: LinkRewriteState): string {
+  if (state.status === "running") return state.total > 0 ? RUNNING_ANNOUNCEMENT : "";
+  return state.status === "done" || state.status === "stopped" ? resultTitle(state) : "";
+}
 
 /** title の変更で他のページのリンクを書き換えている間の進み具合と、終わったあとの結果。 */
 export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewriteRunner }) {
   const state = useSyncExternalStore(runner.subscribe, runner.getState);
+  const { status, failed, stopReason } = state;
+  const [listOpen, setListOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const hidden = useSyncExternalStore(subscribeVisibility, isDocumentHidden);
+  const ready = useAfterFrames();
+  const stoppedForError = stopReason === "error";
+  const succeeded = status === "done" && failed.length === 0;
+  // 読んでいる間、操作している間、見ていない間は下げない。戻ってきたら数え直す
+  const held = focused || hovering || hidden;
+
+  // 通信が戻ったら、手で再試行を押さなくても続きから進める。通信の失敗で止まったときだけで、
+  // サーバーの失敗が続いているときは online が来ないので、呼び直しが繰り返されない
+  useEffect(() => {
+    if (!stoppedForError) return;
+    const resume = () => runner.retry();
+    window.addEventListener("online", resume);
+    return () => window.removeEventListener("online", resume);
+  }, [stoppedForError, runner]);
+
+  // 開いた一覧は、その報告を閉じたあとの次の報告に持ち越さない。通知が消えると pointerleave や blur は
+  // 届かないので、触れている印もここで戻す
+  useEffect(() => {
+    if (status !== "done") setListOpen(false);
+    if (status === "idle") {
+      setFocused(false);
+      setHovering(false);
+    }
+  }, [status]);
+
+  // 失敗も停止も無い完了の報告は、操作を求めないので閉じなくても下げる。一覧を開いている間は残す
+  useEffect(() => {
+    if (!succeeded || listOpen || held) return;
+    const timer = setTimeout(() => runner.dismiss(), DONE_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [succeeded, listOpen, held, runner]);
+
+  return (
+    <>
+      {/* 進み具合は 1 ページごとに変わるので、通知自体は読み上げず、始まり、終わり、停止の文だけをここで知らせる。
+          空で置いてから後の frame で文を入れ、変化として伝える */}
+      <span className="visually-hidden" role="status">
+        {ready ? announcementOf(state) : ""}
+      </span>
+      <LinkRewriteNotice
+        runner={runner}
+        state={state}
+        onListToggle={setListOpen}
+        interaction={{
+          onFocus: () => setFocused(true),
+          onBlur: (event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+          },
+          onPointerEnter: () => setHovering(true),
+          onPointerLeave: () => setHovering(false),
+        }}
+      />
+    </>
+  );
+}
+
+function LinkRewriteNotice({
+  runner,
+  state,
+  onListToggle,
+  interaction,
+}: {
+  runner: LinkRewriteRunner;
+  state: LinkRewriteState;
+  onListToggle: (open: boolean) => void;
+  interaction: NoticeInteraction;
+}) {
   const { status, done, total, rewritten, failed, stopReason } = state;
 
   if (status === "idle") return null;
   if (status === "running") {
     if (total === 0) return null;
     return (
-      <Notice tone="info" role="status" title="他のページのリンクを書き換えています">
+      <Notice tone="info" silent interaction={interaction} title={RUNNING_ANNOUNCEMENT}>
         <p>
           {done}/{total}{" "}
           ページを書き換えました。この画面を閉じても、残りは次に開いたときに続きから進みます。
@@ -29,14 +129,9 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
   return (
     <Notice
       tone={status === "stopped" || failed.length > 0 ? "warn" : "info"}
-      role={status === "stopped" ? "alert" : "status"}
-      title={
-        stoppedForAuth || stoppedForError
-          ? "他のページのリンクの書き換えを止めました"
-          : failed.length > 0
-            ? "書き換えられなかったリンクがあります"
-            : "他のページのリンクを書き換えました"
-      }
+      silent
+      interaction={interaction}
+      title={resultTitle(state)}
       actions={
         <>
           {stoppedForAuth && (
@@ -62,7 +157,7 @@ export function LinkRewriteStatus({ runner = linkRewrites }: { runner?: LinkRewr
       )}
       {stoppedForError && <p>通信を確かめて、再試行してください。</p>}
       {rewritten.length > 0 && (
-        <details>
+        <details onToggle={(event) => onListToggle(event.currentTarget.open)}>
           <summary>
             {rewritten.length} ページのリンクを新しいタイトルに書き換えました
             {publicCount > 0 && `（うち公開 ${publicCount} ページ）`}
