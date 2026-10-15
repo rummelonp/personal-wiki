@@ -111,6 +111,13 @@ const UNKEPT_TITLES = {
   save: "保存できず、内容を端末に退避できませんでした",
 };
 
+/** 失敗の後の操作が終わるまでの間、失敗の通知に代えて台に出す見出し。 */
+const PROGRESS_TITLES = {
+  saving: "保存しています…",
+  visibility: "公開設定を変えています…",
+  deleting: "削除しています…",
+} as const;
+
 function retryLabel(op: FailedOp): string {
   switch (op.kind) {
     case "create":
@@ -392,6 +399,22 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (await session.remove()) navigate(homeHref());
   }
 
+  // 失敗の後に操作を始めると session は失敗の記録を消すので、通知も消える。保存の状態の表示はページの上端に
+  // あり、下までスクロールしていると進んでいる手応えが無いため、終わるまで同じ場所に進行の通知を残す。
+  // 「もう一度保存する」を押す前に本文の blur が保存を始めると、ボタンが消えて押せないので、押したかどうかでなく
+  // 失敗の通知が出ていたかどうかで決める
+  const failure =
+    state.error !== null && state.failedOp !== null && state.failedOp.kind !== "create"
+      ? state.failedOp
+      : null;
+  const [afterFailure, setAfterFailure] = useState(false);
+  if (failure !== null && !afterFailure) setAfterFailure(true);
+  else if (afterFailure && failure === null && state.busy === null) setAfterFailure(false);
+  const progress =
+    afterFailure && failure === null && state.busy !== null && state.busy !== "creating"
+      ? PROGRESS_TITLES[state.busy]
+      : null;
+
   // 削除の再試行は確認を挟まない。ボタン自体が「もう一度削除する」と明示している
   async function retryFailed(op: FailedOp | null) {
     if (op === null) return;
@@ -573,30 +596,35 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           </Notice>
         )}
 
-        {state.error !== null && state.failedOp !== null && state.failedOp.kind !== "create" && (
-          <Notice
-            tone="error"
-            title={
-              state.failedOp.kind === "save" && isDirty(state) && state.backupFailed
-                ? UNKEPT_TITLES.save
-                : FAILURE_TITLES[state.failedOp.kind]
-            }
-            actions={
-              <button
-                type="button"
-                className="button button-main"
-                disabled={!idle}
-                onClick={() => void retryFailed(state.failedOp)}
-              >
-                {retryLabel(state.failedOp)}
-              </button>
-            }
-          >
-            <p>
-              {state.error}
-              {state.failedOp.kind === "save" && isDirty(state) && keptContent(state.backupFailed)}
-            </p>
-          </Notice>
+        {progress !== null ? (
+          // 失敗の通知と同じ位置の同じ部品なので、台の中で動かず、色と見出しだけが変わる
+          <Notice tone="info" role="status" title={progress} />
+        ) : (
+          failure !== null && (
+            <Notice
+              tone="error"
+              title={
+                failure.kind === "save" && isDirty(state) && state.backupFailed
+                  ? UNKEPT_TITLES.save
+                  : FAILURE_TITLES[failure.kind]
+              }
+              actions={
+                <button
+                  type="button"
+                  className="button button-main"
+                  disabled={!idle}
+                  onClick={() => void retryFailed(failure)}
+                >
+                  {retryLabel(failure)}
+                </button>
+              }
+            >
+              <p>
+                {state.error}
+                {failure.kind === "save" && isDirty(state) && keptContent(state.backupFailed)}
+              </p>
+            </Notice>
+          )
         )}
 
         {state.conflict !== null && (

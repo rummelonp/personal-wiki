@@ -152,6 +152,34 @@ describe("PageEditor と本文のエディタ", () => {
     );
   });
 
+  it("もう一度保存する間は、失敗の通知を保存中の通知に置き換え、終わると消す", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+    const { view, button } = renderPage();
+    view().focus();
+    typeAtEnd(view(), "を書き足す");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    const titleOf = () => container?.querySelector(".notice-title")?.textContent;
+    expect(titleOf()).toBe("保存に失敗しました");
+
+    let finish: (value: ApiResult<Page>) => void = () => {};
+    vi.mocked(updatePage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    act(() => button("もう一度保存する").click());
+    await flushAsync();
+    expect(titleOf()).toBe("保存しています…");
+    expect(container?.querySelectorAll(".notice")).toHaveLength(1);
+    expect(container?.querySelector("[role='alert']")).toBeNull();
+    expect(container?.querySelector(".notice [role='status']")).not.toBeNull();
+
+    await act(async () => finish(ok({ ...PAGE, body: "本文を書き足す", version: 2 })));
+    await flushAsync();
+    expect(container?.querySelector(".notice")).toBeNull();
+  });
+
   it("変換中にページを離れても、未確定文字まで退避に残す", async () => {
     vi.mocked(updatePage).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
     const { view } = renderPage();

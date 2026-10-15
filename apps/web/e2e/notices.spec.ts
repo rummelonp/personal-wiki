@@ -203,6 +203,41 @@ test("保存の失敗の通知は、操作の前後で title の位置を動か�
   expect((await caretRect(page)).bottom).toBeLessThanOrEqual((await boxOf(alert)).y + 0.5);
 });
 
+test("もう一度保存している間は、下までスクロールしていても、台に保存中の通知が残る", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await openLongPage(page, api, uniqueTitle(testInfo, "保存中の通知"));
+  const pagePath = `**/api/pages/${created.id}`;
+  await failSaveWith500(page, created);
+  await typeAt(page, 0, "、再試行する");
+  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  await expect(alert).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+  // 保存の状態の表示はページの上端にあり、ここからは見えない。台の通知が進行を伝える
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.unroute(pagePath);
+  await page.route(pagePath, async (route) => {
+    if (route.request().method() === "PUT") await gate;
+    await route.fallback();
+  });
+  await alert.getByRole("button", { name: "もう一度保存する" }).click();
+  const saving = dock(page).getByRole("status").filter({ hasText: "保存しています…" });
+  await expect(saving).toBeVisible();
+  await expect(alert).toBeHidden();
+  await expectDockOnScreen(page);
+
+  release();
+  await expect(saving).toBeHidden();
+  await expect(alert).toBeHidden();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(saveState(page)).toHaveText("保存済み");
+});
+
 test.describe("幅ごとの通知 @widths", () => {
   test("500 の通知は、どの幅でも位置を動かさず、画面に収まる", async ({ page, api }, testInfo) => {
     const created = await openLongPage(page, api, uniqueTitle(testInfo, "幅の通知"));
