@@ -1,4 +1,4 @@
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import {
   bodyEditor,
   expect,
@@ -309,6 +309,52 @@ test("補完の窓は画面の右端に接せず、指で押す端末では縁�
   });
   expect(padding.list).toBeGreaterThanOrEqual(8);
   expect(padding.option).toBeGreaterThanOrEqual(12);
+});
+
+test.describe("補完の窓の右端 @widths", () => {
+  // 768 では列が右の欄に押されて最大幅より狭く、1280 では列と右の欄が中央に寄る
+  for (const width of [768, 1280]) {
+    test(`列の右端の近くで開く窓は、列の右端を越えない（幅 ${width}）`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 800 });
+      await openFromPlus(page);
+      await page.keyboard.type(uniqueTitle(testInfo, "補完の右端"));
+      await page.keyboard.press("Enter");
+      const caretRight = () =>
+        page.evaluate(
+          () => window.getSelection()?.getRangeAt(0).getBoundingClientRect().right ?? 0,
+        );
+      const columnRightNow = () =>
+        bodyEditor(page).evaluate((element) => element.getBoundingClientRect().right);
+      // 最初の字で列の配置が定まってから測る
+      await page.keyboard.type("あ");
+      const columnRight = await columnRightNow();
+      // 窓の幅より内側で、`[[` と 2 字がまだ折り返さない位置まで進める
+      for (let typed = 0; typed < 200 && (await caretRight()) < columnRight - 100; typed++) {
+        await page.keyboard.type("あ");
+      }
+      expect(await caretRight()).toBeGreaterThan(columnRight - 130);
+      await page.keyboard.type(`[[${SEED.welcome.slice(0, 2)}`);
+
+      const popup = page.locator(".cm-tooltip-autocomplete");
+      const frame = popup.locator("> ul");
+      await expect(frame.getByText(SEED.welcome).first()).toBeVisible();
+      const rightOf = async (target: Locator) => {
+        const box = await target.boundingBox();
+        return (box?.x ?? 0) + (box?.width ?? 0);
+      };
+      // 窓は置かれる前に左上に出るので、列の右端の近くまで寄せられるのを待ってから測る。
+      // 寄せられなければ、窓が列に収まる位置で開いていて、検査が空振りする
+      await expect.poll(() => rightOf(frame)).toBeGreaterThanOrEqual(columnRight - 8);
+      const edgeGap = await popup.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).paddingRight),
+      );
+      const columnRightAtOpen = await columnRightNow();
+      expect(await rightOf(frame)).toBeLessThanOrEqual(columnRightAtOpen + 0.5);
+      expect(await rightOf(popup)).toBeLessThanOrEqual(columnRightAtOpen + edgeGap + 0.5);
+    });
+  }
 });
 
 test.describe("匿名", () => {
