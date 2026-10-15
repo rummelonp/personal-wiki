@@ -447,15 +447,26 @@ export async function searchPages(
   const publicOnly = publicOnlyFlag(readable);
   if ([...query].length >= TRIGRAM_MIN_CHARS) {
     const phrase = `"${query.replaceAll('"', '""')}"`;
+    // snippet() は一致した全行で作ると高くつくので、内側で並べて LIMIT した行にだけ外側で作る。
+    // snippet() は MATCH の走査の中でしか使えないので、外側では pages_fts を rowid と MATCH の両方で
+    // 引き直す（EXPLAIN QUERY PLAN では INDEX 0:=M2）。CROSS JOIN は、planner が pages_fts を外側のループに
+    // 置き、MATCH の全件を走査する結合の順にしないために付ける。
     const { results } = await db
       .prepare(
-        `SELECT p.id, p.title, p.visibility, p.updated_at,
+        `SELECT hit.id, hit.title, hit.visibility, hit.updated_at,
                 snippet(pages_fts, 1, '', '', ?3, ?4) AS excerpt
-         FROM pages_fts JOIN pages AS p ON p.seq = pages_fts.rowid
-         WHERE pages_fts MATCH ?1 AND p.deleted_at IS NULL
-           AND (?5 = 0 OR p.visibility = 'public')
-         ORDER BY pages_fts.rowid IN (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?6) DESC,
-                  bm25(pages_fts, 4.0, 1.0), p.updated_at DESC, p.id DESC LIMIT ?2`,
+         FROM (
+           SELECT p.seq, p.id, p.title, p.visibility, p.updated_at,
+                  pages_fts.rowid IN (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?6) AS in_title,
+                  bm25(pages_fts, 4.0, 1.0) AS score
+           FROM pages_fts JOIN pages AS p ON p.seq = pages_fts.rowid
+           WHERE pages_fts MATCH ?1 AND p.deleted_at IS NULL
+             AND (?5 = 0 OR p.visibility = 'public')
+           ORDER BY in_title DESC, score, p.updated_at DESC, p.id DESC LIMIT ?2
+         ) AS hit
+         CROSS JOIN pages_fts ON pages_fts.rowid = hit.seq
+         WHERE pages_fts MATCH ?1
+         ORDER BY hit.in_title DESC, hit.score, hit.updated_at DESC, hit.id DESC`,
       )
       .bind(
         phrase,

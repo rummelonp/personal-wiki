@@ -245,6 +245,19 @@ describe("GET /api/search", () => {
     expect((await client.request("/api/search?q=abc&limit=50")).status).toBe(200);
   });
 
+  it("limit で切った後も、上位のページを関連度の順に、それぞれの本文から取った抜粋で返す", async () => {
+    const client = await buildClient();
+    await client.create("本文だけ A", "最初の話 共通語 の続き");
+    client.clock.now += 1000;
+    await client.create("共通語 の題名", "題名に一致するページ");
+    client.clock.now += 1000;
+    await client.create("本文だけ B", "別の話 共通語 の続き");
+    const hits = await search(client, "共通語", "&limit=2");
+    expect(titles(hits)).toEqual(["共通語 の題名", "本文だけ B"]);
+    expect(hits[0]?.excerpt).toBe("題名に一致するページ");
+    expect(hits[1]?.excerpt).toContain("別の話 共通語 の続き");
+  });
+
   it("削除済みのページは FTS でも LIKE でも返さず、更新後は新しい内容で引く", async () => {
     const client = await buildClient();
     const gone = await client.create("消える", "消えるキーワード");
