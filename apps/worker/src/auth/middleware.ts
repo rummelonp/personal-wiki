@@ -3,9 +3,9 @@ import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
-import { ATTACHMENT_UPLOAD_PATH, uploadContentTypeOf } from "../attachments/content-type";
 import type { AppEnv } from "../env";
-import { mediaTypeOf } from "../media-type";
+import { mediaTypeOf, uploadContentTypeOf } from "../media-type";
+import { ATTACHMENT_UPLOAD_PATH } from "../paths";
 import { findActiveApiToken, recordApiTokenUse } from "./api-tokens";
 import {
   authenticateOAuthAccessToken,
@@ -178,7 +178,7 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * 受け付ける。こちらは同一オリジンの検査だけで守る（できるのは owner の接続を切ることだけ）。
  *
  * 添付のアップロード（POST /api/attachments）は本文が画像のバイト列なので、JSON の代わりに添付として
- * 受ける image/* の 5 種（attachments/content-type.ts）を許す。どれも CORS で safelist されない type なので、
+ * 受ける image/* の 5 種（media-type.ts の uploadContentTypeOf）を許す。どれも CORS で safelist されない type なので、
  * 別のオリジンからは preflight が要り、フォームからも送れない。JSON に限ったのと同じ保護になる。
  * 同一オリジンの検査は掛けたままにする。
  */

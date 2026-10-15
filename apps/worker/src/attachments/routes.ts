@@ -10,9 +10,10 @@ import type { Context, Hono } from "hono";
 import { allowAnonymousRead, requireScope } from "../auth/middleware";
 import { readableVisibilityOf } from "../auth/principal";
 import type { AppEnv } from "../env";
+import { uploadContentTypeOf } from "../media-type";
 import { generatePageId, isPageId } from "../pages/id";
 import { actorOf } from "../pages/revisions";
-import { ATTACHMENT_UPLOAD_PATH, uploadContentTypeOf } from "./content-type";
+import { ATTACHMENT_UPLOAD_PATH } from "../paths";
 import { readBounded } from "./read-bounded";
 
 export interface AttachmentRoutesOptions {
