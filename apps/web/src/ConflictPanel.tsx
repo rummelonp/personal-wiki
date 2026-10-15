@@ -27,17 +27,33 @@ interface ConflictPanelProps {
 }
 
 /**
- * 差分の欄の最初の変更の行が見えるようにスクロールする。見えなければ、直前の共通の行を欄の上端に置く。
+ * 差分の欄の最初の変更が見えるようにスクロールする。見えていれば動かさない。
+ * 見せる単位は最初の変更の組（− の行と、すぐ後ろの ＋ の行）で、欄に収まらなければ − の行だけにする。
+ * 動かすときは、直前の共通の行から始めて文脈を見せる。ただし直前の行から組までが欄に収まらないときは、
+ * 組が半端に切れるより文脈を捨てて、最初の変更の行を上端に置く。
  * 欄が隠れている間（キーボードが出ている間など）は測れないので false を返し、呼び出し側が見えてから呼び直す。
  */
 function revealFirstChange(scroller: HTMLElement): boolean {
   const first = scroller.querySelector<HTMLElement>(".diff-insert, .diff-delete");
   if (first === null) return true;
-  if (scroller.clientHeight === 0) return false;
-  if (first.offsetTop + first.offsetHeight <= scroller.clientHeight) return true;
+  const room = scroller.clientHeight;
+  if (room === 0) return false;
+  const spanOf = (from: HTMLElement, to: HTMLElement) =>
+    to.offsetTop + to.offsetHeight - from.offsetTop;
+  const next = first.nextElementSibling;
+  const pairEnd =
+    first.classList.contains("diff-delete") &&
+    next instanceof HTMLElement &&
+    next.classList.contains("diff-insert")
+      ? next
+      : first;
+  const group = spanOf(first, pairEnd) <= room ? pairEnd : first;
+  const visibleTop = first.offsetTop - scroller.scrollTop;
+  if (visibleTop >= 0 && visibleTop + spanOf(first, group) <= room) return true;
   const before = first.previousElementSibling;
+  const start = before instanceof HTMLElement && spanOf(before, group) <= room ? before : first;
   // offsetTop の基準は position: relative の .notice-details。scrollIntoView は台そのものをスクロールしうる
-  scroller.scrollTop = (before instanceof HTMLElement ? before : first).offsetTop;
+  scroller.scrollTop = start.offsetTop;
   return true;
 }
 
@@ -52,6 +68,13 @@ export function ConflictPanel({
   const rows = useMemo(() => conflictRows(server.body, local.body), [server.body, local.body]);
   const hasDiff = rows.some((row) => row.kind !== "skip");
   const titleChanged = server.title !== local.title;
+  // 最初の変更の位置と中身（組なら − と ＋ の両方）。欄を送り直す条件で、後ろの行を打っても変わらない
+  const firstChange = useMemo(() => {
+    const at = rows.findIndex((row) => row.kind === "insert" || row.kind === "delete");
+    if (at < 0) return "";
+    const pair = rows[at]?.kind === "delete" && rows[at + 1]?.kind === "insert" ? 2 : 1;
+    return JSON.stringify([at, rows.slice(at, at + pair), titleChanged]);
+  }, [rows, titleChanged]);
   // どちらの選択も、選ばなかった側の内容が唯一の写しごと消える。どちらを主操作にもせず、
   // 押す前に両方とも確かめる。確認は window.confirm ではなく通知の中で行う。ブラウザが
   // ダイアログを抑止していると confirm は何も出さずに false を返し、操作が理由なく止まるため
@@ -76,17 +99,20 @@ export function ConflictPanel({
     if (button !== null && !button.disabled) button.focus();
     else back.heading?.focus();
   }, [choice]);
-  // 差分の最初の変更の前に共通の行が続くと、最初の表示に − と ＋ が見えない。差分が決まったときだけ送り、
-  // 確認の操作などで描き直しても動かさない。隠れている間は、見えるようになってから 1 度だけ送る
-  // biome-ignore lint/correctness/useExhaustiveDependencies: rows が変わったときに送り直す
+  // 差分の最初の変更の前に共通の行が続くと、最初の表示に − と ＋ が見えない。最初の変更の位置か中身が
+  // 変わったときだけ送り、確認の操作や本文の打鍵で描き直しても動かさない。欄が隠れる（キーボードや畳み）
+  // 間は測れないので、隠れて戻ったときも 1 度だけ送り直す。それ以外の大きさの変化では動かさない
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 送り直す条件は firstChange だけで決める
   useLayoutEffect(() => {
-    if (scroller === null || revealFirstChange(scroller)) return;
+    if (scroller === null) return;
+    let pending = !revealFirstChange(scroller);
     const observer = new ResizeObserver(() => {
-      if (revealFirstChange(scroller)) observer.disconnect();
+      if (scroller.clientHeight === 0) pending = true;
+      else if (pending) pending = !revealFirstChange(scroller);
     });
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, [rows, scroller]);
+  }, [firstChange, scroller]);
   function leave(): void {
     if (choice === null) return;
     returnTo.current = {

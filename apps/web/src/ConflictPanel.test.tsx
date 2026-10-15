@@ -129,31 +129,46 @@ describe("衝突の操作の確認", () => {
 const LINES = Array.from({ length: 40 }, (_, index) => `${index + 1} 行目`);
 
 /** 台の中に置く。差分の欄の高さは、台と通知の CSS で決まる。 */
-async function mountInDock(options: { changeAt: number; detailsMaxHeight?: number }) {
+async function mountInDock(options: {
+  changeAt: number;
+  detailsMaxHeight?: number;
+  /** 差分の欄の高さを、差分の行の数で指定する（罫線の分を足す）。 */
+  detailsRows?: number;
+}) {
   await browserPage.viewport(393, 500);
-  if (options.detailsMaxHeight !== undefined) {
+  let maxHeight = options.detailsMaxHeight;
+  if (options.detailsRows !== undefined) {
+    const probe = document.createElement("div");
+    probe.className = "diff";
+    probe.innerHTML = '<div class="diff-row">x</div>';
+    document.body.append(probe);
+    const rowHeight = (probe.firstElementChild as HTMLElement).getBoundingClientRect().height;
+    probe.remove();
+    maxHeight = rowHeight * options.detailsRows + 2;
+  }
+  if (maxHeight !== undefined) {
     const style = document.createElement("style");
     style.dataset.test = "";
-    style.textContent = `.notice-details { max-height: ${options.detailsMaxHeight}px !important; }`;
+    style.textContent = `.notice-details { max-height: ${maxHeight}px !important; }`;
     document.head.append(style);
   }
   const server = { ...SERVER, body: LINES.join("\n") };
-  const local = {
+  const localAt = (changeAt: number, laterAt?: number) => ({
     title: "題",
-    body: LINES.map((line, index) => (index === options.changeAt ? `${line}を直した` : line)).join(
-      "\n",
-    ),
-  };
+    body: LINES.map((line, index) =>
+      index === changeAt || index === laterAt ? `${line}を直した` : line,
+    ).join("\n"),
+  });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  const render = (busy: boolean) =>
+  const render = (busy: boolean, changeAt = options.changeAt, laterAt?: number) =>
     act(() =>
       root?.render(
         <NoticeDockProvider>
           <ConflictPanel
             server={server}
-            local={local}
+            local={localAt(changeAt, laterAt)}
             busy={busy}
             onOverwrite={vi.fn()}
             onTakeServer={vi.fn()}
@@ -165,6 +180,9 @@ async function mountInDock(options: { changeAt: number; detailsMaxHeight?: numbe
   const details = document.querySelector(".notice-details") as HTMLElement;
   return { render, details };
 }
+
+const nextFrames = () =>
+  new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
 const within = (inner: Element, outer: Element) => {
   const a = inner.getBoundingClientRect();
@@ -196,6 +214,88 @@ describe("差分の欄", () => {
     details.scrollTop = details.scrollHeight;
     expect(legend.getBoundingClientRect().top).toBe(before);
     expect(within(legend, document.querySelector(".notice") as Element)).toBe(true);
+  });
+
+  it("欄が低く、直前の共通の行と最初の変更の組が収まらないときは、組を上端に置く", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsRows: 2.5 });
+    const first = details.querySelector(".diff-delete") as Element;
+    const second = details.querySelector(".diff-insert") as Element;
+    expect(details.scrollHeight).toBeGreaterThan(details.clientHeight);
+    expect(within(first, details)).toBe(true);
+    expect(within(second, details)).toBe(true);
+  });
+
+  it("直前の共通の行と最初の変更の組が収まるときは、直前の行から見せる", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsRows: 3.5 });
+    const context = details.querySelector(".diff-delete")?.previousElementSibling as Element;
+    const second = details.querySelector(".diff-insert") as Element;
+    expect(context.classList.contains("diff-equal")).toBe(true);
+    expect(within(context, details)).toBe(true);
+    expect(within(second, details)).toBe(true);
+  });
+
+  it("組が欄に収まらないほど低くても、最初の変更の行を上端に置く", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsRows: 1.5 });
+    const first = details.querySelector(".diff-delete") as Element;
+    expect(within(first, details)).toBe(true);
+  });
+
+  it("表示中に差分が変わったら、新しい最初の変更が見える位置に送り直す", async () => {
+    const { render, details } = await mountInDock({ changeAt: 25, detailsRows: 2.5 });
+    render(false, 35);
+    const first = details.querySelector(".diff-delete") as Element;
+    expect(first.textContent).toContain("36 行目");
+    expect(within(first, details)).toBe(true);
+    expect(within(details.querySelector(".diff-insert") as Element, details)).toBe(true);
+  });
+
+  /** キーボードが出て欄が隠れ、また戻る。隠れた状態が描画を 1 度またぐようにする。 */
+  async function hideAndShow(dock: HTMLElement, details: HTMLElement) {
+    dock.dataset.keyboard = "";
+    await expect.poll(() => details.clientHeight).toBe(0);
+    await nextFrames();
+    delete dock.dataset.keyboard;
+    await nextFrames();
+  }
+
+  it("欄が隠れて戻ったときも、最初の変更が見える位置に送り直す", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsRows: 2.5 });
+    const dock = document.querySelector(".notice-dock") as HTMLElement;
+    await hideAndShow(dock, details);
+    const first = details.querySelector(".diff-delete") as Element;
+    expect(within(first, details)).toBe(true);
+  });
+
+  it("隠れる前に利用者が送っていても、戻ったときは最初の変更を見せる", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsRows: 2.5 });
+    const dock = document.querySelector(".notice-dock") as HTMLElement;
+    details.scrollTop = details.scrollHeight;
+    await nextFrames();
+    await hideAndShow(dock, details);
+    const first = details.querySelector(".diff-delete") as Element;
+    expect(within(first, details)).toBe(true);
+  });
+
+  it("欄の大きさだけが変わったときは、利用者がスクロールした位置を動かさない", async () => {
+    const { details } = await mountInDock({ changeAt: 25, detailsRows: 3.5 });
+    details.scrollTop = 0;
+    const scrolled = details.scrollTop;
+    expect(within(details.querySelector(".diff-delete") as Element, details)).toBe(false);
+    const height = details.clientHeight;
+    const style = document.querySelector("style[data-test]") as HTMLStyleElement;
+    style.textContent = ".notice-details { max-height: 60px !important; }";
+    await expect.poll(() => details.clientHeight).not.toBe(height);
+    await nextFrames();
+    expect(details.scrollTop).toBe(scrolled);
+  });
+
+  it("最初の変更より後ろの行を打って描き直しても、利用者がスクロールした位置を動かさない", async () => {
+    const { render, details } = await mountInDock({ changeAt: 25, detailsRows: 2.5 });
+    details.scrollTop = details.scrollHeight;
+    const scrolled = details.scrollTop;
+    render(false, 25, 38);
+    expect(details.querySelectorAll(".diff-delete")).toHaveLength(2);
+    expect(details.scrollTop).toBe(scrolled);
   });
 
   it("先頭の行が変わっていれば、スクロールしない", async () => {
