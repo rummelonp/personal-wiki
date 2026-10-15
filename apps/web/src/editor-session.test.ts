@@ -1232,6 +1232,24 @@ describe("サーバーから消えたページの退避", () => {
     expect(deletedCopies(backup)).toMatchObject([{ body: "消えたページの編集" }]);
   });
 
+  it("保存の 409 のあとに最新を取りにいく間も、busy を保ち、衝突が決まると外す", async () => {
+    const { session, api } = setup();
+    api.updatePage = async () => ({ ok: false, reason: "version_conflict", currentVersion: 2 });
+    let release: (value: ApiResult<Page>) => void = () => {};
+    api.getPage = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
+    session.edit({ title: "題", body: "手元の編集" });
+    const saving = session.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.getState()).toMatchObject({ busy: "saving", conflict: null });
+    release({ ok: true, value: { ...page(), body: "サーバーの本文", version: 2 } });
+    await saving;
+    expect(session.getState()).toMatchObject({ busy: null });
+    expect(session.getState().conflict).not.toBeNull();
+  });
+
   it("自分の削除では、退避できなかった案内を出さない", async () => {
     const backup = memoryBackup();
     const { session, api } = setup({ backup });

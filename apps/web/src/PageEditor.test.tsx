@@ -207,6 +207,43 @@ describe("PageEditor と本文のエディタ", () => {
     expect(container?.querySelector(".notice")).not.toBe(progress);
   });
 
+  it("もう一度保存して 409 になると、最新を取り直す間も保存中の通知を残し、衝突の通知に替える", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+    const { view, button } = renderPage();
+    view().focus();
+    typeAtEnd(view(), "を書き足す");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(container?.querySelector(".notice-title")?.textContent).toBe("保存に失敗しました");
+
+    vi.mocked(updatePage).mockResolvedValueOnce({
+      ok: false,
+      reason: "version_conflict",
+      currentVersion: 2,
+    });
+    let latest: (value: ApiResult<Page>) => void = () => {};
+    vi.mocked(getPage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        latest = resolve;
+      }),
+    );
+    act(() => button("もう一度保存する").click());
+    await flushAsync();
+    // 409 を受けて最新を取りにいく間は、通知が空白にならず、まだ保存の途中として見える
+    const notices = () => [...(container?.querySelectorAll(".notice") ?? [])];
+    expect(notices().map((n) => n.querySelector(".notice-title")?.textContent)).toEqual([
+      "保存しています…",
+    ]);
+    expect(container?.querySelector("[role='alert']")).toBeNull();
+
+    await act(async () => latest(ok({ ...PAGE, body: "サーバーの本文", version: 2 })));
+    await flushAsync();
+    // 衝突が決まったら、進行の通知は衝突の通知と並ばずに消える
+    expect(notices().map((n) => n.querySelector(".notice-title")?.textContent)).toEqual([
+      "サーバーの内容と食い違っています",
+    ]);
+  });
+
   it("変換中にページを離れても、未確定文字まで退避に残す", async () => {
     vi.mocked(updatePage).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
     const { view } = renderPage();

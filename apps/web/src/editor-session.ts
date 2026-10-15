@@ -774,16 +774,21 @@ export class EditorSession {
       }
       return;
     }
-    this.set({ busy: null });
-    await this.handleFailure(
-      res,
-      { kind: "save" },
-      {
-        sent: snapshot,
-        // 離脱の保存（keepalive）も、同じ要求の形で送り直す
-        ...(retried ? {} : { resend: () => this.saveIfDirty(options, true) }),
-      },
-    );
+    // 409 は最新の版を取り直して判定するので、その間も busy を保つ。外すと、進行の表示が消えて空白ができ、
+    // 重ねて送り直す保存が進行の表示の外で走る
+    try {
+      await this.handleFailure(
+        res,
+        { kind: "save" },
+        {
+          sent: snapshot,
+          // 離脱の保存（keepalive）も、同じ要求の形で送り直す
+          ...(retried ? {} : { resend: () => this.saveIfDirty(options, true) }),
+        },
+      );
+    } finally {
+      this.set({ busy: null });
+    }
   }
 
   /** base を進めたあと。未保存の変更が残っていれば新しい版に対して自動保存し、無ければ退避を消す。 */
@@ -1145,11 +1150,15 @@ export class EditorSession {
       const { base } = this.state;
       this.set({ busy: "visibility", ...NO_ERROR });
       const res = await this.api.setVisibility(base.id, base.version, visibility);
-      this.set({ busy: null });
       if (!res.ok) {
-        await this.handleFailure(res, { kind: "visibility", to: visibility });
+        try {
+          await this.handleFailure(res, { kind: "visibility", to: visibility });
+        } finally {
+          this.set({ busy: null });
+        }
         return;
       }
+      this.set({ busy: null });
       const server = res.value;
       // If-Match を照合しない Worker でも、他の保存を踏み越えて版を進めないよう内容を確かめる
       if (server.title !== base.title || server.body !== base.body) {
@@ -1173,12 +1182,16 @@ export class EditorSession {
       const { base } = this.state;
       this.set({ busy: "deleting", ...NO_ERROR });
       const res = await this.api.deletePage(base.id, base.version);
-      this.set({ busy: null });
       if (res.ok) {
+        this.set({ busy: null });
         this.markGone("self");
         return true;
       }
-      await this.handleFailure(res, { kind: "delete" }, { stash: false });
+      try {
+        await this.handleFailure(res, { kind: "delete" }, { stash: false });
+      } finally {
+        this.set({ busy: null });
+      }
       return false;
     });
   }

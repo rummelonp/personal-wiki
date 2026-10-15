@@ -410,8 +410,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const [afterFailure, setAfterFailure] = useState(false);
   if (failure !== null && !afterFailure) setAfterFailure(true);
   else if (afterFailure && failure === null && state.busy === null) setAfterFailure(false);
+  // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
   const progress =
-    afterFailure && failure === null && state.busy !== null && state.busy !== "creating"
+    afterFailure &&
+    failure === null &&
+    state.busy !== null &&
+    state.busy !== "creating" &&
+    state.conflict === null &&
+    !state.authLost &&
+    !state.gone
       ? PROGRESS_TITLES[state.busy]
       : null;
 
