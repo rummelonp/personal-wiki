@@ -1,5 +1,6 @@
 import type { SyntaxNode } from "@lezer/common";
 import { parser, Table } from "@lezer/markdown";
+import { caseFold } from "@personal-wiki/domain";
 import { ObsidianComment } from "./comment";
 import { Frontmatter } from "./frontmatter";
 
@@ -95,7 +96,8 @@ export function extractLinkableHeadings(text: string): string[] {
  * `A#B` は A の範囲の中にある B を指す。同じ文の見出しが複数あれば先に現れるほうを使う。
  * 範囲の外にある link reference definition と脚注の定義は、切り出した本文に入らない。
  *
- * 見出しの文は前後の空白を除いてそのまま比べ、大文字小文字や記号を畳まない。
+ * 見出しの文は前後の空白を除いて比べる。同じ範囲に完全に一致する見出しがあればそれを使い、
+ * 無ければ大文字小文字を畳んだ（title の照合のうち case fold だけ）一致で探す。記号は畳まない。
  * `#`、`|`、`[`、`]` を含む見出しと `^` で始まる見出しは WikiLink で指せない（`#` の後ろが
  * `^` で始まる区切りはブロック参照として読む）。途中に `^` を含む見出し（`A^b`）は指せる。
  * コード、コメント（`%%`）、frontmatter の中の `#` と、文書の最上位にない見出しは数えない。
@@ -121,6 +123,23 @@ export function createHeadingSectionExtractor(text: string): (heading: string) =
   };
 }
 
+// 完全一致を先に探す。`Foo` と `foo` が両方ある本文で `[[A#foo]]` が `Foo` に奪われないようにする。
+function indexOfHeading(
+  headings: readonly Heading[],
+  start: number,
+  end: number,
+  segment: string,
+): number {
+  for (let i = start; i < end; i++) {
+    if (headings[i]?.text === segment) return i;
+  }
+  const folded = caseFold(segment);
+  for (let i = start; i < end; i++) {
+    if (caseFold((headings[i] as Heading).text) === folded) return i;
+  }
+  return -1;
+}
+
 /** `path` の見出しの添字と、その範囲の終わり（次に現れる同じか上の level の見出しの添字）。 */
 function locate(
   headings: readonly Heading[],
@@ -130,13 +149,7 @@ function locate(
   let end = headings.length;
   let found = -1;
   for (const segment of path) {
-    found = -1;
-    for (let i = start; i < end; i++) {
-      if (headings[i]?.text === segment) {
-        found = i;
-        break;
-      }
-    }
+    found = indexOfHeading(headings, start, end, segment);
     if (found < 0) return null;
     const level = (headings[found] as Heading).level;
     let next = found + 1;

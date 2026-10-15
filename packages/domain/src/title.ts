@@ -22,7 +22,7 @@ const CASE_FOLD_EXCEPTIONS: Readonly<Record<string, string>> = {
   ς: "σ",
 };
 
-/** `foldTitle` の case fold だけ。文字単位で畳む呼び出し側（一致箇所の強調）が、title の比較と同じ規則を使うために出す。 */
+/** `foldTitle` の case fold だけ。一致箇所の強調や見出しの照合など、NFKC や空白を畳まずに大文字小文字だけを title と同じ規則で比べる側のために出す。 */
 export function caseFold(text: string): string {
   return text.toLowerCase().replace(/[ßς]/g, (ch) => CASE_FOLD_EXCEPTIONS[ch] ?? ch);
 }

@@ -27,6 +27,7 @@ export {
   TRIGRAM_MIN_CHARS,
 } from "./search";
 export {
+  caseFold,
   foldKeepingUnderscore,
   foldTitle,
   normalizeTitleKey,

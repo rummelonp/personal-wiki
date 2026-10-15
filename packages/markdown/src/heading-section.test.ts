@@ -94,8 +94,25 @@ describe("extractHeadingSection", () => {
     expect(extractHeadingSection("## A\n\n1 つ目\n\n## A\n\n2 つ目", "A")).toBe("## A\n\n1 つ目");
   });
 
-  it("compares the heading text exactly, without folding case", () => {
-    expect(extractHeadingSection("## Heading\n\n本文", "heading")).toBeNull();
+  it("falls back to a case-insensitive match when no heading matches exactly", () => {
+    expect(extractHeadingSection("## Heading\n\n本文", "heading")).toBe("## Heading\n\n本文");
+    expect(extractHeadingSection("## Straße\n\n本文", "STRASSE")).toBe("## Straße\n\n本文");
+    expect(extractHeadingSection("## Heading\n\n本文", "heading!")).toBeNull();
+  });
+
+  it("prefers an exact match over an earlier case-insensitive match", () => {
+    const text = "## Foo\n\n大文字\n\n## foo\n\n小文字";
+    expect(extractHeadingSection(text, "foo")).toBe("## foo\n\n小文字");
+    expect(extractHeadingSection(text, "Foo")).toBe("## Foo\n\n大文字");
+    expect(extractHeadingSection(text, "FOO")).toBe("## Foo\n\n大文字");
+  });
+
+  it("matches each segment of a nested path case-insensitively", () => {
+    const text = "## Parent\n\n### Child\n\n子\n\n## Other\n\n### Child\n\n別";
+    expect(extractHeadingSection(text, "parent#child")).toBe("### Child\n\n子");
+  });
+
+  it("keeps other characters of the heading text as they are", () => {
     expect(extractHeadingSection("## **強調** 見出し\n\n本文", "**強調** 見出し")).toBe(
       "## **強調** 見出し\n\n本文",
     );
@@ -181,9 +198,22 @@ describe("findHeadingOffset", () => {
     }
   });
 
+  it("falls back to a case-insensitive match and prefers an exact one, as the embed does", () => {
+    const cased = "## Foo\n\n大文字\n\n## foo\n\n小文字\n\n## Bar\n\n本文";
+    expect(findHeadingOffset(cased, "bar")).toBe(cased.indexOf("## Bar"));
+    expect(findHeadingOffset(cased, "foo")).toBe(cased.indexOf("## foo"));
+    expect(findHeadingOffset(cased, "FOO")).toBe(cased.indexOf("## Foo"));
+    for (const heading of ["bar", "foo", "Foo", "FOO", "BAR#x"]) {
+      const section = extractHeadingSection(cased, heading);
+      expect(findHeadingOffset(cased, heading)).toBe(
+        section === null ? null : cased.indexOf(section),
+      );
+    }
+  });
+
   it("returns null for a missing heading or an empty path", () => {
     expect(findHeadingOffset(text, "なし")).toBeNull();
-    expect(findHeadingOffset(text, "a")).toBeNull();
+    expect(findHeadingOffset(text, "C")).toBeNull();
     expect(findHeadingOffset(text, " # ")).toBeNull();
   });
 });
