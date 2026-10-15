@@ -50,7 +50,7 @@
   --font-serif:
     "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif; /* 見出し、ページ名、一覧のタイトル */
   --font-mono:
-    ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans Mono CJK JP", monospace; /* 差分 */
+    ui-monospace, "SF Mono", Menlo, Consolas, "Hiragino Sans", "Noto Sans Mono CJK JP", monospace; /* 差分、エディタのコード。和文は本文と同じ書体に落とす（指定しないと macOS の Chromium は Osaka の等幅に落とし、本文より太く見える） */
   --font-size-xs: 0.6875rem; /* チップ、ラベル */
   --font-size-sm: 0.8125rem; /* 補助、日時、レールの本文 */
   --font-size-chip: 0.75rem; /* タグのチップ */
