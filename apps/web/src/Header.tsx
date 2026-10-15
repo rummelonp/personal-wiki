@@ -1,4 +1,6 @@
+import { useEffect, useRef } from "react";
 import { loginHref, type Me } from "./api";
+import { followVisualViewportTop } from "./header-viewport";
 import { LogoutIcon, PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
 import { useSkeletonPainted } from "./Loading";
@@ -40,9 +42,11 @@ function ActionsPlaceholder() {
  */
 export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderProps) {
   const isOwner = session.status === "ready" && session.me.kind === "owner";
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => (ref.current === null ? undefined : followVisualViewportTop(ref.current)), []);
 
   return (
-    <header className="header">
+    <header className="header" ref={ref}>
       <Link className="brand" href={homeHref()}>
         personal-wiki
       </Link>

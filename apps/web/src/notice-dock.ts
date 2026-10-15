@@ -29,6 +29,13 @@ const KEYBOARD_MIN_HEIGHT = 150;
 /** ピンチで拡大しているとみなす倍率。 */
 const ZOOMED_SCALE = 1.01;
 
+/** キーボードが出ているか。ピンチで拡大している間も visual viewport は縮むので、それは除く。 */
+export function keyboardShown(viewport: VisualViewport): boolean {
+  return (
+    viewport.scale <= ZOOMED_SCALE && window.innerHeight - viewport.height > KEYBOARD_MIN_HEIGHT
+  );
+}
+
 /**
  * キーボードが出ている間は、台をキーボードの上へ上げる。iOS の Safari はキーボードが出ても layout viewport
  * を縮めないので、fixed の下端はキーボードの裏に隠れる。visual viewport の下端との差を台の下端に足す。
@@ -52,10 +59,7 @@ function followVisualViewport(dock: HTMLElement): () => void {
     const room = zoomed ? window.innerHeight : viewport.height;
     dock.style.setProperty("--notice-inset", `${Math.round(inset)}px`);
     dock.style.setProperty("--notice-room", `${Math.round(room)}px`);
-    dock.toggleAttribute(
-      "data-keyboard",
-      !zoomed && window.innerHeight - viewport.height > KEYBOARD_MIN_HEIGHT,
-    );
+    dock.toggleAttribute("data-keyboard", keyboardShown(viewport));
     // 台が持ち上がると、高さが同じでも本文を覆う範囲が変わる。最初の設定は台が出る前なので知らせない
     const rounded = Math.round(inset);
     if (last !== null && rounded !== last) document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
