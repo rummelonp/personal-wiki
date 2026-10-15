@@ -98,6 +98,31 @@ function typeAtEnd(view: EditorView, text: string, userEventName = "input.type")
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+// CodeMirror の窓の測り直しは描画の前と、ResizeObserver 経由の 50ms の遅延で起きる。
+// その遅延より長い間、矩形が動かなければ測り直しは残っていないとみなす
+const STILL_FRAMES = 12;
+const MAX_FRAMES = 300;
+
+/** `read` が返す矩形が `STILL_FRAMES` 回続けて描画をまたいで変わらなくなるのを待つ */
+async function untilRectStill(read: () => DOMRect): Promise<void> {
+  const key = () => {
+    const { top, left, width, height } = read();
+    return [top, left, width, height].join("|");
+  };
+  let last = key();
+  let still = 0;
+  for (let frame = 0; frame < MAX_FRAMES; frame++) {
+    await nextFrame();
+    const current = key();
+    still = current === last ? still + 1 : 0;
+    last = current;
+    if (still >= STILL_FRAMES) return;
+  }
+  throw new Error("the rectangle keeps moving");
+}
+
 describe("本文の受け渡し", () => {
   it("入力を onChange に渡し、返ってきた value では replaceDoc を呼ばない", () => {
     const { view, onChange, replacements } = controlled("本文");
@@ -697,7 +722,7 @@ describe("jumpToFragment", () => {
           });
 
           // スクロールの後の再測定が済むまで待つ。台の出入りだけを契機にして置き直されることを確かめる
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          await untilRectStill(tooltipRect);
           dock?.append(document.createElement("div"));
           document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
           await vi.waitFor(() => {

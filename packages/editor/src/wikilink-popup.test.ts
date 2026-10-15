@@ -68,12 +68,33 @@ async function openCompletion(v: EditorView): Promise<HTMLElement> {
   return tooltip;
 }
 
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+// 窓の測り直しは描画の前（requestMeasure）と、ResizeObserver 経由の 50ms の遅延で起きる。
+// その遅延より長い間、位置が動かなければ測り直しは残っていないとみなす
+const STABLE_FRAMES = 12;
+const MAX_FRAMES = 300;
+
 /**
  * 窓を開いた直後の更新（候補の選択など）が終わるのを待つ。それらの更新でも tooltip は測り直されるので、
  * 待たずに visual viewport を変えると、その event を拾わなくても窓が動いて test が素通りする。
+ * 窓の位置と上下の向きが `STABLE_FRAMES` 回続けて変わらなくなったら終わりとする。
  */
-async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 200));
+async function settle(tooltip: HTMLElement): Promise<void> {
+  const snapshot = () => {
+    const rect = tooltip.getBoundingClientRect();
+    return [tooltip.className, rect.top, rect.left, rect.width, rect.height].join("|");
+  };
+  let last = snapshot();
+  let stable = 0;
+  for (let frame = 0; frame < MAX_FRAMES; frame++) {
+    await nextFrame();
+    const current = snapshot();
+    stable = current === last ? stable + 1 : 0;
+    last = current;
+    if (stable >= STABLE_FRAMES) return;
+  }
+  throw new Error("the completion tooltip keeps moving");
 }
 
 /**
@@ -82,7 +103,7 @@ async function settle(): Promise<void> {
  * そのときは test を素通りさせず、ここで落とす。
  */
 async function expectStaysBelowWithoutEvent(tooltip: HTMLElement): Promise<void> {
-  await settle();
+  await settle(tooltip);
   expect(tooltip.classList.contains("cm-tooltip-below")).toBe(true);
 }
 
@@ -122,7 +143,7 @@ describe("the completion popup position", () => {
     const v = mount();
     const tooltip = await openCompletion(v);
     await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-below")).toBe(true));
-    await settle();
+    await settle(tooltip);
     // 窓を開いた後にキーボードが出て、caret の下が 30px ほどしか残らなくなる
     viewport.height = 210;
     await expectStaysBelowWithoutEvent(tooltip);
@@ -135,7 +156,7 @@ describe("the completion popup position", () => {
     const v = mount();
     const tooltip = await openCompletion(v);
     await vi.waitFor(() => expect(tooltip.classList.contains("cm-tooltip-below")).toBe(true));
-    await settle();
+    await settle(tooltip);
     // 画面が上へずれ、layout viewport の 100px から 210px までが見える。高さを変えずに offsetTop だけを
     // 増やすと caret の下の余地が増え、上へ移る形を作れないので、キーボードが出た分の高さも縮める
     viewport.height = 110;
