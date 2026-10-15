@@ -241,8 +241,15 @@ links と待っているリンクの書き換えの key もこの migration が�
 migration からデプロイまでの間は前の版の Worker が動いていて、この間のページの保存は title_key を古い規則で計算し直します。
 本文だけの保存でも、`_` を含む title の key が `a_b` に戻ります。
 戻った key は title の変更とみなされ、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれます。
-この migration を当てる更新では、`pnpm db:migrate:remote`、`pnpm deploy:remote` の順に実行したあと、「前の版に戻す」の項の SQL を 1 回実行して key をそろえ直します。
+この migration を当てる更新では、`pnpm db:migrate:remote`、`pnpm deploy:remote` の順に実行したあと、次の SQL を 1 回実行して key をそろえ直します。
 そのあとに `pnpm derived:rebuild --remote` を実行します。
+`UNIQUE constraint failed` で止まったら、上と同じくどちらかのページの title を変えてから再実行します。
+
+```sh
+node scripts/deploy.mjs config
+pnpm exec wrangler d1 execute DB --remote --config wrangler.deploy.json --command \
+  "UPDATE pages SET title_key = replace(title_key, '_', ' ') WHERE instr(title_key, '_') > 0; UPDATE OR REPLACE link_rewrites SET old_title_key = replace(old_title_key, '_', ' ') WHERE instr(old_title_key, '_') > 0"
+```
 
 ## 前の版に戻す
 
@@ -261,14 +268,7 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
   重複の検査も `a b` があるのに `a_b` を作れるようになります。
   title_key は title を正規化した値で SQL では元の形に作り直せないので、戻さずに前へ進めて直します。
   戻している間は、`_` を含む title のページを保存するたびに（本文だけの保存でも）title_key が `a_b` に戻り、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれます。
-  今の版に戻したら、戻している間に保存したページと、その間に積まれたリンクの書き換えの key を次の SQL でもう一度そろえ、`derived:rebuild` を実行します。
-  `UNIQUE constraint failed` で止まったら、上の migration の項と同じくどちらかの title を変えてから再実行します
-
-  ```sh
-  node scripts/deploy.mjs config
-  pnpm exec wrangler d1 execute DB --remote --config wrangler.deploy.json --command \
-    "UPDATE pages SET title_key = replace(title_key, '_', ' ') WHERE instr(title_key, '_') > 0; UPDATE OR REPLACE link_rewrites SET old_title_key = replace(old_title_key, '_', ' ') WHERE instr(old_title_key, '_') > 0"
-  ```
+  今の版に戻したら、戻している間に保存したページと、その間に積まれたリンクの書き換えの key を、「title の `_` と空白をそろえる migration」の項のそろえ直しの SQL でもう一度そろえ、`derived:rebuild` を実行します
 - `0009_api_token_names.sql` を当てたまま、API token を id で識別しない版に戻すと、同じ名前の token の書き込みはどれも actor が `token:<name>` になり、どの token が書いたか区別できません。
   前の版の `pnpm api-token revoke <name>` は、同じ名前の有効な token をすべて失効させます。
   戻している間は同じ名前の token を発行せず、失効は今の版のスクリプトの `revoke --id` で行います
