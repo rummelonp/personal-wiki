@@ -205,7 +205,33 @@ describe("inline code and line wrapping", () => {
   });
 
   it.each([
+    ["全角の開き括弧", "本文の設定は（`wrangler.jsonc` の中）にある。", "（"],
+    ["鉤括弧", "設定は「`wrangler.jsonc` を見る」こと。続きの文", "「"],
+    ["半角の開き括弧", "file (`wrangler.jsonc` for) details", "("],
+  ])("keeps %s on the same visual line as the code after it, at any width", (_, doc, char) => {
+    const v = mount(`${doc}\n\n後`);
+    placeCursor(v, v.state.doc.length);
+    const line = v.contentDOM.querySelector(".cm-line") as Element;
+    const code = codes(v)[0];
+    if (!code || !host) throw new Error("inline code is not rendered");
+
+    const failures: string[] = [];
+    for (let width = 120; width <= 400; width++) {
+      host.style.width = `${width}px`;
+      const first = code.getClientRects()[0];
+      const mark = charRect(line, char);
+      if (first && Math.abs(mark.top - first.top) > 2) failures.push(`${width}px`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it.each([
     ["リンクの文の最後のコード", "[see `wrangler.jsonc`](https://example.com) 後"],
+    [
+      "リンクの文の先頭で開き括弧が付くコード",
+      "[（`wrangler.jsonc` を見る](https://example.com) 後",
+    ],
     ["リンクの文の中で閉じ括弧が続くコード", "[see `wrangler.jsonc`）](https://example.com) 後"],
   ])("keeps the markdown link in one element: %s", (_, doc) => {
     const v = mount(`${doc}\n\n後`);
