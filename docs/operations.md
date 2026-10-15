@@ -20,7 +20,7 @@ pnpm api-token revoke <name> [--remote]
   D1 に入るのは hash だけです。
   標準出力をパイプに渡すときは、pnpm の表示が混ざらないよう `pnpm -s api-token` で呼びます
 - 失効した token の名前は再利用できません。
-  `revisions.actor` の `token:<名前>` が指す先でもあるためです
+  再利用すると、`revisions.actor` の `token:<名前>` が前の token と新しい token のどちらの操作か区別できなくなるためです
 - `read` の token は、write が要る REST の操作（403）と MCP のツール（エラー）を呼べません
 
 token を使うスクリプト（`derived:rebuild`、`link-rewrites`）は、環境変数 `WIKI_TOKEN` から write の token を読みます。
@@ -41,7 +41,8 @@ API は `POST /api/admin/derived/rebuild` で、CPU の上限に収まるよう 
 スクリプトは、応答の `next` が null になるまで繰り返して全ページ分を回します。
 
 - 既定の送り先はローカルの `wrangler dev`（`http://localhost:8787`）です。
-  `--remote` は `WIKI_HOSTNAME`、`--url` は任意のオリジンに送ります（`--remote` とは同時に使えません）
+  `--remote` は `WIKI_HOSTNAME`、`--url` は指定したオリジンに送ります（`--remote` とは同時に使えません）。
+  token を平文で送らないよう、`--url` の http は `localhost`、`127.0.0.1`、`[::1]` だけを受け付けます
 - 途中で止まったときは、表示される `--after <id>` を付けて続きから再開します
 - 失敗したページがあると、その id を標準エラーに出して終了コード 1 になります
 
@@ -64,9 +65,10 @@ title を変えると、他のページの `[[旧 title]]` を書き換える仕
 pnpm link-rewrites [--remote] [--url <base>] [--target <page id>]
 ```
 
+- `--remote` と `--url` の送り先と制限は、`derived:rebuild` と同じです
 - 応答の `remaining` が 0 になるまで step を呼びます。
   `--target` を付けると、そのページの rename で積まれた分だけを進めます
-- 書き換えると他のリンクやタグが変わるページと、3 回試しても処理が終わらなかったページは、書き換えずに飛ばします。
+- 書き換えると他のリンクやタグが変わるページ、書き換えた本文が上限（64 KiB）を超えるページ、3 回試しても処理が終わらなかったページは、書き換えずに飛ばします。
   その id を標準エラーに出して、終了コード 1 になります
 - 5xx などで途中で止まったときも終了コード 1 になります。
   積んだ分は D1 に残るので、同じコマンドを再実行すれば続きから進みます。
@@ -147,7 +149,7 @@ pnpm derived:rebuild --remote  # WIKI_TOKEN に write の token を入れて実�
   匿名には画像も 404 になります
 - 画像の中身はバックアップに入らないので、R2 にあるものを使います。
   復元後も、前と同じバケットを `R2_BUCKET_NAME` に書きます
-- 旧い D1 に、このバックアップから `deploy:remote` までの間に入った書き込みは移りません
+- 元の D1 に、バックアップを取ってから `deploy:remote` までの間に入った書き込みは移りません
 - `load` が wrangler の失敗で止まったときは、同じコマンドで再試行できます。
   ローカルの D1 では、失敗した SQL ファイルは全体が巻き戻り、表は空のまま残ります。
   remote で表が空でなくなっていたら（`load` が not empty で拒否します）、新しい D1 を作り直して最初からやり直します

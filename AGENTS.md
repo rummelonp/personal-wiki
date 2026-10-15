@@ -42,7 +42,7 @@ pnpm test          # vitest run
 ### E2E
 
 E2E は `pnpm test` に含めず、別に実行する。
-web を build し、一時の D1 で `wrangler dev`（ポート 8790）を起動して、owner の cookie を作って入る。
+web を build し、一時の D1 で `wrangler dev` を起動して、owner の cookie を作って入る。
 `apps/worker/.dev.vars` は読まない。
 初回は `pnpm --filter @personal-wiki/web exec playwright install chromium webkit firefox` でブラウザを入れる。
 
@@ -50,6 +50,7 @@ E2E の build は `apps/web/dist` を上書きするので、8787 で動かし�
 web のソースを前の build から変えていなければ、`E2E_SKIP_BUILD=1 pnpm e2e` で build を省ける。
 E2E のポートは既定で 8790（inspector は 9339）。
 別の worktree の E2E と同時に流すときは `E2E_PORT=8800 pnpm e2e` のように変える。
+`pnpm e2e:sheet` も同じサーバーを起動するので、`apps/web/dist` の上書き、`E2E_SKIP_BUILD`、`E2E_PORT` は `pnpm e2e` と同じに働く。
 
 ```sh
 pnpm e2e                    # apps/web/e2e のテスト。結果は apps/web/e2e-output/（gitignore 済み）

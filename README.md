@@ -46,7 +46,7 @@ pnpm dev
 ## デプロイ
 
 Cloudflare アカウントと、そのアカウントの DNS にあるホスト名のゾーンが要ります。
-手順の全体は [docs/deploy.md](./docs/deploy.md) にあり、流れは次のとおりです。
+手順の全体は [docs/deploy.md](./docs/deploy.md) にあり、流れは次のとおりです（コマンドは `apps/worker` で実行します）。
 
 1. `wrangler login` し、D1 を作る
 2. `apps/worker/deploy.env`（`deploy.env.example` を写して作る。gitignore 済み）に、ホスト名と D1 の ID を書く

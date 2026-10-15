@@ -185,7 +185,7 @@ Cron を使わないときの進め方と、Cron が飛ばしたページの扱�
 ## 更新
 
 新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で毎回次の 3 つを順に実行します。
-`WIKI_TOKEN` には write の token を入れます。
+`derived:rebuild` は環境変数 `WIKI_TOKEN` から write の token を読みます。
 
 ```sh
 pnpm db:migrate:remote
