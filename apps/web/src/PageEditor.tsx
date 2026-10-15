@@ -396,6 +396,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     else if (await session.remove()) navigate(homeHref());
   }
 
+  const goneUnkept = state.gone && isDirty(state) && state.backupFailed;
+
   const rail = (
     <>
       <Outline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
@@ -474,11 +476,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             }
           >
             <p>
-              {state.pendingBackup.createFailed
-                ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に退避されています（`
-                : "保存できなかった内容が、この端末に退避されています（"}
+              {state.pendingBackup.deletedFrom !== undefined
+                ? `削除されたページ「${state.pendingBackup.title}」で保存できなかった内容が、この端末に退避されています（`
+                : state.pendingBackup.createFailed
+                  ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に退避されています（`
+                  : "保存できなかった内容が、この端末に退避されています（"}
               {formatTime(state.pendingBackup.savedAt)}
-              ）。復元して続けるか、破棄してください。
+              {state.pendingBackup.deletedFrom !== undefined
+                ? "）。新しいページとして復元するか、破棄してください。"
+                : "）。復元して続けるか、破棄してください。"}
             </p>
           </Notice>
         )}
@@ -516,21 +522,44 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         {state.gone && (
           <Notice
             tone="error"
-            title="このページはサーバーにありません"
+            title={
+              goneUnkept
+                ? "このページはサーバーになく、内容を端末に退避できませんでした"
+                : "このページはサーバーにありません"
+            }
             actions={
-              <a
-                className="button button-main"
-                href={homeHref()}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate(homeHref());
-                }}
-              >
-                一覧へ戻る
-              </a>
+              <>
+                {/* 退避できなかった内容は画面にしか無く、新規作成の画面へ移っても戻らないので案内しない */}
+                {state.deletedKept && !goneUnkept && (
+                  <button
+                    type="button"
+                    className="button button-main"
+                    onClick={() => openNewPage()}
+                  >
+                    新しいページとして作る
+                  </button>
+                )}
+                <a
+                  className={state.deletedKept && !goneUnkept ? "button" : "button button-main"}
+                  href={homeHref()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigate(homeHref());
+                  }}
+                >
+                  一覧へ戻る
+                </a>
+              </>
             }
           >
-            <p>別の場所で削除されたため、このページは編集できません。一覧へ戻ってください。</p>
+            <p>
+              別の場所で削除されたため、このページは編集できません。
+              {goneUnkept
+                ? "未保存の内容をこの端末に退避できませんでした。画面を離れる前に、内容をコピーして残してください。"
+                : state.deletedKept
+                  ? "保存できなかった内容はこの端末に退避してあります。新しいページとして作り直せます。"
+                  : "一覧へ戻ってください。"}
+            </p>
           </Notice>
         )}
 

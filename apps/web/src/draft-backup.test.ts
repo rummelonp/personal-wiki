@@ -43,6 +43,7 @@ describe("createLocalBackupStore", () => {
     ["baseBody", { baseBody: null }],
     ["createFailed", { createFailed: "yes" }],
     ["owner", { owner: 1 }],
+    ["deletedFrom", { deletedFrom: true }],
   ])("%s の型が違う退避は読まない", (_, extra) => {
     const storage = memoryStorage();
     storage.setItem(KEY, JSON.stringify({ ...OLD, ...extra }));

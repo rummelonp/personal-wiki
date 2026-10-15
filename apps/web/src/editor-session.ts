@@ -115,6 +115,14 @@ function loadBackups(store: BackupStore, page: Page): Array<{ key: string; backu
   return found.sort((a, b) => b.backup.savedAt - a.backup.savedAt);
 }
 
+/** 同じ退避の写しか。移した退避は、書いたセッションの目印と時刻をそのまま持つ */
+const sameBackup = (a: Backup, b: Backup | null): boolean =>
+  b !== null &&
+  a.owner === b.owner &&
+  a.savedAt === b.savedAt &&
+  a.title === b.title &&
+  a.body === b.body;
+
 export interface EditorState {
   /**
    * サーバーで最後に確認した内容。保存済みかどうかはこれと draft の比較で決まる。
@@ -140,6 +148,11 @@ export interface EditorState {
   pendingBackup: Backup | null;
   /** 直近の退避が書けなかった（容量超過、private window など）。この間、画面を閉じると未保存の内容が失われる。 */
   backupFailed: boolean;
+  /**
+   * サーバーから消えたこのページの、保存できなかった内容（手元の未保存の内容、別のタブや前の画面が
+   * 残した退避）が端末にあり、新規作成の画面で新しいページとして復元できる。
+   */
+  deletedKept: boolean;
   /**
    * title 欄に打っている途中の、まだ確定していない title。null なら draft.title を表示する。
    * 確定（commitTitle、離脱）するまで draft に入れず、保存にも退避にも含めない。title の変更は
@@ -259,6 +272,8 @@ export class EditorSession {
   private pendingKey: string | null = null;
   /** ページの key に書いた退避が、まだ残っているはず。保存の成功などで消したら外す */
   private holdsBackup = false;
+  /** サーバーから消えたページの手元の内容を書く、作る前の退避の key */
+  private goneKey: string | null = null;
 
   /**
    * page に null を渡すと、まだ作っていないページ（新規作成の画面）として始める。title は
@@ -287,6 +302,7 @@ export class EditorSession {
         gone: false,
         pendingBackup: null,
         backupFailed: false,
+        deletedKept: false,
         titleInput: null,
         externalBases: 0,
       };
@@ -305,6 +321,7 @@ export class EditorSession {
       gone: false,
       pendingBackup: pending?.backup ?? null,
       backupFailed: false,
+      deletedKept: false,
       titleInput: null,
       externalBases: 0,
     };
@@ -411,6 +428,77 @@ export class EditorSession {
       this.holdsBackup = true;
     }
     if (this.state.backupFailed === written) this.set({ backupFailed: !written });
+  }
+
+  /**
+   * サーバーから消えたと知った。self は自分の削除（消えたページの手元の未保存の内容は捨てる）、
+   * elsewhere は別の場所での削除。
+   *
+   * 消えたページの退避は page id の key に残しても、ページを開けないので二度と案内に出ない。
+   * サーバーに保存できていた内容と同じ退避だけを消し、ほかは作る前の退避の key に移して、新規作成の
+   * 画面で新しいページとして復元するか破棄するかを選ばせる。別のタブや閉じたタブの退避も移す。
+   * 別の場所での削除なら、手元の未保存の内容も同じ形で残す。
+   */
+  private markGone(by: "self" | "elsewhere"): void {
+    const { base } = this.state;
+    this.clearTimer();
+    this.clearStashTimer();
+    // 未決の退避はページの key から移すので、この画面では尋ねず新規作成の画面に任せる。
+    // 消えたページは保存できず、ここで復元しても続けられない
+    this.pendingKey = null;
+    this.set({ gone: true, pendingBackup: null });
+    if (by === "self") this.removeOwnedBackups(base.id, null);
+    else if (isDirty(this.state)) this.stashGone();
+    for (const key of [base.id, ...this.backup.list(sessionKeyPrefix(base.id))]) {
+      const stored = this.backup.load(key);
+      if (stored === null) continue;
+      const saved =
+        (stored.title === base.title && stored.body === base.body) ||
+        savedBeforeLeaving(stored, base);
+      // 移せなかった（書けなかった）退避は、唯一の写しなので残す
+      if (saved || this.backup.save(issueNewBackupKey(), { ...stored, deletedFrom: base.id })) {
+        this.backup.remove(key);
+      }
+    }
+    if (by === "elsewhere") {
+      const deletedKept = this.backup
+        .list(NEW_PAGE_BACKUP_PREFIX)
+        .some((key) => this.backup.load(key)?.deletedFrom === base.id);
+      this.set({ deletedKept });
+    }
+  }
+
+  /** 消えたページの手元の内容を、作る前の退避の key に書く。前の写しは書けたら消す。 */
+  private stashGone(): void {
+    const { base, draft } = this.state;
+    this.goneKey ??= issueNewBackupKey();
+    const written = this.backup.save(this.goneKey, {
+      title: draft.title,
+      body: draft.body,
+      baseVersion: base.version,
+      baseTitle: base.title,
+      baseBody: base.body,
+      savedAt: this.now(),
+      owner: this.nonce,
+      deletedFrom: base.id,
+    });
+    if (written) {
+      this.removeOwnedBackups(base.id, null);
+      const goneKey = this.goneKey;
+      this.removeDeletedCopies(base.id, (stored, key) => key !== goneKey && this.owns(stored));
+    }
+    if (this.state.backupFailed === written) this.set({ backupFailed: !written });
+  }
+
+  /** 消えたページから作る前の退避の key に移した退避のうち、match に当たるものを消す */
+  private removeDeletedCopies(
+    pageId: string,
+    match: (stored: Backup, key: string) => boolean,
+  ): void {
+    for (const key of this.backup.list(NEW_PAGE_BACKUP_PREFIX)) {
+      const stored = this.backup.load(key);
+      if (stored?.deletedFrom === pageId && match(stored, key)) this.backup.remove(key);
+    }
   }
 
   /**
@@ -772,8 +860,8 @@ export class EditorSession {
         if (stash) this.stashIfDirty();
         return;
       case "not_found":
-        this.set({ gone: true });
-        if (stash) this.stashIfDirty();
+        // stash を渡さないのは削除の失敗だけで、消そうとしたページが既に無かった
+        this.markGone(stash ? "elsewhere" : "self");
         return;
       case "version_conflict": {
         const latest = await this.api.getPage(this.state.base.id);
@@ -800,8 +888,10 @@ export class EditorSession {
           }
           this.set({ conflict: server });
         } else if (latest.reason === "unauthorized") this.set({ authLost: true });
-        else if (latest.reason === "not_found") this.set({ gone: true });
-        else
+        else if (latest.reason === "not_found") {
+          this.markGone(stash ? "elsewhere" : "self");
+          return;
+        } else
           this.set({
             error: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
             failedOp: op,
@@ -837,8 +927,7 @@ export class EditorSession {
           this.set({ authLost: true });
           this.stashIfDirty();
         } else if (res.reason === "not_found") {
-          this.set({ gone: true });
-          this.stashIfDirty();
+          this.markGone("elsewhere");
         }
         // 通信の失敗は次の復帰でまた確認する
         return;
@@ -890,8 +979,7 @@ export class EditorSession {
         this.set({ authLost: true });
         this.stashIfDirty();
       } else if (res.reason === "not_found") {
-        this.set({ gone: true });
-        this.stashIfDirty();
+        this.markGone("elsewhere");
       }
       // 通信の失敗では取り込まない。次の保存が 409 になったときに取り直して重ねる
       return;
@@ -1008,6 +1096,11 @@ export class EditorSession {
       return;
     }
     if (this.pendingKey !== null) this.backup.remove(this.pendingKey);
+    // 案内を出している間に別のタブがこのページを削除していれば、退避は作る前の退避の key に移っている。
+    // 破棄を選んだ内容を、新規作成の画面でもう一度尋ねない
+    this.removeDeletedCopies(this.state.base.id, (stored) =>
+      sameBackup(stored, this.state.pendingBackup),
+    );
     // 別のタブの退避が残っていれば、続けて復元を尋ねる
     const [next] = loadBackups(this.backup, this.state.base);
     this.pendingKey = next?.key ?? null;
@@ -1059,8 +1152,7 @@ export class EditorSession {
       const res = await this.api.deletePage(base.id, base.version);
       this.set({ busy: null });
       if (res.ok) {
-        this.removeBackup(base.id);
-        this.set({ gone: true });
+        this.markGone("self");
         return true;
       }
       await this.handleFailure(res, { kind: "delete" }, { stash: false });

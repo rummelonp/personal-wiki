@@ -17,6 +17,11 @@ export interface Backup {
    * 消したりしないための持ち主の目印。この欄を足す前の退避には無く、その持ち主は誰でもない。
    */
   owner?: string;
+  /**
+   * サーバーから消えたページの id。そのページの退避を、新規作成の画面で新しいページとして復元できるよう、
+   * 作る前の退避の key に移したもの。復元の案内の文言を変える。
+   */
+  deletedFrom?: string;
 }
 
 export interface BackupStore {
@@ -45,7 +50,8 @@ function isBackup(value: unknown): value is Backup {
     (v.baseTitle === undefined || typeof v.baseTitle === "string") &&
     (v.baseBody === undefined || typeof v.baseBody === "string") &&
     (v.createFailed === undefined || typeof v.createFailed === "boolean") &&
-    (v.owner === undefined || typeof v.owner === "string")
+    (v.owner === undefined || typeof v.owner === "string") &&
+    (v.deletedFrom === undefined || typeof v.deletedFrom === "string")
   );
 }
 
