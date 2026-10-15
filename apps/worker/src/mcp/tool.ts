@@ -7,6 +7,7 @@ import type {
 import type * as z from "zod/v4";
 import { principalHasScope, type Scope } from "../auth/principal";
 import type { PageWriteContext } from "../pages/operations";
+import { describeInputError } from "./input-error";
 
 /** tool がリクエストごとに受け取る値。principal は /mcp の認可で決まったもの。 */
 export interface WikiToolContext extends PageWriteContext {
@@ -23,7 +24,10 @@ export interface WikiToolDefinition<S extends z.ZodObject> {
   scope: Scope;
   title: string;
   description: string;
-  /** strictObject にして、visibility などの知らないキーを黙って捨てずに拒む */
+  /**
+   * strictObject にして、visibility などの知らないキーを黙って捨てずに拒む。
+   * 検証は SDK でなく tool の呼び出しで行い（defineTool）、tools/list にはこの schema の JSON Schema が載る。
+   */
   inputSchema: S;
   annotations: ToolAnnotations;
   run: (args: z.output<S>, ctx: WikiToolContext) => Promise<CallToolResult>;
@@ -66,7 +70,9 @@ function memoizeJsonSchema(schema: StandardSchemaWithJSON): StandardSchemaWithJS
     "~standard": {
       version: std.version,
       vendor: std.vendor,
-      validate: (value) => std.validate(value),
+      // SDK の検証は常に通す。落ちると SDK が平文の isError を返し、REST と同じ error のコードにできないので、
+      // 検証は tool の呼び出しで行う
+      validate: (value) => ({ value }),
       jsonSchema: { input: convert("input"), output: convert("output") },
     },
   };
@@ -76,8 +82,7 @@ const SDK_JSON_SCHEMA_TARGET = "draft-2020-12";
 
 export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition<S>): WikiTool {
   const { name, scope, title, description, inputSchema, annotations, run } = definition;
-  // 型引数 S のままでは SDK の overload を解決できないので、StandardSchemaWithJSON に包み、
-  // 検証済みの args は S の出力型に戻す
+  // 型引数 S のままでは SDK の overload を解決できないので、StandardSchemaWithJSON に包む
   const schema = memoizeJsonSchema(inputSchema);
   // SDK が tools/list と登録で使う target を先に変換しておく。キーが外れても、初回の登録で変換するだけで結果は変わらない。
   // 変換が失敗してもモジュールの読み込みを止めない（REST と SPA まで起動しなくなる）。失敗は握り、
@@ -102,8 +107,10 @@ export function defineTool<S extends z.ZodObject>(definition: WikiToolDefinition
               message: `この token には ${scope} の scope が無い`,
             });
           }
+          const parsed = inputSchema.safeParse(args);
+          if (!parsed.success) return toolError(describeInputError(parsed.error.issues, args));
           try {
-            return await run(args as z.output<S>, ctx);
+            return await run(parsed.data, ctx);
           } catch (error) {
             // SDK は tool の例外を握り、message をそのまま isError で返す（onerror も呼ばない）。
             // D1 の例外文をクライアントに出さず、ログにだけ残す
@@ -126,10 +133,7 @@ export function toolResult(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
-/**
- * tool が返すエラーの本文は REST の応答本文と同じ形（`{ error, ... }`）にする。
- * inputSchema の検証エラーは tool に届く前に SDK が平文の isError で返すので、この形にならない。
- */
+/** tool が返すエラーの本文は REST の応答本文と同じ形（`{ error, ... }`）にする。 */
 export function toolError(body: { error: string; [key: string]: unknown }): CallToolResult {
   return { isError: true, content: [{ type: "text", text: JSON.stringify(body) }] };
 }

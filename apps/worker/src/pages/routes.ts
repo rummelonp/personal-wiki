@@ -16,6 +16,7 @@ import {
   setVisibilityAs,
   stepLinkRewritesAs,
   updatePageAs,
+  VISIBILITY_NOT_ALLOWED_MESSAGE,
   type WriteMetric,
 } from "./operations";
 import { actorOf } from "./revisions";
@@ -151,7 +152,7 @@ async function readJsonBody(
       return {
         ok: false,
         response: errorResponse(c, 400, "visibility_not_allowed", {
-          message: "visibility は API から変えられない。ページは draft で作られる",
+          message: VISIBILITY_NOT_ALLOWED_MESSAGE,
         }),
       };
     }

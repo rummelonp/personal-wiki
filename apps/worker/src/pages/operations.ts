@@ -181,6 +181,10 @@ export async function setVisibilityAs(
   return result;
 }
 
+/** visibility_not_allowed の説明。REST の本文のキーと MCP の tool の入力で共通にする。 */
+export const VISIBILITY_NOT_ALLOWED_MESSAGE =
+  "visibility は API から変えられない。ページは draft で作られる";
+
 export interface WriteErrorDescription {
   /** REST の応答に使う HTTP ステータス */
   status: 400 | 404 | 409 | 413;

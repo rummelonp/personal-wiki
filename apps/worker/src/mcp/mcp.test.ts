@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "../pages/store";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
 import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";
@@ -62,14 +63,7 @@ async function mcpClient(options: Parameters<typeof buildClient>[0] = {}) {
       throw new Error(`JSON-RPC のエラー: ${JSON.stringify(error)}`);
     }
     const content = result.content as { type: string; text: string }[];
-    const text = content[0]?.text ?? "";
-    let json: Record<string, unknown>;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      // 入力の検証に落ちたときは SDK が平文のメッセージを返す
-      json = { text };
-    }
+    const json = JSON.parse(content[0]?.text ?? "") as Record<string, unknown>;
     return { isError: result.isError === true, json };
   }
   return { ...client, post, rpc, call };
@@ -577,7 +571,7 @@ describe("ページの tool", () => {
     });
   });
 
-  it("visibility などの知らないキーは拒み、何も書かない", async () => {
+  it("visibility などの知らないキーは REST と同じコードで拒み、何も書かない", async () => {
     const { call } = await mcpClient();
     const { json: created } = await call("create_page", { title: "Vis", body: "" });
     const before = await snapshotDb();
@@ -586,13 +580,97 @@ describe("ページの tool", () => {
       ["update_page", { id: created.id, version: 1, title: "Vis", body: "", visibility: "public" }],
       ["append_to_page", { id: created.id, text: "x", visibility: "public" }],
     ] as const) {
-      const outcome = await call(name, args);
-      expect(outcome.isError).toBe(true);
-      expect(JSON.stringify(outcome.json)).toContain("visibility");
+      expect(await call(name, args)).toEqual({
+        isError: true,
+        json: {
+          error: "visibility_not_allowed",
+          message: "visibility は API から変えられない。ページは draft で作られる",
+        },
+      });
     }
-    expect(await call("append_to_page", { id: created.id, text: "" })).toMatchObject({
+    expect(await call("create_page", { title: "x", body: "", content: "y" })).toEqual({
       isError: true,
+      json: { error: "unknown_field", field: "content" },
     });
+    expect(
+      await call("create_page", { title: "x", body: "", content: "y", visibility: "public" }),
+    ).toMatchObject({ isError: true, json: { error: "visibility_not_allowed" } });
+    expect(await snapshotDb()).toEqual(before);
+  });
+
+  it("欠けた引数と型の違う引数は REST と同じ error と field で返し、何も書かない", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Args", body: "" });
+    const before = await snapshotDb();
+    expect(await call("create_page", { title: "x" })).toEqual({
+      isError: true,
+      json: { error: "missing_field", field: "body" },
+    });
+    expect(await call("create_page", { title: 1, body: "" })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "title", message: "文字列で渡す" },
+    });
+    expect(
+      await call("update_page", { id: created.id, version: 1.5, title: "Args", body: "" }),
+    ).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "version", message: "整数で渡す" },
+    });
+    expect(await call("append_to_page", { id: created.id, text: "" })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "text", message: "1 文字以上で渡す" },
+    });
+    expect(await call("append_to_page", { id: created.id, text: "x", extra: 1, bad: 2 })).toEqual({
+      isError: true,
+      json: { error: "unknown_field", field: "extra" },
+    });
+    expect(await snapshotDb()).toEqual(before);
+  });
+
+  it("引数の検証より先に scope を調べる", async () => {
+    const { call } = await mcpClient({ scopes: "read" });
+    expect(await call("create_page", { title: 1 })).toMatchObject({
+      isError: true,
+      json: { error: "forbidden" },
+    });
+  });
+
+  it("title が上限を超えると title_too_long を、本文が上限を超えると body_too_large を返し、何も書かない", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Limit", body: "" });
+    const before = await snapshotDb();
+    const longTitle = "あ".repeat(Math.floor(MAX_TITLE_BYTES / 3) + 1);
+    // 3 バイトの文字で、文字数ではなくバイト数で数えることを確かめる
+    const largeBody = "あ".repeat(Math.floor(MAX_BODY_BYTES / 3) + 1);
+    const tooLong = { isError: true, json: { error: "title_too_long", max: MAX_TITLE_BYTES } };
+    const tooLarge = { isError: true, json: { error: "body_too_large", max: MAX_BODY_BYTES } };
+    expect(await call("create_page", { title: longTitle, body: "" })).toEqual(tooLong);
+    expect(await call("create_page", { title: "Big", body: largeBody })).toEqual(tooLarge);
+    expect(
+      await call("update_page", { id: created.id, version: 1, title: longTitle, body: "" }),
+    ).toEqual(tooLong);
+    expect(
+      await call("update_page", { id: created.id, version: 1, title: "Limit", body: largeBody }),
+    ).toEqual(tooLarge);
+    expect(await call("append_to_page", { id: created.id, text: largeBody })).toEqual(tooLarge);
+    expect(await snapshotDb()).toEqual(before);
+  });
+
+  it("削除済みのページは、読むのも書くのも存在しないページと同じ not_found になる", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Gone", body: "x" });
+    await env.DB.prepare("UPDATE pages SET deleted_at = ?2, deleted_by = 'owner' WHERE id = ?1")
+      .bind(created.id as string, T0)
+      .run();
+    const before = await snapshotDb();
+    const notFound = { isError: true, json: { error: "not_found" } };
+    expect(await call("read_page", { id: created.id })).toEqual(notFound);
+    expect(await call("read_page", { title: "Gone" })).toEqual(notFound);
+    expect(
+      await call("update_page", { id: created.id, version: 1, title: "Gone", body: "y" }),
+    ).toEqual(notFound);
+    expect(await call("append_to_page", { id: created.id, text: "y" })).toEqual(notFound);
+    expect(await call("list_backlinks", { id: created.id })).toEqual(notFound);
     expect(await snapshotDb()).toEqual(before);
   });
 
@@ -606,11 +684,14 @@ describe("ページの tool", () => {
       title: "Ver",
       body: "x",
     });
-    // schema の検証で落ちるので store まで届かず、SDK の平文が返る
-    expect(tooLarge).toMatchObject({
+    expect(tooLarge).toEqual({
       isError: true,
-      json: { text: expect.stringContaining("version") },
+      json: { error: "invalid_field", field: "version", max: 999_999_999_999_999 },
     });
+    // 2^53 を超える数でも、安全な整数の上限ではなく version の上限を返す
+    expect(
+      await call("update_page", { id: created.id, version: 1e16, title: "Ver", body: "x" }),
+    ).toEqual(tooLarge);
     expect(await snapshotDb()).toEqual(before);
     const largest = await call("update_page", {
       id: created.id,
@@ -665,11 +746,22 @@ describe("検索と一覧の tool", () => {
       });
       expect(result.json.message).toEqual(expect.any(String));
     }
-    for (const limit of [0, 51, 1.5]) {
-      const result = await call("search", { query: "abc", limit });
-      expect(result.isError).toBe(true);
-      expect(result.json.text).toContain("Input validation error");
-    }
+    expect(await call("search", { query: "abc", limit: 0 })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "limit", message: "1 以上で渡す" },
+    });
+    expect(await call("search", { query: "abc", limit: 51 })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "limit", max: 50 },
+    });
+    expect(await call("search", { query: "abc", limit: 1e300 })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "limit", max: 50 },
+    });
+    expect(await call("search", { query: "abc", limit: 1.5 })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "limit", message: "整数で渡す" },
+    });
     expect((await call("search", { query: "abc", limit: 50 })).isError).toBe(false);
   });
 
@@ -703,7 +795,10 @@ describe("検索と一覧の tool", () => {
       isError: true,
       json: { error: "invalid_field", field: "cursor" },
     });
-    expect((await call("list_recent", { limit: 101 })).isError).toBe(true);
+    expect(await call("list_recent", { limit: 101 })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "limit", max: 100 },
+    });
   });
 
   it("list_backlinks はリンク元を返し、無いページと形式の違う id は not_found", async () => {
@@ -802,7 +897,10 @@ describe("検索と一覧の tool", () => {
       isError: true,
       json: { error: "invalid_field", field: "cursor" },
     });
-    expect((await call("list_backlinks", { title: 1 })).isError).toBe(true);
+    expect(await call("list_backlinks", { title: 1 })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "title", message: "文字列で渡す" },
+    });
   });
 
   it("list_backlinks の title 引きは、read の token で REST の by-title と同じリンク元を返す", async () => {
