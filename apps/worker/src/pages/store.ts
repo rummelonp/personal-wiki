@@ -128,7 +128,7 @@ export interface ResolvedPage {
 }
 
 /**
- * 複数の title を 1 回のクエリで引き、入力と同じ順・同じ件数で返す。重複や、正規化で同じになる
+ * 複数の title を 1 回のクエリで引き、入力と同じ順、同じ件数で返す。重複や、正規化で同じになる
  * title も入力ごとに答える。MAX_TITLE_BYTES を超える title、title_key にできない title、削除済み、
  * readable の外にあるページは null。readable が public なら draft は null（無いページと区別できない
  * ようにする）。

@@ -120,7 +120,7 @@ describe("匿名の読み取り", () => {
     expect(draftByTitle.status).toBe(404);
   });
 
-  it("draft の title、存在しない title、削除済み・存在しない・形式の違う id（本文と backlink）は同じ 404", async () => {
+  it("draft の title、存在しない title、削除済み／存在しない／形式の違う id（本文と backlink）は同じ 404", async () => {
     const { anonymous, gone } = await seed();
     const responses = await Promise.all(
       [

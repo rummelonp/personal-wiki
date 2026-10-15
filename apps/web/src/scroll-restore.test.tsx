@@ -97,7 +97,7 @@ describe("履歴のエントリごとの位置", () => {
     expect(history.state).toEqual({ scroll: { y: 300, count: 40 } });
   });
 
-  it("戻る・進むで離れるときは、スクロールが止まった後の位置が書いてある", async () => {
+  it("戻る、進むで離れるときは、スクロールが止まった後の位置が書いてある", async () => {
     window.scrollTo(0, 250);
     await vi.waitFor(() => expect(history.state?.scroll?.y).toBe(250), { timeout: 2000 });
   });
@@ -113,7 +113,7 @@ describe("履歴のエントリごとの位置", () => {
     expect(restoreCount()).toBeUndefined();
   });
 
-  it("同じ URL が履歴に 2 回あっても、エントリごとの位置へ戻す（戻る・進むの連鎖）", () => {
+  it("同じ URL が履歴に 2 回あっても、エントリごとの位置へ戻す（戻る、進むの連鎖）", () => {
     const first: Entry = { search: "?t=same", y: 100, count: 20 };
     const second: Entry = { search: "?t=same", y: 700, count: 60 };
     for (const [entry, expected] of [

@@ -39,7 +39,7 @@ describe("parseFrontmatterFields", () => {
     expect(parseFrontmatterFields(block("tags: ~")).tags).toEqual([]);
   });
 
-  it("単数形の `tag`・`alias` と大文字小文字の違いも同じキーとして読む", () => {
+  it("単数形の `tag`、`alias` と大文字小文字の違いも同じキーとして読む", () => {
     const fields = parseFrontmatterFields(block("Tag: a", "ALIAS: 別名"));
     expect(fields).toEqual({ tags: ["a"], aliases: ["別名"], otherKeys: [] });
   });
@@ -49,7 +49,7 @@ describe("parseFrontmatterFields", () => {
     expect(fields.tags).toEqual(["a", "b", "c"]);
   });
 
-  it("入れ子・anchor・複数行スカラは空として扱い、キー名だけを数える", () => {
+  it("入れ子、anchor、複数行スカラは空として扱い、キー名だけを数える", () => {
     const fields = parseFrontmatterFields(
       block("tags:", "  nested: a", "aliases: &anchor", "note: |", "  複数行", "  スカラ"),
     );

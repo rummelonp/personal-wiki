@@ -256,7 +256,7 @@ function readPaging(
  * 匿名から見た draft の title、存在しない id、削除済みの id は、どれも notFound の同じ 404 にする。
  * ページの id は形式が違えば D1 を引かずに 404 にする。
  *
- * 認可の宣言はハンドラと同じ method・path の登録に、ハンドラより前に付ける。子の app を route() で
+ * 認可の宣言はハンドラと同じ method と path の登録に、ハンドラより前に付ける。子の app を route() で
  * 合成したり、prefix の use() で一括に掛けたりすると、宣言の検査がルートを見つけられない。
  */
 export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: PagesRoutesOptions) {
@@ -309,7 +309,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (list === null) return errorResponse(c, 400, "invalid_field", { field: "title" });
         return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })
-      // wikilink の解決に使う。応答は入力と同じ順・同じ件数で、解決できない title は page が null。
+      // wikilink の解決に使う。応答は入力と同じ順、同じ件数で、解決できない title は page が null。
       // 匿名には draft も null で返し、存在しない title と区別させない。`/api/pages/:id` より前に登録する
       .get("/api/pages/resolve", allowAnonymousRead(), async (c) => {
         const titles = c.req.queries("title");

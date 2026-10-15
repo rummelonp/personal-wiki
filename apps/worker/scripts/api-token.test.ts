@@ -57,7 +57,7 @@ describe("parseArgs", () => {
     }
   });
 
-  it("scopes の指定が無い・未知の発行を拒否する", () => {
+  it("scopes の指定が無いか未知のときは、発行を拒否する", () => {
     expect(() => parseArgs(["issue", "a"])).toThrow();
     expect(() => parseArgs(["issue", "a", "--scopes", "admin"])).toThrow();
   });

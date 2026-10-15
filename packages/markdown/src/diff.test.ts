@@ -120,7 +120,7 @@ describe("diffLines", () => {
     ]);
   });
 
-  it("行の比較は完全一致で、前後の空白や全角・半角を同一視しない", () => {
+  it("行の比較は完全一致で、前後の空白や全角と半角を同一視しない", () => {
     const diff = diffLines("Ａ\n a", "A\na");
     expect(diff.map((line) => line.kind)).toEqual(["delete", "delete", "insert", "insert"]);
   });

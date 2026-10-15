@@ -51,7 +51,7 @@ export interface LinkRewriteStepResult {
     rewritten: number;
   } | null;
   /**
-   * 読んだあとにリンク元が保存されたか、対象ページが改名・削除された。積んだ分は残るので、
+   * 読んだあとにリンク元が保存されたか、対象ページが改名されたか削除された。積んだ分は残るので、
    * もう一度呼べば読み直して進む
    */
   conflict: boolean;
@@ -115,7 +115,7 @@ function deleteJobsStatement(db: D1Database, sourcePageId: string, jobs: JobRow[
 
 /**
  * 対象ページが読んだときの title_key のまま、削除されていないことを確かめる guard。違えば save_guard の
- * trigger が batch 全体を version_conflict で戻す。読んだ時点で削除済み・行の無い対象は戻らない
+ * trigger が batch 全体を version_conflict で戻す。読んだ時点で削除済みの対象や行の無い対象は戻らない
  * （削除を取り消す経路が無い）ので確かめない。
  */
 function targetsGuardStatement(db: D1Database, targets: PageRow[]) {

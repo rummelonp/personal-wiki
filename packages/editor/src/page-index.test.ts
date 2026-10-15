@@ -57,7 +57,7 @@ describe("createMemoryPageIndex", () => {
   describe("similar-title fallback", () => {
     it("surfaces a page differing only by wave dash vs tilde, which fuzzy match misses", () => {
       const index = createMemoryPageIndex(pages("Vol.1〜2", "unrelated"), { normalize: fold });
-      // page title は波ダッシュ（U+301C）。query 側の全角チルダ・半角チルダは fold（NFKC）を
+      // page title は波ダッシュ（U+301C）。query 側の全角チルダ、半角チルダは fold（NFKC）を
       // 通しても波ダッシュへは統合されないため、通常の fuzzy match（部分列走査）は候補を返さない。
       expect(titles(index, "Vol.1～2")).toEqual(["Vol.1〜2"]);
       expect(titles(index, "Vol.1~2")).toEqual(["Vol.1〜2"]);

@@ -101,13 +101,13 @@ export const codeHighlighting: Extension = [
 ];
 
 /**
- * 本文の書体・大きさ・行間。`.cm-scroller` は CodeMirror 自身の `baseTheme` が
+ * 本文の書体、大きさ、行間。`.cm-scroller` は CodeMirror 自身の `baseTheme` が
  * `font-family: monospace` を既定で当てており（`Prec.fallback`）、`EditorView.theme` は
  * 既定より優先されるためここで上書きできる。等幅はコードだけに使う。コード自身の書体は
  * `codeHighlightStyle` の `t.monospace` が span に直接 font-family を当てる（子孫要素への
  * 直接の宣言は祖先からの継承に常に勝つので、この rule との宣言順には依存しない）。
  *
- * 16px・行の高さ 1.75 は本文用。`rem` にせず固定 px にしているのは、ホストの
+ * 16px と行の高さ 1.75 は本文用。`rem` にせず固定 px にしているのは、ホストの
  * root の font-size が変わっても本文の大きさを固定するため（Editor はホストの
  * spacing のように rem で揃える対象ではなく、可読性の基準そのものである）。
  */

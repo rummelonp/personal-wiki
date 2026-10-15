@@ -107,7 +107,7 @@ describe("GET /_auth/login", () => {
     expect(res.headers.get("Set-Cookie")).toBeNull();
   });
 
-  it("JWT が無い・検証に通らなければ 403", async () => {
+  it("JWT が無いか検証に通らなければ 403", async () => {
     const { key, request } = await setup();
     expect((await request("/_auth/login")).status).toBe(403);
     const res = await request("/_auth/login", {

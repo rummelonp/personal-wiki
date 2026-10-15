@@ -35,7 +35,7 @@ export interface WikiLinkSources {
 export interface WikiLinks extends WikiLinkSources {
   /**
    * 展開した embed の埋め込み先の id。`target` は `![[target]]` に書かれたままの title。
-   * 取得前と、無い・読めないページは null。入れ子の embed の添付の URL は埋め込み先の id で引く。
+   * 取得前と、無いページ、読めないページは null。入れ子の embed の添付の URL は埋め込み先の id で引く。
    * 匿名には draft の embed が展開されない（API が not_found を返す）ので、draft の id はここに入らない。
    */
   embedPageId(target: string): string | null;
@@ -111,7 +111,7 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
           embedIds.set(title, res.value.id);
           return { id: res.value.id, title: res.value.title, text: res.value.body };
         }
-        // 無い・読めないは null。それ以外（通信、5xx、ログイン切れ）は reject して再試行させる
+        // 無いか読めないなら null。それ以外（通信、5xx、ログイン切れ）は reject して再試行させる
         if (res.reason === "not_found") {
           embedIds.delete(title);
           return null;

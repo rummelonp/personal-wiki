@@ -15,7 +15,7 @@ export type Principal =
 
 export type TokenIssuer = "api" | "oauth";
 
-/** write は read を含む（作成・更新の前に読み直す流れを 1 つのトークンで済ませるため）。 */
+/** write は read を含む（作成、更新の前に読み直す流れを 1 つのトークンで済ませるため）。 */
 export function hasScope(granted: readonly Scope[], required: Scope): boolean {
   if (required === "read") return granted.includes("read") || granted.includes("write");
   return granted.includes("write");

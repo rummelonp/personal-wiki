@@ -88,7 +88,7 @@ describe("無効なトークン", () => {
     };
   }
 
-  it("不正な形式・未登録・失効済み・匿名を区別できない同じ 401 にする", async () => {
+  it("不正な形式、未登録、失効済み、匿名のどれも、区別できない同じ 401 にする", async () => {
     const revoked = await insertToken({ name: "old", scopes: "read write", revokedAt: T0 - 1 });
     const { request } = buildApp();
     const responses = await Promise.all(
@@ -214,7 +214,7 @@ describe("認可の宣言が無いルート", () => {
       await expectRejected(app, "/api/x");
     });
 
-    it("同じパス・同じ method でも、ハンドラより後ろに登録した宣言", async () => {
+    it("同じパス、同じ method でも、ハンドラより後ろに登録した宣言", async () => {
       const app = createApp()
         .get("/api/x", undeclared)
         .get("/api/x", requireToken("read"), declared);

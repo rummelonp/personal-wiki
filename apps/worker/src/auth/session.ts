@@ -12,7 +12,7 @@ import { isOwnerEmail, type OwnerAuthConfig } from "./owner-config";
  */
 
 /**
- * `__Host-` を付けると、ブラウザは Secure・Path=/・Domain 無しの cookie しか受け付けない。
+ * `__Host-` を付けると、ブラウザは Secure、Path=/、Domain 無しの cookie しか受け付けない。
  * 同じ親ドメインの別のサブドメインから同名の cookie を上書きされない。
  */
 export const SESSION_COOKIE_NAME = "__Host-wiki_session";

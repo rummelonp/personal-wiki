@@ -288,7 +288,7 @@ describe("匿名から見た draft の title", () => {
 });
 
 describe("見つからないパス", () => {
-  it("存在しない・削除済み・形式の違う id と、ページの URL の形でないパスは noindex の 404", async () => {
+  it("存在しない／削除済み／形式の違う id と、ページの URL の形でないパスは noindex の 404", async () => {
     const { navigate, asOwner, create } = await seed();
     const gone = await create("Gone", "消した話", "public");
     const deleted = await asOwner(`/api/pages/${gone.id}`, "DELETE", undefined, {

@@ -56,7 +56,7 @@ export function embedKindForTarget(target: string): MediaEmbedKind | null {
   return null;
 }
 
-/** embed の target が添付（画像・動画・PDF・音声）を指すか。page への参照ではない。 */
+/** embed の target が添付（画像、動画、PDF、音声）を指すか。page への参照ではない。 */
 export function isAttachmentTarget(target: string): boolean {
   if (embedKindForTarget(target) !== null) return true;
   const ext = extensionOf(target);

@@ -24,7 +24,7 @@ function expectColor(actual: number[], expected: readonly number[]) {
 
 const DOC = "前\n\n```ts\na\nb\n```\n\n後";
 
-/** DOC を描き、選択を置いて、地の上端・本文・下端と、その外側の点の色を撮る */
+/** DOC を描き、選択を置いて、地の上端／本文／下端と、その外側の点の色を撮る */
 async function sample(from: number, to: number) {
   host = document.createElement("div");
   host.style.width = "480px";

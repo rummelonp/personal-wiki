@@ -11,7 +11,7 @@ export interface LinkSyntaxParts {
 
 /**
  * `[text](url "title")` と `![alt](url "title")` に共通する構造から `LinkMark`
- * （`[`/`![`・`]`・`(`・`)`）と `URL` を取り出す。`@lezer/markdown` は Link と Image を同じ
+ * （`[`/`![`、`]`、`(`、`)`）と `URL` を取り出す。`@lezer/markdown` は Link と Image を同じ
  * `finishLink` で組み立てるため、node の種類を見ずに子の並びだけで判定できる
  * （live-preview.ts の markdown link 装飾と embed.ts の markdown image 埋め込みが共有する）。
  * `[text][ref]` のような reference link/image は `URL` node を持たないので null にする
@@ -27,7 +27,7 @@ export function linkSyntaxParts(node: SyntaxNodeRef, doc: Text): LinkSyntaxParts
   const closeBracket = before[1];
   const closeParen = after.at(-1);
   if (!open || !closeBracket || !closeParen) return null;
-  // `<https://...>` 記法の angle bracket は URL の一部ではない。剥がさないと data 属性・title・
+  // `<https://...>` 記法の angle bracket は URL の一部ではない。剥がさないと data 属性、title、
   // embed の src のいずれでも `<...>` 込みの文字列が乗り、scheme 判定が二重にずれる。
   return {
     open,

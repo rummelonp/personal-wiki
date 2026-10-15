@@ -5,8 +5,8 @@ import { isInvalidateDecorationsTransaction } from "./decoration-plugin";
 import { type ImeEvent, imeEventSink, imeViewLabel, reportImeEvent } from "./ime";
 
 /**
- * composition の開始・更新・終了と transaction の発火を観測する。
- * decoration の再構築・スキップは `decoration-plugin` が同じ sink へ報告する。
+ * composition の開始、更新、終了と transaction の発火を観測する。
+ * decoration の再構築、スキップは `decoration-plugin` が同じ sink へ報告する。
  *
  * `viewLabel` は `ImeEvent.view` に載る値。title 欄と本文は 1 つの debug タイムラインを
  * 共有するため、呼び出し側（`create-editor`/`title-editor`）が自分の役割を示す文字列を渡す。

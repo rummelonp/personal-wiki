@@ -31,7 +31,7 @@ export const HELP = `usage:
          空のままなら Cron は付けない。アカウント全体で Cron Trigger は 5 本までなので、既定は空にしてある
          推奨は * * * * * か */5 * * * *。1 回の発火で 1 リンク元を進め、積んだ分が無ければ D1 の読み取りは数行で済む
          空に戻してデプロイすると、デプロイ済みの Cron も外れる
-  4. owner のログイン（ブラウザからの閲覧・編集）を使うときだけ:
+  4. owner のログイン（ブラウザからの閲覧、編集）を使うときだけ:
        Cloudflare Zero Trust で /_auth/login だけを対象にした Access のアプリケーションを作り、
        deploy.env に ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS を書く
        Access のポリシーでも owner のメールアドレスだけを許可し、ログイン方法にはメールアドレスを

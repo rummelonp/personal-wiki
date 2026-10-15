@@ -33,7 +33,7 @@ const rowCells = (row: Element | undefined) => [
 const px = (value: string) => Number.parseFloat(value);
 const cellRights = (row: Element) =>
   rowCells(row).map((cell) => cell.getBoundingClientRect().right);
-/** 前置き・空行の後の、表の 4 行（header、区切り行、本文 2 行） */
+/** 前置きと空行の後の、表の 4 行（header、区切り行、本文 2 行） */
 const tableLines = (v: EditorView) => lines(v).slice(2, 6);
 
 describe("table grid", () => {
@@ -212,7 +212,7 @@ describe("table grid", () => {
     });
 
     it("splits the width evenly when even the short columns do not fit", async () => {
-      // 列は線・padding・1 字の幅の合計より細くならず、本数を増やすといずれ欄に入らなくなる。何本で
+      // 列は線、padding、1 字の幅の合計より細くならず、本数を増やすといずれ欄に入らなくなる。何本で
       // 溢れるかは書体と文字の大きさで変わるので、8 本は入ることだけを確かめる
       const wide = "長い見出し".repeat(2);
       const header = `| ${Array.from({ length: 8 }, () => wide).join(" | ")} |`;

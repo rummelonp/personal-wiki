@@ -1391,7 +1391,7 @@ describe("edit button", () => {
     const button = editButtonOf(v, "Note");
     expect(button).not.toBeNull();
 
-    // alias を足しても target・content・page は変わらないので widget（DOM）は eq で使い回される。
+    // alias を足しても target、content、page は変わらないので widget（DOM）は eq で使い回される。
     // ボタンの closure が持つ widget もこの同じインスタンスのまま。
     v.dispatch({ changes: { from: doc.indexOf("]]"), insert: "|別名" } });
     expect(editButtonOf(v, "Note")).toBe(button);

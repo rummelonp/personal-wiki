@@ -31,12 +31,12 @@ export interface TitleResolverOptions {
 
 export interface TitleResolver {
   /**
-   * `WikiLinkResolver` の実装。存在しないと確認できた title だけ false を返し、未確認・確認中・
+   * `WikiLinkResolver` の実装。存在しないと確認できた title だけ false を返し、未確認、確認中、
    * 失敗は true（印を付けない）。確認していない title を見つけたら、裏でまとめて問い合わせる。
    */
   isResolved(target: string): boolean;
   /**
-   * 取得済みの解決先。未確認・確認中・存在しないなら null。問い合わせは始めない（`isResolved` と
+   * 取得済みの解決先。未確認、確認中、存在しないなら null。問い合わせは始めない（`isResolved` と
    * 同じ組み直しの中で呼ぶ前提）。解決先が変わったときも `onChange` を呼ぶ。
    */
   resolvedPage(target: string): ResolvedPage | null;

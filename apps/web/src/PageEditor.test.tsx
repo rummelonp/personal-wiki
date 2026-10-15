@@ -637,7 +637,7 @@ describe("PageEditor の見出しと block への移動", () => {
     );
   });
 
-  it("戻る・進むで fragment 付きの URL に戻ると、位置を合わせる", async () => {
+  it("戻る、進むで fragment 付きの URL に戻ると、位置を合わせる", async () => {
     const { view } = renderPage({ ...PAGE, body: BODY });
     await flushAsync();
     clickLink("#節B");
@@ -647,7 +647,7 @@ describe("PageEditor の見出しと block への移動", () => {
     await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("## 節B")));
     history.forward();
     await vi.waitFor(() => expect(view().state.selection.main.head).toBe(at("段落 ^blk")));
-    // 戻る・進むでは focus しない
+    // 戻る、進むでは focus しない
     expect(view().hasFocus).toBe(false);
   });
 

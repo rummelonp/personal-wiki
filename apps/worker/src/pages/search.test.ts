@@ -424,7 +424,7 @@ describe("GET /api/pages/titles", () => {
     });
   });
 
-  it("recent と同じ順・同じ cursor でページングし、同じ更新日時のページも取りこぼさない", async () => {
+  it("recent と同じ順、同じ cursor でページングし、同じ更新日時のページも取りこぼさない", async () => {
     const client = await buildClient();
     for (let i = 0; i < 5; i++) {
       if (i % 2 === 0) client.clock.now += 1000;

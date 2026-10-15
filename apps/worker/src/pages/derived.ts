@@ -45,7 +45,7 @@ export function deriveValues(title: string, body: string): DerivedValues {
 
 /**
  * ページ 1 件の派生データ（links、tags、attachment_refs、page_excerpts、pages_fts）を、そのページの body から作った値に合わせる文。
- * 作成・更新・作り直しで同じ文を使い、どの経路で書いても同じ行になるようにする。
+ * 作成、更新、作り直しで同じ文を使い、どの経路で書いても同じ行になるようにする。
  *
  * - pages の行がすでにあり、id と seq が変わらないことを前提にする。pages の title や version には依存しない
  *   ので、更新の batch では pages の UPDATE より前に置ける（版の照合は先頭の guard が済ませる）。

@@ -5,7 +5,7 @@ import { navigate, useHash, usePathname } from "./route";
 
 /**
  * URL の hash が指す見出しか block へ、本文の編集部品を移す。ページを表示したとき（mount）と、hash が
- * 変わったとき（リンクのクリック、戻る・進む）に移る。hash が見出しや block を指さない、
+ * 変わったとき（リンクのクリック、戻る、進む）に移る。hash が見出しや block を指さない、
  * または本文に無いときは何もしない（先頭のまま）。
  *
  * どの経路でも編集部品に focus しない（focus 中なら外す）。見出しへ移るのは読むためで、

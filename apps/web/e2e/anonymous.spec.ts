@@ -127,7 +127,7 @@ test("匿名の 0 件の検索結果には作成の導線が出ない", async ({
   await expect(page.getByRole("button", { name: /を作成/ })).toHaveCount(0);
 });
 
-test("一覧・title・タグ・検索・backlink の API が draft を返さない", async ({ page, seedIds }) => {
+test("一覧、title、タグ、検索、backlink の API が draft を返さない", async ({ page, seedIds }) => {
   await page.goto("/");
   const welcomeId = seedIds[SEED.welcome];
   const bodies = await page.evaluate(

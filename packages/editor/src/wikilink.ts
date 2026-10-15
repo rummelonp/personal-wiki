@@ -154,7 +154,7 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
  * 場合は、リンクの外側にカーソルを置いてから矢印キーで入る。
  *
  * 修飾クリックと中クリックはここでは扱わず、`link-activation.ts` が `<a href>` を使って
- * ブラウザ既定（新しいタブ・新しいウィンドウ・ダウンロード）へ流す。
+ * ブラウザ既定（新しいタブ、新しいウィンドウ、ダウンロード）へ流す。
  */
 const clickToNavigate = EditorView.domEventHandlers({
   mousedown(event, view) {

@@ -7,8 +7,8 @@ import { type EditorView, ViewPlugin } from "@codemirror/view";
  *
  * 変換中（composition 中）のブラウザは、確定前の文字列を contenteditable の DOM に直接書き、
  * CodeMirror はその DOM を変換の終わりに読み取って doc へ入れる。変換中に editor 側が DOM や
- * doc を書き換えるとブラウザの変換状態とずれ、確定した文字が消える・二重に入る・変換候補が
- * 閉じる・カーソルが飛ぶ、といった壊れ方をする。再現が IME・OS・ブラウザの組み合わせに
+ * doc を書き換えるとブラウザの変換状態とずれ、確定した文字が消える、二重に入る、変換候補が
+ * 閉じる、カーソルが飛ぶ、といった壊れ方をする。再現が IME、OS、ブラウザの組み合わせに
  * 依存して後から追いにくいので、次の 4 つは例外なく守る。
  *
  * 1. 変換中は decoration を組み直さず、editor の外から dispatch しない。組み直しと保留した
@@ -17,7 +17,7 @@ import { type EditorView, ViewPlugin } from "@codemirror/view";
  * 2. selection に触れる範囲（両端を含む）を `Decoration.replace` で隠さない。replace の中や
  *    境界にカーソルがあると、IME が確定前の文字列を置く場所を DOM に見つけられない。
  *    判定は `reveal.ts` の `shouldRevealSource` に集める。
- * 3. 変換中の Enter・Tab・Shift+Enter を keymap が取らない。これらは IME 自身の確定や操作に
+ * 3. 変換中の Enter、Tab、Shift+Enter を keymap が取らない。これらは IME 自身の確定や操作に
  *    使われる。handler は `isComposing` なら false を返す。
  * 4. 変換中の入力で autocomplete を開かない。候補 UI の開閉は tooltip の DOM 追加と dispatch を
  *    伴い、1 を破る。落ち着いた後に開き直す。

@@ -85,7 +85,7 @@ async function holdResponses(
 }
 
 test.describe("本文の左端 @widths", () => {
-  test("owner の一覧・ページ・404・空の状態", async ({ page, seedIds }) => {
+  test("owner の一覧、ページ、404、空の状態", async ({ page, seedIds }) => {
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
 
@@ -204,7 +204,7 @@ test("短いページに通知の台が出ても、横スクロールは出ず�
 test.describe("匿名の本文の左端 @widths", () => {
   test.use({ role: "anonymous" });
 
-  test("一覧・ページ・404・案内", async ({ page }) => {
+  test("一覧、ページ、404、案内", async ({ page }) => {
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
 

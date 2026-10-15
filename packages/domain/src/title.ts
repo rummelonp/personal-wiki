@@ -30,7 +30,7 @@ export function caseFold(text: string): string {
 /**
  * title_key と同じ比較規則で文字列を畳む。空文字列も返す全域関数。
  *
- * NFKC 正規化で全角/半角の英数・記号ゆれ（例: "Ａ" -> "A", "ｱ" -> "ア"）を吸収し、
+ * NFKC 正規化で全角/半角の英数や記号のゆれ（例: "Ａ" -> "A", "ｱ" -> "ア"）を吸収し、
  * 前後の空白を trim、連続する空白を単一スペースへ畳んでから case fold する。
  * autocomplete の入力途中の query のように、空でありうる文字列を title と突き合わせるときに使う。
  */

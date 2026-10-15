@@ -307,7 +307,7 @@ export function splitResolveBatches(titles: readonly string[]): number[][] {
 
 /**
  * title の page を 1 回の要求で引く。件数と URL の長さは呼び出し側が `splitResolveBatches` で
- * 収める。返す配列は `titles` と同じ順・同じ件数で、解決できない title は null。
+ * 収める。返す配列は `titles` と同じ順、同じ件数で、解決できない title は null。
  * 失敗（404、5xx、通信の失敗、形の違い）は ApiFailure で返す。「全部存在しない」とは区別する。
  * Worker を前の版に戻すと resolve が `/api/pages/:id` に落ちて 404 になる。
  */

@@ -349,7 +349,7 @@ describe("writeGeneratedConfig", () => {
     expect(opts.warnings[0]).toContain(opts.envPath);
   });
 
-  it("deploy.env が無い・値が足りない・形式が誤りのとき、パスと内容を含む例外にする", () => {
+  it("deploy.env が無いとき、値が足りないとき、形式が誤りのとき、パスと内容を含む例外にする", () => {
     const none = setup(undefined);
     expect(() => writeGeneratedConfig(none)).toThrow(none.envPath);
     const missing = setup("WIKI_HOSTNAME=h.example\n");

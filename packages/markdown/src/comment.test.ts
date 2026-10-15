@@ -5,7 +5,7 @@ import { Frontmatter } from "./frontmatter";
 import { extractTags, Tag, tagNodes } from "./tag";
 import { extractWikiLinks, WikiLink, wikiLinkNodes } from "./wikilink";
 
-// Editor の parser と同じく WikiLink・Tag と一緒に載せる
+// Editor の parser と同じく WikiLink、Tag と一緒に載せる
 const commentParser = parser.configure([Frontmatter, WikiLink, Tag, ObsidianComment]);
 
 const { inline, block } = commentNodes;

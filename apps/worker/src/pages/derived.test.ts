@@ -132,7 +132,7 @@ describe("pages_fts", () => {
 });
 
 describe("links.target_page_id の解決", () => {
-  it("作成・title の変更・削除のたびに、そのページを指す links を付け直す", async () => {
+  it("作成、title の変更、削除のたびに、そのページを指す links を付け直す", async () => {
     const { create, update, request } = await buildClient();
     const a = await create("A", "[[B]] [[A]]");
     expect(await linksFrom(a.id)).toEqual([
@@ -260,7 +260,7 @@ describe("rows_written の記録", () => {
     return `${links}\n${tags}\n${filler}`;
   }
 
-  it("作成・本文だけの更新・全入れ替えの書き込み行数を計測値として出す", async () => {
+  it("作成、本文だけの更新、全入れ替えの書き込み行数を計測値として出す", async () => {
     const { request, metrics } = await buildClient();
     const body = largeBody("最初", "L", "t");
     const created = await request("/api/pages", {

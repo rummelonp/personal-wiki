@@ -17,7 +17,7 @@ const HighlightDelimiter = { resolve: highlightNodes.highlight, mark: highlightN
 /**
  * Obsidian の `==text==` を inline node として解析する MarkdownConfig。
  *
- * 開き・閉じの判定は GFM の Strikethrough（`~~`）と同じ flanking 規則に従う。
+ * 開きと閉じの判定は GFM の Strikethrough（`~~`）と同じ flanking 規則に従う。
  * Obsidian の Reading view がこの規則で解釈し、`== text ==` のように内側が空白の
  * ものはハイライトにしない。Live Preview はこれを緩く扱うが、そちらは Reading view との
  * 不一致として報告されている挙動なので合わせない。

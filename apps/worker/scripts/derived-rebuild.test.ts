@@ -158,7 +158,7 @@ describe("run", () => {
     }
   });
 
-  it("deploy.env が無い・不正なら 1 にする", async () => {
+  it("deploy.env が無いか不正なら 1 にする", async () => {
     const { io, out } = fakeIo([], { WIKI_TOKEN: TOKEN });
     io.readDeployEnv = () => {
       throw new Error("ENOENT");

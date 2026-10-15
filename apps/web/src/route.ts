@@ -100,7 +100,7 @@ function subscribe(listener: () => void): () => void {
 const currentLocation = () => `${window.location.pathname}${window.location.search}`;
 
 /**
- * URL の hash（`#` 付き、無ければ空文字列）。hash だけが変わる遷移（`navigate`、戻る・進む）でも再描画する。
+ * URL の hash（`#` 付き、無ければ空文字列）。hash だけが変わる遷移（`navigate`、戻る、進む）でも再描画する。
  * `useRoute` は hash を見ないので、ページの中の位置はこちらで追う。
  */
 export function useHash(): string {

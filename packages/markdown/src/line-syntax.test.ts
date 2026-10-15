@@ -20,7 +20,7 @@ describe("syntaxByLine", () => {
     expect(syntaxByLine("a\nb\nc")).toHaveLength(3);
   });
 
-  it("見出し・リスト・task・引用の記号を記法にし、本文の語は残す", () => {
+  it("見出し、リスト、task、引用の記号を記法にし、本文の語は残す", () => {
     expect(markedText("## 記録\n- [ ] 感想を書く\n> 書くことは考えること")).toEqual([
       ["##"],
       ["-", "[ ]"],
@@ -28,7 +28,7 @@ describe("syntaxByLine", () => {
     ]);
   });
 
-  it("強調・取り消し・ハイライト・inline code の記号を記法にする", () => {
+  it("強調、取り消し、ハイライト、inline code の記号を記法にする", () => {
     expect(markedText("**太字** ~~消す~~ ==印== `code`")).toEqual([
       ["**", "**", "~~", "~~", "==", "==", "`", "`"],
     ]);
@@ -92,7 +92,7 @@ describe("syntaxByLine", () => {
     ]);
   });
 
-  it("水平線・block id・escape の \\ を記法にし、#tag は本文の語として残す", () => {
+  it("水平線、block id、escape の \\ を記法にし、#tag は本文の語として残す", () => {
     expect(markedText("段落 ^abc\n\n---\n\n\\*星\\* #reading")).toEqual([
       ["^abc"],
       [],

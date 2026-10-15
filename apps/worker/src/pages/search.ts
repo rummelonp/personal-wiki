@@ -8,7 +8,7 @@ import type { ReadableVisibility } from "../auth/principal";
 import { publicOnlyFlag, type Visibility } from "./store";
 
 /*
- * 検索・最近の更新・backlink・タグの読み取り。どれも readable（readableVisibilityOf の値）を必須で
+ * 検索、最近の更新、backlink、タグの読み取り。どれも readable（readableVisibilityOf の値）を必須で
  * 受け取り、public なら draft を SQL の段階で除く。取得後に配列から除くと、LIMIT と nextCursor が
  * 除く前の行で決まり、件数が欠けたり cursor に draft の id が入ったりする。
  */
@@ -303,7 +303,7 @@ export async function listTagCounts(
 
 /**
  * pageId を指す links を持つ、削除されていないページを更新日時の降順で返す。
- * pageId のページが無い・削除済みなら null。自分自身へのリンクは含めない。
+ * pageId のページが無いか削除済みなら null。自分自身へのリンクは含めない。
  * readable が public なら、リンク元を public のページに絞る。pageId 自体は draft でもよい
  * （id を知っていれば draft を読めるのと同じ扱いで、返すのは public のページだけ）。
  *

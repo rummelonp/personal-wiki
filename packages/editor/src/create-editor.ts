@@ -81,7 +81,7 @@ export interface CreateEditorOptions {
   readonly onWikiLinkClick?: WikiLinkClickHandler;
   /**
    * 渡したときだけ WikiLink を `<a href>` にする。素のクリックは `onWikiLinkClick` の
-   * ままで、href は修飾クリック・中クリック・リンクのコピー・hover の遷移先表示に使う。
+   * ままで、href は修飾クリック、中クリック、リンクのコピー、hover の遷移先表示に使う。
    */
   readonly hrefForWikiLink?: WikiLinkHref;
   /** 渡したときだけ unresolved link のスタイルを適用する */

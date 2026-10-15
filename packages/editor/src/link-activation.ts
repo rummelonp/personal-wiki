@@ -13,7 +13,7 @@ export interface LinkActivation {
 export type LinkActivator = (activation: LinkActivation) => void;
 
 /**
- * 修飾クリックと中クリックの起動先。新しいタブ・新しいウィンドウ・ダウンロードの
+ * 修飾クリックと中クリックの起動先。新しいタブ、新しいウィンドウ、ダウンロードの
  * 振り分けは OS とブラウザの設定（と将来増える修飾キー）に依るので、既定の
  * `dispatchToHiddenAnchor` は判断せずブラウザへ丸ごと委ねる。
  * 差し替えるのは起動を観測したいテストと、ブラウザ既定に載せられない組み込み先だけ。
@@ -32,7 +32,7 @@ export function isModifiedClick(event: MouseEvent): boolean {
  * クリックのたびに作って外すと、Alt+click の download が始まらないことがある——Chromium は
  * download の起動を click の dispatch とは別に進めるため、その時点で起点の `<a>` が
  * document から外れていると黙って捨てる（`setTimeout(…, 0)` で外すのでも間に合わない）。
- * 新しいタブ・新しいウィンドウは dispatch の中で始まるので、失敗は download にだけ出る。
+ * 新しいタブ、新しいウィンドウは dispatch の中で始まるので、失敗は download にだけ出る。
  */
 let hiddenAnchor: HTMLAnchorElement | null = null;
 
@@ -122,7 +122,7 @@ const activationHandlers = EditorView.domEventHandlers({
 });
 
 /**
- * `<a href>` として描いたリンク（WikiLink・markdown link・autolink）の起動を editor が握る。
+ * `<a href>` として描いたリンク（WikiLink、markdown link、autolink）の起動を editor が握る。
  * 素のクリックは各 extension の JS 経路に残し、修飾クリックと中クリックだけを
  * `linkActivator` へ渡す。
  */

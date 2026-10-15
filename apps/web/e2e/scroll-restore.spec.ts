@@ -87,7 +87,7 @@ test("「さらに表示」で読み足した位置まで、戻るで戻る", as
   await expect.poll(() => scrollY(page)).toBeLessThan(target + TOLERANCE);
 });
 
-test("戻る・進む・戻るの連鎖と再読み込みのあとも、位置が戻る", async ({ page }) => {
+test("戻る、進む、戻ると続けたあとも、再読み込みのあとも、位置が戻る", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".entries .entry").first()).toBeVisible();
   await page.evaluate((y) => window.scrollTo(0, y), SCROLL);

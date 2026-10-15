@@ -9,7 +9,7 @@ export const frontmatterNodes = {
 const DELIMITER = "---";
 const READ_WINDOW = 256;
 
-/** frontmatter の開き・閉じの行か。前後の空白と CRLF の `\r` は区切りの一部として許す。 */
+/** frontmatter の開きか閉じの行か。前後の空白と CRLF の `\r` は区切りの一部として許す。 */
 export function isFrontmatterDelimiterLine(line: string): boolean {
   return line.trim() === DELIMITER;
 }
@@ -56,7 +56,7 @@ export function frontmatterEnd(text: string): number | null {
 // 求めておき、同じ parse の block parser がそれを引く。
 const frontmatterEnds = new WeakMap<object, number>();
 
-// 先頭で再利用されうる node が、今の frontmatter の有無・終端と食い違っているか。
+// 先頭で再利用されうる node が、今の frontmatter の有無や終端と食い違っているか。
 // lezer の incremental parse は block parser より先に fragment の node を再利用するので、
 // 後から閉じ `---` を打つと、先頭の区切り線と setext 見出しがそのまま残ってしまう。
 // 先頭の node が fragment に収まっていなければ（編集がその中にある）再利用されないので、

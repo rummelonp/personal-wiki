@@ -33,7 +33,7 @@ const placeCursor = (v: EditorView, pos: number) => {
 
 const lines = (v: EditorView) => [...v.contentDOM.querySelectorAll<HTMLElement>(".cm-line")];
 const cells = (v: EditorView) => v.contentDOM.querySelectorAll(".cm-lp-table-cell");
-/** 前置き・空行の後の、表の 4 行（header、区切り行、本文 2 行） */
+/** 前置きと空行の後の、表の 4 行（header、区切り行、本文 2 行） */
 const tableLines = (v: EditorView) => lines(v).slice(2, 6);
 
 describe("table decoration", () => {

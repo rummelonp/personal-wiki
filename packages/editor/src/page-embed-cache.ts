@@ -9,7 +9,7 @@ export interface PageEmbedPage {
 
 export interface PageEmbedCacheOptions {
   /**
-   * title（`![[Title]]` の Title）の page を取得する。page が無い・読めない（API の 404）は null を
+   * title（`![[Title]]` の Title）の page を取得する。page が無いか読めない（API の 404）ときは null を
    * 返す。それ以外の失敗（ネットワーク、5xx）は reject する。reject は未解決にせず、再試行する。
    */
   readonly load: (title: string, signal: AbortSignal) => Promise<PageEmbedPage | null>;

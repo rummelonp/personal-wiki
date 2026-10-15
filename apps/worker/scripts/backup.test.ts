@@ -55,7 +55,7 @@ function migratedDb(files = MIGRATION_FILES) {
 
 type Spawn = (command: string, args: string[]) => { status: number | null; stdout: string };
 
-/** `wrangler d1 execute` を SQLite に対して実行する。onCommand で呼び出しを観測・割り込みできる */
+/** `wrangler d1 execute` を SQLite に対して実行する。onCommand で呼び出しを観測したり割り込んだりできる */
 function fakeWrangler(db: DatabaseSync, onCommand?: (sql: string) => void): Spawn {
   return (_command, args) => {
     const w = args.slice(1);

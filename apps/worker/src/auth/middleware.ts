@@ -37,7 +37,7 @@ import { hashApiToken, isWellFormedApiToken } from "./token";
  *      scope を検査する
  *
  * 4 が保証すること: マッチした登録のうち、基盤の middleware と宣言を除くすべて（ハンドラや
- * 宣言でない middleware）について、それより前に同じ path・同じ method の宣言が登録されている。
+ * 宣言でない middleware）について、それより前に同じ path、同じ method の宣言が登録されている。
  * 1 つでも満たさなければリクエスト全体を拒否する。ALL の宣言（use、all）は ALL の登録しか守らない。
  * `.use(p, requireToken("read")).put(p, h)` を通すと、write を書き忘れた h が read で動くため。
  *
@@ -47,7 +47,7 @@ import { hashApiToken, isWellFormedApiToken } from "./token";
  *     "/api/pages" のハンドラを守らない。prefix で一括して守る書き方は、宣言漏れを隠すので採らない。
  *   - 宣言は守る登録より前に置く。後ろに置いた宣言は数えない。
  * 保証の単位は (path, method)。Hono の登録情報からは `.get(p, policy, h1, h2)` と
- * `.get(p, policy, h1).get(p, h2)` を区別できないので、同じ path・method に前の登録の宣言があれば
+ * `.get(p, policy, h1).get(p, h2)` を区別できないので、同じ path と method に前の登録の宣言があれば
  * それが効く。別の path や別の method の宣言、catch-all の allowAnonymous() には便乗できない。
  */
 
@@ -135,7 +135,7 @@ function everyRouteDeclared(routes: readonly RouterRoute[]): boolean {
 }
 
 /**
- * 不正な形式・未登録・失効済みのトークンを区別させないため、どれも同じ応答にする。
+ * 不正な形式、未登録、失効済みのトークンを区別させないため、どれも同じ応答にする。
  * error パラメータ（RFC 6750 の invalid_token など）も付けない。
  */
 function unauthorized(c: Context<AppEnv>): Response {

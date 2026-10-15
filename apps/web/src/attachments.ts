@@ -70,7 +70,7 @@ export interface AttachmentUploaderOptions {
 export interface AttachmentUploader {
   upload: UploadAttachment;
   /**
-   * アップロード中は、ページを閉じる・再読み込みする前にブラウザの確認を出す。戻り値で外す。
+   * アップロード中は、ページを閉じたり再読み込みしたりする前にブラウザの確認を出す。戻り値で外す。
    * アプリ内の遷移は止められない（遷移すると placeholder が本文に残り、上げた添付は参照されない）。
    */
   bindUnloadGuard: (win: EventTarget) => () => void;

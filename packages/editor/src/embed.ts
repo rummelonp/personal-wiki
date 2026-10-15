@@ -141,7 +141,7 @@ const IMAGE_ALLOWED_SCHEMES: ReadonlySet<string> = new Set(
 
 /**
  * `rawUrl` が同一 origin の絶対パス（`/help/foo.png` のように `/` 1 つから始まり `//` ではないもの）かを
- * 判定する。文字列の見た目だけで `/` 1 つ・`//` でないことを見ると、`/\evil.example/a.png` のように
+ * 判定する。文字列の見た目だけで `/` 1 つから始まり `//` でないことを見ると、`/\evil.example/a.png` のように
  * `\` を混ぜたものが崩れる（URL 仕様は特別 scheme で `\` を `/` と同じに扱うため、ブラウザは
  * `//evil.example/a.png` と同じ protocol-relative URL として host を `evil.example` に解決する）。
  * `new URL` に実際に解決させ、結果の origin で判定することでこれを避ける。
@@ -727,7 +727,7 @@ function build(
           const parts = linkSyntaxParts(node, state.doc);
           if (!parts) return true;
           const src = markdownImageSrc(parts.url);
-          // 許可できない scheme・相対パスは widget を作らず、記法をそのまま素の text として見せる
+          // 許可できない scheme と相対パスは widget を作らず、記法をそのまま素の text として見せる
           // （`javascript:` などを widget の src に渡さない）。
           if (src === null) return true;
           const alt = state.doc.sliceString(parts.open.to, parts.closeBracket.from);
@@ -873,7 +873,7 @@ const embedTheme = EditorView.baseTheme({
     gap: "0.5em",
   },
   ".cm-embed-page-title": { fontWeight: "600" },
-  // タイトル行では flex item として残り幅いっぱいに広げる。他の場所（unresolved・pending・self の
+  // タイトル行では flex item として残り幅いっぱいに広げる。他の場所（unresolved、pending、self の
   // 単独ラベル）は flex コンテナの外なので、flex 関連の指定はそこでは効かない。
   // クリック域をタイトルの見た目の幅いっぱいに保つ（Playwright の `.cm-embed-page-title` への
   // click は要素中央を狙うので、テキストがボタン側へ寄って中央から外れると拾えなくなる）。
@@ -919,7 +919,7 @@ const embedTheme = EditorView.baseTheme({
  *
  * markdown 標準の画像記法（`![alt](url)`）も同じ widget（`ImageEmbedWidget`）で展開する。
  * こちらは添付の解決を経ず、URL をそのまま `<img src>` に使う（`markdownImageSrc` が scheme と
- * 同一 origin の絶対パスだけを通す）。`resolveUrl`・`page` の有無に関わらず常に展開する。
+ * 同一 origin の絶対パスだけを通す）。`resolveUrl`、`page` の有無に関わらず常に展開する。
  */
 export function embeds(resolveUrl?: AttachmentUrlResolver, page?: PageEmbedOptions): Extension {
   return [

@@ -79,7 +79,7 @@ function parseContent(content: string): ParsedContent | null {
 }
 
 /**
- * `[[` と `]]` の間の生テキストを target・heading・blockId・label に分ける。
+ * `[[` と `]]` の間の生テキストを target、heading、blockId、label に分ける。
  * 最初の `|`（または `\|`）だけを区切りとして label を切り出し、残った target 側から
  * 最初の `#`（heading）または `^`（blockId）で target 本体を分ける。
  * link として成立しない場合は null を返す。
@@ -95,8 +95,8 @@ export interface WikiLinkTargetSpan {
 }
 
 /**
- * `splitWikiLinkContent` が target とする部分の範囲を返す。target だけを書き換える処理が、
- * 区切り・label・見出し・block id・前後の空白を保てるようにする。
+ * `splitWikiLinkContent` が target とする部分の範囲を返す。target だけを書き換える処理は、
+ * この範囲を使って、区切り、label、見出し、block id、前後の空白を保つ。
  * link として成立しない場合は null。target が空（`[[#見出し]]`）なら from と to が等しい。
  */
 export function wikiLinkTargetSpan(content: string): WikiLinkTargetSpan | null {
@@ -211,7 +211,7 @@ export function isEmbedWikiLink(charBeforeLink: string): boolean {
 
 // GFM Table は入れない。Editor の構文木（lang-markdown の GFM 入り）とは表の中だけ解析単位が
 // ずれるが、入れると表がセル単位で解析され、保存済みのページから派生データを作り直したときに links が変わる
-// （表の行の `[[A|B]]` が `|` でセルに分かれて link でなくなる）。block-id.ts・tag.ts も同じ構成。
+// （表の行の `[[A|B]]` が `|` でセルに分かれて link でなくなる）。block-id.ts、tag.ts も同じ構成。
 const wikiLinkParser = parser.configure([Frontmatter, WikiLink]);
 
 /**

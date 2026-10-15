@@ -38,7 +38,7 @@ function setup(results: StepResult[]) {
 }
 
 describe("LinkRewriteRunner", () => {
-  it("残りが 0 になるまで 1 ページずつ呼び、書き換えたページを公開・下書きつきで残す", async () => {
+  it("残りが 0 になるまで 1 ページずつ呼び、書き換えたページを公開範囲と一緒に残す", async () => {
     const { runner, step, states, settled } = setup([
       ok({ processed: processed("a", "public"), remaining: 1 }),
       ok({ processed: processed("b"), remaining: 0 }),

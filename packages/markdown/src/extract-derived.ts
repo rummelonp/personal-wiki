@@ -30,9 +30,9 @@ export interface DerivedData {
 }
 
 /**
- * 本文から links・tags・plain text・attachments を導出する。D1 の派生テーブルと FTS はこの結果から作り直せる。
+ * 本文から links、tags、plain text、attachments を導出する。D1 の派生テーブルと FTS はこの結果から作り直せる。
  *
- * - links: 添付（画像・動画・PDF・音声）の embed は page への参照ではないので除く。title_key が同じ link は先頭の 1 件に畳む。
+ * - links: 添付（画像、動画、PDF、音声）の embed は page への参照ではないので除く。title_key が同じ link は先頭の 1 件に畳む。
  *   title_key にできない target（空白だけなど）は落とす。frontmatter の中の WikiLink は link にしない。
  * - tags: frontmatter の `tags` を先に、本文の `#tag` を後に並べる。大文字小文字や全角半角だけが
  *   違う tag は同じものとして先頭の表記に畳む。

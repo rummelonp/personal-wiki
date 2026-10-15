@@ -3,7 +3,7 @@ import type { Line, MarkdownConfig } from "@lezer/markdown";
 
 /**
  * `%%comment%%` の構文木ノード名。decoration 側が文字列リテラルを直書きしないよう、ここを唯一の定義とする。
- * @lezer/markdown は HTML コメント（`<!-- -->`）に `Comment`・`CommentBlock` を使うので、名前を分ける。
+ * @lezer/markdown は HTML コメント（`<!-- -->`）に `Comment`、`CommentBlock` を使うので、名前を分ける。
  */
 export const commentNodes = {
   /** 段落の中の `%%...%%` */
@@ -45,7 +45,7 @@ function hasOpenComment(text: string): boolean {
  *
  * 段落の中の `%%...%%`（改行をまたいでよい）は inline の node、`%%` で始まり同じ行で閉じない
  * 行は、次に `%%` が現れる行までを block の node にする。block は空行をまたげ、閉じなければ
- * 文書末まで続く。どちらも中身を 1 つの node として消費し、中の WikiLink・tag・強調は node にしない。
+ * 文書末まで続く。どちらも中身を 1 つの node として消費し、中の WikiLink、tag、強調は node にしない。
  * `%%` の前後の文字による制約（flanking）は無い。
  *
  * Obsidian より狭くしているところ:

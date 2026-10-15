@@ -89,7 +89,7 @@ const RICH_DOC = [
 const KEPT_OPAQUE = ".cm-tag";
 
 describe("装飾の地は選択範囲を隠さない", () => {
-  it("frontmatter を畳んだ表示と、本文・コード・引用・callout・表の地が不透明でない", () => {
+  it("frontmatter を畳んだ表示と、本文／コード／引用／callout／表の地が不透明でない", () => {
     const v = mount(RICH_DOC);
     v.focus();
     v.dispatch({ selection: EditorSelection.cursor(v.state.doc.length) });

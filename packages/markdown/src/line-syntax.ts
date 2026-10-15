@@ -59,8 +59,8 @@ const CODE_NODES = new Set(["FencedCode", "CodeBlock", frontmatterNodes.frontmat
  * 行は `"\n"` で区切り、`diffLines` と同じ数え方をする（返す配列の長さは行数と等しい）。
  *
  * 行を 1 行ずつ parse すると、fence の内側の行や表の区切り行の文脈が失われるので、本文全体を
- * parse してから行へ割り付ける。記法として扱うのは見出し・リスト・引用・task の記号、強調・
- * 取り消し・ハイライト・code の記号、リンクの括弧と URL、WikiLink の括弧と区切り、表の区切り、
+ * parse してから行へ割り付ける。記法として扱うのは見出し／リスト／引用／task の記号、強調／
+ * 取り消し／ハイライト／code の記号、リンクの括弧と URL、WikiLink の括弧と区切り、表の区切り、
  * 水平線、inline の HTML タグ、escape の `\`。コメント、リンク参照の定義、block id は丸ごと記法に含める。
  * `#tag` は本文の語として扱う。
  */

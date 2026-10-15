@@ -13,7 +13,7 @@
 const TOKENS_CSS = `
 :root {
   color-scheme: light;
-  /* 16px 以外にしておく。本文・title の大きさが固定 px でなくホストの root に
+  /* 16px 以外にしておく。本文、title の大きさが固定 px でなくホストの root に
      つられて継承されているだけの回帰を、既定の 16px と偶然一致させず検出する
      （typography.test.ts）。 */
   font-size: 20px;

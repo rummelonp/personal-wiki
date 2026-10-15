@@ -28,7 +28,7 @@ export interface AppOptions {
 
 /**
  * 認可の middleware はこの順で全ルートの前に登録する（保証の範囲は auth/middleware.ts）。
- * ルートは `.get(path, requireScope("read"), handler)` のように、ハンドラと同じ path・同じ
+ * ルートは `.get(path, requireScope("read"), handler)` のように、ハンドラと同じ path、同じ
  * 呼び出しで宣言を付けて登録する。宣言の無いハンドラにマッチしたリクエストは 404 になる。
  * 全ルートに効かせる middleware を足すときは defineBaseMiddleware で登録する。
  * SPA の catch-all は最後に登録する。`/api` などの Worker のパス（paths.ts）は catch-all を素通りするので、

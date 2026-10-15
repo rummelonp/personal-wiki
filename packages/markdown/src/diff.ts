@@ -22,7 +22,7 @@ type Run = [kind: RunKind, count: number];
  * 変更箇所の中では削除した行を挿入した行より先に並べる。
  *
  * 行は `"\n"` で区切り、CodeMirror 6 と同じ数え方をする。空文字列は空行 1 行、`"a\n"` は `"a"` と
- * 空行の 2 行になるので、`oldLine`・`newLine` は Editor に表示される行番号と一致し、末尾の改行の
+ * 空行の 2 行になるので、`oldLine`、`newLine` は Editor に表示される行番号と一致し、末尾の改行の
  * 追加や削除も空行 1 行の差分として見える。`"\r"` は行の内容の一部として比べる。
  */
 export function diffLines(before: string, after: string): LineDiff[] {

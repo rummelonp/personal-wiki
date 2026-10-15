@@ -5,7 +5,7 @@ import { Highlight, highlightNodes } from "./highlight";
 import { extractTags, Tag, tagNodes } from "./tag";
 import { extractWikiLinks, WikiLink, wikiLinkNodes } from "./wikilink";
 
-// Editor の parser と同じく、WikiLink・Tag・GFM の Strikethrough と一緒に載せる
+// Editor の parser と同じく、WikiLink、Tag、GFM の Strikethrough と一緒に載せる
 const highlightParser = parser.configure([Frontmatter, WikiLink, Tag, Strikethrough, Highlight]);
 
 /** ハイライトされる範囲の中身（`==` を除いたテキスト）を出現順に返す */
@@ -118,7 +118,7 @@ describe("Highlight", () => {
 
 /**
  * links/tags の抽出（`extractDerived`）は Highlight を載せない parser を使う。
- * Obsidian はハイライトの中のリンクとタグもリンク一覧・タグ一覧に数えるので、
+ * Obsidian はハイライトの中のリンクとタグもリンク一覧、タグ一覧に数えるので、
  * Highlight の有無で抽出結果が変わらないことを、Highlight を載せた parser との比較で固定する。
  */
 describe("extraction is unaffected by highlights", () => {

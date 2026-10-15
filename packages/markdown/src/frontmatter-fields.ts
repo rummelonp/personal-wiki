@@ -23,7 +23,7 @@ const DELIMITER = "---";
  *
  * - 末尾の空白は正規表現で落とさず `trimEnd` に任せる。`([^:]*?)[ \t]*:` のように lazy な繰り返しと
  *   trim の繰り返しを重ねると、同じ空白を取り合って `:` の無い長い空白行で秒単位になる。
- * - 値は `.` でなく `[\s\S]` で取る。`.` は U+2028・U+2029 を跨げないため、それを含む行では
+ * - 値は `.` でなく `[\s\S]` で取る。`.` は U+2028、U+2029 を跨げないため、それを含む行では
  *   `(.*)$` の `$` が失敗し、`[ \t]+` と `.*` の境目で backtrack する。
  */
 const KEY_LINE = /^([^\s#][^:]*):(?:[ \t]+([\s\S]*))?$/;
@@ -31,7 +31,7 @@ const KEY_LINE = /^([^\s#][^:]*):(?:[ \t]+([\s\S]*))?$/;
 /** block list の項目（`- a`、値の無い `-`）。末尾の空白と `[\s\S]` の理由は `KEY_LINE` と同じ */
 const BLOCK_ITEM = /^[ \t]*-(?:[ \t]+([\s\S]*))?$/;
 
-/** 値として読まない先頭文字。複数行スカラ（`|`・`>`）、anchor、alias、tag（`!!str`）。 */
+/** 値として読まない先頭文字。複数行スカラ（`|`、`>`）、anchor、alias、tag（`!!str`）。 */
 const UNSUPPORTED_VALUE = /^[|>&*!]/;
 
 const FIELDS: Record<string, "tags" | "aliases"> = {
@@ -50,14 +50,14 @@ function unquote(value: string): string {
   return value;
 }
 
-/** YAML 1.2 の null（`~`・`null`・`Null`・`NULL`）。`NuLl` のような他の綴りは文字列 */
+/** YAML 1.2 の null（`~`、`null`、`Null`、`NULL`）。`NuLl` のような他の綴りは文字列 */
 const NULL_SCALAR = /^(?:~|null|Null|NULL)$/;
 
 /**
  * 1 つのスカラを値にする。YAML の null は「値が無い」ので `null` を返し、呼び出し側が落とす。
  *
  * quote を剥がした後では `~` と `"~"` を見分けられないので、null の判定はここでしかできない。
- * tag 名・title として読めるかどうかの判定は、剥がした後の文字列に対して呼び出し側が行う。
+ * tag 名、title として読めるかどうかの判定は、剥がした後の文字列に対して呼び出し側が行う。
  */
 function scalarValue(raw: string): string | null {
   return NULL_SCALAR.test(raw) ? null : unquote(raw);
@@ -88,10 +88,10 @@ function parseInlineValue(value: string): (string | null)[] {
  * （editor は browser で動く）。代わりに扱う範囲を次に限る。
  *
  * - 読むのはトップレベルの `tags`／`tag`／`aliases`／`alias` だけ。キー名の大文字小文字は区別しない。
- * - 値は flow list（`[a, b]`）、block list（`- a`）、scalar（`a`）、quoted（`"a"`・`'a'`）。
- * - 入れ子、anchor・alias、複数行スカラは読まず、空として扱う。
+ * - 値は flow list（`[a, b]`）、block list（`- a`）、scalar（`a`）、quoted（`"a"`、`'a'`）。
+ * - 入れ子、anchor／alias、複数行スカラは読まず、空として扱う。
  * - flow list の `,` は quote の中でも分ける（`['山田, 太郎']` は 2 項目。既知の制限）。
- * - YAML の null（`~`・`null`・`Null`・`NULL`）は値として返さない。quote されていれば文字列。
+ * - YAML の null（`~`、`null`、`Null`、`NULL`）は値として返さない。quote されていれば文字列。
  * - 行頭の `#` の行は読み飛ばす。行末の `#` はコメントとして扱わない（tag の `#` と紛れるため）。
  * - 同じキーが複数回書かれていれば値をつなぎ、重複は先に現れたほうを残す。
  *

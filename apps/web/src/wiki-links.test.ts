@@ -124,7 +124,7 @@ describe("embedPageId", () => {
     expect(links.embedPageId("別")).toBe("B");
   });
 
-  it("無い・読めないページは null のまま（匿名の draft の id を持たない）", async () => {
+  it("無いページと読めないページは null のまま（匿名の draft の id を持たない）", async () => {
     const { links } = setup([]);
     links.resolvePageEmbed("無い");
     await vi.advanceTimersByTimeAsync(0);

@@ -63,7 +63,7 @@ function lineByClass(view: EditorView, className: string): HTMLElement {
 }
 
 describe("本文の書体", () => {
-  it("本文は等幅でなく --ui-font-body、16px・行の高さ 1.75", () => {
+  it("本文は等幅でなく --ui-font-body、16px、行の高さ 1.75", () => {
     const view = mount((parent) => createEditor(parent, { doc: DOC }));
     const style = getComputedStyle(view.contentDOM);
     expect(style.fontFamily).toContain(BODY_FONT);
@@ -104,7 +104,7 @@ describe("本文の書体", () => {
     expect(h4Size).toBe(bodyFontSize);
   });
 
-  it("インラインコード・fenced code・indented code だけが等幅（--ui-font-mono）になる", () => {
+  it("インラインコード、fenced code、indented code だけが等幅（--ui-font-mono）になる", () => {
     const view = mount((parent) => createEditor(parent, { doc: DOC }));
 
     const inlineCode = spanByText(view, INLINE_CODE);
@@ -206,7 +206,7 @@ describe("見出しの上の余白", () => {
     expect(paddingTop(view, 3)).toBeGreaterThan(0);
   });
 
-  it("カーソルが入って `#` を出しても、見出しの行の位置・高さ・文字の位置が変わらない", async () => {
+  it("カーソルが入って `#` を出しても、見出しの行の位置、高さ、文字の位置が変わらない", async () => {
     const doc = ["本文", "", "## 見出し", "", "本文"].join("\n");
     const view = mount((parent) => createEditor(parent, { doc }));
     const textFrom = view.state.doc.line(3).from + 3;

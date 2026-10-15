@@ -16,7 +16,7 @@ import { createTitleEditor } from "./title-editor";
 /*
  * IME 不変条件（ime.ts の冒頭）を、CompositionEvent を自前で dispatch するのではなく、Chromium の
  * IME の経路（CDP の Input.imeSetComposition / Input.insertText / Input.dispatchKeyEvent）で確かめる。
- * こうするとブラウザ自身が compositionstart・compositionupdate・beforeinput・compositionend を発火し、
+ * こうするとブラウザ自身が compositionstart、compositionupdate、beforeinput、compositionend を発火し、
  * CodeMirror は DOM の変更を読んで `input.type.compose` の transaction を作る。合成の CompositionEvent は
  * DOM の変更を伴わないので、CodeMirror の `inputState.composing` が 0 のまま進まず、確定文字列が DOM から
  * doc へ読み込まれる順序や、`composing > 0` の間 keydown を keymap より前に捨てる挙動を再現できない。

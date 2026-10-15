@@ -106,7 +106,7 @@ const tab = (view: EditorView) => press(view, "Tab");
 const shiftTab = (view: EditorView) => press(view, "Tab", { shiftKey: true });
 const shiftEnter = (view: EditorView) => press(view, "Enter", { shiftKey: true });
 
-/** 文書順の各 ListItem の範囲と深さと本文（子のリストを除き、行頭の空白・`>`・記号を落としたもの） */
+/** 文書順の各 ListItem の範囲と深さと本文（子のリストを除き、行頭の空白、`>`、記号を落としたもの） */
 function listItemShapes(view: EditorView) {
   const { state } = view;
   const shapes: { from: number; to: number; depth: number; own: string }[] = [];
@@ -259,7 +259,7 @@ describe("Tab / Shift+Tab in a list", () => {
   });
 
   // 事後の検査と同じ不変条件を、検査の外から確かめる。変わった文書でも変わらなかった文書でも、
-  // 項目の数・順序・本文は保たれ、深さはカーソルの項目とその子孫だけが 1 段ずつ変わる
+  // 項目の数、順序、本文は保たれ、深さはカーソルの項目とその子孫だけが 1 段ずつ変わる
   test("Tab / Shift+Tab keep every list item, its text and the expected depth", () => {
     const changed = [
       ["stab", "1. p\n   - a|\n   - b\n2. q"],

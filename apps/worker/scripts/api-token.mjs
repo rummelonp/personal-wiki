@@ -1,4 +1,4 @@
-// API トークンを発行・失効する。
+// API トークンを発行する、または失効させる。
 //   node scripts/api-token.mjs issue <name> --scopes read|read,write [--remote]
 //   node scripts/api-token.mjs revoke <name> [--remote]
 // 既定はローカルの D1（wrangler d1 execute --local）。本番に書くときだけ --remote を付ける。

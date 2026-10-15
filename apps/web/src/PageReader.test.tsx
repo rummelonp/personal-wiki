@@ -433,7 +433,7 @@ describe("見出しと block への移動", () => {
     );
   });
 
-  it("戻る・進むで fragment 付きの URL に戻ると、位置を合わせる", async () => {
+  it("戻る、進むで fragment 付きの URL に戻ると、位置を合わせる", async () => {
     const { view } = renderReader(PAGE_WITH_HEADINGS);
     await flushAsync();
     clickLink("#節B");
@@ -447,7 +447,7 @@ describe("見出しと block への移動", () => {
     expect(location.hash).toBe(hashOf("節B"));
     history.forward();
     await moved(at("段落 ^blk"));
-    // 戻る・進むでは focus しない
+    // 戻る、進むでは focus しない
     expect(view().hasFocus).toBe(false);
   });
 

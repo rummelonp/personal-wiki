@@ -27,7 +27,7 @@ const MARK_NODES = new Set([
   blockIdNodes.marker,
 ]);
 
-/** 本文に含めない block・inline。空白に置き換え、前後の語がくっつかないようにする。 */
+/** 本文に含めない block、inline。空白に置き換え、前後の語がくっつかないようにする。 */
 const DROPPED_NODES = new Set([
   frontmatterNodes.frontmatter,
   commentNodes.inline,
@@ -92,9 +92,9 @@ interface ExtractPlainTextOptions {
  * Markdown の本文を、記法を除いた 1 行の plain text にする。検索結果の抜粋と全文検索の索引の元になる。
  * 一覧の抜粋は行末のタグを除くので、extractPlainTextParts の textWithoutTrailingTags を使う。
  *
- * 構文木から記号の node を落とす。見出しの `#`・リストの記号・引用の `>`・task の checkbox・
- * 強調／取り消し／ハイライト／inline code の記号・code fence の行・水平線・コメント（`%%`、
- * `<!-- -->`）・block id・frontmatter・リンク参照の定義を除き、リンクは表示文字だけを残す。
+ * 構文木から記号の node を落とす。見出しの `#`、リストの記号、引用の `>`、task の checkbox、
+ * 強調／取り消し／ハイライト／inline code の記号、code fence の行、水平線、コメント（`%%`、
+ * `<!-- -->`）、block id、frontmatter、リンク参照の定義を除き、リンクは表示文字だけを残す。
  * 画像と embed（`![[...]]`）は丸ごと落とす。code の中身は落とさない（読み物の一部として残す）。
  * `#tag` は本文の語としてそのまま残す（タグの語でも検索できるように）。
  *

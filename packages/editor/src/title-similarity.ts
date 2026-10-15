@@ -22,7 +22,7 @@ export function collapseConfusables(text: string): string {
 }
 
 /**
- * a と b が 1 文字の挿入・削除・置換だけで一致するか（編集距離 <= 1）。
+ * a と b が 1 文字の挿入、削除、置換だけで一致するか（編集距離 <= 1）。
  * 候補生成は打鍵のたびに全ページに対して走るため、任意の編集距離を許す DP ではなく
  * O(length) の定数距離チェックにとどめる。
  */
@@ -44,7 +44,7 @@ export function isOneEditAway(a: string, b: string): boolean {
     if (usedEdit) return false;
     usedEdit = true;
     if (shorter.length === longer.length) i++; // 置換
-    j++; // 削除・挿入
+    j++; // 削除、挿入
   }
   return true;
 }

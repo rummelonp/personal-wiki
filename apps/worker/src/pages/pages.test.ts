@@ -157,7 +157,7 @@ describe("POST /api/pages", () => {
 });
 
 describe("read のトークン", () => {
-  it("取得はできるが、作成・更新・追記・削除・作り直し・リンクの書き換えは 403", async () => {
+  it("取得はできるが、作成、更新、追記、削除、作り直し、リンクの書き換えは 403", async () => {
     const writer = await buildClient();
     const page = await writer.create("p");
     const reader = await buildClient({ scopes: "read", name: "reader" });
