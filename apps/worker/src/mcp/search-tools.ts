@@ -1,4 +1,5 @@
 // 理由は page-tools.ts の同じ import を参照
+import { prepareSearchQuery } from "@personal-wiki/domain";
 import * as z from "zod/v4";
 import { readableVisibilityOf } from "../auth/principal";
 import { isPageId } from "../pages/id";
@@ -12,7 +13,6 @@ import {
   type PageList,
   type PageSummary,
   parseCursor,
-  prepareSearchQuery,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
   SEARCH_QUERY_MESSAGES,

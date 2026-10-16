@@ -7,11 +7,11 @@ import {
   originValidationResponse,
   PARSE_ERROR,
 } from "@modelcontextprotocol/server";
+import { MAX_BODY_BYTES } from "@personal-wiki/domain";
 import type { Hono } from "hono";
 import { requireToken } from "../auth/middleware";
 import type { AppEnv } from "../env";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
-import { MAX_BODY_BYTES } from "../pages/store";
 import { PAGE_TOOLS } from "./page-tools";
 import { SEARCH_TOOLS } from "./search-tools";
 import type { WikiTool, WikiToolContext } from "./tool";

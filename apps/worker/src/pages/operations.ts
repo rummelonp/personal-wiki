@@ -1,3 +1,4 @@
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import type { Principal } from "../auth/principal";
 import { isPageId } from "./id";
 import {
@@ -12,8 +13,6 @@ import {
   createPage,
   findPageById,
   type LinkRewritesQueued,
-  MAX_BODY_BYTES,
-  MAX_TITLE_BYTES,
   type Page,
   setVisibility,
   type UpdateSuccess,

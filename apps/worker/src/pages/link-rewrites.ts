@@ -1,14 +1,8 @@
-import { wikiLinkUnsafeChars } from "@personal-wiki/domain";
+import { MAX_BODY_BYTES, utf8ByteLength, wikiLinkUnsafeChars } from "@personal-wiki/domain";
 import { rewriteWikiLinkTargets } from "@personal-wiki/markdown";
 import { type DerivedValues, derivedStatements, deriveValues } from "./derived";
 import { revisionStatements } from "./revisions";
-import {
-  guardStatement,
-  isVersionConflict,
-  MAX_BODY_BYTES,
-  sumRowsWritten,
-  type Visibility,
-} from "./store";
+import { guardStatement, isVersionConflict, sumRowsWritten, type Visibility } from "./store";
 
 /*
  * title の変更で積んだ書き換え（link_rewrites）を、1 回の呼び出しで 1 ページずつ本文に反映する。
@@ -330,7 +324,7 @@ export async function stepLinkRewrites(
   );
   if (rewrite.rewritten === 0) return discard([], guards);
 
-  if (new TextEncoder().encode(rewrite.body).length > MAX_BODY_BYTES) {
+  if (utf8ByteLength(rewrite.body) > MAX_BODY_BYTES) {
     return fail("body_too_large", guards);
   }
   const values = deriveValues(source.title, rewrite.body);

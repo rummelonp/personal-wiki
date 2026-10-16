@@ -1,7 +1,8 @@
 import {
-  foldForSearch,
   foldKeepingUnderscore,
   normalizeTitleKey,
+  SEARCH_MAX_QUERY_CHARS,
+  type SearchQuery,
   TRIGRAM_MIN_CHARS,
 } from "@personal-wiki/domain";
 import type { ReadableVisibility } from "../auth/principal";
@@ -78,8 +79,6 @@ export const TITLES_MAX_LIMIT = 500;
 export const SEARCH_DEFAULT_LIMIT = 20;
 /** 抜粋を作る分、一覧より 1 件あたりの CPU が重いので小さく抑える */
 export const SEARCH_MAX_LIMIT = 50;
-/** 長い phrase は trigram の数だけ照合が増えるので、検索語の長さ（文字数）に上限を置く */
-export const SEARCH_MAX_QUERY_CHARS = 200;
 
 /** 抜粋の長さ（文字数）。FTS5 の snippet() は trigram を 1 token と数え、64 が上限 */
 const EXCERPT_CHARS = 64;
@@ -382,10 +381,6 @@ export async function listBacklinksByTitle(
   return pageOf(results, limit, toSummary);
 }
 
-export type SearchQuery =
-  | { ok: true; query: string }
-  | { ok: false; reason: "empty" | "too_long" | "control_char" };
-
 /** REST と MCP が検索語の誤りに返す説明 */
 export const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["reason"], string> =
   {
@@ -393,20 +388,6 @@ export const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["
     too_long: `検索語が長すぎる（上限 ${SEARCH_MAX_QUERY_CHARS} 文字）`,
     control_char: "検索語に制御文字を含められない",
   };
-
-// NUL は FTS5 の phrase が途中で切れて構文エラー（500）になり、LIKE では pattern が切れて全件に一致する。
-// 本文に残らない制御文字で探す用途も無いので、タブと改行を含めて C0 と DEL をまとめて拒む
-// biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字を検出するのが目的
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-
-/** 検索語を pages_fts と同じ NFKC にそろえ、前後の空白を除く。途中の制御文字は拒む。 */
-export function prepareSearchQuery(raw: string): SearchQuery {
-  const query = foldForSearch(raw).trim();
-  if (query === "") return { ok: false, reason: "empty" };
-  if (CONTROL_CHARS.test(query)) return { ok: false, reason: "control_char" };
-  if ([...query].length > SEARCH_MAX_QUERY_CHARS) return { ok: false, reason: "too_long" };
-  return { ok: true, query };
-}
 
 interface FtsRow extends SummaryRow {
   excerpt: string;

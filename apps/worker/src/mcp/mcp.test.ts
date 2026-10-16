@@ -1,9 +1,9 @@
 import { env } from "cloudflare:workers";
 import { McpServer } from "@modelcontextprotocol/server";
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
-import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "../pages/store";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
 import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";

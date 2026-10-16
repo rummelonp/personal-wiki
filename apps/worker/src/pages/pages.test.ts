@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { buildClient, type PageJson, snapshotDb, T0 } from "../test/pages";
-import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "./store";
 
 async function revisionsOf(pageId: string) {
   const { results } = await env.DB.prepare(
@@ -142,11 +142,11 @@ describe("POST /api/pages", () => {
     expect(await snapshotDb()).toEqual(before);
   });
 
-  it("title に NUL などの C0 の制御文字があれば 400 invalid_field で、何も書かない", async () => {
+  it("title に NUL などの C0 の制御文字か DEL があれば 400 invalid_field で、何も書かない", async () => {
     const { create, request } = await buildClient();
     const page = await create("元の title", "本文");
     const before = await snapshotDb();
-    for (const title of ["a\u0000b", "a\u0001b", "a\u001fb"]) {
+    for (const title of ["a\u0000b", "a\u0001b", "a\u001fb", "a\u007fb"]) {
       const created = await request("/api/pages", { method: "POST", json: { title, body: "" } });
       expect(created.status).toBe(400);
       expect(await created.json()).toEqual({
@@ -166,14 +166,14 @@ describe("POST /api/pages", () => {
     expect(await snapshotDb()).toEqual(before);
   });
 
-  it("title の改行とタブは空白にして保存し、DEL など C0 の外の文字は受ける", async () => {
+  it("title の改行とタブは空白にして保存し、C0 と DEL の外の文字は受ける", async () => {
     const { request } = await buildClient();
     const res = await request("/api/pages", {
       method: "POST",
-      json: { title: "a\r\nb\tc\u007f", body: "" },
+      json: { title: "a\r\nb\tc\u0080", body: "" },
     });
     expect(res.status).toBe(201);
-    expect(await res.json()).toMatchObject({ title: "a b c\u007f" });
+    expect(await res.json()).toMatchObject({ title: "a b c\u0080" });
   });
 
   it("本文に NUL があれば 400 invalid_field で、タブ、改行、復帰は受ける", async () => {

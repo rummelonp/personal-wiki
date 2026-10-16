@@ -1,8 +1,11 @@
 import {
+  type CharAt,
+  checkPageInput,
+  findNul,
+  MAX_TITLE_BYTES,
   normalizeTitleKey,
-  singleLineTitle,
-  textHasNul,
-  titleHasControlChar,
+  type PageInputProblem,
+  utf8ByteLength,
   wikiLinkUnsafeChars,
 } from "@personal-wiki/domain";
 import type { ReadableVisibility } from "../auth/principal";
@@ -37,26 +40,22 @@ export interface Page {
 }
 
 /**
- * 本文の上限（UTF-8 のバイト数）。保存のたびに本文の Markdown を解析して派生データを作るので、
- * Workers Free の CPU 10ms で決める。dev の Mac（Node、warm）で解析を測った値:
- *   リンクと強調の多い本文: 28KB で 8.5ms、100KB で 24.8ms、286KB で 69ms、1MB で約 260〜300ms
- *   平文: 22KB で 3.4ms、219KB で 21ms
- * リンクの多い本文では 64KiB でも 10ms を超えうる。本番の CPU 時間を測ってから見直す。
- * D1 の 1 行 2MB（revisions の行は title と body を両方持つ）には、この上限なら十分収まる。
+ * 入力の誤り。上限と位置は domain の checkPageInput の値をそのまま持つ。追記では誤りを追記した text に
+ * 結びつけ、本文の超過には追記前の本文のバイト数も添える（どれだけ短くすればよいかを呼び出し元が決められる）。
  */
-export const MAX_BODY_BYTES = 65_536;
-
-/**
- * title の上限（UTF-8 のバイト数）。title は一覧やリンクの解決で何度も読み書きし、title_key の
- * 索引にも入るので、本文と別に小さく抑える。
- */
-export const MAX_TITLE_BYTES = 1024;
-
 export type InputError =
   | { ok: false; reason: "invalid_title" }
-  | { ok: false; reason: "control_char"; field: "title" | "body" | "text" }
-  | { ok: false; reason: "title_too_long" }
-  | { ok: false; reason: "body_too_large" };
+  | { ok: false; reason: "control_char"; field: "title" | "body" | "text"; at: CharAt }
+  | { ok: false; reason: "title_too_long"; bytes: number; max: number }
+  | { ok: false; reason: "body_too_large"; field: "body"; bytes: number; max: number }
+  | {
+      ok: false;
+      reason: "body_too_large";
+      field: "text";
+      bytes: number;
+      currentBytes: number;
+      max: number;
+    };
 
 export type WriteError =
   | InputError
@@ -147,12 +146,11 @@ export async function resolvePagesByTitle(
   titles: readonly string[],
   readable: ReadableVisibility,
 ): Promise<(ResolvedPage | null)[]> {
-  const encoder = new TextEncoder();
   const keys = titles.map((title) => {
     // 保存できる title の上限を超える入力は解決しない。空白を詰めれば一致する入力もありうるが、
     // 正規化（NFKC）の前に除いて長い入力に CPU を使わせない方を採る。UTF-16 の長さは UTF-8 の
-    // バイト数以下なので、先にそれで弾けば長い入力の変換も省ける
-    if (title.length > MAX_TITLE_BYTES || encoder.encode(title).length > MAX_TITLE_BYTES) {
+    // バイト数以下なので、先にそれで弾けば長い入力を数える手間も省ける
+    if (title.length > MAX_TITLE_BYTES || utf8ByteLength(title) > MAX_TITLE_BYTES) {
       return null;
     }
     const key = normalizeTitleKey(title);
@@ -183,31 +181,26 @@ interface PreparedContent {
   body: string;
 }
 
+function inputErrorOf(problem: PageInputProblem): InputError {
+  return problem.reason === "body_too_large"
+    ? { ok: false, ...problem, field: "body" }
+    : { ok: false, ...problem };
+}
+
 /**
- * 保存する title と本文を整え、規則に合うか調べる。
- * 制御文字の検査は新しく書き込む入力にだけ掛ける。追記は既存の本文を渡し直すので、NUL を含む
- * 既存のページに追記できなくならないよう、呼び出し側で追記する text だけを調べる。
+ * 保存する title と本文を整え、規則に合うか調べる。誤りは checkPageInput の先頭の 1 件を返す。
+ * checkControlChars の意味は checkPageInput と同じで、追記だけが false を渡す。
  */
 function prepareContent(
   rawTitle: string,
   body: string,
-  { checkControlChars }: { checkControlChars: boolean },
+  options: { checkControlChars: boolean },
 ): PreparedContent | InputError {
-  const title = singleLineTitle(rawTitle);
-  const key = normalizeTitleKey(title);
-  if (!key.ok) return { ok: false, reason: "invalid_title" };
-  if (checkControlChars) {
-    if (titleHasControlChar(title)) return { ok: false, reason: "control_char", field: "title" };
-    if (textHasNul(body)) return { ok: false, reason: "control_char", field: "body" };
-  }
-  const encoder = new TextEncoder();
-  if (encoder.encode(title).length > MAX_TITLE_BYTES) {
-    return { ok: false, reason: "title_too_long" };
-  }
-  if (encoder.encode(body).length > MAX_BODY_BYTES) {
-    return { ok: false, reason: "body_too_large" };
-  }
-  return { ok: true, title, titleKey: key.value, body };
+  const check = checkPageInput(rawTitle, body, options);
+  const [problem] = check.problems;
+  if (problem !== undefined) return inputErrorOf(problem);
+  if (check.titleKey === null) return { ok: false, reason: "invalid_title" };
+  return { ok: true, title: check.title, titleKey: check.titleKey, body };
 }
 
 export function guardStatement(
@@ -483,7 +476,8 @@ export async function appendToPage(
   db: D1Database,
   input: AppendInput,
 ): Promise<(UpdateSuccess & { attempts: number }) | AppendError> {
-  if (textHasNul(input.text)) return { ok: false, reason: "control_char", field: "text" };
+  const nul = findNul(input.text);
+  if (nul !== null) return { ok: false, reason: "control_char", field: "text", at: nul };
   for (let attempt = 1; attempt <= APPEND_MAX_ATTEMPTS; attempt++) {
     const current = await findPageById(db, input.id);
     if (current === null) return { ok: false, reason: "not_found" };
@@ -496,7 +490,11 @@ export async function appendToPage(
       now: input.now,
     };
     const content = prepareContent(update.title, update.body, { checkControlChars: false });
-    if (!content.ok) return content;
+    if (!content.ok) {
+      return content.reason === "body_too_large"
+        ? { ...content, field: "text", currentBytes: utf8ByteLength(current.body) }
+        : content;
+    }
     const result = await writeContent(db, update, content, false);
     if (result === GUARD_REJECTED) continue;
     if (result.ok) return { ...result, attempts: attempt };

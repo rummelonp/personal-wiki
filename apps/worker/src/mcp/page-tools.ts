@@ -1,4 +1,5 @@
 // "zod" の `z` を経由すると zod の全ロケールがバンドルに入る（約 580KB）。SDK と同じ "zod/v4" から名前空間で取る
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import * as z from "zod/v4";
 import { readableVisibilityOf } from "../auth/principal";
 import {
@@ -9,14 +10,7 @@ import {
   linkRewritesField,
   updatePageAs,
 } from "../pages/operations";
-import {
-  type AppendError,
-  findPageByTitle,
-  MAX_BODY_BYTES,
-  MAX_TITLE_BYTES,
-  type Page,
-  type WriteError,
-} from "../pages/store";
+import { type AppendError, findPageByTitle, type Page, type WriteError } from "../pages/store";
 import { pageUrls } from "../pages/urls";
 import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool";
 

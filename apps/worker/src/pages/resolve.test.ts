@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { SESSION_TTL_SECONDS } from "../auth/session";
@@ -7,7 +8,6 @@ import { ownerCookie, ownerEnv } from "../test/owner";
 import { type PageJson, T0 } from "../test/pages";
 import { generateTestToken, insertToken } from "../test/tokens";
 import { RESOLVE_MAX_TITLES } from "./routes";
-import { MAX_TITLE_BYTES } from "./store";
 
 const ORIGIN = "http://localhost";
 

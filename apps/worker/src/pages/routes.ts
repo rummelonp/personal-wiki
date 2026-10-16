@@ -1,4 +1,9 @@
-import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain";
+import {
+  ANONYMOUS_SEARCH_MIN_CHARS,
+  MAX_BODY_BYTES,
+  prepareSearchQuery,
+  searchQueryLength,
+} from "@personal-wiki/domain";
 import type { Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { allowAnonymousRead, requireOwner, requireScope } from "../auth/middleware";
@@ -30,7 +35,6 @@ import {
   listRecentPages,
   listTagCounts,
   parseCursor,
-  prepareSearchQuery,
   prepareTagFilter,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
@@ -42,7 +46,6 @@ import {
   type AppendError,
   deletePage,
   findPageByTitle,
-  MAX_BODY_BYTES,
   type Page,
   REBUILD_MAX_LIMIT,
   rebuildDerived,

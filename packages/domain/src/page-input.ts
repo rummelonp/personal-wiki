@@ -139,16 +139,3 @@ export function checkPageInput(
   }
   return { title, titleKey: key.ok ? key.value : null, titleBytes, bodyBytes, problems };
 }
-
-/** 本文と追記の text が NUL を含むか。タブ、改行、復帰を含め、NUL 以外の制御文字は受ける。 */
-export function textHasNul(text: string): boolean {
-  return text.includes("\u0000");
-}
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字を検出するのが目的
-const TITLE_CONTROL_CHARS = /[\u0000-\u001f]/;
-
-/** title が C0 の制御文字（NUL など）を含むか。`singleLineTitle` の後の title に使う。 */
-export function titleHasControlChar(title: string): boolean {
-  return TITLE_CONTROL_CHARS.test(title);
-}

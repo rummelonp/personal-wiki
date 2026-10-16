@@ -17,8 +17,6 @@ export {
   MAX_TITLE_BYTES,
   type PageInputCheck,
   type PageInputProblem,
-  textHasNul,
-  titleHasControlChar,
   utf8ByteLength,
 } from "./page-input";
 export {
