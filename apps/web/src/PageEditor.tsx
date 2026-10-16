@@ -96,6 +96,19 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
   gone: "削除済み",
 };
 
+/**
+ * 通知か見えない status がすでに読み上げる状態。上端の文はこれらを読み上げない。
+ * 上端自体を live region にすると、通知の alert と合わせて 2 度読まれる。
+ */
+const SPOKEN_BY_NOTICE: ReadonlySet<SaveStatus> = new Set([
+  "create-error",
+  "error",
+  "invalid",
+  "conflict",
+  "auth",
+  "gone",
+]);
+
 const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
   create: "作成できませんでした",
   save: "保存できませんでした",
@@ -559,15 +572,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             {leaving ? `「${linkPending}」を開いています…` : ""}
           </span>
         )}
-        <p
-          ref={saveStateEl}
-          className={`save-state save-state-${status}`}
-          role="status"
-          aria-live="polite"
-        >
+        <p ref={saveStateEl} className={`save-state save-state-${status}`}>
           <span className="dot" aria-hidden="true" />
           {STATUS_LABELS[status]}
         </p>
+        <span className="visually-hidden" role="status">
+          {SPOKEN_BY_NOTICE.has(status) ? "" : STATUS_LABELS[status]}
+        </span>
 
         {state.pendingBackup !== null && (
           <Notice
@@ -881,7 +892,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           )}
         {inputProblem !== undefined && (
           // 数は打つたびに変わり、読み上げると打つたびに読み直されるので、通知は読み上げない。
-          // 原因は下の status が、保存できないことは上端の保存の状態が伝える
+          // 原因と保存できないことは、下の見えない status が inputProblemTitle で伝える。
+          // 上端の保存の状態は、この間は読み上げない
           <Notice
             key="input"
             tone="error"

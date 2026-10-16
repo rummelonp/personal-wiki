@@ -145,6 +145,98 @@ describe("PageEditor と本文のエディタ", () => {
     expect(section?.textContent).toContain("ありません");
   });
 
+  describe("上端の保存の状態の読み上げ", () => {
+    const top = () => container?.querySelector(".save-state");
+    const spoken = () => container?.querySelector(".save-state + [role='status']");
+
+    it("上端の文は live region にせず、同じ文を見えない status で読み上げる", async () => {
+      const { view } = renderPage();
+      expect(top()?.getAttribute("role")).toBeNull();
+      expect(top()?.getAttribute("aria-live")).toBeNull();
+      expect(spoken()?.getAttribute("role")).toBe("status");
+      expect(spoken()?.textContent).toBe("保存済み");
+      view().focus();
+      act(() => typeAtEnd(view(), "を書き足す"));
+      expect(top()?.textContent).toBe("未保存の変更あり");
+      expect(spoken()?.textContent).toBe("未保存の変更あり");
+    });
+
+    it("通知が同じ状態を伝えるときは、上端の文を見せたまま読み上げない", async () => {
+      vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "unauthorized" });
+      const { view } = renderPage();
+      view().focus();
+      typeAtEnd(view(), "を書き足す");
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+      expect(top()?.textContent).toBe("ログインの期限切れ");
+      expect(spoken()?.textContent).toBe("");
+    });
+
+    it.each([
+      {
+        status: "別の場所でも更新あり",
+        provoke: () => {
+          vi.mocked(updatePage).mockResolvedValue({
+            ok: false,
+            reason: "version_conflict",
+            currentVersion: 2,
+          });
+          vi.mocked(getPage).mockResolvedValue(ok({ ...PAGE, body: "サーバーの本文", version: 2 }));
+        },
+      },
+      {
+        status: "削除済み",
+        provoke: () => {
+          vi.mocked(updatePage).mockResolvedValue({
+            ok: false,
+            reason: "version_conflict",
+            currentVersion: 2,
+          });
+          vi.mocked(getPage).mockResolvedValue({ ok: false, reason: "not_found" });
+        },
+      },
+      {
+        status: "保存に失敗",
+        provoke: () => {
+          vi.mocked(updatePage).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
+        },
+      },
+    ])("$status のときは、通知が伝えるので読み上げない", async ({ status, provoke }) => {
+      provoke();
+      const { view } = renderPage();
+      view().focus();
+      typeAtEnd(view(), "を書き足す");
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+      expect(top()?.textContent).toBe(status);
+      expect(spoken()?.textContent).toBe("");
+    });
+
+    it("保存できない入力のときは、上端でなく入力の通知の原因の status が読み上げる", async () => {
+      const { view } = renderPage();
+      view().focus();
+      act(() => typeAtEnd(view(), "あ".repeat(Math.ceil(MAX_BODY_BYTES / 3) + 1)));
+      await flushAsync();
+      expect(top()?.textContent).toBe("保存できません");
+      expect(spoken()?.textContent).toBe("");
+      const reasons = [...(container?.querySelectorAll("[role='status']") ?? [])]
+        .map((status) => status.textContent)
+        .filter(Boolean);
+      expect(reasons).toEqual(["本文が長すぎて保存できません"]);
+    });
+
+    it("保存し直している間は、保存中を読み上げる", async () => {
+      vi.mocked(updatePage).mockReturnValue(new Promise(() => {}));
+      const { view } = renderPage();
+      view().focus();
+      typeAtEnd(view(), "を書き足す");
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+      expect(top()?.textContent).toBe("保存中…");
+      expect(spoken()?.textContent).toBe("保存中…");
+    });
+  });
+
   describe("ログインの期限が切れた通知の再試行ボタン", () => {
     const authNotice = () =>
       [...(container?.querySelectorAll(".notice") ?? [])].find((notice) =>
@@ -1378,7 +1470,7 @@ describe("まだ作っていないページ（page が null）", () => {
     typeTitle("題");
     pressEnter(false);
     await vi.waitFor(() => expect(container?.textContent).toContain("作成できませんでした"));
-    expect(container?.querySelector("[role='status']")?.textContent).toBe("作成に失敗");
+    expect(container?.querySelector(".save-state")?.textContent).toBe("作成に失敗");
     const keys = newBackupKeys();
     expect(keys).toHaveLength(1);
     const saved = JSON.parse(localStorage.getItem(keys[0] ?? "") ?? "null");
