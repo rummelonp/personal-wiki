@@ -44,7 +44,7 @@ async function mount(hideEmpty: boolean) {
 }
 
 describe("Backlinks の取得中", () => {
-  it("2 行の帯を出し、取得中であることと「読み込み中…」を支援技術に伝える", async () => {
+  it("2 行の帯を出し、取得中であることと「読み込み中…」を支援技術に伝える。読み込みの知らせは live region にしない", async () => {
     await mount(false);
     await act(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -52,9 +52,8 @@ describe("Backlinks の取得中", () => {
     const pending = container?.querySelector(".skeleton-links");
     expect(pending?.getAttribute("aria-busy")).toBe("true");
     expect(pending?.querySelectorAll(".skeleton").length).toBe(2);
-    // status は aria-busy の領域の外に置く（中の変化は読み上げられない）
-    expect(pending?.querySelector("[role='status']")).toBeNull();
-    expect(container?.querySelector("[role='status']")?.textContent).toBe("読み込み中…");
+    expect(container?.querySelector("[role='status'], [role='alert'], [aria-live]")).toBeNull();
+    expect(container?.querySelector(".visually-hidden")?.textContent).toBe("読み込み中…");
     expect(container?.querySelector(".muted")).toBeNull();
   });
 

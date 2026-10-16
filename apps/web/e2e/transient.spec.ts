@@ -64,7 +64,9 @@ test.describe("ページを開く途中", () => {
         3,
       );
       // リンクの書き換えの空の status も同じ role を持つので、読み込みの文で絞る
-      await expect(page.getByRole("status").filter({ hasText: "読み込み中…" })).toHaveCount(1);
+      await expect(page.getByRole("status").filter({ hasText: "ページを読み込み中…" })).toHaveCount(
+        1,
+      );
 
       hold.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });

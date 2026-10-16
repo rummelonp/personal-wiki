@@ -45,7 +45,7 @@ describe("読み込み中の帯", () => {
     expect(painted()).toBe(true);
   });
 
-  it("「読み込み中…」の status は空で取り付け、frame を空けて文字を入れる。aria-busy の外に置く", () => {
+  it("「ページを読み込み中…」の status は空で取り付け、frame を空けて文字を入れる。aria-busy の外に置く", () => {
     vi.useFakeTimers();
     mount(<PageSkeleton />);
     // 取り付けと同じ描画の更新では文字を入れない（中身を持ったまま挿入すると読まれない）
@@ -53,8 +53,17 @@ describe("読み込み中の帯", () => {
     expect(status()).toBe("");
 
     act(() => vi.advanceTimersByTime(40));
-    expect(status()).toBe("読み込み中…");
+    expect(status()).toBe("ページを読み込み中…");
     expect(container?.querySelector("[aria-busy='true'] [role='status']")).toBeNull();
+  });
+
+  it("一覧の帯は一覧を、行き先の分からない帯は対象を言わずに読み込み中と伝える", () => {
+    vi.useFakeTimers();
+    mount(<ListSkeleton />);
+    act(() => vi.advanceTimersByTime(40));
+    expect(status()).toBe("一覧を読み込み中…");
+    act(() => root?.render(<ListSkeleton status="読み込み中…" />));
+    expect(status()).toBe("読み込み中…");
   });
 
   it("文字を入れる前に取り除けば、文字を入れない", () => {

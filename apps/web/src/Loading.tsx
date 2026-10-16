@@ -117,15 +117,16 @@ export function useAfterFrames(): boolean {
 }
 
 /**
- * 支援技術にだけ伝える「読み込み中…」。取得中の領域の外に置く（`aria-busy` の中の status は、
+ * 支援技術にだけ伝える「〜を読み込み中…」。取得中の領域の外に置く（`aria-busy` の中の status は、
  * 多くの読み上げが変化を伝えない）。中身を持ったまま挿入した status も読まれないので、
  * 空で置いてから、後の frame で文字を入れる（`useAfterFrames`）。
+ * 文は前後の文脈なしに読まれるので、何を読み込んでいるかを含める。
  */
-export function LoadingStatus() {
+export function LoadingStatus({ text }: { text: string }) {
   const ready = useAfterFrames();
   return (
     <span className="visually-hidden" role="status">
-      {ready ? "読み込み中…" : ""}
+      {ready ? text : ""}
     </span>
   );
 }
@@ -176,12 +177,21 @@ export function LoadingMoreRows({ count = 3 }: { count?: number }) {
   return <SkeletonEntryRows count={count} painted />;
 }
 
-/** 一覧の画面全体の帯。heading が分かっていれば文字で出す。 */
-export function ListSkeleton({ heading }: { heading?: string }) {
+/**
+ * 一覧の画面全体の帯。heading が分かっていれば文字で出す。
+ * 行き先が一覧と決まっていない（知らない URL）ときは、status の文を status で差し替える。
+ */
+export function ListSkeleton({
+  heading,
+  status = "一覧を読み込み中…",
+}: {
+  heading?: string;
+  status?: string;
+}) {
   const painted = useSkeletonPainted();
   return (
     <RailLayout rail={null}>
-      <LoadingStatus />
+      <LoadingStatus text={status} />
       <div className={`home ${paintedClass(painted) ?? ""}`} aria-busy="true">
         {heading === undefined ? (
           <div className="list-title" aria-hidden="true">
@@ -225,7 +235,7 @@ export function PageSkeleton({
   );
   return (
     <RailLayout rail={rail}>
-      <LoadingStatus />
+      <LoadingStatus text="ページを読み込み中…" />
       <div className={`note ${paintedClass(painted) ?? ""}`} aria-busy="true">
         <div className="note-title">
           {title === undefined ? (
@@ -266,6 +276,6 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
     case "new":
       return <PageSkeleton owner={owner} />;
     case "unknown":
-      return <ListSkeleton />;
+      return <ListSkeleton status="読み込み中…" />;
   }
 }

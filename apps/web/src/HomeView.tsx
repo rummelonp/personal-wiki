@@ -77,7 +77,11 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
 
   return (
     <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
-      {busy && <LoadingStatus />}
+      {busy && (
+        <LoadingStatus
+          text={state.status === "ready" ? "続きを読み込み中…" : "一覧を読み込み中…"}
+        />
+      )}
       <div className="home" aria-busy={busy || undefined}>
         {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
         {searching && <SearchBox query={trimmed} />}

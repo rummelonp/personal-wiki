@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "./Link";
-import { LoadingStatus, useSkeletonPainted } from "./Loading";
+import { useSkeletonPainted } from "./Loading";
 import { rememberTitle } from "./page-titles";
 import { listBacklinks, listBacklinksByTitle, type PageSummary } from "./pages-api";
 import { RailSection } from "./Rail";
@@ -11,12 +11,16 @@ type State =
   | { status: "ready"; pages: PageSummary[]; next: string | null; loadingMore: boolean }
   | { status: "error" };
 
-/** 取得中の 2 行の帯。リンクの行と同じ高さで場所を取り、取得が遅いときだけ描く。 */
+/**
+ * 取得中の 2 行の帯。リンクの行と同じ高さで場所を取り、取得が遅いときだけ描く。
+ * 「読み込み中…」は節を読んだときにだけ伝わればよいので、live region にしない（補助欄の読み込みの
+ * 知らせが本文の読み上げに割り込む）。
+ */
 function PendingLinks() {
   const painted = useSkeletonPainted();
   return (
     <>
-      <LoadingStatus />
+      <span className="visually-hidden">読み込み中…</span>
       <div
         className={painted ? "skeleton-links skeleton-painted" : "skeleton-links"}
         aria-busy="true"

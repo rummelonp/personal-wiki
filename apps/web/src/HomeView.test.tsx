@@ -225,6 +225,9 @@ describe("条件を変えて取り直している間の一覧", () => {
       expect(container?.querySelector(".entries-stale .entry-title")?.textContent).toBe("前の一覧");
       expect(container?.querySelector(".entries-stale.skeleton-painted")).not.toBeNull();
       expect(container?.querySelector(".skeleton-entries")).toBeNull();
+      await vi.waitFor(() =>
+        expect(container?.querySelector("[role='status']")?.textContent).toBe("一覧を読み込み中…"),
+      );
 
       await act(async () =>
         deliver(
@@ -258,6 +261,10 @@ describe("条件を変えて取り直している間の一覧", () => {
         2,
       );
       expect(container?.querySelectorAll(".entries .entry").length).toBe(1);
+      // 一覧の取り直しと区別できるよう、読み足していることを伝える
+      await vi.waitFor(() =>
+        expect(container?.querySelector("[role='status']")?.textContent).toBe("続きを読み込み中…"),
+      );
     } finally {
       restore();
     }
