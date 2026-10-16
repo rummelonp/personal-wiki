@@ -1,6 +1,7 @@
 import {
   ATTACHMENT_CONTENT_TYPES,
   ATTACHMENT_MAX_BYTES,
+  type AttachmentContentType,
   isAttachmentName,
 } from "@personal-wiki/domain/attachment";
 import type {
@@ -16,7 +17,6 @@ export interface UploadNotice {
   message: string;
 }
 
-// Worker の上限と同じく Finder の表示に合わせた 1,000 単位。
 const MAX_MB = ATTACHMENT_MAX_BYTES / 1_000_000;
 
 /**
@@ -27,7 +27,7 @@ function formatMegabytes(bytes: number): string {
   return `${(Math.ceil(bytes / 100_000) / 10).toFixed(1)} MB`;
 }
 
-const FORMAT_LABELS: Record<string, string> = {
+const FORMAT_LABELS: Readonly<Record<AttachmentContentType, string>> = {
   "image/png": "PNG",
   "image/jpeg": "JPEG",
   "image/gif": "GIF",
@@ -46,12 +46,12 @@ function noticeFor(kind: UploadFailureKind, file: File): UploadNotice {
     case "unsupported_type":
       return {
         kind,
-        message: `${subject}は添付できない形式です。PNG、JPEG、GIF、WebP、AVIF の画像だけ添付できます。`,
+        message: `${subject}は添付できない形式です。${Object.values(FORMAT_LABELS).join("、")} の画像だけ添付できます。`,
       };
     case "content_mismatch":
       return {
         kind,
-        message: `${subject}の中身が ${FORMAT_LABELS[file.type] ?? "画像"} として読めませんでした。ファイルが壊れているか、拡張子だけが違う可能性があります。`,
+        message: `${subject}の中身が ${FORMAT_LABELS[file.type as AttachmentContentType] ?? "画像"} として読めませんでした。ファイルが壊れているか、拡張子だけが違う可能性があります。`,
       };
     case "unauthorized":
       return {

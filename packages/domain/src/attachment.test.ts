@@ -173,26 +173,28 @@ describe("matchesAttachmentMagic", () => {
       if (brandAt !== undefined) data.set(ascii("avif"), brandAt);
       return data;
     }
-    const TEN_MIB = ATTACHMENT_MAX_BYTES;
+    const MAX_BYTES = ATTACHMENT_MAX_BYTES;
 
     it("size が 0 でも上限の内側の brand は読む", () => {
-      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, 64))).toBe(true);
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, MAX_BYTES, 64))).toBe(true);
       expect(
-        matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, AVIF_BRAND_SEARCH_LIMIT - 4)),
+        matchesAttachmentMagic("image/avif", hugeFtyp(0, MAX_BYTES, AVIF_BRAND_SEARCH_LIMIT - 4)),
       ).toBe(true);
     });
 
     it("size が 0 や巨大でも、上限より後ろの avif は brand とみなさない", () => {
       const far = AVIF_BRAND_SEARCH_LIMIT;
-      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, far))).toBe(false);
-      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0xffffffff, TEN_MIB, far))).toBe(false);
-      expect(matchesAttachmentMagic("image/avif", hugeFtyp(TEN_MIB, TEN_MIB, TEN_MIB - 4))).toBe(
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, MAX_BYTES, far))).toBe(false);
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0xffffffff, MAX_BYTES, far))).toBe(
         false,
       );
+      expect(
+        matchesAttachmentMagic("image/avif", hugeFtyp(MAX_BYTES, MAX_BYTES, MAX_BYTES - 4)),
+      ).toBe(false);
     });
 
     it("brand が無い上限いっぱいの入力は false", () => {
-      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB))).toBe(false);
+      expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, MAX_BYTES))).toBe(false);
     });
 
     it("minor version の avif は brand とみなさない", () => {
