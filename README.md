@@ -15,7 +15,10 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 - ページの版の履歴。
   保存のたびに版を残し、owner のブラウザからの保存は、最初の保存から 10 分までを 1 つの版にまとめます。
   過去の版は、owner がブラウザの右の列から、read 以上の API token が REST（`/api/pages/:id/revisions`）と MCP（`list_revisions` と `read_page` の `revision`）から、OAuth の接続が MCP から読めます。
-  ログインしていない閲覧者には見せません
+  ログインしていない閲覧者には見せません。
+  過去の版の本文には、owner が版のダイアログの「この版の本文に戻す」から、write の API token が REST（`POST /api/pages/:id/revisions/:version/restore`）から戻せます。
+  戻すのは本文と、本文から作るタグとリンクだけで、title は今のままです。
+  戻すと新しい版を積み、戻す前の本文も履歴に残ります
 - API token による REST と MCP の認証。
   claude.ai などのカスタムコネクタからは OAuth でも接続できます
 - ブラウザで閲覧と編集をする owner のログイン（Cloudflare Access）
