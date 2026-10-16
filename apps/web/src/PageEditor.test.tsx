@@ -1262,6 +1262,26 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(createPage).toHaveBeenLastCalledWith({ title: "題", body: "残る本文" });
   });
 
+  it("作成の失敗の後に本文を規則に合わなくしたら、押しても作れない再試行を隠す", async () => {
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "error",
+      message: "通信できない",
+    });
+    const { view } = renderNew();
+    typeTitle("題");
+    pressEnter(false);
+    await vi.waitFor(() => expect(container?.textContent).toContain("もう一度作成する"));
+    act(() => typeAtEnd(view(), "\u0000"));
+    await flushAsync();
+    expect(container?.textContent).toContain("見えない文字があって保存できません");
+    expect(container?.textContent).not.toContain("もう一度作成する");
+
+    act(() => view().dispatch({ changes: { from: 0, to: view().state.doc.length, insert: "" } }));
+    await flushAsync();
+    expect(container?.textContent).toContain("もう一度作成する");
+  });
+
   it("退避が端末に書けないときは、退避してあるとは言わず、内容をコピーするよう案内する", async () => {
     vi.mocked(createPage).mockResolvedValue({
       ok: false,

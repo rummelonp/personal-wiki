@@ -485,9 +485,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // サーバーが入力の誤りで拒んでも、手元の検査が同じ問題を見つけていれば、その通知に任せる
   const coveredByCheck = (op: FailedOp) =>
     (op.kind === "create" || op.kind === "save") && op.input === true && inputProblem !== undefined;
-  // 重複と入力の誤りは、同じ内容を送り直しても同じ応答になるので、再試行を出さない
+  // 重複と入力の誤りは、同じ内容を送り直しても同じ応答になるので、再試行を出さない。手元の内容が
+  // 規則に合わない間も、再試行は送らずに止まるので出さない
   const retryable = (op: FailedOp) =>
-    !((op.kind === "create" || op.kind === "save") && (op.titleTaken || op.input));
+    !(
+      (op.kind === "create" || op.kind === "save") &&
+      (op.titleTaken || op.input || inputProblem !== undefined)
+    );
   const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
   const rail = (
