@@ -26,6 +26,21 @@ function chip(className: string, text: string): HTMLElement {
   return element;
 }
 
+/**
+ * frontmatter の tag は `#` 無しで書くのが Obsidian の書き方だが、付けて書く人もいる。
+ * 表示では `#` を 1 つだけ付け、遷移には `#` を除いた名前を渡す。
+ */
+const tagName = (tag: string) => tag.replace(/^#/, "");
+
+/** 枠の名前。役割が button なので、中の chip は名前に入らず、ここで中身を言う */
+function frontmatterLabel({ tags, aliases, otherKeys }: FrontmatterFields): string {
+  const parts: string[] = [];
+  if (tags.length > 0) parts.push(tags.map((tag) => `#${tagName(tag)}`).join(" "));
+  if (aliases.length > 0) parts.push(`別名 ${aliases.join(" ")}`);
+  if (otherKeys.length > 0) parts.push(`ほか ${otherKeys.length} 項目`);
+  return parts.length > 0 ? `プロパティ: ${parts.join("、")}` : "プロパティ";
+}
+
 /** 畳んだ frontmatter の枠。`tags` と `aliases` を chip で見せ、他のキーは件数だけ出す */
 class FrontmatterWidget extends WidgetType {
   constructor(private readonly fields: FrontmatterFields) {
@@ -48,13 +63,11 @@ class FrontmatterWidget extends WidgetType {
     const box = document.createElement("div");
     box.className = "cm-frontmatter";
     box.setAttribute("role", "button");
-    box.setAttribute("aria-label", "プロパティ");
+    box.setAttribute("aria-label", frontmatterLabel(this.fields));
     const { tags, aliases, otherKeys } = this.fields;
 
     for (const tag of tags) {
-      // frontmatter の tag は `#` 無しで書くのが Obsidian の書き方だが、付けて書く人もいる。
-      // chip では `#` を 1 つだけ付けて見せ、遷移には `#` を除いた名前を渡す。
-      const name = tag.replace(/^#/, "");
+      const name = tagName(tag);
       const chipElement = chip("cm-tag cm-frontmatter-chip", `#${name}`);
       chipElement.setAttribute(TAG_NAME_ATTR, name);
       box.append(chipElement);

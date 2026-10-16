@@ -59,6 +59,34 @@ describe("frontmatter block", () => {
     expect(chipTexts(mount("---\n---\n本文"))).toEqual(["プロパティ"]);
   });
 
+  describe("枠の aria-label", () => {
+    const label = (source: string) => box(mount(source))?.getAttribute("aria-label");
+
+    it("tags、aliases、他のキーの件数から組み立てる", () => {
+      expect(label(doc)).toBe("プロパティ: #仕事 #読書、別名 別名、ほか 1 項目");
+    });
+
+    it("無い部分は省く", () => {
+      expect(label("---\ntags: [仕事]\n---\n本文")).toBe("プロパティ: #仕事");
+      expect(label("---\naliases: [別名]\n---\n本文")).toBe("プロパティ: 別名 別名");
+      expect(label("---\ntitle: X\nkind: Y\n---\n本文")).toBe("プロパティ: ほか 2 項目");
+    });
+
+    it("tag の先頭の # は 1 つにそろえる", () => {
+      expect(label("---\ntags: ['#仕事']\n---\n本文")).toBe("プロパティ: #仕事");
+    });
+
+    it("キーが 1 つも無ければ「プロパティ」だけにする", () => {
+      expect(label("---\n---\n本文")).toBe("プロパティ");
+    });
+
+    it("tags を書き換えると名前も変わる", () => {
+      const v = mount("---\ntags: [仕事]\n---\n本文");
+      v.dispatch({ changes: { from: "---\ntags: [".length, insert: "読書, " } });
+      expect(box(v)?.getAttribute("aria-label")).toBe("プロパティ: #読書 #仕事");
+    });
+  });
+
   it("2 行目以降を畳み、本文は残す", () => {
     const v = mount(doc);
     // 見えているのは枠の行（中身は widget の文字）と本文の 2 行だけ
