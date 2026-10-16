@@ -845,11 +845,11 @@ describe("App の owner の画面", () => {
       vi.mocked(createPage).mockResolvedValue({
         ok: false,
         reason: "title_conflict",
-        message: "同じ title のページがすでにあります。",
+        message: "同じタイトルのページがすでにあります。",
+        existing: { id: PUBLIC.id, title: PUBLIC.title, visibility: PUBLIC.visibility },
       });
       await renderAt(titleUrl("まだ無い題"));
       await vi.waitFor(() => expect(main()?.textContent).toContain("まだ無い題"));
-      vi.mocked(findPageByTitle).mockResolvedValue(ok(PUBLIC));
       clickCreateOnNotFound();
       await vi.waitFor(() =>
         expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(

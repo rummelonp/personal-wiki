@@ -12,7 +12,8 @@ export const formatCount = (value: number): string => numberFormat.format(value)
 export function inputProblemMessage(problem: PageInputProblem): string {
   switch (problem.reason) {
     case "invalid_title":
-      return "タイトルが空か、空白だけです。タイトルを入力してください。";
+      // title の比較は _ を空白とみなすので、_ だけの title も空として拒まれる
+      return "タイトルが空か、空白と _ だけです。ほかの文字を入れてください。";
     case "title_too_long":
       return `タイトルが ${formatCount(problem.bytes)} バイトあり、上限の ${formatCount(problem.max)} バイトを超えているため保存できません。タイトルを短くしてください。`;
     case "body_too_large":

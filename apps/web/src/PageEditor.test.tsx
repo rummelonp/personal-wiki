@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { MAX_BODY_BYTES, MAX_TITLE_BYTES, utf8ByteLength } from "@personal-wiki/domain/page-input";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -558,6 +559,128 @@ describe("PageEditor と本文のエディタ", () => {
   });
 });
 
+describe("保存の前の検査の表示", () => {
+  const OVER = "あ".repeat(Math.ceil(MAX_BODY_BYTES / 3) + 1);
+  const alertNotice = () =>
+    [...(container?.querySelectorAll(".notice") ?? [])].find((notice) =>
+      notice.textContent?.includes("保存できません"),
+    );
+
+  it("本文が上限を超えたら、送らずに超えた量と直し方を出し、減らすと保存する", async () => {
+    const { view } = renderPage();
+    view().focus();
+    act(() => typeAtEnd(view(), OVER));
+    await flushAsync();
+    const bytes = utf8ByteLength(`本文${OVER}`);
+    expect(container?.querySelector(".save-state")?.textContent).toBe("保存できません");
+    expect(alertNotice()?.querySelector(".notice-title")?.textContent).toBe(
+      "本文が長すぎて保存できません",
+    );
+    expect(alertNotice()?.textContent).toContain(
+      `${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")} バイト以上減らすか`,
+    );
+    // 数は打つたびに変わるので、通知自体は読み上げず、原因だけを status で伝える
+    expect(alertNotice()?.querySelector("[role]")).toBeNull();
+    const meter = container?.querySelector(".body-meter .input-meter");
+    expect(meter?.classList).toContain("input-meter-over");
+    expect(meter?.textContent).toContain(
+      `${bytes.toLocaleString("ja-JP")} / ${MAX_BODY_BYTES.toLocaleString("ja-JP")} バイト`,
+    );
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).not.toHaveBeenCalled();
+
+    act(() => {
+      view().dispatch({
+        changes: { from: 2, to: view().state.doc.length, insert: "短い" },
+        userEvent: "delete",
+      });
+    });
+    act(() => view().focus());
+    act(() => view().contentDOM.blur());
+    await vi.waitFor(() =>
+      expect(updatePage).toHaveBeenCalledWith(
+        ID,
+        1,
+        { title: "題", body: "本文短い" },
+        expect.anything(),
+      ),
+    );
+    expect(alertNotice()).toBeUndefined();
+    expect(container?.querySelector(".body-meter .input-meter")?.classList).toContain(
+      "input-meter-normal",
+    );
+  });
+
+  it("本文の NUL は、通知のボタンでその文字を選択して消せる", async () => {
+    const { view, button } = renderPage();
+    view().focus();
+    act(() => typeAtEnd(view(), "\n二行目\u0000"));
+    await flushAsync();
+    expect(alertNotice()?.textContent).toContain("本文の 2 行目に、目に見えない文字（NUL）");
+    act(() => view().contentDOM.blur());
+    act(() => button("その文字を選択する").click());
+    await vi.waitFor(() => expect(view().hasFocus).toBe(true));
+    const { from, to } = view().state.selection.main;
+    expect(view().state.sliceDoc(from, to)).toBe("\u0000");
+
+    act(() => view().dispatch(view().state.replaceSelection("")));
+    await flushAsync();
+    expect(alertNotice()).toBeUndefined();
+  });
+
+  it("保存済みの内容に問題があっても、手を付けるまでは通知を出さない", async () => {
+    renderPage({ ...PAGE, body: "古い\u0000" });
+    await flushAsync();
+    expect(alertNotice()).toBeUndefined();
+    expect(container?.querySelector(".save-state")?.textContent).toBe("保存済み");
+  });
+
+  it("保存で title の重複と言われたら、再試行は出さず、既存のページを開く導線を出す", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じタイトルのページがすでにあります。",
+      existing: { id: "B", title: "別の題", visibility: "public" },
+    });
+    renderPage();
+    act(() => titleView().focus());
+    typeTitle("別の題");
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    const alert = container?.querySelector("[role='alert']");
+    expect(alert?.querySelector(".notice-title")?.textContent).toBe(
+      "同じタイトルのページがあるため、保存できません",
+    );
+    expect(alert?.textContent).toContain("タイトルを変えて Enter を押すと、保存します。");
+    expect(alert?.querySelector("a")?.textContent).toBe("そのページを開く");
+    expect(alert?.textContent).not.toContain("もう一度保存する");
+  });
+
+  it("title が上限の 8 割を超えたら、欄の下に長さを出す", () => {
+    renderPage();
+    const meter = () => container?.querySelector(".title-hint .input-meter");
+    act(() => titleView().focus());
+    typeTitle("a".repeat(Math.floor(MAX_TITLE_BYTES * 0.8) - 1));
+    expect(meter()).toBeNull();
+    typeTitle("a".repeat(MAX_TITLE_BYTES + 1));
+    expect(meter()?.classList).toContain("input-meter-over");
+    expect(meter()?.textContent).toContain("1,025 / 1,024 バイト");
+    // 読み上げでは、欄の説明として長さを伝える
+    const describedBy = titleView().contentDOM.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy ?? "")?.textContent).toContain("1,025");
+  });
+
+  it("リンクに書けない文字を title に打つと、欄の下でその文字を知らせる", () => {
+    renderPage();
+    act(() => titleView().focus());
+    typeTitle("a#b|c");
+    expect(container?.querySelector(".title-hint")?.textContent).toBe(
+      "「#」「|」はリンクに書けない文字です",
+    );
+  });
+});
+
 describe("PageEditor の tag", () => {
   const pressTag = (init: MouseEventInit = {}) => {
     const tag = container?.querySelector(".cm-tag");
@@ -1050,29 +1173,52 @@ describe("まだ作っていないページ（page が null）", () => {
     vi.mocked(createPage).mockResolvedValue({
       ok: false,
       reason: "title_conflict",
-      message: "同じ title のページがすでにある",
+      message: "同じタイトルのページがすでにあります。",
+      existing: { id: ID, title: "重なる題", visibility: "draft" },
     });
-    vi.mocked(findPageByTitle).mockResolvedValue(ok({ ...PAGE, title: "重なる題" }));
     const { view } = renderNew();
     act(() => typeAtEnd(view(), "残る本文"));
     typeTitle("重なる題");
     pressEnter(false);
-    await vi.waitFor(() =>
-      expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(`/p/${ID}`),
-    );
-    expect(container?.textContent).toContain("タイトルを変えて Enter を押すと、もう一度作ります。");
+    const link = () => container?.querySelector("[role='alert'] a");
+    await vi.waitFor(() => expect(link()?.getAttribute("href")).toBe(`/p/${ID}`));
+    expect(link()?.textContent).toBe("そのページを開く");
+    const alert = container?.querySelector("[role='alert']")?.textContent;
+    expect(alert).toContain("同じタイトルのページがあるため、作成できません");
+    expect(alert).toContain("「重なる題」というページがすでにあります。");
+    expect(alert).toContain("タイトルを変えて Enter を押すと、もう一度作ります。");
+    expect(alert).not.toContain("大文字と小文字");
+    // 送り直しても同じ応答になるので、再試行は出さない
+    expect(alert).not.toContain("もう一度作成する");
     expect(view().state.doc.toString()).toBe("残る本文");
     expect(titleText()).toBe("重なる題");
     // 直しかけの title でも、リンクは送った title の既存のページを指したまま
     typeTitle("直しかけ");
-    expect(container?.querySelector("[role='alert'] a")?.getAttribute("href")).toBe(`/p/${ID}`);
-    expect(findPageByTitle).toHaveBeenLastCalledWith("重なる題", expect.anything());
+    expect(link()?.getAttribute("href")).toBe(`/p/${ID}`);
 
     vi.mocked(createPage).mockImplementation(async (input) => created(input));
     typeTitle("別の題");
     pressEnter(false);
     await vi.waitFor(() =>
       expect(createPage).toHaveBeenLastCalledWith({ title: "別の題", body: "残る本文" }),
+    );
+  });
+
+  it("見た目の違う title と重なったら、同じとみなす規則を添える", async () => {
+    vi.mocked(createPage).mockResolvedValue({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じタイトルのページがすでにあります。",
+      existing: { id: ID, title: "Wiki Page", visibility: "draft" },
+    });
+    renderNew();
+    typeTitle("wiki_page");
+    pressEnter(false);
+    await vi.waitFor(() =>
+      expect(container?.textContent).toContain("「Wiki Page」というページがすでにあります。"),
+    );
+    expect(container?.textContent).toContain(
+      "大文字と小文字、全角と半角、_ と空白の違いは、同じタイトルとみなします。",
     );
   });
 
@@ -1737,7 +1883,7 @@ describe("リンクの書き換えの取り込み", () => {
     typeTitle("新#");
     act(() => titleView().contentDOM.blur());
     await flushAsync();
-    expect(container?.textContent).toContain("このタイトルはリンクに書けないので");
+    expect(container?.textContent).toContain("このタイトルの「#」はリンクに書けないので");
     expect(stepLinkRewrites).not.toHaveBeenCalled();
   });
 
@@ -1755,7 +1901,7 @@ describe("リンクの書き換えの取り込み", () => {
     typeTitle("新#");
     act(() => titleView().contentDOM.blur());
     await flushAsync();
-    expect(container?.textContent).toContain("このタイトルはリンクに書けないので");
+    expect(container?.textContent).toContain("このタイトルの「#」はリンクに書けないので");
 
     // 本文だけの保存（title が変わらない）では消さない
     view().focus();
@@ -1763,7 +1909,7 @@ describe("リンクの書き換えの取り込み", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(2);
-    expect(container?.textContent).toContain("このタイトルはリンクに書けないので");
+    expect(container?.textContent).toContain("このタイトルの「#」はリンクに書けないので");
 
     // リンク元が無い title への変更は、応答に linkRewrites が付かない
     act(() => titleView().focus());
@@ -1771,7 +1917,7 @@ describe("リンクの書き換えの取り込み", () => {
     act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(3);
-    expect(container?.textContent).not.toContain("このタイトルはリンクに書けないので");
+    expect(container?.textContent).not.toContain("はリンクに書けないので");
   });
 });
 

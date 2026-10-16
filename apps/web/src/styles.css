@@ -1255,6 +1255,70 @@ a {
   text-wrap: pretty;
 }
 
+/* title 欄の下の余白（.title-input の下の margin）を内側に含め、案内をその余白に重ねる */
+.title-field {
+  position: relative;
+  display: flow-root;
+}
+
+/* 1 行に収め、狭い幅では左の文を省略する。長さは右に寄せて、省略されないようにする */
+.title-hint {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  height: var(--space-4);
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.title-hint-unsafe {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.body-meter {
+  display: flex;
+  justify-content: flex-end;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  color: var(--color-fg-muted);
+}
+
+.input-meter {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 上限の手前は保存の状態の衝突と同じく、文字は本文の色、点だけを注意の色にする */
+.input-meter-near {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-fg);
+}
+
+.input-meter.input-meter-near .dot {
+  color: var(--color-warn-border);
+}
+
+.input-meter-over {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-danger);
+}
+
+.title-hint .input-meter {
+  margin-left: auto;
+}
+
 /*
  * 読み取り専用の画面の title。編集の画面の title 欄と同じ位置と書体にそろえる。
  * 横の padding は CodeMirror の .cm-line の既定（左 6px、右 2px）と同じ値で、左端と折り返す幅を合わせる

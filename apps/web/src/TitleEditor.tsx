@@ -1,5 +1,6 @@
 import { EditorView } from "@codemirror/view";
-import { titleInputText } from "@personal-wiki/domain/title";
+import { MAX_TITLE_BYTES, utf8ByteLength } from "@personal-wiki/domain/page-input";
+import { singleLineTitle, titleInputText, wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import {
   createTitleEditor,
   dispatchWhenSettled,
@@ -7,7 +8,8 @@ import {
   replaceDoc,
   setReadOnly,
 } from "@personal-wiki/editor";
-import { type Ref, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { type Ref, useId, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { InputMeter } from "./InputMeter";
 
 export interface TitleEditorHandle {
   /**
@@ -41,10 +43,18 @@ export interface TitleEditorProps {
 const settledKey = Symbol("whenSettled");
 
 /**
+ * title の長さをこの割合から出す。短い title が大半なので、常に出すと数が title の下で目に付くだけになる。
+ */
+const TITLE_METER_RATIO = 0.8;
+
+/**
  * title 欄。packages/editor の title エディタを React に載せる。長い title は折り返して全文を出す。
  *
  * BodyEditor と同じく、EditorView は mount で 1 回だけ作り、title は replaceDoc、readOnly は
  * setReadOnly で届ける（作り直すと変換中の未確定文字が消える）。onChange は変換中の入力でも呼ぶ。
+ *
+ * 欄の下の余白に、リンクに書けない文字と、上限に近づいた長さを出す。余白に重ねるので、出入りしても
+ * 本文の位置は動かない。
  */
 export function TitleEditor({
   value,
@@ -57,6 +67,7 @@ export function TitleEditor({
   ref,
 }: TitleEditorProps) {
   const host = useRef<HTMLDivElement>(null);
+  const hintId = useId();
   const view = useRef<EditorView | null>(null);
   /** whenSettled を待っている resolve。破棄したときは dispatchWhenSettled が捨てるので、ここで呼ぶ */
   const settledWaiters = useRef<(() => void)[]>([]);
@@ -80,12 +91,16 @@ export function TitleEditor({
       onCommit: () => latest.current.onCommit(),
       // 保存で拒まれる制御文字は、貼った時点で取り除く。見えない文字を後から探させない
       normalizeInput: titleInputText,
-      extensions: EditorView.domEventHandlers({
-        blur: () => {
-          latest.current.onBlur();
-          return false;
-        },
-      }),
+      extensions: [
+        EditorView.domEventHandlers({
+          blur: () => {
+            latest.current.onBlur();
+            return false;
+          },
+        }),
+        // 案内の要素は空の間も置いておくので、作ったときの id のまま指し続けられる
+        EditorView.contentAttributes.of({ "aria-describedby": hintId }),
+      ],
       onUpdate: (update) => {
         if (!update.docChanged) return;
         const doc = update.state.doc.toString();
@@ -112,7 +127,7 @@ export function TitleEditor({
       editor.destroy();
       for (const resolve of waiters.splice(0)) resolve();
     };
-  }, []);
+  }, [hintId]);
 
   // useLayoutEffect にするのは、持ち主の状態が変わってから次の入力が届く前に、エディタへ反映するため
   useLayoutEffect(() => {
@@ -149,5 +164,22 @@ export function TitleEditor({
     },
   }));
 
-  return <div ref={host} className="title-input" />;
+  const title = singleLineTitle(value);
+  const unsafe = wikiLinkUnsafeChars(title);
+  const bytes = utf8ByteLength(title);
+  return (
+    <div className="title-field">
+      <div ref={host} className="title-input" />
+      <p id={hintId} className="title-hint">
+        {unsafe.length > 0 && (
+          <span className="title-hint-unsafe">
+            {`${unsafe.map((ch) => `「${ch}」`).join("")}はリンクに書けない文字です`}
+          </span>
+        )}
+        {bytes >= MAX_TITLE_BYTES * TITLE_METER_RATIO && (
+          <InputMeter label="タイトルの長さ" bytes={bytes} max={MAX_TITLE_BYTES} />
+        )}
+      </p>
+    </div>
+  );
 }

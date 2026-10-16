@@ -40,6 +40,11 @@ export interface BodyEditorHandle {
    */
   jumpToFragment: (fragment: PageFragment) => void;
   /**
+   * 本文の `from` から `to` を選択し、画面の中ほどに見せて focus する。`jumpTo` と違って focus を
+   * 残すのは、選んだ文字をそのまま消してもらうため。
+   */
+  select: (from: number, to: number) => void;
+  /**
    * IME の変換が落ち着いたら resolve する。落ち着いていればすぐに resolve する。
    * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
    */
@@ -352,6 +357,19 @@ export function BodyEditor({
         }
         const offset = findHeadingOffset(editor.state.doc.toString(), fragment.heading);
         if (offset !== null) moveTo(editor, offset);
+      });
+    },
+    select(from, to) {
+      const editor = view.current;
+      if (editor === null) return;
+      dispatchWhenSettled(editor, jumpKey, () => {
+        const length = editor.state.doc.length;
+        const range = EditorSelection.range(Math.min(from, length), Math.min(to, length));
+        editor.dispatch({
+          selection: range,
+          effects: EditorView.scrollIntoView(range, { y: "center" }),
+        });
+        editor.focus();
       });
     },
     whenSettled() {
