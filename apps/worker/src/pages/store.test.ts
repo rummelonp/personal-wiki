@@ -56,6 +56,7 @@ async function concurrentEdit(id: string, suffix: string) {
     body: `${current.body}${suffix}`,
     actor: "token:other",
     now: 2,
+    mergeOwnerSaves: true,
   });
   if (!result.ok) throw new Error(result.reason);
 }
@@ -138,6 +139,7 @@ describe("rebuildDerived", () => {
         body: "[[New]] #new",
         actor: "token:other",
         now: 2,
+        mergeOwnerSaves: true,
       });
       if (!result.ok) throw new Error(result.reason);
     });

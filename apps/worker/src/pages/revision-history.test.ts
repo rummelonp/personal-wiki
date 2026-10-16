@@ -59,6 +59,7 @@ async function save(id: string, body: string, actor: string, now: number, title?
     body,
     actor,
     now,
+    mergeOwnerSaves: true,
   });
   if (!result.ok) throw new Error(result.reason);
   return result.page;

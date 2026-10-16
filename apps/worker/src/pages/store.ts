@@ -310,6 +310,8 @@ export interface UpdatePageInput {
   body: string;
   actor: string;
   now: number;
+  /** revisions.ts の RevisionInput.mergeOwnerSaves */
+  mergeOwnerSaves: boolean;
 }
 
 export interface LinkRewritesQueued {
@@ -409,7 +411,7 @@ async function writeContent(
       body: content.body,
       actor: input.actor,
       now: input.now,
-      mergeOwnerSaves: true,
+      mergeOwnerSaves: input.mergeOwnerSaves,
     }),
     ...derivedStatements(db, id, content.titleKey, deriveValues(content.title, content.body)),
     db
@@ -495,6 +497,7 @@ export async function appendToPage(
       body: appendText(current.body, input.text),
       actor: input.actor,
       now: input.now,
+      mergeOwnerSaves: true,
     };
     const content = prepareContent(update.title, update.body, { checkControlChars: false });
     if (!content.ok) {

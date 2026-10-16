@@ -601,6 +601,7 @@ async function renameDirectly(id: string, title: string, now: number) {
     body: current.body,
     actor: "token:other",
     now,
+    mergeOwnerSaves: true,
   });
   if (!result.ok) throw new Error(result.reason);
   return result.linkRewrites;

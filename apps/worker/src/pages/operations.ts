@@ -11,6 +11,7 @@ import {
   type LinkRewriteStepResult,
   stepLinkRewrites,
 } from "./link-rewrites";
+import { findRestoreSource } from "./revision-history";
 import { actorOf } from "./revisions";
 import {
   type AppendError,
@@ -48,7 +49,15 @@ export const MAX_REQUEST_BYTES = (MAX_TITLE_BYTES + MAX_BODY_BYTES) * 6 + 1024;
  * どの actor がどのページに書いたかを後から追えるようにする。本文は含めない。
  */
 export interface WriteMetric {
-  op: "create" | "update" | "append" | "delete" | "rebuild" | "visibility" | "link_rewrite";
+  op:
+    | "create"
+    | "update"
+    | "restore"
+    | "append"
+    | "delete"
+    | "rebuild"
+    | "visibility"
+    | "link_rewrite";
   /**
    * revisions.actor と同じ形式。リンクの書き換えで本文を書いたときは revision と同じく rename した
    * actor、積んだ分を捨てただけのときは呼び出し元（Cron は "cron"）
@@ -134,12 +143,62 @@ export async function updatePageAs(
 ): Promise<UpdateSuccess | WriteError> {
   if (!isPageId(input.id)) return { ok: false, reason: "not_found" };
   const actor = actorOf(ctx.principal);
-  const result = await updatePage(ctx.db, { ...input, actor, now: ctx.now() });
+  const result = await updatePage(ctx.db, {
+    ...input,
+    actor,
+    now: ctx.now(),
+    mergeOwnerSaves: true,
+  });
   if (result.ok) {
     ctx.recordWrite({ op: "update", actor, pageId: input.id, rowsWritten: result.rowsWritten });
     return result;
   }
   return withExisting(ctx, input.title, result, input.id);
+}
+
+export type RestoreError = WriteError | { ok: false; reason: "revision_not_found" };
+
+/**
+ * 過去の版の本文を、今の title のまま新しい版として保存する。戻すのは本文だけで、タグとリンクは保存と
+ * 同じく本文から作り直す。
+ *
+ * owner でも直前の owner の revision にはまとめない。まとめると、戻す直前の本文が入った行が戻した本文で
+ * 上書きされ、戻す前の状態に戻れなくなる。戻した後の owner の保存は、戻した revision にまとまる。
+ *
+ * 本文が今と同じなら書かずに今のページを返す（同じ本文の revision を積まない）。呼び出し元は版が
+ * 進んだかで見分ける。
+ */
+export async function restoreRevisionAs(
+  ctx: PageWriteContext,
+  input: { id: string; version: number; expectedVersion: number },
+): Promise<UpdateSuccess | RestoreError> {
+  if (!isPageId(input.id)) return { ok: false, reason: "not_found" };
+  const source = await findRestoreSource(ctx.db, input.id, input.version);
+  if (!source.ok) {
+    return { ok: false, reason: source.reason === "page_not_found" ? "not_found" : source.reason };
+  }
+  const { page, revisionBody } = source;
+  // 書かずに返す場合も、古い版を見て送った要求を成功にしないよう、先に照合する。書く場合の照合は guard が担う
+  if (page.version !== input.expectedVersion) {
+    return { ok: false, reason: "version_conflict", currentVersion: page.version };
+  }
+  if (revisionBody === page.body) {
+    return { ok: true, page, rowsWritten: 0, linkRewrites: { queued: 0 } };
+  }
+  const actor = actorOf(ctx.principal);
+  const result = await updatePage(ctx.db, {
+    id: input.id,
+    expectedVersion: input.expectedVersion,
+    title: page.title,
+    body: revisionBody,
+    actor,
+    now: ctx.now(),
+    mergeOwnerSaves: false,
+  });
+  if (result.ok) {
+    ctx.recordWrite({ op: "restore", actor, pageId: input.id, rowsWritten: result.rowsWritten });
+  }
+  return result;
 }
 
 export async function appendToPageAs(

@@ -63,6 +63,7 @@ describe("保存の revision のまとめ", () => {
       body,
       actor,
       now,
+      mergeOwnerSaves: true,
     });
     if (!result.ok) throw new Error(result.reason);
     return result;
@@ -162,6 +163,7 @@ describe("保存の revision のまとめ", () => {
       body: "stale",
       actor: "owner",
       now: T + 2,
+      mergeOwnerSaves: true,
     });
     expect(result).toEqual({ ok: false, reason: "version_conflict", currentVersion: 2 });
     expect(await revisionsOf(id)).toEqual(before);
@@ -178,6 +180,7 @@ describe("保存の revision のまとめ", () => {
       body: "v2",
       actor: "owner",
       now: T + 1,
+      mergeOwnerSaves: true,
     });
     expect(result).toMatchObject({ ok: false, reason: "title_conflict" });
     expect(await revisionsOf(id)).toEqual(before);

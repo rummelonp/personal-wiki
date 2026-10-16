@@ -234,3 +234,52 @@ export async function findRevision(
     },
   };
 }
+
+export type RestoreSourceLookup =
+  | { ok: true; page: Page; revisionBody: string }
+  | { ok: false; reason: "page_not_found" | "revision_not_found" };
+
+/**
+ * 版を戻す前に、今のページ（本文を含む）と戻す版の本文を 1 回のクエリで読む。見分け方は findRevision と同じ。
+ * 書き込みの経路なので、作成者の名前（KV）は引かない。
+ */
+export async function findRestoreSource(
+  db: D1Database,
+  pageId: string,
+  version: number,
+): Promise<RestoreSourceLookup> {
+  if (!isPageId(pageId)) return { ok: false, reason: "page_not_found" };
+  const row = await db
+    .prepare(
+      `SELECT p.title, p.body, p.visibility, p.version, p.created_at, p.updated_at,
+         r.body AS revision_body
+       FROM pages AS p
+       LEFT JOIN revisions AS r ON r.page_id = p.id AND r.version = ?2
+       WHERE p.id = ?1 AND p.deleted_at IS NULL`,
+    )
+    .bind(pageId, version)
+    .first<{
+      title: string;
+      body: string;
+      visibility: Visibility;
+      version: number;
+      created_at: number;
+      updated_at: number;
+      revision_body: string | null;
+    }>();
+  if (row === null) return { ok: false, reason: "page_not_found" };
+  if (row.revision_body === null) return { ok: false, reason: "revision_not_found" };
+  return {
+    ok: true,
+    page: {
+      id: pageId,
+      title: row.title,
+      body: row.body,
+      visibility: row.visibility,
+      version: row.version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+    revisionBody: row.revision_body,
+  };
+}

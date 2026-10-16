@@ -140,6 +140,22 @@ describe("1 invocation のクエリ数", () => {
     expectWithinBudget(counter);
   });
 
+  it("版を戻す書き込みは、版の競合で読み分けるところまで収まる", async () => {
+    const client = await buildClient();
+    const page = await client.create("Page", "[[Other]] #tag");
+    expect((await client.update(page, "Page", "[[Another]] #tag2")).status).toBe(200);
+    const { db, counter } = instrumentedDb(() => page.id);
+    const res = await requestWith(db, `/api/pages/${page.id}/revisions/1/restore`, {
+      method: "POST",
+      json: {},
+      headers: { "If-Match": `"${page.version + 1}"` },
+    });
+    expect(res.status).toBe(409);
+    // 認証 2、今のページと戻す版の読み 1、batch 15、版の読み分け 1
+    expect(counter.queries).toBe(19);
+    expectWithinBudget(counter);
+  });
+
   it("link の書き換えの step は、版の競合で数え直すところまで収まる", async () => {
     const client = await buildClient();
     const target = await client.create("Old");

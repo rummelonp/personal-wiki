@@ -18,6 +18,7 @@ import {
   linkRewritesField,
   MAX_REQUEST_BYTES,
   type PageWriteContext,
+  restoreRevisionAs,
   setVisibilityAs,
   stepLinkRewritesAs,
   updatePageAs,
@@ -469,6 +470,25 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
             : errorResponse(c, 404, "revision_not_found");
         }
         return c.json({ pageId: id, ...found.revision });
+      })
+      // 本文は読まない（戻す版は path、照合する版は If-Match で渡す）。PUT と同じく書き込める principal だけが呼べる
+      .post("/api/pages/:id/revisions/:version/restore", requireScope("write"), async (c) => {
+        const id = c.req.param("id");
+        const version = parseVersion(c.req.param("version"));
+        if (!isPageId(id) || version === null) return c.notFound();
+        const ifMatch = requireIfMatch(c);
+        if (!ifMatch.ok) return ifMatch.response;
+        const result = await restoreRevisionAs(writeContext(c), {
+          id,
+          version,
+          expectedVersion: ifMatch.version,
+        });
+        if (!result.ok) {
+          return result.reason === "revision_not_found"
+            ? errorResponse(c, 404, "revision_not_found")
+            : writeErrorResponse(c, result);
+        }
+        return pageResponse(c, result.page);
       })
       .put("/api/pages/:id", requireScope("write"), async (c) => {
         const id = c.req.param("id");
