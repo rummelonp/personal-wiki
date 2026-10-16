@@ -573,7 +573,7 @@ function editEmbedSource(view: EditorView, wrapper: HTMLElement): void {
 }
 
 /**
- * embed の widget の右上に「編集」ボタンを足す。押すと source を反転表示させ、閉じ括弧の
+ * embed の widget の右上に「記法を編集」ボタンを足す。押すと source を反転表示させ、閉じ括弧の
  * 直前へカーソルを置く（「本体のクリックは遷移だけ」という規則は変えず、直接編集の入口を
  * 別に設ける）。
  *
@@ -599,8 +599,8 @@ function appendEditButton(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-embed-edit";
-  button.setAttribute("aria-label", `${target} の埋め込みを編集`);
-  button.textContent = "編集";
+  button.setAttribute("aria-label", `「${target}」の埋め込み記法を編集`);
+  button.textContent = "記法を編集";
   // click まで待つと、editor が先にボタンへカーソルを置こうとして selection が動く
   // （callout.ts の折りたたみ、task-list.ts のチェックボックスと同じ対処）
   button.addEventListener("mousedown", (event) => {
@@ -842,6 +842,13 @@ const embedTheme = EditorView.baseTheme({
     padding: "0 0.4em",
     fontSize: "0.75em",
     lineHeight: "1.6",
+    // 小さい画像の widget は、絶対配置のボタンの幅を画像の幅までに縮めて文字を折り返す。
+    // 折り返さずに画像より広がると行頭では editor の外に切れるので、画像の幅で省略する。
+    whiteSpace: "nowrap",
+    maxWidth: "calc(100% - 4px)",
+    boxSizing: "border-box",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
     color: "var(--ui-color-muted)",
     backgroundColor: "var(--ui-color-surface)",
     border: "1px solid var(--ui-color-border)",

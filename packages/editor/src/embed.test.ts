@@ -134,6 +134,26 @@ describe("image embed", () => {
     expect(rect.right).toBeLessThanOrEqual(imgRect.right);
   });
 
+  it("names the edit button after what it edits, with the visible text in it", () => {
+    const v = mount("![[image.png]]");
+    const button = embedOf(v, "image.png")?.querySelector<HTMLElement>(".cm-embed-edit");
+    expect(button?.textContent).toBe("記法を編集");
+    expect(button?.getAttribute("aria-label")).toBe("「image.png」の埋め込み記法を編集");
+    expect(button?.getAttribute("aria-label")).toContain(button?.textContent ?? "");
+  });
+
+  it.each(["120x80", "40x30"])("fits the edit button inside a %s image", async (size) => {
+    const v = mount(`前\n![[image.png|${size}]]\n後`);
+    const img = await loadedImg(v, "image.png");
+    const button = embedOf(v, "image.png")?.querySelector<HTMLElement>(".cm-embed-edit");
+    if (!button) throw new Error("編集ボタンが無い");
+    const imgRect = img.getBoundingClientRect();
+    const rect = button.getBoundingClientRect();
+    expect(rect.left).toBeGreaterThanOrEqual(imgRect.left);
+    expect(rect.right).toBeLessThanOrEqual(imgRect.right);
+    expect(rect.height).toBeLessThan(imgRect.height);
+  });
+
   it("starts the source overlay at or above the image's top edge", async () => {
     const v = mount("前\n![[image.png|300x200]]\n後");
     const img = await loadedImg(v, "image.png");
