@@ -48,6 +48,55 @@ test("quick switcher から本文を検索し、結果から開ける", async ({
   await expect(page.locator(".title-input")).toHaveText(SEED.server);
 });
 
+test("検索した先では header のボタンに検索語が出て、押すと語を選択した窓が開く。語の欄はほかに無い", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "ページを検索" }).click();
+  const switcher = page.getByRole("dialog", { name: "ページを検索" });
+  await switcher.getByRole("combobox", { name: "検索語" }).fill("無料枠");
+  await switcher.getByRole("combobox", { name: "検索語" }).press("Enter");
+  await expect(page.getByRole("heading", { name: "「無料枠」の検索結果" })).toBeVisible();
+  await expect(switcher).toBeHidden();
+
+  const search = page.getByRole("button", { name: "ページを検索: 無料枠", exact: true });
+  await expect(search).toHaveText(/無料枠/);
+  await expect(page.locator("input[type=search], .search")).toHaveCount(0);
+
+  await search.click();
+  const input = switcher.getByRole("combobox", { name: "検索語" });
+  await expect(input).toHaveValue("無料枠");
+  await expect(input).toBeFocused();
+  const selection = await input.evaluate((el: HTMLInputElement) => [
+    el.selectionStart,
+    el.selectionEnd,
+  ]);
+  expect(selection).toEqual([0, 3]);
+  // 全選択なので、そのまま打てば語が置き換わる。fill は値を丸ごと差し替えて選択を見ないので使わない
+  await page.keyboard.insertText("データベース");
+  await expect(input).toHaveValue("データベース");
+  await input.press("Enter");
+  await expect(page.getByRole("heading", { name: "「データベース」の検索結果" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "ページを検索: データベース", exact: true }),
+  ).toBeVisible();
+});
+
+test("検索結果の窓で語を消して Enter すると、検索を解除してトップへ戻る", async ({ page }) => {
+  await page.goto(`/?q=${encodeURIComponent("無料枠")}`);
+  await page.getByRole("button", { name: "ページを検索: 無料枠", exact: true }).click();
+  const switcher = page.getByRole("dialog", { name: "ページを検索" });
+  const input = switcher.getByRole("combobox", { name: "検索語" });
+  await input.fill("");
+  await expect(switcher.getByRole("option", { selected: true })).toHaveText(
+    "検索を解除して最近の更新へ戻る",
+  );
+  await input.press("Enter");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "最近の更新" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "ページを検索", exact: true })).toBeVisible();
+});
+
 /** title がこのとおりのページがあるか。 */
 async function pageExists(page: Page, title: string): Promise<boolean> {
   const res = await page.request.get(`/api/pages/by-title?title=${encodeURIComponent(title)}`);

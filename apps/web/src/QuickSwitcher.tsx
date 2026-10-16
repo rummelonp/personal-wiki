@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { highlightMatches } from "./highlight";
-import { PlusIcon, SearchIcon } from "./icons";
+import { CloseIcon, PlusIcon, SearchIcon } from "./icons";
 import { useAfterFrames, useDelayedWhile } from "./Loading";
 import {
   ANONYMOUS_TITLE_INDEX_MAX_REQUESTS,
@@ -35,11 +35,14 @@ const CANDIDATES_FAILED = "候補を取得できません。開き直してく�
  * 語を打って Enter しただけで要らないページができないよう、「作成」は既定にせず末尾に置く。
  * 候補の取得に失敗して 1 件も無いときは、title の完全一致を確かめられないので「作成」を出さない。
  * 匿名が本文を検索できる長さに満たない間は、行き止まりの画面へ移さないよう「本文から検索」を出さない。
+ * 検索結果の画面で開いて語を消したときは、先頭に「検索を解除」の行を置き、Enter で最近の更新へ戻す。
+ * 結果の画面に語を直す欄が無いので、語を空にして確定する手段をここに持つ。
  */
 type Row =
   | { kind: "page"; candidate: PageCandidate }
   | { kind: "create" }
-  | { kind: "content-search" };
+  | { kind: "content-search" }
+  | { kind: "clear-search" };
 
 // 選択は位置でなく行の識別子で持つ。候補が後から変わっても、選んでいる行に追従させる
 function rowKey(row: Row): string {
@@ -51,6 +54,8 @@ interface QuickSwitcherProps {
   onOpenChange: (open: boolean) => void;
   /** owner だけが「作成」の行を使える。匿名には出さない。 */
   owner: boolean;
+  /** 開いたときに入力欄へ入れて全選択する語。検索結果の画面で、いま検索している語を渡す。 */
+  initialQuery?: string;
 }
 
 /**
@@ -58,7 +63,12 @@ interface QuickSwitcherProps {
  * 候補は `/api/pages/titles` の一覧で、匿名の閲覧者には公開ページだけが返る。
  * 一覧はログイン状態ごとに違うので、呼び出し側は owner かどうかを key にして作り直す。
  */
-export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps) {
+export function QuickSwitcher({
+  open,
+  onOpenChange,
+  owner,
+  initialQuery = "",
+}: QuickSwitcherProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   // 前に開いたときの候補を残して開いた直後から出し、開くたびに取り直した一覧へ差し替える
   const index = useMemo(
@@ -72,8 +82,11 @@ export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps)
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog === null) return;
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // showModal が入力欄へ focus を移した後でないと、選択が残らない処理系がある
+      dialog.querySelector<HTMLInputElement>(".switcher-input")?.select();
+    } else if (!open && dialog.open) dialog.close();
   }, [open]);
 
   return (
@@ -91,6 +104,7 @@ export function QuickSwitcher({ open, onOpenChange, owner }: QuickSwitcherProps)
         <SwitcherBody
           index={index}
           owner={owner}
+          initialQuery={initialQuery}
           onClose={() => onOpenChange(false)}
           onCreate={(title) => {
             // modal の間は外の要素に focus できないので、新規作成の画面が title 欄に focus する前に、
@@ -131,16 +145,18 @@ function PendingCandidates() {
 function SwitcherBody({
   index,
   owner,
+  initialQuery,
   onClose,
   onCreate,
 }: {
   index: TitleIndex;
   owner: boolean;
+  initialQuery: string;
   onClose: () => void;
   /** 「作成」の行を選んだとき。dialog を閉じて、その title で新規作成の画面を開く */
   onCreate: (title: string) => void;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   // null は「先頭の行」
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   // 一覧を取り直し終えたら、同じ index から候補を引き直させる
@@ -185,9 +201,11 @@ function SwitcherBody({
     trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
   const createRows: Row[] =
     trimmed !== "" && owner && !hasExactTitle && settled && !failed ? [{ kind: "create" }] : [];
+  const clearRows: Row[] =
+    trimmed === "" && initialQuery.trim() !== "" ? [{ kind: "clear-search" }] : [];
   const rows: Row[] = hasExactTitle
     ? [...pageRows, ...contentSearchRows]
-    : [...contentSearchRows, ...pageRows, ...createRows];
+    : [...clearRows, ...contentSearchRows, ...pageRows, ...createRows];
   // 行が 1 つでもあれば、一致が無いことは並びから分かる。行が無いのは、匿名が本文を検索できない短い語で
   // 候補も無いときだけ
   const noMatch = trimmed !== "" && settled && !failed && rows.length === 0;
@@ -222,6 +240,9 @@ function SwitcherBody({
     } else if (row.kind === "content-search") {
       onClose();
       navigate(homeHref(trimmed));
+    } else if (row.kind === "clear-search") {
+      onClose();
+      navigate(homeHref());
     } else {
       onCreate(trimmed);
     }
@@ -270,7 +291,8 @@ function SwitcherBody({
         }}
         onKeyDown={handleKeyDown}
       />
-      {trimmed === "" && candidates.length > 0 && (
+      {/* 見出しがあると、検索を解除する行まで最近のページの 1 つに見えるので出さない */}
+      {trimmed === "" && candidates.length > 0 && clearRows.length === 0 && (
         <p className="switcher-heading" aria-hidden="true">
           {RECENT_LABEL}
         </p>
@@ -293,7 +315,7 @@ function SwitcherBody({
       <div
         id={listboxId}
         role="listbox"
-        aria-label={trimmed === "" ? RECENT_LABEL : ROWS_LABEL}
+        aria-label={trimmed === "" && clearRows.length === 0 ? RECENT_LABEL : ROWS_LABEL}
         className="switcher-list"
       >
         {rows.map((row, i) => (
@@ -325,6 +347,12 @@ function SwitcherBody({
               <>
                 <PlusIcon />
                 <span className="switcher-option-label">{`「${trimmed}」を作成`}</span>
+              </>
+            )}
+            {row.kind === "clear-search" && (
+              <>
+                <CloseIcon />
+                <span className="switcher-option-label">検索を解除して最近の更新へ戻る</span>
               </>
             )}
             {row.kind === "content-search" && (

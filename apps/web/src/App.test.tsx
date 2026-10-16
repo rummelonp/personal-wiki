@@ -19,6 +19,7 @@ import {
   listTags,
   type Page,
   resolvePages,
+  searchPages,
 } from "./pages-api";
 import { navigate } from "./route";
 import { recordImageSrcs } from "./test-image-srcs";
@@ -1129,6 +1130,28 @@ describe("App の owner の画面", () => {
         "「新しい題」を作成",
       ),
     );
+  });
+
+  it("検索結果の画面では、ボタンに検索語を出し、押すと語を入れて全選択した窓が開く。語の欄は窓の 1 つだけ", async () => {
+    stubUserAgent(LINUX_UA);
+    serve("owner", [PUBLIC]);
+    vi.mocked(searchPages).mockResolvedValue(ok([]));
+    await renderAt("/?q=%E3%83%A1%E3%83%A2");
+    const search = () =>
+      header()?.querySelector<HTMLButtonElement>("button.header-search") as HTMLButtonElement;
+    expect(search().getAttribute("aria-label")).toBe("ページを検索: メモ");
+    expect(search().querySelector(".header-search-text")?.textContent).toBe("メモ");
+    expect(container?.querySelectorAll("input[type='search']")).toHaveLength(0);
+    act(() => search().click());
+    await vi.waitFor(() => expect(switcher()?.open).toBe(true));
+    const input = switcher()?.querySelector<HTMLInputElement>("input[role='combobox']");
+    expect(input?.value).toBe("メモ");
+    expect([input?.selectionStart, input?.selectionEnd]).toEqual([0, 2]);
+
+    // 検索結果の画面を離れたら、案内の文言に戻る
+    act(() => navigate("/"));
+    await vi.waitFor(() => expect(search().getAttribute("aria-label")).toBe("ページを検索"));
+    expect(search().querySelector(".header-search-text")?.textContent).toBe("ページを検索");
   });
 
   it("見出しの fragment 付きの URL を開くと、編集の画面でも見出しにカーソルを置く", async () => {

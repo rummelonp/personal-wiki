@@ -18,6 +18,8 @@ interface HeaderProps {
   session: SessionState;
   loggingOut: boolean;
   onLogout: () => void;
+  /** 検索結果の画面にいる間の検索語。空でなければボタンに出す。 */
+  query: string;
   /** quick switcher を開く。検索の入口はこれだけで、検索語はそちらの入力欄で打つ。 */
   onOpenSearch: () => void;
 }
@@ -38,10 +40,11 @@ function ActionsPlaceholder() {
 
 /**
  * 狭い幅でも 1 行に収める。検索は欄でなく開くだけのボタンにし（変換中の文字を別の入力欄へ
- * 移さないため）、狭い幅では虫眼鏡だけにする。ラベルを隠す幅の切り替えは CSS が持つ。
+ * 移さないため）、狭い幅では虫眼鏡だけにする。ただし検索語があるときは、語が分かるよう
+ * 狭い幅でも語を出し、長い語は省略する。ラベルを隠す幅の切り替えは CSS が持つ。
  * 匿名の「ログイン」は塗らない。塗りの差し色は、読者が読むページより目立つ。
  */
-export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderProps) {
+export function Header({ session, loggingOut, onLogout, query, onOpenSearch }: HeaderProps) {
   const isOwner = session.status === "ready" && session.me.kind === "owner";
   const ref = useRef<HTMLElement>(null);
   useEffect(() => (ref.current === null ? undefined : followVisualViewportTop(ref.current)), []);
@@ -54,15 +57,15 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
       {session.status !== "error" && (
         <button
           type="button"
-          className="header-search"
+          className={query === "" ? "header-search" : "header-search header-search-filled"}
           // ログイン状態が分かる前は、候補の取得も始められない
           disabled={session.status === "loading"}
-          aria-label="ページを検索"
+          aria-label={query === "" ? "ページを検索" : `ページを検索: ${query}`}
           aria-keyshortcuts={switcherShortcutKeys()}
           onClick={onOpenSearch}
         >
           <SearchIcon />
-          <span className="header-search-text">ページを検索</span>
+          <span className="header-search-text">{query === "" ? "ページを検索" : query}</span>
           <kbd className="header-search-key">{switcherShortcutLabel()}</kbd>
         </button>
       )}

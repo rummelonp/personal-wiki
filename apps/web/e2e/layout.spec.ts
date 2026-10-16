@@ -67,6 +67,35 @@ test.describe("匿名 @widths", () => {
     });
   }
 
+  test("長い検索語が header のボタンに出ても、header は 1 行のまま", async ({ page }) => {
+    const longQuery = "とても長い検索語".repeat(8);
+    await page.goto("/");
+    const header = page.locator("header.header");
+    await expect(header).toBeVisible();
+    for (const width of [320, 375, 768, 1280]) {
+      await test.step(`${width}px`, async () => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto("/");
+        await expect(page.getByRole("button", { name: "ページを検索" })).toBeVisible();
+        const plain = (await header.boundingBox())?.height;
+        await page.goto(`/?q=${encodeURIComponent(longQuery)}`);
+        const search = page.getByRole("button", {
+          name: `ページを検索: ${longQuery}`,
+          exact: true,
+        });
+        await expect(search).toBeVisible();
+        expect((await header.boundingBox())?.height).toBe(plain);
+        // 語は省略され、ボタンの外へ出ない
+        const truncated = await search.evaluate((el) => {
+          const text = el.querySelector<HTMLElement>(".header-search-text");
+          return text !== null && text.clientWidth > 0 && text.scrollWidth > text.clientWidth;
+        });
+        expect(truncated).toBe(true);
+        await expectNoHorizontalScroll(page);
+      });
+    }
+  });
+
   test("存在しないページ", async ({ page }) => {
     // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことは応答で待つ
     const backlinks = page.waitForResponse((res) =>

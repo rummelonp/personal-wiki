@@ -7,7 +7,6 @@ import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
 import { homeHref, tagHref } from "./route";
-import { SearchBox } from "./SearchBox";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScroll } from "./scroll-restore";
 import { TagsPanel, useTags } from "./TagsPanel";
@@ -45,7 +44,7 @@ function PreviousEntries({
 }
 
 /**
- * トップの配置。中央に検索欄と抜粋付きの一覧、右にタグの一覧を置く。
+ * トップの配置。中央に抜粋付きの一覧、右にタグの一覧を置く。
  * データは useEntryList、行は EntryRow が受け持つので、配置を変えるときはこのファイルだけを直す。
  */
 export function HomeView({ query, tag, owner }: HomeViewProps) {
@@ -82,8 +81,6 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
         />
       )}
       <div className="home" aria-busy={busy || undefined}>
-        {/* 検索の入口はヘッダーと quick switcher。結果の画面でだけ、検索語を直す欄を置く */}
-        {searching && <SearchBox query={trimmed} />}
         <h1 className={listTitleClass(heading)}>{heading}</h1>
         {searching && tag !== "" && (
           <p className="muted">

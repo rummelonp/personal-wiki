@@ -23,6 +23,7 @@ export function App() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const route = useRoute();
   const newPage = useNewPageRequest();
+  const searchQuery = route.name === "home" ? route.query.trim() : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +155,7 @@ export function App() {
       <div className="app">
         <Header
           session={session}
+          query={searchQuery}
           onOpenSearch={() => setSwitcherOpen(true)}
           loggingOut={loggingOut}
           onLogout={() => void handleLogout()}
@@ -206,6 +208,7 @@ export function App() {
             open={switcherOpen}
             onOpenChange={setSwitcherOpen}
             owner={isOwner}
+            initialQuery={searchQuery}
           />
         )}
       </div>

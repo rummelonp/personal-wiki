@@ -54,24 +54,24 @@ afterEach(() => {
   history.replaceState(null, "", startUrl);
 });
 
-function Harness({ owner }: { owner: boolean }) {
+function Harness({ owner, initialQuery = "" }: { owner: boolean; initialQuery?: string }) {
   const [open, setOpen] = useState(true);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}>
         open
       </button>
-      <QuickSwitcher open={open} onOpenChange={setOpen} owner={owner} />
+      <QuickSwitcher open={open} onOpenChange={setOpen} owner={owner} initialQuery={initialQuery} />
     </>
   );
 }
 
-async function renderSwitcher(owner: boolean) {
+async function renderSwitcher(owner: boolean, initialQuery = "") {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
   root = mounted;
-  act(() => mounted.render(<Harness owner={owner} />));
+  act(() => mounted.render(<Harness owner={owner} initialQuery={initialQuery} />));
   // 一覧の取得が終わるのを待つ
   await vi.waitFor(() => expect(options().length).toBeGreaterThan(0));
 }
@@ -117,6 +117,52 @@ async function closeWithEscape() {
     await closed;
   });
 }
+
+describe("QuickSwitcher を検索結果の画面から開く", () => {
+  it("いまの検索語を入れて全選択し、Enter で同じ語の検索結果へ移る", async () => {
+    history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92");
+    await renderSwitcher(true, "ほげ");
+    expect(input().value).toBe("ほげ");
+    expect([input().selectionStart, input().selectionEnd]).toEqual([0, 2]);
+    expect(document.activeElement).toBe(input());
+    expect(selected()).toBe("「ほげ」を本文から検索");
+    expect(container?.querySelector("[data-row-kind='clear-search']")).toBeNull();
+    press("Enter");
+    expect(new URLSearchParams(location.search).get("q")).toBe("ほげ");
+    expect(dialog().open).toBe(false);
+  });
+
+  it("語を消すと先頭に検索を解除する行が出て、Enter で検索語の無いトップへ戻る", async () => {
+    history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92");
+    await renderSwitcher(true, "ほげ");
+    typeText("");
+    await vi.waitFor(() => expect(options()[0]).toBe("検索を解除して最近の更新へ戻る"));
+    expect(selected()).toBe("検索を解除して最近の更新へ戻る");
+    // 最近のページの行と取り違えないよう、操作の行と同じく、アイコンを付ける
+    expect(container?.querySelector("[data-row-kind='clear-search'] svg.icon")).not.toBeNull();
+    expect(container?.querySelector("[role='listbox']")?.getAttribute("aria-label")).toBe(
+      "候補と操作",
+    );
+    expect(container?.querySelector("p.switcher-heading[aria-hidden='true']")).toBeNull();
+    press("Enter");
+    expect(location.pathname).toBe("/");
+    expect(location.search).toBe("");
+    expect(dialog().open).toBe(false);
+  });
+
+  it("検索結果の画面で開いていなければ、語が空でも検索を解除する行は出さない", async () => {
+    await renderSwitcher(true);
+    expect(container?.querySelector("[data-row-kind='clear-search']")).toBeNull();
+  });
+
+  it("匿名が本文を検索できない短い語は、本文から検索する行を出さずに案内する", async () => {
+    await renderSwitcher(false, "メモ");
+    expect(container?.querySelector("[data-row-kind='content-search']")).toBeNull();
+    expect(container?.querySelector("[role='status']")?.textContent).toBe(
+      "3\u00a0文字以上で、本文からも検索できます。",
+    );
+  });
+});
 
 describe("QuickSwitcher の候補", () => {
   it("開くと入力欄にフォーカスがあり、未入力なら最近更新したページを更新順に出す", async () => {
