@@ -11,6 +11,7 @@ import {
   getPage,
   listBacklinks,
   listPageTitles,
+  listRevisions,
   type Page,
   resolvePages,
   updatePage,
@@ -30,6 +31,7 @@ vi.mock("./pages-api", async (importOriginal) => {
     deletePage: vi.fn(),
     findPageByTitle: vi.fn(),
     listBacklinks: vi.fn(),
+    listRevisions: vi.fn(),
     listPageTitles: vi.fn(),
     resolvePages: vi.fn(),
     createPage: vi.fn(),
@@ -62,6 +64,7 @@ beforeEach(() => {
   );
   vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+  vi.mocked(listRevisions).mockResolvedValue(ok({ revisions: [], nextCursor: null }));
   vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(resolvePages).mockImplementation(async (titles) =>
     ok(titles.map((title) => ({ id: "B", title, visibility: "draft" as const }))),

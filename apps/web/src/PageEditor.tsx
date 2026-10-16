@@ -62,6 +62,7 @@ import {
   updatePage,
 } from "./pages-api";
 import { RailLayout, RailSection } from "./Rail";
+import { RevisionHistory } from "./RevisionHistory";
 import { homeHref, missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
@@ -564,6 +565,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             <dd>{formatTime(state.base.createdAt)}</dd>
           </dl>
         </RailSection>
+      )}
+      {!uncreated && (
+        <RevisionHistory
+          pageId={pageId}
+          pageVersion={state.base.version}
+          updatedAt={state.base.updatedAt}
+          paused={state.gone}
+          resolveAttachmentUrl={attachmentUrl}
+        />
       )}
       {/* 作る前のページには消す対象が無い。押せない操作を置かない */}
       {!uncreated && (

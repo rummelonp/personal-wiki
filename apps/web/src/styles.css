@@ -375,6 +375,136 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* 履歴。行は時刻と作成者の 2 つで、押すと版の本文をダイアログで開く */
+.revision-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.revision-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-2);
+  width: 100%;
+  padding: var(--space-1) 0;
+  font: inherit;
+  color: var(--color-fg);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .revision-entry:hover .revision-time {
+    color: var(--color-accent);
+  }
+}
+
+/* 右の列は overflow で切れるので、focus の輪は内側に引く（目次と同じ） */
+.revision-entry:focus-visible {
+  outline-offset: calc(-2 * var(--border-width));
+}
+
+@media (pointer: coarse) {
+  .revision-entry {
+    align-items: center;
+    min-height: var(--tap-size);
+  }
+}
+
+.revision-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.revision-author {
+  min-width: 0;
+  color: var(--color-fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.revision-viewer {
+  width: min(100% - var(--space-5), var(--revision-viewer-width));
+  max-height: calc(var(--viewport-height) - 2 * var(--space-5));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  /* top layer に出ても右の列（.rail）の小さい文字を継ぐので、画面の本文と同じ大きさ（と em で決まる本文の幅）にそろえる */
+  font-size: var(--font-size-base);
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+/* 見出しは残し、本文だけがダイアログの中でスクロールする */
+.revision-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.revision-viewer::backdrop {
+  background: var(--color-backdrop);
+}
+
+.revision-viewer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.revision-viewer-heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.revision-viewer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.revision-viewer-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-heading);
+  overflow-wrap: anywhere;
+}
+
+/* 編集欄の最低の高さを外す。残すと、短い版を開いたダイアログが本文の無い余白で高くなる */
+.revision-viewer-body {
+  --editor-min-height: 0;
+
+  min-height: 0;
+  padding: var(--space-3) var(--space-4) var(--space-5);
+  overflow-y: auto;
+}
+
+.revision-viewer-body > p {
+  margin: 0;
+}
+
+/* 画面の本文（.note）と同じ幅で折り返す */
+.revision-viewer-prose {
+  max-width: var(--prose-width);
+}
+
 .segmented {
   display: inline-flex;
   min-width: 0;

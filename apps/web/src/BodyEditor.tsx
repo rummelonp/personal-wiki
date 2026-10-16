@@ -98,6 +98,11 @@ export interface BodyEditorProps {
   resolveAttachmentUrl?: AttachmentUrlResolver;
   /** 作った時点で 1 度だけ、エディタに focus する。ページを開いただけでキーボードを出さないため既定は立てない。 */
   autoFocus?: boolean;
+  /**
+   * 画面のスクロールの復元に、見えている行を使わせる。登録は画面に 1 つだけなので、ダイアログの中など
+   * 画面の本文と並べて出す本文では false にし、画面の本文の登録を奪わない。作った時点の値を使う。
+   */
+  scrollAnchor?: boolean;
   ref?: Ref<BodyEditorHandle>;
 }
 
@@ -165,6 +170,7 @@ export function BodyEditor({
   acceptAttachment,
   resolveAttachmentUrl,
   autoFocus = false,
+  scrollAnchor = true,
   ref,
 }: BodyEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -187,6 +193,7 @@ export function BodyEditor({
     acceptAttachment,
     resolveAttachmentUrl,
     autoFocus,
+    scrollAnchor,
   });
   latest.current = {
     value,
@@ -202,6 +209,7 @@ export function BodyEditor({
     acceptAttachment,
     resolveAttachmentUrl,
     autoFocus,
+    scrollAnchor,
   };
 
   // 開く操作（flushSync）の中で autoFocus まで済ませるため、layout effect で作る。iOS の Safari は
@@ -280,7 +288,9 @@ export function BodyEditor({
     // 作った直後の 1 回だけ。focus は DOM の focus を移すだけで、doc や selection には dispatch しない
     if (initial.autoFocus && !initial.readOnly) editor.focus();
     const waiters = settledWaiters.current;
-    const unregisterAnchor = registerScrollAnchor(bodyScrollAnchor(editor));
+    const unregisterAnchor = initial.scrollAnchor
+      ? registerScrollAnchor(bodyScrollAnchor(editor))
+      : () => {};
     return () => {
       unregisterAnchor();
       view.current = null;

@@ -18,6 +18,7 @@ import {
   getPage,
   listBacklinks,
   listPageTitles,
+  listRevisions,
   type Page,
   resolvePages,
   setVisibility,
@@ -41,6 +42,7 @@ vi.mock("./pages-api", async (importOriginal) => {
     deletePage: vi.fn(),
     findPageByTitle: vi.fn(),
     listBacklinks: vi.fn(),
+    listRevisions: vi.fn(),
     listPageTitles: vi.fn(),
     resolvePages: vi.fn(),
     createPage: vi.fn(),
@@ -82,6 +84,7 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+  vi.mocked(listRevisions).mockResolvedValue(ok({ revisions: [], nextCursor: null }));
   vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   // 既定では、どの link も存在することにして印を付けない
   vi.mocked(resolvePages).mockImplementation(async (titles) =>
@@ -143,6 +146,21 @@ describe("PageEditor と本文のエディタ", () => {
     const section = container?.querySelector(".rail-section-links");
     expect(section?.textContent).toContain("このページへのリンク");
     expect(section?.textContent).toContain("ありません");
+  });
+
+  it("情報の下に履歴を出し、保存で版が進むと取り直す", async () => {
+    const { view } = renderPage();
+    await vi.waitFor(() => expect(listRevisions).toHaveBeenCalledTimes(1));
+    const labels = [...(container?.querySelectorAll(".rail-label") ?? [])].map(
+      (l) => l.textContent,
+    );
+    expect(labels.slice(labels.indexOf("情報"))).toEqual(["情報", "履歴"]);
+    view().focus();
+    typeAtEnd(view(), "を書き足す");
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalled();
+    await vi.waitFor(() => expect(listRevisions).toHaveBeenCalledTimes(2));
   });
 
   describe("上端の保存の状態の読み上げ", () => {

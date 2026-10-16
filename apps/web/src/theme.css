@@ -98,6 +98,7 @@
   --switcher-width: 34rem; /* quick switcher の幅 */
   --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
+  --revision-viewer-width: 46rem; /* 履歴の版を開くダイアログの幅。本文の幅（--prose-width）が収まる */
   --auth-sheet-width: 30rem; /* Worker が返す OAuth の画面（同意、接続の一覧、誤り）の枠の幅 */
   --rail-width: 14.375rem; /* ノートの右の情報レールの幅 */
   --editor-line-inset: 6px; /* CodeMirror の行の左 padding の既定値。編集欄と読み取りの title を、この分だけ左へ出して文字の左端を列に合わせる */

@@ -3,10 +3,12 @@ import {
   createPage,
   deletePage,
   getPage,
+  getRevision,
   listBacklinks,
   listBacklinksByTitle,
   listPageTitles,
   listRecent,
+  listRevisions,
   listTags,
   RESOLVE_MAX_TITLES,
   RESOLVE_MAX_URL_LENGTH,
@@ -560,5 +562,68 @@ describe("splitResolveBatches", () => {
 
   it("title が無ければ空", () => {
     expect(splitResolveBatches([])).toEqual([]);
+  });
+});
+
+describe("版の履歴", () => {
+  const summary = {
+    version: 4,
+    title: "題",
+    createdAt: 1,
+    author: { kind: "oauth", clientId: "c", name: null },
+  };
+
+  it("一覧は cursor をクエリで送り、4 つの作成者の形を通す", async () => {
+    const authors = [
+      { kind: "owner" },
+      { kind: "token", tokenId: 3, name: "agent" },
+      { kind: "token", tokenId: null, name: "old" },
+      { kind: "oauth", clientId: "c", name: "Claude" },
+      { kind: "oauth", clientId: "c", name: null },
+      { kind: "other", actor: "system" },
+    ];
+    const revisions = authors.map((author, i) => ({ ...summary, version: 10 - i, author }));
+    const { calls, fetchFn } = recorder(() => Response.json({ revisions, nextCursor: "5" }));
+    expect(await listRevisions(ID, null, fetchFn)).toEqual({
+      ok: true,
+      value: { revisions, nextCursor: "5" },
+    });
+    await listRevisions(ID, "5", fetchFn);
+    expect(calls.map((call) => call.path)).toEqual([
+      `/api/pages/${ID}/revisions`,
+      `/api/pages/${ID}/revisions?cursor=5`,
+    ]);
+  });
+
+  it("形の合わない応答は読めない失敗にする", async () => {
+    for (const author of [{ kind: "token", name: 1 }, { kind: "oauth" }, { kind: "x" }, null]) {
+      const { fetchFn } = recorder(() =>
+        Response.json({ revisions: [{ ...summary, author }], nextCursor: null }),
+      );
+      expect(await listRevisions(ID, null, fetchFn), JSON.stringify(author)).toMatchObject({
+        ok: false,
+        reason: "error",
+      });
+    }
+    const { fetchFn } = recorder(() => Response.json({ ...summary }));
+    expect(await getRevision(ID, 4, fetchFn)).toMatchObject({ ok: false, reason: "error" });
+  });
+
+  it("1 つの版は本文ごと返し、版が無ければ revision_not_found、ページが無ければ not_found", async () => {
+    const { calls, fetchFn } = recorder(() => Response.json({ pageId: ID, ...summary, body: "b" }));
+    expect(await getRevision(ID, 4, fetchFn)).toMatchObject({ ok: true, value: { body: "b" } });
+    expect(calls[0]?.path).toBe(`/api/pages/${ID}/revisions/4`);
+    const missing = recorder(() => Response.json({ error: "revision_not_found" }, { status: 404 }));
+    expect(await getRevision(ID, 4, missing.fetchFn)).toEqual({
+      ok: false,
+      reason: "revision_not_found",
+    });
+    for (const gone of [
+      () => Response.json({ error: "not_found" }, { status: 404 }),
+      () => new Response("404 Not Found", { status: 404 }),
+    ]) {
+      const res = await getRevision(ID, 4, recorder(gone).fetchFn);
+      expect(res).toEqual({ ok: false, reason: "not_found" });
+    }
   });
 });

@@ -622,6 +622,99 @@ export async function listBacklinksByTitle(
   );
 }
 
+/** 版の作成者。表示の文は画面が決める。oauth の name は接続の登録が消えていれば null */
+export type RevisionAuthor =
+  | { kind: "owner" }
+  | { kind: "token"; tokenId: number | null; name: string }
+  | { kind: "oauth"; clientId: string; name: string | null }
+  | { kind: "other"; actor: string };
+
+/** 版の 1 件。createdAt はその版の編集を始めた時刻で、owner の保存をまとめた版では最初の保存の時刻 */
+export interface RevisionSummary {
+  version: number;
+  title: string;
+  createdAt: number;
+  author: RevisionAuthor;
+}
+
+export interface Revision extends RevisionSummary {
+  body: string;
+}
+
+/** 版の新しい順 */
+export interface RevisionList {
+  revisions: RevisionSummary[];
+  nextCursor: string | null;
+}
+
+function isRevisionAuthor(value: unknown): value is RevisionAuthor {
+  const v = recordOf(value);
+  switch (v.kind) {
+    case "owner":
+      return true;
+    case "token":
+      return typeof v.name === "string" && (v.tokenId === null || typeof v.tokenId === "number");
+    case "oauth":
+      return typeof v.clientId === "string" && (v.name === null || typeof v.name === "string");
+    case "other":
+      return typeof v.actor === "string";
+    default:
+      return false;
+  }
+}
+
+function isRevisionSummary(value: unknown): value is RevisionSummary {
+  const v = recordOf(value);
+  return (
+    typeof v.version === "number" &&
+    typeof v.title === "string" &&
+    typeof v.createdAt === "number" &&
+    isRevisionAuthor(v.author)
+  );
+}
+
+export async function listRevisions(
+  id: string,
+  cursor: string | null,
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<RevisionList>> {
+  const query = cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+  const res = await request(fetchFn, `/api/pages/${encodeURIComponent(id)}/revisions${query}`);
+  if (isFailure(res)) return res;
+  if (!res.ok) return failureOf(res);
+  const json = recordOf(await readJson(res));
+  const { revisions, nextCursor } = json;
+  if (!Array.isArray(revisions) || !revisions.every(isRevisionSummary)) return BAD_SHAPE;
+  if (nextCursor !== null && typeof nextCursor !== "string") return BAD_SHAPE;
+  return { ok: true, value: { revisions, nextCursor } };
+}
+
+/** ページはあるがその版が無い（後の保存にまとめられて番号が進んだ）。ページが無いときは not_found */
+export type RevisionNotFound = { ok: false; reason: "revision_not_found" };
+
+export async function getRevision(
+  id: string,
+  version: number,
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<Revision> | RevisionNotFound> {
+  const res = await request(
+    fetchFn,
+    `/api/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}`,
+  );
+  if (isFailure(res)) return res;
+  if (res.status === 404) {
+    const body = recordOf(await readJson(res));
+    return body.error === "revision_not_found"
+      ? { ok: false, reason: "revision_not_found" }
+      : { ok: false, reason: "not_found" };
+  }
+  if (!res.ok) return failureOf(res);
+  const json = await readJson(res);
+  return isRevisionSummary(json) && typeof recordOf(json).body === "string"
+    ? { ok: true, value: json as Revision }
+    : BAD_SHAPE;
+}
+
 /** 検索語を直せば通る誤り。一覧の取得の失敗とは別に、入力を直す案内として見せる。 */
 export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string };
 

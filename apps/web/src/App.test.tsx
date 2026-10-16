@@ -16,6 +16,7 @@ import {
   listBacklinksByTitle,
   listPageTitles,
   listRecent,
+  listRevisions,
   listTags,
   type Page,
   resolvePages,
@@ -41,6 +42,7 @@ vi.mock("./pages-api", async (importOriginal) => {
     deletePage: vi.fn(),
     findPageByTitle: vi.fn(),
     listBacklinks: vi.fn(),
+    listRevisions: vi.fn(),
     listBacklinksByTitle: vi.fn(),
     listPageTitles: vi.fn(),
     resolvePages: vi.fn(),
@@ -84,6 +86,7 @@ let container: HTMLElement | null = null;
 
 beforeEach(() => {
   vi.mocked(listBacklinks).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+  vi.mocked(listRevisions).mockResolvedValue(ok({ revisions: [], nextCursor: null }));
   vi.mocked(listBacklinksByTitle).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: [], nextCursor: null }));
   vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
