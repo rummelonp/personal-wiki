@@ -373,7 +373,7 @@ function grantsPage(
   });
   const list =
     rows.length > 0
-      ? `<p>取り消すと、その接続からはすぐに読み書きできなくなります。同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
+      ? `<p>取り消すと、その接続はすぐに使えなくなります。同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
 <ul class="grants">\n${rows.join("\n")}\n</ul>`
       : "<p>許可した接続はありません。</p>";
   const more =
@@ -498,8 +498,8 @@ ${loopback}
 <input type="hidden" name="handle" value="${escapeHtml(handle)}">
 <fieldset>
 <legend>許可する権限</legend>
-<label><input type="radio" name="access" value="read" checked> 読み取り（read）: draft を含むページを読む</label>
-<label><input type="radio" name="access" value="write"> 読み書き（read と write）: ページを作成、更新する。公開範囲は変えられない</label>
+<label><input type="radio" name="access" value="read" checked> 読み取り: 下書きを含むすべてのページを読めます。</label>
+<label><input type="radio" name="access" value="write"> 読み書き: 読み取りに加えて、ページの作成と書き換えができます。公開中のページも書き換えられます。削除、画像の添付、公開と下書きの切り替えはできません。</label>
 </fieldset>
 <p><button name="decision" value="approve">許可する</button> <button name="decision" value="deny">拒否する</button></p>
 </form>`,

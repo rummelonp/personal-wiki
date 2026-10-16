@@ -456,6 +456,8 @@ describe("認可と同意画面", () => {
     const { html } = await openConsent(request, path);
     expect(html).toContain('value="read" checked');
     expect(html).not.toContain('value="write" checked');
+    expect(html).toContain("読み取り: 下書きを含むすべてのページを読めます。");
+    expect(html).toContain("削除、画像の添付、公開と下書きの切り替えはできません。");
     expect(html).toContain(`${"あ".repeat(40)}…`);
     expect(html).not.toContain("あ".repeat(41));
   });
@@ -966,7 +968,7 @@ describe("許可した接続の一覧と取り消し", () => {
     expect(html).toMatch(
       /許可: \d{4}\/\d{2}\/\d{2} \d{2}:\d{2} UTC<br>期限: (なし|\d{4}\/\d{2}\/\d{2} \d{2}:\d{2} UTC)<\/p>/,
     );
-    expect(html).toContain("取り消すと、その接続からはすぐに読み書きできなくなります。");
+    expect(html).toContain("取り消すと、その接続はすぐに使えなくなります。");
     expect(grantIdsOf(html)).toHaveLength(1);
   });
 

@@ -120,6 +120,24 @@ describe("/mcp の認可", () => {
     expect(reader.metrics).toEqual([]);
   });
 
+  // 同意画面の読み書きの説明（auth/oauth-routes.ts）はこの 3 つでできることだけを書いているので、範囲が変わったら説明も直す
+  it("write の scope を要る tool は create_page、update_page、append_to_page だけ", async () => {
+    const reader = await mcpClient({ name: "reader", scopes: "read" });
+    const { result } = await reader.rpc("tools/list");
+    const tools = (result?.tools ?? []) as { name: string }[];
+    const names = tools.map((tool) => tool.name);
+    expect(names).toHaveLength(7);
+    const before = await snapshotDb();
+    const writeOnly: string[] = [];
+    // scope は引数の検証より先に調べるので、空の引数で呼べば read の token では何も書かずに判定できる
+    for (const name of names) {
+      const outcome = await reader.call(name, {});
+      if (outcome.isError && outcome.json.error === "forbidden") writeOnly.push(name);
+    }
+    expect(writeOnly.toSorted()).toEqual(["append_to_page", "create_page", "update_page"]);
+    expect(await snapshotDb()).toEqual(before);
+  });
+
   it("応答は共有キャッシュに載せない", async () => {
     const { post } = await mcpClient();
     const res = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
