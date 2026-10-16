@@ -53,7 +53,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
   const searching = trimmed !== "";
   // 検索 API に tag の絞り込みは無いので、検索中は tag を一覧の取得にも強調にも使わない
   const effectiveTag = searching ? "" : tag;
-  const { state, loadMore } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
+  const { state, loadMore, reload } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
   const { tags, settled: tagsSettled } = useTags();
   // 狭い画面ではタグが一覧の下に続き、描かれる前は戻す位置に届かないので、タグが済むまで待つ
   useRestoreScroll(
@@ -115,7 +115,16 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
           />
         )}
         {state.status === "error" && (
-          <Notice inline tone="error" title="一覧を取得できませんでした">
+          <Notice
+            inline
+            tone="error"
+            title="一覧を取得できませんでした"
+            actions={
+              <button type="button" className="button button-main" onClick={reload}>
+                再読み込み
+              </button>
+            }
+          >
             <p>{state.message}</p>
           </Notice>
         )}

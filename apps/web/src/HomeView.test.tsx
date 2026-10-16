@@ -421,3 +421,30 @@ describe("HomeView の 0 件の検索", () => {
     expect(createButton()).toBeUndefined();
   });
 });
+
+describe("HomeView の取得の失敗", () => {
+  it("再読み込みで同じ条件を取り直し、届いたら一覧を出す", async () => {
+    vi.mocked(listRecent).mockResolvedValueOnce({
+      ok: false,
+      reason: "error",
+      message: "時間をおいて、もう一度試してください。",
+    });
+    vi.mocked(listRecent).mockResolvedValueOnce(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "取り直した行")], nextCursor: null }),
+    );
+    await mountHome("", true, "x");
+    const reload = () =>
+      [...(container?.querySelectorAll<HTMLButtonElement>(".notice button") ?? [])].find(
+        (b) => b.textContent === "再読み込み",
+      );
+    await vi.waitFor(() => expect(reload()).toBeDefined());
+    expect(container?.textContent).toContain("一覧を取得できませんでした");
+    await act(async () => reload()?.click());
+    await vi.waitFor(() =>
+      expect(container?.querySelector(".entries .entry-title")?.textContent).toBe("取り直した行"),
+    );
+    expect(listRecent).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(listRecent).mock.calls[1]?.[1]).toMatchObject({ tag: "x" });
+    expect(container?.textContent).not.toContain("一覧を取得できませんでした");
+  });
+});

@@ -135,3 +135,32 @@ describe("PageView の取得中の title", () => {
     expect(noteTitle()).toBe("");
   });
 });
+
+describe("PageView の取得の失敗", () => {
+  it("再読み込みで取り直し、届いたらページを出す", async () => {
+    vi.mocked(getPage).mockResolvedValueOnce({
+      ok: false,
+      reason: "error",
+      message: "時間をおいて、もう一度試してください。",
+    });
+    history.replaceState(null, "", `/p/${PAGE.id}`);
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () =>
+      mounted.render(
+        <PageView target={{ by: "id", id: PAGE.id }} owner={false} attachments={false} />,
+      ),
+    );
+    const reload = () =>
+      [...(container?.querySelectorAll<HTMLButtonElement>(".notice button") ?? [])].find(
+        (b) => b.textContent === "再読み込み",
+      );
+    await vi.waitFor(() => expect(reload()).toBeDefined());
+    expect(container.textContent).toContain("ページを取得できませんでした");
+    await act(async () => reload()?.click());
+    await vi.waitFor(() => expect(container?.querySelector(".reader-stub")).not.toBeNull());
+    expect(getPage).toHaveBeenCalledTimes(2);
+  });
+});

@@ -83,6 +83,8 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       ? { status: "new", serial: target.serial, title: target.title }
       : { status: "loading" },
   );
+  /** 取得の失敗から再読み込みで取り直すたびに進める */
+  const [attempt, setAttempt] = useState(0);
   /** 表示中のページの正の URL のパス。アドレスバーがこれと同じなら、ルートが変わっても取り直さない */
   const shownPath = useRef<string | null>(null);
   const targetKey =
@@ -106,7 +108,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     setState({ status: "new", serial: target.serial, title: target.title });
   }
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表し、attempt は再読み込みの印
   useEffect(() => {
     if (target.by === "new") {
       shownPath.current = null;
@@ -127,7 +129,7 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [targetKey]);
+  }, [targetKey, attempt]);
 
   // 開く操作で渡された title は使い捨て。受け取ったら空に戻し、同じ title でもう一度作らせない
   const newTargetSerial = target.by === "new" ? target.serial : null;
@@ -199,7 +201,20 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     case "error":
       return (
         <RailLayout rail={null}>
-          <Notice inline tone="error" title="ページを取得できませんでした">
+          <Notice
+            inline
+            tone="error"
+            title="ページを取得できませんでした"
+            actions={
+              <button
+                type="button"
+                className="button button-main"
+                onClick={() => setAttempt((n) => n + 1)}
+              >
+                再読み込み
+              </button>
+            }
+          >
             <p>{state.message}</p>
           </Notice>
         </RailLayout>

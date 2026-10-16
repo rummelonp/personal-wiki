@@ -65,7 +65,10 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
   const setState = useCallback((next: ListState) => setHeld({ key, state: next }), [key]);
   // 条件が変わった後に遅れて届いた応答で、表示を上書きしない
   const generation = useRef(0);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt は再読み込みで同じ条件を取り直すための印
   useEffect(() => {
     const mine = ++generation.current;
     if (query !== "" && !owner && searchQueryLength(query) < ANONYMOUS_SEARCH_MIN_CHARS) {
@@ -95,7 +98,7 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
         setState({ status: "invalid_query", message: res.message });
       else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
     });
-  }, [query, tag, owner, key, setState]);
+  }, [query, tag, owner, key, setState, attempt]);
 
   const loadMore = useCallback(async () => {
     if (state.status !== "ready" || state.next === null || state.loadingMore) return;
@@ -116,5 +119,5 @@ export function useEntryList({ query, tag, owner }: EntryListSource) {
     }
   }, [state, tag, setState]);
 
-  return { state, loadMore };
+  return { state, loadMore, reload };
 }
