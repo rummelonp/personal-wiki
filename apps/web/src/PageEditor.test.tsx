@@ -145,6 +145,70 @@ describe("PageEditor と本文のエディタ", () => {
     expect(section?.textContent).toContain("ありません");
   });
 
+  describe("ログインの期限が切れた通知の再試行ボタン", () => {
+    const authNotice = () =>
+      [...(container?.querySelectorAll(".notice") ?? [])].find((notice) =>
+        notice.querySelector(".notice-title")?.textContent?.startsWith("ログインの期限が切れ"),
+      );
+
+    async function loseAuth() {
+      vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "unauthorized" });
+      const rendered = renderPage();
+      rendered.view().focus();
+      typeAtEnd(rendered.view(), "を書き足す");
+      act(() => rendered.view().contentDOM.blur());
+      await flushAsync();
+      return rendered;
+    }
+
+    it("未保存の内容があれば、押すと保存し直す名前にして、操作の使い分けを本文で伝える", async () => {
+      const { button } = await loseAuth();
+      expect(authNotice()?.querySelector(".notice-title")?.textContent).toBe(
+        "ログインの期限が切れました",
+      );
+      expect(authNotice()?.textContent).toContain(
+        "別のタブでログインし直したときは、「もう一度保存する」を押してください。",
+      );
+      expect(authNotice()?.textContent).not.toContain("ログインし直したので再試行");
+      vi.mocked(updatePage).mockClear();
+      act(() => button("もう一度保存する").click());
+      await flushAsync();
+      expect(updatePage).toHaveBeenCalledTimes(1);
+      expect(authNotice()).toBeUndefined();
+    });
+
+    it("内容を端末に残せなかったときは、画面を移ると内容が消えることを本文で伝える", async () => {
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("full", "QuotaExceededError");
+      });
+      try {
+        await loseAuth();
+        expect(authNotice()?.querySelector(".notice-title")?.textContent).toBe(
+          "ログインの期限が切れ、内容をこの端末に残せませんでした",
+        );
+        expect(authNotice()?.textContent).toContain(
+          "「ログインし直す」で画面を移ると、入力した内容は消えます。",
+        );
+        expect(authNotice()?.textContent).toContain("「もう一度保存する」を押してください。");
+      } finally {
+        setItem.mockRestore();
+      }
+    });
+
+    it("未保存の変更が無くなっていれば、押しても保存しない「閉じる」にする", async () => {
+      const { view, button } = await loseAuth();
+      act(() => view().dispatch({ changes: { from: 2, to: view().state.doc.length, insert: "" } }));
+      await flushAsync();
+      expect(view().state.doc.toString()).toBe("本文");
+      expect(authNotice()?.textContent).toContain("未保存の変更はありません。");
+      vi.mocked(updatePage).mockClear();
+      act(() => button("閉じる").click());
+      await flushAsync();
+      expect(authNotice()).toBeUndefined();
+      expect(updatePage).not.toHaveBeenCalled();
+    });
+  });
+
   it("フォーカスが外れたら、入力した本文を保存する", async () => {
     const { view } = renderPage();
     view().focus();

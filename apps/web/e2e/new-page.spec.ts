@@ -175,12 +175,12 @@ test("作成が 401 になるとログインし直す案内が出て、打った
   await openFromPlus(page);
   await typeTitleThenBody(page, title, body);
   const alert = page.getByRole("alert").filter({ hasText: "ログインの期限が切れました" });
-  await expect(alert).toContainText("未保存の内容はこの端末に退避してあります。");
+  await expect(alert).toContainText("未保存の内容は、この端末に残してあります。");
   await expect(saveState(page)).toHaveText("ログインの期限切れ");
   await expect(bodyEditor(page)).toHaveText(body);
 
   await page.unroute(CREATE);
-  await alert.getByRole("button", { name: "ログインし直したので再試行" }).click();
+  await alert.getByRole("button", { name: "もう一度作成する" }).click();
   await expect(alert).toBeHidden();
   await expectCreatedAndKept(page, title, body);
 });

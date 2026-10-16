@@ -51,12 +51,12 @@ test("保存が 401 になるとログインし直す案内が出て、再試行
   const typed = "、ログインが切れても残る";
   await typeAtBodyEnd(page, typed);
   const alert = page.getByRole("alert").filter({ hasText: "ログインの期限が切れました" });
-  await expect(alert).toContainText("未保存の内容はこの端末に退避してあります。");
+  await expect(alert).toContainText("未保存の内容は、この端末に残してあります。");
   await expect(saveState(page)).toHaveText("ログインの期限切れ");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
   await page.unroute(pagePath);
-  await alert.getByRole("button", { name: "ログインし直したので再試行" }).click();
+  await alert.getByRole("button", { name: "もう一度保存する" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(alert).toBeHidden();
   await expectSavedOnServer(api, created.id, FIRST_LINE + typed);

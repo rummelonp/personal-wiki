@@ -110,8 +110,8 @@ test("ログインが切れて退避も書けないと、見出しで内容が�
   const created = await openFreshPage(page, api, uniqueTitle(testInfo, "退避できないログイン切れ"));
   const typed = "、退避できないログイン切れ";
   await typeWithSaveFailing(page, created, 401, "unauthorized", typed);
-  const alert = alertWithHeading(page, "ログインの期限が切れ、内容を端末に退避できませんでした");
-  await expect(alert).toContainText("ログインし直す前に、内容をコピーして残してください。");
+  const alert = alertWithHeading(page, "ログインの期限が切れ、内容をこの端末に残せませんでした");
+  await expect(alert).toContainText("「ログインし直す」で画面を移ると、入力した内容は消えます。");
   await expect(saveState(page)).toHaveText("ログインの期限切れ");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
   await shoot(page, testInfo, "auth-lost");

@@ -496,6 +496,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       (op.kind === "create" || op.kind === "save") &&
       (op.titleTaken || op.input || inputProblem !== undefined)
     );
+  // 変更が無いときの retry() は通知を下ろすだけで、保存も作成もしない
+  const authRetryLabel = !isDirty(state)
+    ? "閉じる"
+    : uncreated
+      ? "もう一度作成する"
+      : "もう一度保存する";
   const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
   const rail = (
@@ -611,7 +617,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             tone="warn"
             title={
               isDirty(state) && state.backupFailed
-                ? "ログインの期限が切れ、内容を端末に退避できませんでした"
+                ? "ログインの期限が切れ、内容をこの端末に残せませんでした"
                 : "ログインの期限が切れました"
             }
             claimFocus
@@ -621,7 +627,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                   ログインし直す
                 </a>
                 <button type="button" className="button" onClick={() => void session.retry()}>
-                  ログインし直したので再試行
+                  {authRetryLabel}
                 </button>
               </>
             }
@@ -629,8 +635,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             <p>
               {isDirty(state)
                 ? state.backupFailed
-                  ? "未保存の内容をこの端末に退避できませんでした。ログインし直す前に、内容をコピーして残してください。"
-                  : "未保存の内容はこの端末に退避してあります。ログインし直すと、続きから保存できます。"
+                  ? `「ログインし直す」で画面を移ると、入力した内容は消えます。先に内容をコピーするか、別のタブでログインし直してから「${authRetryLabel}」を押してください。`
+                  : `未保存の内容は、この端末に残してあります。ログインし直してこのページに戻ると、その内容を戻せます。別のタブでログインし直したときは、「${authRetryLabel}」を押してください。`
                 : "未保存の変更はありません。ログインし直してください。"}
             </p>
           </Notice>
