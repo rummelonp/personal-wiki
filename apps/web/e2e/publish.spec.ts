@@ -40,7 +40,7 @@ test("公開の確認を取り消すと、draft のまま匿名に出ない", as
   await expect(page.getByRole("button", { name: "URL をコピー" })).toHaveCount(0);
 
   await option(page, "公開").click();
-  await expect(confirmPanel(page)).toContainText("匿名の一覧、検索、タグに載り");
+  await expect(confirmPanel(page)).toContainText("最近の更新、検索、タグの一覧にも載ります");
   // 開いた直後の焦点は、確定でなく「やめる」に置く
   await expect(confirmPanel(page).getByRole("button", { name: "やめる" })).toBeFocused();
   // 確認の最中は、まだ何も変わっていない

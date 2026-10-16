@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useDelayedWhile } from "./Loading";
 
 type Visibility = "draft" | "public";
@@ -87,6 +87,7 @@ export function PublishBar({
   const publicOption = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const urlInput = useRef<HTMLInputElement>(null);
+  const confirmTextId = useId();
   const previousVisibility = useRef(visibility);
   const refocusPublic = useRef(false);
   // 選択は押した直後に動かす。文字は応答がすぐ届くときにちらつかないよう、遅らせて出す
@@ -238,11 +239,15 @@ export function PublishBar({
             publicOption.current?.focus();
           }}
         >
-          <p>公開すると、このページが匿名の一覧、検索、タグに載り、誰でも読めるようになります。</p>
+          {/* 焦点は「やめる」に置くので、どちらの操作にも何が起きるかを結び付けて読ませる */}
+          <p id={confirmTextId}>
+            誰でもこのページを読めるようになり、最近の更新、検索、タグの一覧にも載ります。下書きに戻しても、すでに読まれた内容は取り消せません。
+          </p>
           <div className="actions">
             <button
               type="button"
               className="button button-accent"
+              aria-describedby={confirmTextId}
               disabled={disabled}
               onClick={() => void apply("public")}
             >
@@ -252,6 +257,7 @@ export function PublishBar({
               ref={cancel}
               type="button"
               className="button"
+              aria-describedby={confirmTextId}
               onClick={() => {
                 setConfirming(false);
                 publicOption.current?.focus();
