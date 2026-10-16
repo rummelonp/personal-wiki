@@ -2101,17 +2101,30 @@ describe("まだ作っていないページ", () => {
   it("title の重複は、title を直すまで本文を打っても案内を残し、直して確定すると作り直す", async () => {
     const { session, api } = setupNew();
     const create = api.createPage.bind(api);
-    api.createPage = async () => ({
-      ok: false,
-      reason: "title_conflict",
-      message: "同じ title のページがすでにある",
-    });
+    const existing = { id: ID, title: "題", visibility: "draft" } as const;
+    let attempts = 0;
+    api.createPage = async () => {
+      attempts += 1;
+      return {
+        ok: false,
+        reason: "title_conflict",
+        message: "同じタイトルのページがすでにあります。",
+        existing,
+      };
+    };
     session.editTitle("題");
     await session.commitTitle();
-    expect(session.getState().failedOp).toEqual({ kind: "create", titleTaken: true, title: "題" });
+    expect(session.getState().failedOp).toEqual({
+      kind: "create",
+      title: "題",
+      titleTaken: { title: "題", existing },
+    });
     expect(saveStatusOf(session.getState())).toBe("create-error");
     session.edit({ title: "題", body: "続き" });
     expect(session.getState().error).not.toBeNull();
+    // 同じ title の確定し直しは、同じ応答になるので送らない
+    await session.commitTitle();
+    expect(attempts).toBe(1);
     api.createPage = create;
     session.editTitle("別の題");
     await session.commitTitle();
@@ -2129,7 +2142,7 @@ describe("まだ作っていないページ", () => {
     });
     session.editTitle("題");
     await session.commitTitle();
-    expect(session.getState().failedOp).toEqual({ kind: "create", titleTaken: false, title: "題" });
+    expect(session.getState().failedOp).toEqual({ kind: "create", title: "題" });
     expect(saveStatusOf(session.getState())).toBe("create-error");
     api.createPage = create;
     await session.retryCreate();
@@ -2382,5 +2395,145 @@ describe("まだ作っていないページ", () => {
       expect(next.getState().uncreated).toBe(false);
       expect(newBackups(backup)).toEqual([]);
     });
+  });
+});
+
+describe("保存の前の検査", () => {
+  const OVER = "a".repeat(65_537);
+
+  function newSession(api: EditorApi, backup: BackupStore) {
+    return new EditorSession(null, { api, backup });
+  }
+
+  const newBackups = (backup: BackupStore) =>
+    backup.list(NEW_PAGE_BACKUP_PREFIX).map((key) => backup.load(key));
+
+  it("上限を超えた本文は自動保存でも blur でも送らず、退避して、減らすと送る", async () => {
+    const { session, api, backup, server } = setup();
+    session.edit({ title: "題", body: OVER });
+    expect(saveStatusOf(session.getState())).toBe("invalid");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await session.flush();
+    expect(api.calls).toEqual([]);
+    expect(backup.load(ID)).toMatchObject({ body: OVER });
+
+    session.edit({ title: "題", body: "短い" });
+    expect(saveStatusOf(session.getState())).toBe("unsaved");
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(api.calls).toEqual(["put@1"]);
+    expect(server.page.body).toBe("短い");
+    expect(backup.load(ID)).toBeNull();
+  });
+
+  it("送れない内容のまま離れたら、送らずに端末へ退避する", async () => {
+    const { session, api, backup } = setup();
+    session.edit({ title: "題", body: "a\u0000b" });
+    await session.leave();
+    expect(api.calls).toEqual([]);
+    expect(backup.load(ID)).toMatchObject({ body: "a\u0000b" });
+  });
+
+  it("確定した title が長すぎれば送らない", async () => {
+    const { session, api, backup } = setup();
+    const long = "あ".repeat(342);
+    session.editTitle(long);
+    await session.commitTitle();
+    expect(api.calls).toEqual([]);
+    expect(saveStatusOf(session.getState())).toBe("invalid");
+    expect(backup.load(ID)).toMatchObject({ title: long });
+  });
+
+  it("保存済みのページが規則に合わなくても、変えるまでは保存済みと見せる", () => {
+    const { session } = setup({ server: page({ body: "a\u0000" }) });
+    expect(saveStatusOf(session.getState())).toBe("saved");
+  });
+
+  it("作る前の空の title は誤りとしない", () => {
+    const session = newSession(fakeApi({ page: page() }), memoryBackup());
+    session.edit({ title: "", body: "本文" });
+    expect(saveStatusOf(session.getState())).toBe("new");
+  });
+
+  it("作る前のページは、送れない内容なら作らずに退避し、直したら確定し直さなくても作る", async () => {
+    const server = { page: page() };
+    const api = fakeApi(server);
+    const backup = memoryBackup();
+    const session = newSession(api, backup);
+    session.edit({ title: "", body: OVER });
+    session.editTitle("題");
+    await session.commitTitle();
+    expect(api.calls).toEqual([]);
+    expect(saveStatusOf(session.getState())).toBe("invalid");
+    expect(newBackups(backup)).toEqual([expect.objectContaining({ title: "題", body: OVER })]);
+
+    session.edit({ title: "題", body: "短い" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.calls).toEqual(["create"]);
+    expect(server.page).toMatchObject({ title: "題", body: "短い" });
+  });
+
+  it("送れない内容が残る間は、公開設定を変えない", async () => {
+    const { session, api, backup } = setup();
+    session.edit({ title: "題", body: OVER });
+    await session.changeVisibility("public");
+    expect(api.calls).toEqual([]);
+    expect(session.getState().base.visibility).toBe("draft");
+    expect(backup.load(ID)).toMatchObject({ body: OVER });
+  });
+
+  it("衝突を手元で上書きしても、送れない内容なら送らずに退避する", async () => {
+    const { session, api, backup, server } = setup();
+    session.edit({ title: "題", body: OVER });
+    server.page = { ...server.page, body: "サーバー", version: 2 };
+    await session.checkFreshness();
+    expect(saveStatusOf(session.getState())).toBe("conflict");
+    backup.remove(ID);
+
+    await session.overwrite();
+    expect(api.calls).toEqual(["get"]);
+    expect(saveStatusOf(session.getState())).toBe("invalid");
+    expect(backup.load(ID)).toMatchObject({ body: OVER, baseVersion: 2 });
+  });
+
+  it("保存で重複と言われた title のままなら、本文を打っても送らず、title を変えたら送る", async () => {
+    const { session, api, backup } = setup();
+    const update = api.updatePage.bind(api);
+    let attempts = 0;
+    api.updatePage = async () => {
+      attempts += 1;
+      return {
+        ok: false,
+        reason: "title_conflict",
+        message: "同じタイトルのページがすでにあります。",
+      };
+    };
+    session.editTitle("週報");
+    await session.commitTitle();
+    expect(session.getState().failedOp).toEqual({ kind: "save", titleTaken: { title: "週報" } });
+    session.edit({ title: "週報", body: "続き" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await session.flush();
+    expect(attempts).toBe(1);
+    expect(session.getState().error).not.toBeNull();
+    expect(backup.load(ID)).toMatchObject({ title: "週報", body: "続き" });
+
+    api.updatePage = update;
+    session.editTitle("週報 2");
+    await session.commitTitle();
+    expect(session.getState()).toMatchObject({ error: null, base: { title: "週報 2" } });
+  });
+
+  it("サーバーが入力の誤りで拒んだら、送り直しても通らないと印を付ける", async () => {
+    const { session, api } = setup();
+    api.updatePage = async () => ({
+      ok: false,
+      reason: "invalid_input",
+      problem: null,
+      message: "本文が大きすぎて保存できません。本文を短くするか、ページを分けてください。",
+    });
+    session.edit({ title: "題", body: "続き" });
+    await session.flush();
+    expect(session.getState().failedOp).toEqual({ kind: "save", input: true });
+    expect(saveStatusOf(session.getState())).toBe("error");
   });
 });

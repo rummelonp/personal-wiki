@@ -1,9 +1,15 @@
+import {
+  checkPageInput,
+  type PageInputCheck,
+  type PageInputProblem,
+} from "@personal-wiki/domain/page-input";
 import { singleLineTitle } from "@personal-wiki/domain/title";
 import type { Backup, BackupStore } from "./draft-backup";
 import { rebaseOnLinkRewrite, savedBeforeLeaving } from "./link-rewrite-body";
 import {
   type ApiFailure,
   type ApiResult,
+  type ExistingPage,
   failureMessage,
   type Page,
   type UpdateOptions,
@@ -53,14 +59,30 @@ export interface ProcessedLinkRewrite {
   version: number;
 }
 
+/** 作成と保存の失敗のうち、送り直しても通らないもの。画面は再試行を出さず、直し方を案内する */
+export interface WriteRejection {
+  /** 送った title と同じタイトルのページがある。existing はサーバーが添えたときだけある */
+  titleTaken?: { title: string; existing?: ExistingPage };
+  /** サーバーが入力の誤り（長さ、制御文字など）で拒んだ */
+  input?: true;
+}
+
 export type FailedOp =
-  /** title は作成に送った title。重複の案内は、その後に title 欄を打ち直しても送った title で引く */
-  | { kind: "create"; titleTaken: boolean; title: string }
-  | { kind: "save" }
+  /** title は作成に送った title */
+  | ({ kind: "create"; title: string } & WriteRejection)
+  | ({ kind: "save" } & WriteRejection)
   | { kind: "visibility"; to: Visibility }
   | { kind: "delete" };
 
 const NO_ERROR = { error: null, failedOp: null } as const;
+
+function rejectionOf(res: ApiFailure, sent: Draft): WriteRejection {
+  if (res.reason === "title_conflict") {
+    const existing = res.existing === undefined ? {} : { existing: res.existing };
+    return { titleTaken: { title: sent.title, ...existing } };
+  }
+  return res.reason === "invalid_input" ? { input: true } : {};
+}
 
 /**
  * まだ作っていないページの退避の key の頭。画面ごとに後ろへ別の文字列を付ける。page id は英数字と
@@ -174,6 +196,7 @@ export type SaveStatus =
   | "saved"
   | "unsaved"
   | "saving"
+  | "invalid"
   | "error"
   | "conflict"
   | "auth"
@@ -181,6 +204,41 @@ export type SaveStatus =
 
 export const isDirty = (state: Pick<EditorState, "base" | "draft">): boolean =>
   state.draft.title !== state.base.title || state.draft.body !== state.base.body;
+
+const inputChecks = new WeakMap<Draft, PageInputCheck>();
+
+/**
+ * draft を保存の前の規則で調べる。draft は変わるたびに新しい object になるので、同じ draft の
+ * 結果を覚えて、描画のたびに本文を数え直さない。
+ */
+export function inputCheckOf(draft: Draft): PageInputCheck {
+  let check = inputChecks.get(draft);
+  if (check === undefined) {
+    check = checkPageInput(draft.title, draft.body, { checkControlChars: true });
+    inputChecks.set(draft, check);
+  }
+  return check;
+}
+
+/**
+ * draft のうち、このままでは保存で拒まれる問題。作る前のページの空の title は、まだ打っていない
+ * だけなので含めない（作成は title の確定を待つ）。
+ */
+export function inputProblemsOf(draft: Draft): readonly PageInputProblem[] {
+  const { problems } = inputCheckOf(draft);
+  return draft.title === "" ? problems.filter((p) => p.reason !== "invalid_title") : problems;
+}
+
+/**
+ * 送っても拒まれると分かっている。入力の誤りのほか、作成や保存で重複と言われた title のまま
+ * （title を変えるまで同じ応答になる）のときも送らない。
+ */
+export function holdsBack(state: Pick<EditorState, "draft" | "failedOp">): boolean {
+  const { draft, failedOp } = state;
+  if (inputProblemsOf(draft).length > 0) return true;
+  const rejected = failedOp?.kind === "create" || failedOp?.kind === "save" ? failedOp : null;
+  return rejected?.titleTaken !== undefined && rejected.titleTaken.title === draft.title;
+}
 
 /**
  * 手元の内容を動かしてはいけない状態。画面は入力欄を読み取り専用にし、セッションも編集を受け付けない。
@@ -201,6 +259,9 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.conflict !== null) return "conflict";
   if (state.busy === "creating") return "creating";
   if (state.busy === "saving") return "saving";
+  if ((state.uncreated || isDirty(state)) && inputProblemsOf(state.draft).length > 0) {
+    return "invalid";
+  }
   if (state.error !== null && state.failedOp?.kind === "create") return "create-error";
   if (state.error !== null && state.failedOp?.kind === "save") return "error";
   if (state.uncreated) return "new";
@@ -260,6 +321,11 @@ export class EditorSession {
   private creating: Promise<void> | null = null;
   /** まだ作っていないページの退避の key。画面ごとに別にし、作れたら消す */
   private newKey = "";
+  /**
+   * 作成を始めたが、送らずに止めた（holdsBack）。直して送れる内容になったら、title を確定し直させず
+   * に作る。本文を直したときは title 欄を通らないので、確定を待つと作られないままになる。
+   */
+  private createHeld = false;
   /** pendingBackup に出している、別の画面が残した作る前の退避の key */
   private adoptedKey: string | null = null;
   /**
@@ -548,9 +614,12 @@ export class EditorSession {
     // 画面側でも読み取り専用にするが、遅れて届いた入力でも手元の内容を動かさない
     if (isReadOnly(this.state)) return;
     this.markActive();
-    // 作成の失敗は title を直すまで案内を残す。本文を打っても直らないので消さない
+    // 作成の失敗と title の重複は、title を直すまで案内を残す。本文を打っても直らないので消さない
+    const { failedOp } = this.state;
     const keepError =
-      this.state.failedOp?.kind === "create" && draft.title === this.state.draft.title;
+      draft.title === this.state.draft.title &&
+      (failedOp?.kind === "create" ||
+        (failedOp?.kind === "save" && failedOp.titleTaken !== undefined));
     this.set(keepError ? { draft } : { draft, ...NO_ERROR });
     this.rearm();
   }
@@ -584,9 +653,15 @@ export class EditorSession {
       this.stashIfDirty();
       return;
     }
-    if (this.state.authLost || this.state.uncreated) {
+    if (this.createHeld && this.state.uncreated && !holdsBack(this.state)) {
+      this.createHeld = false;
+      void this.create();
+      return;
+    }
+    if (this.state.authLost || this.state.uncreated || holdsBack(this.state)) {
       // 保存はできないので、入力のたびに localStorage へ書かず、止まってからまとめて書く。
       // 離脱（leave）では待たずに書く
+      this.clearTimer();
       this.clearStashTimer();
       this.stashTimer = setTimeout(() => {
         this.stashTimer = null;
@@ -649,6 +724,11 @@ export class EditorSession {
   private async createNow(): Promise<void> {
     const { uncreated, draft } = this.state;
     if (!uncreated || !this.canWrite() || isReadOnly(this.state) || draft.title === "") return;
+    if (holdsBack(this.state)) {
+      this.createHeld = true;
+      this.stashIfDirty();
+      return;
+    }
     const sent: Draft = { ...draft };
     this.clearStashTimer();
     this.set({ busy: "creating", ...NO_ERROR });
@@ -667,11 +747,7 @@ export class EditorSession {
     } else {
       this.set({
         error: failureMessage(res, "ページを作れませんでした。"),
-        failedOp: {
-          kind: "create",
-          titleTaken: res.reason === "title_conflict",
-          title: sent.title,
-        },
+        failedOp: { kind: "create", title: sent.title, ...rejectionOf(res, sent) },
       });
     }
     this.stashIfDirty();
@@ -760,6 +836,10 @@ export class EditorSession {
   private async saveIfDirty(options: UpdateOptions = {}, retried = false): Promise<void> {
     // 作る前のページは本文の blur や離脱では作らない。作るのは title の確定だけ
     if (this.state.uncreated || !this.canWrite() || !isDirty(this.state)) return;
+    if (holdsBack(this.state)) {
+      this.stashIfDirty();
+      return;
+    }
     const { base } = this.state;
     const snapshot: Draft = { ...this.state.draft };
     this.set({ busy: "saving", ...NO_ERROR });
@@ -787,7 +867,7 @@ export class EditorSession {
     try {
       await this.handleFailure(
         res,
-        { kind: "save" },
+        { kind: "save", ...rejectionOf(res, snapshot) },
         {
           sent: snapshot,
           // 離脱の保存（keepalive）も、同じ要求の形で送り直す
@@ -1153,8 +1233,10 @@ export class EditorSession {
       // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える
       this.set(NO_ERROR);
       await this.saveIfDirty();
-      // 保存できなかった（衝突、ログイン切れ、失敗）なら、画面の状態表示に任せて visibility は変えない
+      // 保存できなかった（衝突、ログイン切れ、失敗、送れない内容）なら、画面の状態表示に任せて
+      // visibility は変えない。手元に保存できない内容を残したまま、公開範囲だけを変えない
       if (!this.canWrite() || this.state.error !== null) return;
+      if (isDirty(this.state) && holdsBack(this.state)) return;
       if (this.state.base.visibility === visibility) return;
       const { base } = this.state;
       this.set({ busy: "visibility", ...NO_ERROR });

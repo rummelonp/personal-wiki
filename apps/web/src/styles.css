@@ -1179,6 +1179,7 @@ a {
 }
 
 .save-state-error,
+.save-state-invalid,
 .save-state-create-error,
 .save-state-gone {
   font-weight: var(--font-weight-medium);

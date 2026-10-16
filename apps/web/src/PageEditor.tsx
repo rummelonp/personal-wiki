@@ -81,6 +81,7 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
   saved: "保存済み",
   unsaved: "未保存の変更あり",
   saving: "保存中…",
+  invalid: "保存できません",
   error: "保存に失敗",
   conflict: "サーバーの内容と食い違っています",
   auth: "ログインが切れました",
