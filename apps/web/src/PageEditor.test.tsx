@@ -629,6 +629,20 @@ describe("保存の前の検査の表示", () => {
     expect(alertNotice()).toBeUndefined();
   });
 
+  it("本文が \\r\\n を含んでエディタを通っていなくても、ボタンは NUL そのものを選択する", async () => {
+    const { view, button } = renderPage({ ...PAGE, body: "一\r\n二\r\n\u0000cdef" });
+    // title だけを変えると、draft の本文は読み込んだ \r\n のまま
+    act(() => titleView().focus());
+    typeTitle("別の題");
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).not.toHaveBeenCalled();
+    act(() => button("その文字を選択する").click());
+    await vi.waitFor(() => expect(view().hasFocus).toBe(true));
+    const { from, to } = view().state.selection.main;
+    expect(view().state.sliceDoc(from, to)).toBe("\u0000");
+  });
+
   it("保存済みの内容に問題があっても、手を付けるまでは通知を出さない", async () => {
     renderPage({ ...PAGE, body: "古い\u0000" });
     await flushAsync();

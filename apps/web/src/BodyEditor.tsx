@@ -40,10 +40,10 @@ export interface BodyEditorHandle {
    */
   jumpToFragment: (fragment: PageFragment) => void;
   /**
-   * 本文の `from` から `to` を選択し、画面の中ほどに見せて focus する。`jumpTo` と違って focus を
-   * 残すのは、選んだ文字をそのまま消してもらうため。
+   * 本文の最初の NUL を選択し、画面の中ほどに見せて focus する。無ければ何もしない。`jumpTo` と
+   * 違って focus を残すのは、選んだ文字をそのまま消してもらうため。
    */
-  select: (from: number, to: number) => void;
+  selectFirstNul: () => void;
   /**
    * IME の変換が落ち着いたら resolve する。落ち着いていればすぐに resolve する。
    * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
@@ -359,12 +359,15 @@ export function BodyEditor({
         if (offset !== null) moveTo(editor, offset);
       });
     },
-    select(from, to) {
+    selectFirstNul() {
       const editor = view.current;
       if (editor === null) return;
       dispatchWhenSettled(editor, jumpKey, () => {
-        const length = editor.state.doc.length;
-        const range = EditorSelection.range(Math.min(from, length), Math.min(to, length));
+        // 位置はエディタの doc で探す。doc は \r\n を \n に直すので、エディタを通る前の draft の
+        // 本文（読み込んだまま、復元した直後など）の index とはずれる
+        const at = editor.state.doc.toString().indexOf("\u0000");
+        if (at < 0) return;
+        const range = EditorSelection.range(at, at + 1);
         editor.dispatch({
           selection: range,
           effects: EditorView.scrollIntoView(range, { y: "center" }),

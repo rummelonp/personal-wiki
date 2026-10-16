@@ -488,10 +488,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // 重複と入力の誤りは、同じ内容を送り直しても同じ応答になるので、再試行を出さない
   const retryable = (op: FailedOp) =>
     !((op.kind === "create" || op.kind === "save") && (op.titleTaken || op.input));
-  const nulAt =
-    inputProblem?.reason === "control_char" && inputProblem.field === "body"
-      ? inputProblem.at.index
-      : null;
+  const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
   const rail = (
     <>
@@ -876,11 +873,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             title={inputProblemTitle(inputProblem)}
             silent
             actions={
-              nulAt !== null ? (
+              nulInBody ? (
                 <button
                   type="button"
                   className="button button-main"
-                  onClick={() => editor.current?.select(nulAt, nulAt + 1)}
+                  onClick={() => editor.current?.selectFirstNul()}
                 >
                   その文字を選択する
                 </button>
