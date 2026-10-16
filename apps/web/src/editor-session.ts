@@ -931,6 +931,7 @@ export class EditorSession {
         return;
       }
       case "title_conflict":
+      case "invalid_input":
       case "error":
         this.set({ error: res.message, failedOp: op });
         // 画面を閉じたり離れたりする前に、手元の内容を端末に残す。ログイン切れや衝突の失敗と同じ

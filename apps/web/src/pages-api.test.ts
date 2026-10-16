@@ -127,10 +127,24 @@ describe("失敗の分類", () => {
       currentVersion: 5,
     });
     const title = failing(409, { error: "title_conflict" });
-    expect(await createPage({ title: "a", body: "" }, title.fetchFn)).toMatchObject({
+    expect(await createPage({ title: "a", body: "" }, title.fetchFn)).toEqual({
       ok: false,
       reason: "title_conflict",
+      message: "同じタイトルのページがすでにあります。",
     });
+  });
+
+  it("title_conflict の既存のページは、形を確かめて添える", async () => {
+    const existing = { id: ID, title: "Ａ", visibility: "public" };
+    const found = failing(409, { error: "title_conflict", existing, message: "常体の文" });
+    expect(await updatePage(ID, 3, { title: "a", body: "" }, {}, found.fetchFn)).toMatchObject({
+      reason: "title_conflict",
+      existing,
+    });
+    const odd = failing(409, { error: "title_conflict", existing: { id: ID } });
+    const res = await updatePage(ID, 3, { title: "a", body: "" }, {}, odd.fetchFn);
+    expect(res).toMatchObject({ reason: "title_conflict" });
+    expect(res).not.toHaveProperty("existing");
   });
 
   it("通信の失敗と形の違う応答は error にする", async () => {
@@ -156,23 +170,106 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("既知の code は、サーバーの常体の message より画面の文体の固定の文を使う", async () => {
-    const { fetchFn } = failing(400, {
-      error: "body_too_large",
-      message: "本文が大きすぎる",
+  it("長さの超過は入力の誤りにし、応答の今の値と上限で画面の文を作る", async () => {
+    const title = failing(400, {
+      error: "title_too_long",
+      field: "title",
+      max: 1024,
+      actual: 1530,
+      unit: "utf8_bytes",
+      message: "title が長すぎる",
     });
-    expect(await updatePage(ID, 1, { title: "a", body: "" }, {}, fetchFn)).toMatchObject({
+    expect(await updatePage(ID, 1, { title: "a", body: "" }, {}, title.fetchFn)).toEqual({
       ok: false,
+      reason: "invalid_input",
+      problem: { reason: "title_too_long", bytes: 1530, max: 1024 },
+      message:
+        "タイトルが 1,530 バイトあり、上限の 1,024 バイトを超えているため保存できません。タイトルを短くしてください。",
+    });
+    const body = failing(413, {
+      error: "body_too_large",
+      field: "body",
+      max: 65536,
+      actual: 65612,
+    });
+    expect(await createPage({ title: "a", body: "" }, body.fetchFn)).toMatchObject({
+      reason: "invalid_input",
+      problem: { reason: "body_too_large", bytes: 65612, max: 65536 },
+      message: expect.stringContaining("76 バイト以上減らすか"),
+    });
+  });
+
+  it("今の値の無い超過の応答は、送った内容と domain の上限で補う", async () => {
+    const title = failing(400, { error: "title_too_long" });
+    const long = "あ".repeat(400);
+    expect(await updatePage(ID, 1, { title: long, body: "" }, {}, title.fetchFn)).toMatchObject({
+      reason: "invalid_input",
+      problem: { reason: "title_too_long", bytes: 1200, max: 1024 },
+    });
+    // Content-Length で断った 413。送った本文が上限以下なら、長さの文を作らない
+    const sized = failing(413, { error: "body_too_large", max: 65536 });
+    expect(await updatePage(ID, 1, { title: "a", body: "短い" }, {}, sized.fetchFn)).toEqual({
+      ok: false,
+      reason: "invalid_input",
+      problem: null,
       message: "本文が大きすぎて保存できません。本文を短くするか、ページを分けてください。",
     });
   });
 
-  it("429 は障害ではなく制限と読める文で、少し待つよう伝える", async () => {
+  it("制御文字の誤りは、送った内容から位置を求め直し、再読み込みではなく消すよう伝える", async () => {
+    const titled = failing(400, {
+      error: "invalid_field",
+      field: "title",
+      reason: "control_char",
+      line: 1,
+      column: 3,
+      codePoint: "U+0001",
+    });
+    const title = await updatePage(ID, 1, { title: "ab\u0001", body: "" }, {}, titled.fetchFn);
+    expect(title).toMatchObject({
+      reason: "invalid_input",
+      problem: { reason: "control_char", field: "title", at: { index: 2, column: 3 } },
+      message: expect.stringContaining("タイトルの 3 文字目"),
+    });
+    const nul = failing(400, { error: "invalid_field", field: "body", reason: "control_char" });
+    const body = await createPage({ title: "a", body: "1\n2\u0000" }, nul.fetchFn);
+    expect(body).toMatchObject({
+      reason: "invalid_input",
+      problem: { reason: "control_char", field: "body", at: { index: 3, line: 2 } },
+      message: expect.stringContaining("本文の 2 行目"),
+    });
+    for (const res of [title, body]) expect(JSON.stringify(res)).not.toContain("再読み込み");
+  });
+
+  it("入力の誤りは書き込みの応答でだけ読む", async () => {
+    const { fetchFn } = failing(400, { error: "title_too_long", message: "常体" });
+    expect(await getPage(ID, fetchFn)).toMatchObject({ reason: "error" });
+  });
+
+  it("タグの指定の誤りは、再読み込みを勧めず上限を伝える", async () => {
+    const long = failing(400, {
+      error: "invalid_field",
+      field: "tag",
+      reason: "too_long",
+      max: 200,
+    });
+    expect(await listRecent(null, { tag: "x" }, long.fetchFn)).toEqual({
+      ok: false,
+      reason: "error",
+      message: "タグが長すぎます（200 文字まで）。タグを選び直してください。",
+    });
+    const empty = failing(400, { error: "invalid_field", field: "tag", reason: "empty" });
+    const res = await listRecent(null, { tag: "#" }, empty.fetchFn);
+    expect(res).toMatchObject({ reason: "error", message: expect.stringContaining("タグが空") });
+    expect(JSON.stringify(res)).not.toContain("再読み込み");
+  });
+
+  it("429 は障害ではなく混雑による制限と読める文で、少し待つよう伝える", async () => {
     const { fetchFn } = failing(429, {});
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
       message:
-        "リクエストが多すぎて、いったん制限されています（HTTP 429）。少し待ってから、もう一度試してください。",
+        "アクセスが集中したため、一時的に制限されています（HTTP 429）。少し待ってから、もう一度試してください。",
     });
   });
 
@@ -185,25 +282,17 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("message の無い invalid_field は、固定の文にする", async () => {
-    const { fetchFn } = failing(400, { error: "invalid_field", field: "limit" });
+  it("要求の形の誤りは、サーバーの message より固定の文にする", async () => {
+    const { fetchFn } = failing(400, {
+      error: "invalid_field",
+      field: "limit",
+      message: "limit が正しくない",
+    });
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
       message:
-        "リクエストの形が正しくありません。ページを再読み込みしてから、もう一度試してください。",
+        "サーバーに受け付けられませんでした。ページを再読み込みしてから、もう一度試してください。",
     });
-  });
-
-  it("制御文字の invalid_field は、再読み込みではなく取り除くよう伝える", async () => {
-    for (const [field, text] of [
-      ["title", "title に制御文字"],
-      ["body", "本文に NUL"],
-    ] as const) {
-      const { fetchFn } = failing(400, { error: "invalid_field", field, reason: "control_char" });
-      const res = await getPage(ID, fetchFn);
-      expect(res).toMatchObject({ ok: false, message: expect.stringContaining(text) });
-      expect(JSON.stringify(res)).not.toContain("再読み込み");
-    }
   });
 
   it("未知の code は、サーバーの message をそのまま使う", async () => {
@@ -221,7 +310,7 @@ describe("失敗の分類", () => {
     expect(await searchPages("a", tooLong.fetchFn)).toEqual({
       ok: false,
       reason: "invalid_query",
-      message: "検索語が長すぎます。短くしてください。",
+      message: "検索語が長すぎます。200 文字以内にしてください。",
     });
     const unknown = failing(400, { error: "invalid_field", field: "q" });
     expect(await searchPages("a", unknown.fetchFn)).toMatchObject({

@@ -1,3 +1,15 @@
+import {
+  findControlChar,
+  findNul,
+  MAX_BODY_BYTES,
+  MAX_TITLE_BYTES,
+  type PageInputProblem,
+  utf8ByteLength,
+} from "@personal-wiki/domain/page-input";
+import { SEARCH_MAX_QUERY_CHARS } from "@personal-wiki/domain/search";
+import { singleLineTitle } from "@personal-wiki/domain/title";
+import { formatCount, inputProblemMessage } from "./input-messages";
+
 export type Visibility = "public" | "draft";
 
 export interface Page {
@@ -44,17 +56,31 @@ export interface PageList<T extends PageSummary = PageSummary> {
   nextCursor: string | null;
 }
 
+/** title_conflict で、同じ title とみなされたページ。読める範囲に無ければサーバーは返さない。 */
+export interface ExistingPage {
+  id: string;
+  title: string;
+  visibility: Visibility;
+}
+
 /** 呼び出し側が分岐する失敗だけを区別する。それ以外は message を表示するだけでよい。 */
 export type ApiFailure =
   | { ok: false; reason: "unauthorized" }
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "version_conflict"; currentVersion: number | null }
-  | { ok: false; reason: "title_conflict"; message: string }
+  | { ok: false; reason: "title_conflict"; message: string; existing?: ExistingPage }
+  /**
+   * 送った title か本文が保存の規則に合わない。直さない限り何度送っても通らないので、再試行を勧めない。
+   * problem は応答から組み立て直した問題で、位置を求められない応答では null。
+   */
+  | { ok: false; reason: "invalid_input"; problem: PageInputProblem | null; message: string }
   | { ok: false; reason: "error"; message: string };
 
 /** 画面に出す失敗の説明。version_conflict などは呼び出し側が分岐するので、ここでは汎用の文にする。 */
 export function failureMessage(failure: ApiFailure, fallback: string): string {
-  return failure.reason === "error" || failure.reason === "title_conflict"
+  return failure.reason === "error" ||
+    failure.reason === "title_conflict" ||
+    failure.reason === "invalid_input"
     ? failure.message
     : fallback;
 }
@@ -79,16 +105,19 @@ const KEEPALIVE_MAX_BYTES = 60_000;
 const RETRY_LATER = "時間をおいて、もう一度試してください。";
 const RELOAD = "ページを再読み込みしてから、もう一度試してください。";
 
+/**
+ * web が正しく組んでいれば起きない誤り。利用者に直せる点は無く、web の版がサーバーと食い違っている
+ * ことが多いので、読み込み直しを勧める。
+ */
+const NOT_ACCEPTED = `サーバーに受け付けられませんでした。${RELOAD}`;
+
 const ERROR_MESSAGES: Record<string, string> = {
-  invalid_title: "title が空か、空白だけになっています。title を入力してください。",
-  title_too_long: "title が長すぎます。短くしてください。",
-  body_too_large: "本文が大きすぎて保存できません。本文を短くするか、ページを分けてください。",
-  if_match_required: `版の指定が欠けています。${RELOAD}`,
-  invalid_if_match: `版の指定が正しくありません。${RELOAD}`,
-  invalid_json: `リクエストの形が正しくありません。${RELOAD}`,
-  unknown_field: `リクエストの形が正しくありません。${RELOAD}`,
-  missing_field: `リクエストの形が正しくありません。${RELOAD}`,
-  invalid_field: `リクエストの形が正しくありません。${RELOAD}`,
+  if_match_required: NOT_ACCEPTED,
+  invalid_if_match: NOT_ACCEPTED,
+  invalid_json: NOT_ACCEPTED,
+  unknown_field: NOT_ACCEPTED,
+  missing_field: NOT_ACCEPTED,
+  invalid_field: NOT_ACCEPTED,
 };
 
 /**
@@ -97,7 +126,7 @@ const ERROR_MESSAGES: Record<string, string> = {
  */
 function statusMessage(status: number): string {
   if (status === 429) {
-    return "リクエストが多すぎて、いったん制限されています（HTTP 429）。少し待ってから、もう一度試してください。";
+    return "アクセスが集中したため、一時的に制限されています（HTTP 429）。少し待ってから、もう一度試してください。";
   }
   return status >= 500
     ? `サーバーで問題が起きました（HTTP ${status}）。${RETRY_LATER}`
@@ -116,18 +145,85 @@ function recordOf(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
+const numberOf = (value: unknown): number | null => (typeof value === "number" ? value : null);
+
+const invalidInput = (problem: PageInputProblem | null, message?: string): ApiFailure => ({
+  ok: false,
+  reason: "invalid_input",
+  problem,
+  message: problem === null ? (message ?? NOT_ACCEPTED) : inputProblemMessage(problem),
+});
+
 /**
- * 保存で title や本文に制御文字（NUL など）が入っていたときの文。invalid_field の固定の文は
- * 再読み込みを勧めるが、この誤りは再読み込みでは直らず、入力から取り除く必要がある。
+ * 作成と保存の入力の誤りを、送る前の検査と同じ問題の形に組み立て直す。入力の誤りでなければ null。
+ *
+ * 位置は送った内容から求め直す。応答の line と column は人に伝える値で、エディタの位置（UTF-16 の
+ * index）を持たない。数え方もエディタの行と違いうる（対の無い `\r` を改行と数えない）。
+ * 応答に actual や max が無い（前の版の Worker）ときは、送った内容と domain の上限で補う。
  */
-function controlCharMessage(code: string, body: Record<string, unknown>): string | undefined {
-  if (code !== "invalid_field" || body.reason !== "control_char") return undefined;
-  return body.field === "title"
-    ? "title に制御文字が含まれていて保存できません。取り除いてください。"
-    : "本文に NUL が含まれていて保存できません。取り除いてください。";
+function inputFailureOf(
+  code: string,
+  body: Record<string, unknown>,
+  sent: SentPage,
+): ApiFailure | null {
+  switch (code) {
+    case "invalid_title":
+      return invalidInput({ reason: "invalid_title" });
+    case "title_too_long": {
+      const bytes = numberOf(body.actual) ?? utf8ByteLength(singleLineTitle(sent.title));
+      const max = numberOf(body.max) ?? MAX_TITLE_BYTES;
+      return invalidInput({ reason: "title_too_long", bytes, max });
+    }
+    case "body_too_large": {
+      // Content-Length で断った 413 は actual を持たない。送った本文が上限以下なら、本文の長さでは
+      // 説明できないので位置の無い文にする
+      const max = numberOf(body.max) ?? MAX_BODY_BYTES;
+      const bytes = numberOf(body.actual) ?? utf8ByteLength(sent.body);
+      return invalidInput(
+        bytes > max ? { reason: "body_too_large", bytes, max } : null,
+        "本文が大きすぎて保存できません。本文を短くするか、ページを分けてください。",
+      );
+    }
+    case "invalid_field": {
+      if (body.reason !== "control_char") return null;
+      const field = body.field === "title" ? "title" : "body";
+      const at =
+        field === "title" ? findControlChar(singleLineTitle(sent.title)) : findNul(sent.body);
+      return invalidInput(
+        at === null ? null : { reason: "control_char", field, at },
+        field === "title"
+          ? "タイトルに目に見えない制御文字が入っていて保存できません。その文字を消してください。"
+          : "本文に目に見えない文字（NUL）が入っていて保存できません。その文字を消してください。",
+      );
+    }
+    default:
+      return null;
+  }
 }
 
-async function failureOf(res: Response): Promise<ApiFailure> {
+/** 一覧をタグで絞る指定の誤り。URL を手で書き換えたときに起きるので、読み込み直しを勧めない。 */
+function tagFailureOf(code: string, body: Record<string, unknown>): ApiFailure | null {
+  if (code !== "invalid_field" || body.field !== "tag") return null;
+  const max = numberOf(body.max);
+  const message =
+    body.reason === "too_long"
+      ? `タグが長すぎます${max === null ? "" : `（${formatCount(max)} 文字まで）`}。タグを選び直してください。`
+      : "タグが空か、「#」だけです。タグを選び直してください。";
+  return { ok: false, reason: "error", message };
+}
+
+function existingOf(value: unknown): ExistingPage | undefined {
+  if (!isResolvedPage(value)) return undefined;
+  return { id: value.id, title: value.title, visibility: value.visibility };
+}
+
+/** 作成と保存で送った内容。入力の誤りの位置を求め直すのに使う。 */
+interface SentPage {
+  title: string;
+  body: string;
+}
+
+async function failureOf(res: Response, sent?: SentPage): Promise<ApiFailure> {
   if (res.status === 401) return { ok: false, reason: "unauthorized" };
   if (res.status === 404) return { ok: false, reason: "not_found" };
   const body = recordOf(await readJson(res));
@@ -141,16 +237,22 @@ async function failureOf(res: Response): Promise<ApiFailure> {
     };
   }
   if (res.status === 409 && code === "title_conflict") {
+    const existing = existingOf(body.existing);
     return {
       ok: false,
       reason: "title_conflict",
-      message: "同じ title のページがすでにあります。",
+      message: "同じタイトルのページがすでにあります。",
+      ...(existing === undefined ? {} : { existing }),
     };
   }
+  // 入力の誤りは書き込みの応答でだけ読む。送った内容が無いと位置を求め直せない
+  const input =
+    (sent === undefined ? null : inputFailureOf(code, body, sent)) ?? tagFailureOf(code, body);
+  if (input !== null) return input;
   // サーバーの message は API を使う側（エージェント）向けの常体なので、画面の文体にそろえた固定の文を
   // 優先する。検索語の誤りは searchPages が先に固定の文へ置き換える
   const serverMessage = typeof body.message === "string" ? body.message : undefined;
-  const message = controlCharMessage(code, body) ?? ERROR_MESSAGES[code] ?? serverMessage;
+  const message = ERROR_MESSAGES[code] ?? serverMessage;
   return { ok: false, reason: "error", message: message ?? statusMessage(res.status) };
 }
 
@@ -227,9 +329,9 @@ async function request(
 const isFailure = (value: Response | ApiFailure): value is ApiFailure =>
   !(value instanceof Response);
 
-async function pageResult(res: Response | ApiFailure): Promise<ApiResult<Page>> {
+async function pageResult(res: Response | ApiFailure, sent?: SentPage): Promise<ApiResult<Page>> {
   if (isFailure(res)) return res;
-  if (!res.ok) return failureOf(res);
+  if (!res.ok) return failureOf(res, sent);
   const json = await readJson(res);
   return isPage(json) ? { ok: true, value: json } : BAD_SHAPE;
 }
@@ -349,7 +451,7 @@ export async function createPage(
   input: { title: string; body: string },
   fetchFn: Fetch = fetch,
 ): Promise<ApiResult<Page>> {
-  return pageResult(await request(fetchFn, "/api/pages", jsonInit("POST", input)));
+  return pageResult(await request(fetchFn, "/api/pages", jsonInit("POST", input)), input);
 }
 
 export interface UpdateOptions {
@@ -391,6 +493,7 @@ export async function updatePage(
       ...jsonInit("PUT", input, { headers: ifMatch(version) }),
       keepalive,
     }),
+    input,
   );
   if (!res.ok) return res;
   const { linkRewrites, ...page } = res.value as UpdatedPage;
@@ -518,8 +621,8 @@ export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string
 
 const QUERY_MESSAGES: Record<string, string> = {
   empty: "検索語が空か、空白だけになっています。語を入力してください。",
-  too_long: "検索語が長すぎます。短くしてください。",
-  control_char: "検索語に改行などの制御文字が含まれています。取り除いてください。",
+  too_long: `検索語が長すぎます。${SEARCH_MAX_QUERY_CHARS} 文字以内にしてください。`,
+  control_char: "検索語にタブや改行など、目に見えない文字が入っています。取り除いてください。",
 };
 
 /** 検索語の誤りの 400 を固定の文にする。それ以外の失敗は null。 */
