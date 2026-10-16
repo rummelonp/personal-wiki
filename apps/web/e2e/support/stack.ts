@@ -1,11 +1,16 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { stripJsonc } from "../../../worker/scripts/deploy-config.mjs";
+import {
+  INSPECTOR_OFFSET,
+  OWNER_EMAIL,
+  writeLocalConfig,
+  writeLocalSecrets,
+} from "../../../worker/scripts/local-dev.mjs";
 
 /*
  * E2E 用のローカルのスタック。web をビルドし、毎回新しい一時ディレクトリの D1 に migration を当てて
@@ -26,9 +31,9 @@ export const E2E_PORT = Number(process.env.E2E_PORT ?? 8790);
  * wrangler dev の既定の 9229 は開発中の wrangler dev が使うので避ける。E2E_PORT を変えたときに
  * 重ならないよう、E2E_PORT からの差で決める（既定は 9339）。
  */
-const INSPECTOR_PORT = E2E_PORT + 549;
+const INSPECTOR_PORT = E2E_PORT + INSPECTOR_OFFSET;
 export const E2E_ORIGIN = `http://localhost:${E2E_PORT}`;
-export const OWNER_EMAIL = "owner@example.test";
+export { OWNER_EMAIL };
 
 export interface Stack {
   origin: string;
@@ -45,44 +50,6 @@ function portInUse(port: number): Promise<boolean> {
     });
     socket.once("error", () => done(false));
   });
-}
-
-/**
- * apps/worker/wrangler.jsonc を元に、一時ディレクトリに置く設定を作る。
- * wrangler は設定ファイルの隣の .dev.vars を読むので、設定ごと一時ディレクトリに移し、
- * 秘密は --env-file で渡す（--env-file があると .dev.vars は読まれない）。
- * routes はデプロイ先のホスト名なので外す。
- */
-function writeConfig(dir: string): string {
-  const base = JSON.parse(stripJsonc(readFileSync(join(WORKER_DIR, "wrangler.jsonc"), "utf8")));
-  delete base.$schema;
-  delete base.routes;
-  delete base.workers_dev;
-  delete base.preview_urls;
-  base.main = join(WORKER_DIR, base.main);
-  for (const db of base.d1_databases) db.migrations_dir = join(WORKER_DIR, db.migrations_dir);
-  base.assets.directory = join(WORKER_DIR, base.assets.directory);
-  const path = join(dir, "wrangler.json");
-  writeFileSync(path, JSON.stringify(base, null, 2));
-  return path;
-}
-
-function writeSecrets(dir: string, sessionSecret: string): string {
-  // owner のログインの設定は 1 つでも欠けると owner の経路が閉じる（auth/owner-config.ts）。
-  // Access の値は /_auth/login でしか使わず、E2E はログインを通さずに cookie を作るので、形だけ満たす
-  const path = join(dir, "secrets.env");
-  writeFileSync(
-    path,
-    [
-      "ACCESS_TEAM_DOMAIN=access.example.test",
-      "ACCESS_AUD=e2e-audience",
-      `OWNER_EMAILS=${OWNER_EMAIL}`,
-      `SESSION_SECRET=${sessionSecret}`,
-      "",
-    ].join("\n"),
-    { mode: 0o600 },
-  );
-  return path;
 }
 
 async function waitForHealthy(child: ChildProcess, log: () => string): Promise<void> {
@@ -133,8 +100,8 @@ async function launch(
   build: Promise<void>,
 ): Promise<{ child: ChildProcess; sessionSecret: string; log: () => string }> {
   const sessionSecret = randomBytes(32).toString("base64");
-  const config = writeConfig(dir);
-  const envFile = writeSecrets(dir, sessionSecret);
+  const config = writeLocalConfig(dir);
+  const envFile = writeLocalSecrets(dir, { sessionSecret, audience: "e2e-audience" });
   const persist = join(dir, "state");
   const wrangler = join(WORKER_DIR, "node_modules/.bin/wrangler");
 
