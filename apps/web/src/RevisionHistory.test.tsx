@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RestoreOutcome } from "./editor-session";
 import { setLoadingDelay } from "./Loading";
 import {
   type ApiResult,
@@ -66,12 +67,16 @@ interface Props {
   pageVersion?: number;
   updatedAt?: number;
   paused?: boolean;
+  onRestore?: (version: number) => Promise<RestoreOutcome>;
+  canRestore?: boolean;
 }
 
 async function mount({
   pageVersion = 5,
   updatedAt = NOW - 2 * MINUTE,
   paused = false,
+  onRestore,
+  canRestore,
 }: Props = {}) {
   container ??= document.createElement("div");
   document.body.append(container);
@@ -83,6 +88,8 @@ async function mount({
         pageVersion={pageVersion}
         updatedAt={updatedAt}
         paused={paused}
+        {...(onRestore === undefined ? {} : { onRestore })}
+        {...(canRestore === undefined ? {} : { canRestore })}
       />,
     ),
   );
@@ -244,9 +251,12 @@ describe("RevisionHistory の一覧", () => {
   });
 });
 
+const bodyStatus = (dialog: HTMLDialogElement) =>
+  dialog.querySelector(".revision-viewer-body [role=status]")?.textContent;
+
 describe("RevisionHistory の版の表示", () => {
-  async function openEntry(index: number) {
-    await mount();
+  async function openEntry(index: number, props: Props = {}) {
+    await mount(props);
     const entry = await vi.waitFor(() => {
       const found = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[index];
       expect(found).toBeDefined();
@@ -292,9 +302,7 @@ describe("RevisionHistory の版の表示", () => {
       );
     const dialog = await openEntry(0);
     await vi.waitFor(() =>
-      expect(dialog.querySelector("[role=status]")?.textContent).toContain(
-        "この版は後の保存にまとめられたため、表示できません。",
-      ),
+      expect(bodyStatus(dialog)).toContain("この版は後の保存にまとめられたため、表示できません。"),
     );
     expect(listRevisions).toHaveBeenCalledTimes(2);
 
@@ -308,11 +316,148 @@ describe("RevisionHistory の版の表示", () => {
     vi.mocked(getRevision).mockResolvedValue({ ok: false, reason: "not_found" });
     const dialog = await openEntry(1);
     await vi.waitFor(() =>
-      expect(dialog.querySelector("[role=status]")?.textContent).toBe(
-        "このページは削除されたため、版を表示できません。",
-      ),
+      expect(bodyStatus(dialog)).toBe("このページは削除されたため、版を表示できません。"),
     );
     expect(dialog.textContent).not.toContain("まとめられた");
     expect(listRevisions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RevisionHistory の版を戻す操作", () => {
+  const OLD = { ...(REVISIONS[1] as RevisionSummary), body: "昔の本文" };
+
+  async function openOld(props: Props) {
+    vi.mocked(getRevision).mockResolvedValue(ok(OLD));
+    await mount(props);
+    const entry = await vi.waitFor(() => {
+      const found = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[1];
+      expect(found).toBeDefined();
+      return found as HTMLButtonElement;
+    });
+    await act(async () => entry.click());
+    const dialog = container?.querySelector("dialog") as HTMLDialogElement;
+    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    return dialog;
+  }
+
+  const restoreButton = (dialog: HTMLDialogElement) =>
+    [...dialog.querySelectorAll("button")].find((b) => b.textContent === "この版の本文に戻す");
+  const note = (dialog: HTMLDialogElement) =>
+    dialog.querySelector(".revision-viewer-status")?.textContent;
+
+  it("先頭の版と、onRestore を渡さないときは出さない", async () => {
+    vi.mocked(getRevision).mockResolvedValue(
+      ok({ ...(REVISIONS[0] as RevisionSummary), body: "今" }),
+    );
+    await mount({ onRestore: vi.fn() });
+    const head = await vi.waitFor(() => {
+      const found = container?.querySelector<HTMLButtonElement>(".revision-entry");
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    await act(async () => head.click());
+    const dialog = container?.querySelector("dialog") as HTMLDialogElement;
+    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    expect(restoreButton(dialog)).toBeUndefined();
+    act(() => root?.unmount());
+    root = null;
+
+    const plain = await openOld({});
+    expect(restoreButton(plain)).toBeUndefined();
+  });
+
+  it("古い版で押すと、その版の番号で戻し、結果を伝えてボタンを下げる", async () => {
+    let finish: (outcome: RestoreOutcome) => void = () => {};
+    const onRestore = vi.fn(
+      () =>
+        new Promise<RestoreOutcome>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const dialog = await openOld({ onRestore });
+    restoreButton(dialog)?.focus();
+    expect(document.activeElement?.textContent).toBe("この版の本文に戻す");
+    await act(async () => restoreButton(dialog)?.click());
+    expect(onRestore).toHaveBeenCalledWith(2);
+    const pending = [...dialog.querySelectorAll("button")].find((b) => b.textContent === "戻し中…");
+    expect(pending?.disabled).toBe(true);
+
+    await act(async () => finish({ ok: true, changed: true }));
+    expect(note(dialog)).toBe(
+      "この版の本文に戻しました。戻す前の本文は履歴に残っているので、そこから戻し直せます。",
+    );
+    expect(restoreButton(dialog)).toBeUndefined();
+    expect(dialog.open).toBe(true);
+    // 押したボタンが消えても、焦点をダイアログの中に残す
+    expect(document.activeElement?.textContent).toBe("閉じる");
+  });
+
+  it("本文が今と同じなら、そう伝えてボタンを下げる", async () => {
+    const dialog = await openOld({
+      onRestore: vi.fn(async () => ({ ok: true, changed: false }) as const),
+    });
+    await act(async () => restoreButton(dialog)?.click());
+    expect(note(dialog)).toBe("今の本文はこの版と同じです。");
+    expect(restoreButton(dialog)).toBeUndefined();
+  });
+
+  it("canRestore が false の間は押せない", async () => {
+    const dialog = await openOld({ onRestore: vi.fn(), canRestore: false });
+    expect(restoreButton(dialog)?.disabled).toBe(true);
+  });
+
+  it.each([
+    [{ ok: false, reason: "unsaved" }, "未保存の変更を保存できなかったため、戻していません。"],
+    [
+      { ok: false, reason: "conflict" },
+      "別の場所で更新されていたため、戻していません。最新の内容を読み込んだので、もう一度試してください。",
+    ],
+    [{ ok: false, reason: "unauthorized" }, "ログインの期限が切れたため、戻せませんでした。"],
+    [
+      { ok: false, reason: "error", message: "通信に失敗しました。" },
+      "戻せませんでした。通信に失敗しました。",
+    ],
+  ] satisfies Array<[RestoreOutcome, string]>)(
+    "%o は文で伝え、もう一度押せる",
+    async (outcome, text) => {
+      const dialog = await openOld({ onRestore: vi.fn(async () => outcome) });
+      await act(async () => restoreButton(dialog)?.click());
+      expect(note(dialog)).toBe(text);
+      expect(restoreButton(dialog)?.disabled).toBe(false);
+    },
+  );
+
+  it("版がまとめられていたら、その旨を出して一覧を取り直す", async () => {
+    const dialog = await openOld({
+      onRestore: vi.fn(async () => ({ ok: false, reason: "revision_not_found" }) as const),
+    });
+    await act(async () => restoreButton(dialog)?.click());
+    expect(note(dialog)).toBe("戻せませんでした。");
+    expect(bodyStatus(dialog)).toContain("この版は後の保存にまとめられたため");
+    expect(restoreButton(dialog)).toBeUndefined();
+    await vi.waitFor(() => expect(listRevisions).toHaveBeenCalledTimes(2));
+  });
+
+  it("ページが消えていたら、その旨を出す", async () => {
+    const dialog = await openOld({
+      onRestore: vi.fn(async () => ({ ok: false, reason: "gone" }) as const),
+    });
+    await act(async () => restoreButton(dialog)?.click());
+    expect(bodyStatus(dialog)).toBe("このページは削除されたため、版を表示できません。");
+    expect(listRevisions).toHaveBeenCalledTimes(1);
+  });
+
+  it("閉じて開き直すと、前の結果の文を残さない", async () => {
+    const dialog = await openOld({
+      onRestore: vi.fn(async () => ({ ok: false, reason: "unsaved" }) as const),
+    });
+    await act(async () => restoreButton(dialog)?.click());
+    expect(note(dialog)).not.toBe("");
+    const close = [...dialog.querySelectorAll("button")].find((b) => b.textContent === "閉じる");
+    await act(async () => close?.click());
+    const entry = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[1];
+    await act(async () => entry?.click());
+    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    expect(note(dialog)).toBe("");
   });
 });

@@ -48,6 +48,7 @@ function setup(updatePage?: EditorApi["updatePage"]) {
     updatePage: put,
     setVisibility: async () => ok(BASE),
     deletePage: async () => ok(null),
+    restoreRevision: async () => ok(BASE),
   };
   const session = new EditorSession(BASE, { api, backup });
   return { session, backup, put };

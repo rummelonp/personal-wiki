@@ -1,6 +1,7 @@
 import type { AttachmentUrlResolver } from "@personal-wiki/editor";
 import { useEffect, useId, useRef, useState } from "react";
 import { BodyEditor } from "./BodyEditor";
+import type { RestoreOutcome } from "./editor-session";
 import { formatRelativeTime, formatTime } from "./format";
 import { useSkeletonPainted } from "./Loading";
 import {
@@ -108,7 +109,39 @@ interface RevisionHistoryProps {
   /** ページが消えた後などは取りに行かない */
   paused: boolean;
   resolveAttachmentUrl?: AttachmentUrlResolver;
+  /** 渡すと、先頭より古い版に「この版の本文に戻す」を出す */
+  onRestore?: (version: number) => Promise<RestoreOutcome>;
+  /** 戻す操作を受け付けられるか。衝突の確認中やログインの期限切れの間などは false */
+  canRestore?: boolean;
 }
+
+/** 戻した結果の文。版やページが消えたときは、本文の欄の文（missing、gone）が理由を伝える */
+function restoreNote(outcome: RestoreOutcome): string {
+  if (outcome.ok) {
+    return outcome.changed
+      ? "この版の本文に戻しました。戻す前の本文は履歴に残っているので、そこから戻し直せます。"
+      : "今の本文はこの版と同じです。";
+  }
+  switch (outcome.reason) {
+    case "unsaved":
+      return "未保存の変更を保存できなかったため、戻していません。";
+    case "conflict":
+      return "別の場所で更新されていたため、戻していません。最新の内容を読み込んだので、もう一度試してください。";
+    case "unauthorized":
+      return "ログインの期限が切れたため、戻せませんでした。";
+    case "revision_not_found":
+    case "gone":
+      return "戻せませんでした。";
+    case "error":
+      return `戻せませんでした。${outcome.message}`;
+  }
+}
+
+/** 開いている版を戻した結果。別の版を開くか閉じると消す */
+type Restoring = { version: number } & (
+  | { status: "pending" }
+  | { status: "done"; restored: boolean; note: string }
+);
 
 /**
  * 右の列の「履歴」。版の番号は飛ぶので見せず、時刻と作成者で並べる。
@@ -121,9 +154,12 @@ export function RevisionHistory({
   updatedAt,
   paused,
   resolveAttachmentUrl,
+  onRestore,
+  canRestore = true,
 }: RevisionHistoryProps) {
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [viewing, setViewing] = useState<Viewing | null>(null);
+  const [restoring, setRestoring] = useState<Restoring | null>(null);
   const now = useNow();
   const listRef = useRef<HTMLOListElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -172,8 +208,15 @@ export function RevisionHistory({
   const timeOf = (summary: RevisionSummary, index: number, basis: Basis) =>
     index === 0 && summary.version === basis.pageVersion ? basis.updatedAt : summary.createdAt;
 
+  async function refetchAfterMerge() {
+    const basis = latest.current;
+    const fresh = await listRevisions(pageId, null);
+    if (fresh.ok) setList((current) => mergeFresh(current, fresh.value, basis));
+  }
+
   async function open(summary: RevisionSummary, time: number, opener: HTMLElement) {
     openerRef.current = opener;
+    setRestoring(null);
     setViewing({ status: "loading", summary, time });
     const res = await getRevision(pageId, summary.version);
     setViewing((current) => {
@@ -185,11 +228,27 @@ export function RevisionHistory({
       return { status: "error", summary, time, message: failureMessage(res, LOAD_FAILED) };
     });
     // 後の保存にまとめられて番号が進んだ版は、一覧も古い
-    if (!res.ok && res.reason === "revision_not_found") {
-      const basis = latest.current;
-      const fresh = await listRevisions(pageId, null);
-      if (fresh.ok) setList((current) => mergeFresh(current, fresh.value, basis));
+    if (!res.ok && res.reason === "revision_not_found") await refetchAfterMerge();
+  }
+
+  // 戻せた後の一覧は、ページの版が進むので取り直しの effect が新しくする
+  async function restore(version: number) {
+    if (onRestore === undefined) return;
+    setRestoring({ version, status: "pending" });
+    const outcome = await onRestore(version);
+    setRestoring((current) =>
+      current?.version === version
+        ? { version, status: "done", restored: outcome.ok, note: restoreNote(outcome) }
+        : current,
+    );
+    if (outcome.ok) return;
+    if (outcome.reason === "revision_not_found" || outcome.reason === "gone") {
+      const status = outcome.reason === "gone" ? "gone" : "missing";
+      setViewing((current) =>
+        current?.summary.version === version ? { ...current, status } : current,
+      );
     }
+    if (outcome.reason === "revision_not_found") await refetchAfterMerge();
   }
 
   // 開いた行が取り直しで消えていたら（版がまとめられた）、焦点を一覧の先頭に戻す。戻さないと body に落ちる
@@ -242,9 +301,25 @@ export function RevisionHistory({
       )}
       <RevisionViewer
         viewing={viewing}
-        onClose={() => setViewing(null)}
+        onClose={() => {
+          setViewing(null);
+          setRestoring(null);
+        }}
         onClosed={restoreFocus}
         resolveAttachmentUrl={resolveAttachmentUrl}
+        restore={
+          onRestore === undefined ||
+          viewing === null ||
+          list.status !== "ready" ||
+          // 先頭の版は今の本文そのもので、戻す先にならない
+          list.revisions[0]?.version === viewing.summary.version
+            ? null
+            : {
+                state: restoring?.version === viewing.summary.version ? restoring : null,
+                enabled: canRestore,
+                run: () => void restore(viewing.summary.version),
+              }
+        }
       />
     </RailSection>
   );
@@ -255,16 +330,26 @@ function RevisionViewer({
   onClose,
   onClosed,
   resolveAttachmentUrl,
+  restore,
 }: {
   viewing: Viewing | null;
   onClose: () => void;
   /** ダイアログが閉じた後。焦点を戻すのに使う */
   onClosed: () => void;
   resolveAttachmentUrl: AttachmentUrlResolver | undefined;
+  /** 戻せない版（先頭など）では null */
+  restore: { state: Restoring | null; enabled: boolean; run: () => void } | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const open = viewing !== null;
+  const showRestore =
+    restore !== null &&
+    viewing?.status === "ready" &&
+    !(restore.state?.status === "done" && restore.state.restored);
+  const restoreStatus = restore?.state?.status;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -272,6 +357,15 @@ function RevisionViewer({
     if (open && !dialog.open) dialog.showModal();
     else if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  // 押したボタンが待つ間に押せなくなるか、戻せて消えると、焦点がダイアログの外に落ちる。中に戻す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 戻す操作の進みが変わったときに確かめる
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog === null || !dialog.open || dialog.contains(document.activeElement)) return;
+    const target = restoreRef.current?.disabled === false ? restoreRef.current : closeRef.current;
+    target?.focus();
+  }, [restoreStatus, showRestore]);
 
   return (
     <dialog
@@ -300,10 +394,32 @@ function RevisionViewer({
                 {viewing.summary.title}
               </h2>
             </div>
-            <button type="button" className="button button-compact" onClick={onClose}>
-              閉じる
-            </button>
+            <div className="revision-viewer-actions">
+              {showRestore && (
+                <button
+                  ref={restoreRef}
+                  type="button"
+                  className="button button-compact"
+                  onClick={restore.run}
+                  disabled={!restore.enabled || restore.state?.status === "pending"}
+                >
+                  {restore.state?.status === "pending" ? "戻し中…" : "この版の本文に戻す"}
+                </button>
+              )}
+              <button
+                ref={closeRef}
+                type="button"
+                className="button button-compact"
+                onClick={onClose}
+              >
+                閉じる
+              </button>
+            </div>
           </header>
+          {/* 結果の文を読み上げるよう、空の間も live region を置いておく */}
+          <p className="revision-viewer-status" role="status">
+            {restore?.state?.status === "done" ? restore.state.note : ""}
+          </p>
           <div className="revision-viewer-body">
             {viewing.status === "loading" && <PendingBody />}
             {viewing.status === "missing" && (

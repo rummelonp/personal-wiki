@@ -12,6 +12,7 @@ import {
   type ExistingPage,
   failureMessage,
   type Page,
+  type RevisionNotFound,
   type UpdateOptions,
   type Visibility,
 } from "./pages-api";
@@ -32,6 +33,11 @@ export interface EditorApi {
   ): Promise<ApiResult<Page>>;
   setVisibility(id: string, version: number, visibility: Visibility): Promise<ApiResult<Page>>;
   deletePage(id: string, version: number): Promise<ApiResult<null>>;
+  restoreRevision(
+    id: string,
+    revision: number,
+    version: number,
+  ): Promise<ApiResult<Page> | RevisionNotFound>;
 }
 
 export interface EditorDeps {
@@ -89,6 +95,20 @@ function rejectionOf(res: ApiFailure, sent: Draft): WriteRejection {
  * `-` `_` の 22 文字で `:` を含まないので重ならない。
  */
 export const NEW_PAGE_BACKUP_PREFIX = "new:";
+
+/** 版を戻した結果。失敗の多くはセッションの状態（ログイン切れ、消失など）にも出るが、戻せたかは別に返す */
+export type RestoreOutcome =
+  /** changed が false なら、本文が今と同じで書かなかった */
+  | { ok: true; changed: boolean }
+  | {
+      ok: false;
+      /**
+       * unsaved は、未保存の変更を保存できなかった（または退避や衝突が未決）ので戻さなかった。
+       * conflict は、他で版が進んでいたので戻さなかった（最新は取り込んである）
+       */
+      reason: "unsaved" | "conflict" | "revision_not_found" | "gone" | "unauthorized";
+    }
+  | { ok: false; reason: "error"; message: string };
 
 /**
  * このタブのセッションが持つ、作る前の退避の key。次の新規作成の画面は、これを復元の案内に出さない。
@@ -155,8 +175,8 @@ export interface EditorState {
   /** まだサーバーに無いページ。title の確定（commitTitle）で作る。 */
   uncreated: boolean;
   draft: Draft;
-  /** 書き込み中の操作。作成、保存、visibility、削除は直列に走るので 1 つだけ。 */
-  busy: "creating" | "saving" | "visibility" | "deleting" | null;
+  /** 書き込み中の操作。作成、保存、visibility、削除、版を戻す操作は直列に走るので 1 つだけ。 */
+  busy: "creating" | "saving" | "visibility" | "deleting" | "restoring" | null;
   /** 直近の失敗の説明。次の編集か再試行で消える。どの操作の失敗かは failedOp が持つ。 */
   error: string | null;
   /** error を起こした操作。保存の失敗だけが保存の状態（SaveStatus）になる。 */
@@ -1272,6 +1292,84 @@ export class EditorSession {
       this.set({ base: server });
       if (isDirty(this.state)) this.rearm();
     });
+  }
+
+  /**
+   * 過去の版の本文に戻す（title は今のまま）。未保存の変更は先に保存し、保存できなければ戻さない。
+   * 手元の入力を黙って捨てず、戻す前の内容として履歴に残すため。
+   * 戻した版は、他から入った版と同じく takeIn で手元に入れる（変換が落ち着くのを待ってから差し替える）。
+   */
+  restoreRevision(revision: number): Promise<RestoreOutcome> {
+    this.markActive();
+    return this.enqueue(async (): Promise<RestoreOutcome> => {
+      const blocked = this.restoreBlocked();
+      if (blocked !== null) return blocked;
+      // 変換中の文字はまだ draft に無い。確定を待たずに保存すると、戻した本文で消える
+      await this.whenSettled();
+      this.clearTimer();
+      this.set(this.clearedError());
+      await this.saveIfDirty();
+      const unsaved = this.restoreBlocked();
+      if (unsaved !== null) return unsaved;
+      if (this.state.error !== null || isDirty(this.state)) return { ok: false, reason: "unsaved" };
+      const { base } = this.state;
+      this.set({ busy: "restoring", ...NO_ERROR });
+      const res = await this.api.restoreRevision(base.id, revision, base.version);
+      try {
+        if (!res.ok) return await this.restoreFailed(res);
+      } finally {
+        this.set({ busy: null });
+      }
+      if (res.value.version === base.version) return { ok: true, changed: false };
+      await this.takeIn(res.value);
+      return { ok: true, changed: true };
+    });
+  }
+
+  private restoreBlocked(): RestoreOutcome | null {
+    const { uncreated, gone, authLost } = this.state;
+    if (gone) return { ok: false, reason: "gone" };
+    if (authLost) return { ok: false, reason: "unauthorized" };
+    if (uncreated || isReadOnly(this.state)) return { ok: false, reason: "unsaved" };
+    return null;
+  }
+
+  private async restoreFailed(res: ApiFailure | RevisionNotFound): Promise<RestoreOutcome> {
+    switch (res.reason) {
+      case "revision_not_found":
+        return res;
+      case "unauthorized":
+        this.set({ authLost: true });
+        return { ok: false, reason: "unauthorized" };
+      case "not_found":
+        this.markGone("elsewhere");
+        return { ok: false, reason: "gone" };
+      case "version_conflict": {
+        // 戻す前に保存を済ませているので、最新をそのまま取り込める。衝突の画面にはしない
+        // （戻し中にダイアログを閉じて打った入力は、takeIn が衝突として退避する）
+        const latest = await this.api.getPage(this.state.base.id);
+        if (latest.ok) {
+          if (latest.value.version > this.state.base.version) await this.takeIn(latest.value);
+        } else if (latest.reason === "unauthorized") {
+          this.set({ authLost: true });
+          return { ok: false, reason: "unauthorized" };
+        } else if (latest.reason === "not_found") {
+          this.markGone("elsewhere");
+          return { ok: false, reason: "gone" };
+        } else {
+          return {
+            ok: false,
+            reason: "error",
+            message: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
+          };
+        }
+        return { ok: false, reason: "conflict" };
+      }
+      case "title_conflict":
+      case "invalid_input":
+      case "error":
+        return { ok: false, reason: "error", message: res.message };
+    }
   }
 
   /** 成功したら true。呼び出し側が一覧へ戻る。 */

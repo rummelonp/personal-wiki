@@ -48,8 +48,11 @@ function memoryBackup(
 
 const ok = <T>(value: T): ApiResult<T> => ({ ok: true, value });
 
-/** 本物のサーバーのように、保存のたびに版を 1 進める。 */
-function fakeApi(server: { page: Page }): EditorApi & { calls: string[] } {
+/** 本物のサーバーのように、保存のたびに版を 1 進める。revisions は版の番号ごとの本文 */
+function fakeApi(server: {
+  page: Page;
+  revisions?: Record<number, string>;
+}): EditorApi & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
@@ -85,6 +88,17 @@ function fakeApi(server: { page: Page }): EditorApi & { calls: string[] } {
       }
       return ok(null);
     },
+    async restoreRevision(_id, revision, version) {
+      calls.push(`restore${revision}@${version}`);
+      if (version !== server.page.version) {
+        return { ok: false, reason: "version_conflict", currentVersion: server.page.version };
+      }
+      const body = server.revisions?.[revision];
+      if (body === undefined) return { ok: false, reason: "revision_not_found" };
+      if (body === server.page.body) return ok(server.page);
+      server.page = { ...server.page, body, version: version + 1 };
+      return ok(server.page);
+    },
   };
 }
 
@@ -96,7 +110,9 @@ function setup(
     deps?: Partial<EditorDeps>;
   } = {},
 ) {
-  const server = { page: options.server ?? page() };
+  const server: { page: Page; revisions?: Record<number, string> } = {
+    page: options.server ?? page(),
+  };
   const api = (options.api ?? fakeApi(server)) as EditorApi & { calls: string[] };
   const backup = options.backup ?? memoryBackup();
   const session = new EditorSession(server.page, { api, backup, ...options.deps });
@@ -817,6 +833,147 @@ describe("visibility", () => {
     const state = session.getState();
     expect(saveStatusOf(state)).toBe("conflict");
     expect(state.conflict?.body).toBe("他");
+  });
+});
+
+describe("版を戻す", () => {
+  it("本文を戻した版に差し替え、title は今のまま、他から入った版として数える", async () => {
+    const { session, api, server } = setup();
+    server.revisions = { 1: "前の本文" };
+    expect(await session.restoreRevision(1)).toEqual({ ok: true, changed: true });
+    expect(api.calls).toEqual(["restore1@1"]);
+    const state = session.getState();
+    expect(state.base).toMatchObject({ title: "題", body: "前の本文", version: 2 });
+    expect(state.draft).toEqual({ title: "題", body: "前の本文" });
+    expect(state.externalBases).toBe(1);
+    expect(saveStatusOf(state)).toBe("saved");
+  });
+
+  it("未保存の変更を先に保存し、保存した版を照合に使う", async () => {
+    const { session, api, server } = setup();
+    server.revisions = { 1: "本文" };
+    session.edit({ title: "題", body: "打った内容" });
+    expect(await session.restoreRevision(1)).toEqual({ ok: true, changed: true });
+    expect(api.calls).toEqual(["put@1", "restore1@2"]);
+    expect(session.getState().draft.body).toBe("本文");
+    expect(session.getState().base.version).toBe(3);
+  });
+
+  it("未保存の変更を保存できなければ戻さず、打った内容を残す", async () => {
+    const { session, api, server, backup } = setup();
+    server.revisions = { 1: "本文" };
+    api.updatePage = async () => ({ ok: false, reason: "error", message: "落ちた" });
+    session.edit({ title: "題", body: "打った内容" });
+    expect(await session.restoreRevision(1)).toEqual({ ok: false, reason: "unsaved" });
+    expect(api.calls).toEqual([]);
+    expect(session.getState().draft.body).toBe("打った内容");
+    expect(saveStatusOf(session.getState())).toBe("error");
+    expect(backup.load(ID)?.body).toBe("打った内容");
+  });
+
+  it("送れない内容（入力の誤り）が残っていれば戻さない", async () => {
+    const { session, api, server } = setup();
+    server.revisions = { 1: "本文" };
+    session.edit({ title: "題", body: "a\u0000b" });
+    expect(await session.restoreRevision(1)).toEqual({ ok: false, reason: "unsaved" });
+    expect(api.calls).toEqual([]);
+    expect(session.getState().draft.body).toBe("a\u0000b");
+  });
+
+  it("本文が今と同じなら版を進めず、changed を false で返す", async () => {
+    const { session, server } = setup();
+    server.revisions = { 1: "本文" };
+    expect(await session.restoreRevision(1)).toEqual({ ok: true, changed: false });
+    expect(session.getState().base.version).toBe(1);
+    expect(session.getState().externalBases).toBe(0);
+  });
+
+  it("他で版が進んでいたら戻さず、手元は保存済みなので最新をそのまま取り込む", async () => {
+    const { session, api, server } = setup();
+    server.revisions = { 1: "前の本文" };
+    server.page = page({ body: "他で書いた", version: 3 });
+    expect(await session.restoreRevision(1)).toEqual({ ok: false, reason: "conflict" });
+    expect(api.calls).toEqual(["restore1@1", "get"]);
+    const state = session.getState();
+    expect(state.conflict).toBeNull();
+    expect(state.draft.body).toBe("他で書いた");
+    expect(state.base.version).toBe(3);
+  });
+
+  it("他で版が進んでいて最新も読めなければ、読み込んだとは伝えず失敗として返す", async () => {
+    const { session, api, server } = setup();
+    server.revisions = { 1: "前の本文" };
+    server.page = page({ body: "他で書いた", version: 3 });
+    api.getPage = async () => ({ ok: false, reason: "error", message: "落ちた" });
+    expect(await session.restoreRevision(1)).toEqual({
+      ok: false,
+      reason: "error",
+      message: "別の場所で更新されていますが、最新の内容を取得できませんでした。落ちた",
+    });
+    expect(session.getState().base.version).toBe(1);
+  });
+
+  it("版が無ければ revision_not_found を返し、手元は変えない", async () => {
+    const { session } = setup();
+    expect(await session.restoreRevision(9)).toEqual({ ok: false, reason: "revision_not_found" });
+    expect(session.getState().draft.body).toBe("本文");
+    expect(session.getState().error).toBeNull();
+  });
+
+  it("ページが消えていれば gone、ログインが切れていれば unauthorized", async () => {
+    const gone = setup();
+    gone.api.restoreRevision = async () => ({ ok: false, reason: "not_found" });
+    expect(await gone.session.restoreRevision(1)).toEqual({ ok: false, reason: "gone" });
+    expect(gone.session.getState().gone).toBe(true);
+
+    const lost = setup();
+    lost.api.restoreRevision = async () => ({ ok: false, reason: "unauthorized" });
+    expect(await lost.session.restoreRevision(1)).toEqual({ ok: false, reason: "unauthorized" });
+    expect(lost.session.getState().authLost).toBe(true);
+    // ログインが切れたままなら送らない
+    expect(await lost.session.restoreRevision(1)).toEqual({ ok: false, reason: "unauthorized" });
+  });
+
+  it("通信の失敗は message を付けて返す", async () => {
+    const { session, api } = setup();
+    api.restoreRevision = async () => ({ ok: false, reason: "error", message: "落ちた" });
+    expect(await session.restoreRevision(1)).toEqual({
+      ok: false,
+      reason: "error",
+      message: "落ちた",
+    });
+    expect(session.getState().busy).toBeNull();
+  });
+
+  it("変換が落ち着くまで、保存も本文の差し替えも待つ", async () => {
+    const waits: Array<() => void> = [];
+    const { session, api, server } = setup({
+      deps: { whenSettled: () => new Promise<void>((resolve) => waits.push(resolve)) },
+    });
+    server.revisions = { 1: "前の本文" };
+    session.edit({ title: "題", body: "打った内容" });
+    const restoring = session.restoreRevision(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.calls).toEqual([]);
+    waits.shift()?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.calls).toEqual(["put@1", "restore1@2"]);
+    expect(session.getState().draft.body).toBe("打った内容");
+    waits.shift()?.();
+    expect(await restoring).toEqual({ ok: true, changed: true });
+    expect(session.getState().draft.body).toBe("前の本文");
+  });
+
+  it("衝突が未決の間は戻さない", async () => {
+    const { session, api, server } = setup();
+    server.revisions = { 1: "本文" };
+    session.edit({ title: "題", body: "手元" });
+    server.page = page({ body: "他", version: 2 });
+    await session.flush();
+    expect(saveStatusOf(session.getState())).toBe("conflict");
+    const calls = api.calls.length;
+    expect(await session.restoreRevision(1)).toEqual({ ok: false, reason: "unsaved" });
+    expect(api.calls.length).toBe(calls);
   });
 });
 

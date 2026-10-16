@@ -58,6 +58,7 @@ import {
   type LinkRewritesQueued,
   listPageTitles,
   type Page,
+  restoreRevision,
   setVisibility,
   updatePage,
 } from "./pages-api";
@@ -82,6 +83,7 @@ function editorApi(onLinkRewrites: (title: string, queued: LinkRewritesQueued) =
     },
     setVisibility: (id, version, visibility) => setVisibility(id, version, visibility),
     deletePage: (id, version) => deletePage(id, version),
+    restoreRevision: (id, revision, version) => restoreRevision(id, revision, version),
   };
 }
 
@@ -185,6 +187,7 @@ const PROGRESS_TITLES = {
   saving: "保存中…",
   visibility: "公開範囲を変更中…",
   deleting: "削除中…",
+  restoring: "版を戻し中…",
 } as const;
 
 function retryLabel(op: FailedOp): string {
@@ -573,6 +576,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           updatedAt={state.base.updatedAt}
           paused={state.gone}
           resolveAttachmentUrl={attachmentUrl}
+          canRestore={!readOnly && !state.authLost && !deleting}
+          onRestore={(revision) => session.restoreRevision(revision)}
         />
       )}
       {/* 作る前のページには消す対象が無い。押せない操作を置かない */}

@@ -692,6 +692,16 @@ export async function listRevisions(
 /** ページはあるがその版が無い（後の保存にまとめられて番号が進んだ）。ページが無いときは not_found */
 export type RevisionNotFound = { ok: false; reason: "revision_not_found" };
 
+/** 404 の本文で、版が無いのかページが無いのかを読み分ける */
+async function notFoundOf(
+  res: Response,
+): Promise<RevisionNotFound | { ok: false; reason: "not_found" }> {
+  const body = recordOf(await readJson(res));
+  return body.error === "revision_not_found"
+    ? { ok: false, reason: "revision_not_found" }
+    : { ok: false, reason: "not_found" };
+}
+
 export async function getRevision(
   id: string,
   version: number,
@@ -702,17 +712,33 @@ export async function getRevision(
     `/api/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}`,
   );
   if (isFailure(res)) return res;
-  if (res.status === 404) {
-    const body = recordOf(await readJson(res));
-    return body.error === "revision_not_found"
-      ? { ok: false, reason: "revision_not_found" }
-      : { ok: false, reason: "not_found" };
-  }
+  if (res.status === 404) return notFoundOf(res);
   if (!res.ok) return failureOf(res);
   const json = await readJson(res);
   return isRevisionSummary(json) && typeof recordOf(json).body === "string"
     ? { ok: true, value: json as Revision }
     : BAD_SHAPE;
+}
+
+/**
+ * revision の版の本文に戻し、保存後のページを返す（title は今のまま）。version は今のページの版で、If-Match に
+ * 使う。本文が今と同じなら書かずに今のページを返すので、版が進んだかで見分ける。サーバーは要求の本文を
+ * 読まないが、cookie 付きの変更系なので JSON の Content-Type と本文を付ける（CSRF 対策）。
+ */
+export async function restoreRevision(
+  id: string,
+  revision: number,
+  version: number,
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<Page> | RevisionNotFound> {
+  const res = await request(
+    fetchFn,
+    `/api/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revision)}/restore`,
+    jsonInit("POST", {}, { headers: ifMatch(version) }),
+  );
+  if (isFailure(res)) return res;
+  if (res.status === 404) return notFoundOf(res);
+  return pageResult(res);
 }
 
 /** 検索語を直せば通る誤り。一覧の取得の失敗とは別に、入力を直す案内として見せる。 */
