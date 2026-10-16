@@ -2523,6 +2523,55 @@ describe("保存の前の検査", () => {
     expect(session.getState()).toMatchObject({ error: null, base: { title: "週報 2" } });
   });
 
+  it("409 で取り込んだリンクの書き換えを重ねると上限を超えるなら、送り直さずに退避する", async () => {
+    // 手元の追記だけなら上限に収まり、リンクの書き換えで伸びた分と合わせると超える
+    const rest = "a".repeat(65_536 - 20);
+    const { session, server, api, backup } = setup({ server: page({ body: `[[旧]] ${rest}` }) });
+    session.edit({ title: "題", body: `[[旧]] ${rest}b` });
+    const longer = `[[${"x".repeat(30)}]] ${rest}`;
+    server.page = { ...server.page, body: longer, version: 2 };
+    await session.flush();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(api.calls).toEqual(["put@1", "get"]);
+    expect(session.getState()).toMatchObject({
+      base: { version: 2 },
+      draft: { body: `${longer}b` },
+      conflict: null,
+    });
+    expect(saveStatusOf(session.getState())).toBe("invalid");
+    expect(backup.load(ID)).toMatchObject({ body: `${longer}b`, baseVersion: 2 });
+  });
+
+  it("作成で重複と言われた後に title を変えて確定すると、1 回だけ作る", async () => {
+    const server = { page: page() };
+    const api = fakeApi(server);
+    const create = api.createPage.bind(api);
+    const sent: string[] = [];
+    api.createPage = async (input) => {
+      sent.push(input.title);
+      if (input.title === "題") {
+        return { ok: false, reason: "title_conflict", message: "重複" };
+      }
+      return create(input);
+    };
+    const session = newSession(api, memoryBackup());
+    session.editTitle("題");
+    await session.commitTitle();
+    // 同じ title の確定し直しは送らずに止め、title が変われば自動で作る状態にする
+    await session.commitTitle();
+    session.edit({ title: "題", body: "本文" });
+    expect(sent).toEqual(["題"]);
+
+    session.editTitle("別の題");
+    await session.commitTitle();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sent).toEqual(["題", "別の題"]);
+    expect(session.getState()).toMatchObject({
+      uncreated: false,
+      base: { title: "別の題", body: "本文" },
+    });
+  });
+
   describe("重複と言われた title の記録は、title を変えるまで残す", () => {
     function takenSetup() {
       const ctx = setup({ server: page({ body: "[[旧]] 本文" }) });
