@@ -1,5 +1,6 @@
 import { StateEffect, type Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { MAX_TITLE_BYTES } from "@personal-wiki/domain/page-input";
 import { isCompositionUnsettled, isDocReplacement } from "@personal-wiki/editor";
 import { act, createRef, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -272,5 +273,35 @@ describe("whenSettled", () => {
     act(() => root?.unmount());
     root = null;
     await expect(waiting).resolves.toBeUndefined();
+  });
+});
+
+describe("帯の読み上げ", () => {
+  const live = () => container?.querySelector(".title-hint [role='status']");
+
+  it("文が無いときも live region は帯の中に残り、文は空のまま", () => {
+    render({ value: "題" });
+    expect(live()).not.toBeNull();
+    expect(live()?.textContent).toBe("");
+  });
+
+  it("文は live region に入り、同じ要素の中身が入れ替わる", () => {
+    const { rerender } = render({ value: "a#b" });
+    const region = live();
+    expect(region?.textContent).toBe("「#」はリンクに書けない文字です");
+    rerender({ value: "ab" });
+    expect(live()).toBe(region);
+    expect(live()?.textContent).toBe("");
+    rerender({ value: "", keptTitle: "前の題" });
+    expect(live()).toBe(region);
+    expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです");
+  });
+
+  it("長さの数は live region の外に置き、数が変わっても読み上げない", () => {
+    render({ value: "a".repeat(MAX_TITLE_BYTES) });
+    const meter = container?.querySelector(".title-hint .input-meter");
+    expect(meter).not.toBeNull();
+    expect(live()?.contains(meter ?? null)).toBe(false);
+    expect(meter?.closest("[aria-live], [role='status'], [role='alert']")).toBeNull();
   });
 });

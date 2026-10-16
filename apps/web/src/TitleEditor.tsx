@@ -173,18 +173,24 @@ export function TitleEditor({
   const title = singleLineTitle(value);
   const unsafe = wikiLinkUnsafeChars(title);
   const bytes = utf8ByteLength(title);
+  // title が空なら unsafe も空なので、文は同時に 2 つ出ない
+  const hintText =
+    title === "" && keptTitle !== ""
+      ? `空のタイトルは保存しません。「${keptTitle}」のままです`
+      : unsafe.length > 0
+        ? `${unsafe.map((ch) => `「${ch}」`).join("")}はリンクに書けない文字です`
+        : "";
   return (
     <div className="title-field">
       <div ref={host} className="title-input" />
       <p id={hintId} className="title-hint">
-        {title === "" && keptTitle !== "" && (
-          <span className="title-hint-text">{`空のタイトルは保存しません。「${keptTitle}」のままです`}</span>
-        )}
-        {unsafe.length > 0 && (
-          <span className="title-hint-text">
-            {`${unsafe.map((ch) => `「${ch}」`).join("")}はリンクに書けない文字です`}
-          </span>
-        )}
+        {/*
+         * 文だけを live region にする。帯ごと読み上げると、打つたびに変わる長さの数まで読まれる。
+         * 要素は文が無いときも残す。後から role を付けて出した要素は、最初の文が読まれない読み上げがある
+         */}
+        <span role="status" className="title-hint-text">
+          {hintText}
+        </span>
         {bytes >= MAX_TITLE_BYTES * TITLE_METER_RATIO && (
           <InputMeter label="タイトルの長さ" bytes={bytes} max={MAX_TITLE_BYTES} />
         )}
