@@ -23,6 +23,16 @@ const titleEditor = (page: Page) => page.locator(".title-input .cm-content");
 const notice = (page: Page, title: string) =>
   page.locator(".notice").filter({ has: page.locator(".notice-title", { hasText: title }) });
 
+/** このページへの以後の PUT の数を返す関数を返す。 */
+async function countPuts(page: Page, id: string): Promise<() => number> {
+  let count = 0;
+  await page.route(`**/api/pages/${id}`, (route) => {
+    if (route.request().method() === "PUT") count += 1;
+    return route.fallback();
+  });
+  return () => count;
+}
+
 /** 上限まで `room` バイトを残した本文のページを開き、以後の PUT の数を返す関数を返す。 */
 async function openNearLimit(
   page: Page,
@@ -33,14 +43,10 @@ async function openNearLimit(
   const fill = MAX_BODY_BYTES - room;
   const body = `${LINE.repeat(Math.floor(fill / LINE.length))}${"a".repeat(fill % LINE.length)}`;
   const created = await api.createPage({ title, body });
-  let count = 0;
-  await page.route(`**/api/pages/${created.id}`, (route) => {
-    if (route.request().method() === "PUT") count += 1;
-    return route.fallback();
-  });
+  const puts = await countPuts(page, created.id);
   await page.goto(`/p/${created.id}`);
   await expect(saveState(page)).toHaveText("保存済み");
-  return { created, puts: () => count };
+  return { created, puts };
 }
 
 test("本文が上限を超えると送らずに超えた量を出し、減らすとそのまま保存する", async ({
@@ -85,8 +91,10 @@ test("上限を超えたまま画面を離れると送らずに退避し、開�
   await typeAtBodyEnd(page, "cccc");
   await expect(saveState(page)).toHaveText("保存できません");
 
-  await page.goto("/");
+  // アプリの中で離れる。文書ごと移ると、閉じる間の要求が数える前に取り消されることがある
+  await page.getByRole("link", { name: "personal-wiki" }).click();
   await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await page.waitForTimeout(500);
   expect(puts()).toBe(0);
   expect((await api.getPage(created.id)).version).toBe(created.version);
 
@@ -134,6 +142,7 @@ test("title が上限に近づくと欄の下に長さを出し、超えたら�
   api,
 }, testInfo) => {
   const created = await api.createPage({ title: uniqueTitle(testInfo, "長い題"), body: "本文" });
+  const puts = await countPuts(page, created.id);
   await page.goto(`/p/${created.id}`);
   await expect(saveState(page)).toHaveText("保存済み");
   const hintMeter = page.locator(".title-hint .input-meter");
@@ -153,6 +162,8 @@ test("title が上限に近づくと欄の下に長さを出し、超えたら�
   const tooLong = notice(page, "タイトルが長すぎて保存できません");
   await expect(tooLong).toBeVisible();
   await expect(saveState(page)).toHaveText("保存できません");
+  await page.waitForTimeout(500);
+  expect(puts()).toBe(0);
   expect((await api.getPage(created.id)).title).toBe(created.title);
 });
 
