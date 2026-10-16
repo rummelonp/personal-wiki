@@ -12,8 +12,9 @@ import { APPEND_MAX_ATTEMPTS } from "./store";
 /*
  * 書き込みの経路ごとに、1 invocation のクエリ数が最も多くなる場合を数える。D1 Free の上限は 50 で、
  * batch の文も 1 文ずつ数える。派生データの文を足す余裕は添付の参照（attachment_refs の 2 文）で使い、
- * append の最悪は 47 になった。保存の batch にさらに文を足すと append が上限を超えるので、そのときは
- * APPEND_MAX_ATTEMPTS を下げる。
+ * append の最悪は owner の 48 になる（owner は batch に revision をまとめる文が 1 つ増えるが、認証に D1 を
+ * 使わない。token は認証の 2 を足して 47）。保存の batch にさらに文を足すと append が上限を超えるので、
+ * そのときは APPEND_MAX_ATTEMPTS を下げる。
  */
 const D1_QUERY_LIMIT = 50;
 
@@ -95,6 +96,31 @@ describe("1 invocation のクエリ数", () => {
     expect(counter.batches).toBe(APPEND_MAX_ATTEMPTS);
     // 認証 2、試行ごとに読み 1 と batch 14
     expect(counter.queries).toBe(2 + APPEND_MAX_ATTEMPTS * 15);
+    expectWithinBudget(counter);
+  });
+
+  it("owner の append は、revision をまとめる文の分を足しても競合が上限まで続いて収まる", async () => {
+    const client = await buildClient();
+    const page = await client.create("Page", "[[Other]] #tag");
+    const { db, counter } = instrumentedDb(() => page.id);
+    const res = await createApp({ now: () => T0 + 1000, recordWrite: () => {} }).request(
+      `/api/pages/${page.id}/append`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: await ownerCookie(T0 + 1000),
+          Origin: "http://localhost",
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: "追記" }),
+      },
+      ownerEnv({ DB: db }),
+    );
+    expect(res.status).toBe(409);
+    expect(counter.batches).toBe(APPEND_MAX_ATTEMPTS);
+    // 試行ごとに読み 1 と batch 15（cookie は署名の検証だけで D1 を読まない）
+    expect(counter.queries).toBe(APPEND_MAX_ATTEMPTS * 16);
     expectWithinBudget(counter);
   });
 

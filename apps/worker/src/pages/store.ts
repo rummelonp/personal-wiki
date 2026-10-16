@@ -409,6 +409,7 @@ async function writeContent(
       body: content.body,
       actor: input.actor,
       now: input.now,
+      mergeOwnerSaves: true,
     }),
     ...derivedStatements(db, id, content.titleKey, deriveValues(content.title, content.body)),
     db
@@ -456,7 +457,8 @@ export async function updatePage(
 
 /**
  * 追記の競合で読み直す回数の上限。D1 は 1 invocation あたりのクエリ数に上限（Free で 50）があり、
- * 1 回の試行で読み 1 文と batch の 14 文を使う（query-budget.test.ts で数えている）。
+ * 1 回の試行で読み 1 文と batch の 14 文（owner は revision をまとめる文を足して 15 文）を使う
+ * （query-budget.test.ts で数えている）。
  */
 export const APPEND_MAX_ATTEMPTS = 3;
 
@@ -570,7 +572,7 @@ export interface SetVisibilityInput {
  * 変えたときは版を 1 つ進め、updated_at も更新する。visibility を変える前に読んだ版で本文を
  * 書き換えようとした呼び出し元（draft のつもりの AI など）が、409 で読み直して公開範囲に気づけるように
  * するため。revision は積まない（revision は title と本文の履歴で、どちらも変わっていない）。
- * 版と revision の版が 1 対 1 でなくなるが、連続保存をまとめる設計（revisions.ts）でも同じく欠番が出る。
+ * 版と revision の版が 1 対 1 でなくなるが、owner の連続保存をまとめる（revisions.ts）ときも同じく欠番が出る。
  * すでに同じ visibility なら何も書かずに今のページを返す。
  */
 export async function setVisibility(

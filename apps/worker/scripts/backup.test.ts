@@ -455,6 +455,35 @@ describe("backup と load の往復", () => {
     expect(out.stderr).toBe("");
   });
 
+  it("読んでいる間に owner の保存が最新の revision の版を進めても、重複せず外して数え、load が失敗しない", () => {
+    const source = migratedDb();
+    seedPage(source, { id: "aaaaaaaaaaaaaaaaaaaaaa", title: "a", body: "a", versions: 2 });
+    let injected = false;
+    const { io, out } = ioFor(source, {}, (sql) => {
+      if (!injected && sql.includes('FROM "revisions"')) {
+        injected = true;
+        // revisions.ts がまとめるときと同じく、版 2 の行を版 3 と新しい本文に書き換える
+        source.exec("UPDATE pages SET version = 3 WHERE id = 'aaaaaaaaaaaaaaaaaaaaaa'");
+        source.exec(
+          "UPDATE revisions SET version = 3, body = 'a3' WHERE page_id = 'aaaaaaaaaaaaaaaaaaaaaa' AND version = 2",
+        );
+      }
+    });
+    const result = backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
+    expect(injected).toBe(true);
+    expect(result.tables.pages?.rows).toBe(1);
+    expect(result.tables.revisions?.rows).toBe(1);
+    expect(result.skippedRevisions).toBe(1);
+
+    const dest = migratedDb();
+    load({ command: "load", remote: false, dir: result.dir }, ioFor(dest).io);
+    expect(dest.prepare("SELECT version FROM pages").all()).toEqual([{ version: 2 }]);
+    expect(dest.prepare("SELECT version FROM revisions ORDER BY version").all()).toEqual([
+      { version: 1 },
+    ]);
+    expect(out.stderr).toBe("");
+  });
+
   it("pages の batch の間に title を手放したページがあり、後のページがそれを取ると、失敗して出力を残さない", () => {
     const source = migratedDb();
     const body = "x".repeat(60_000);

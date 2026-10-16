@@ -632,7 +632,11 @@ function readMigrations(target, io) {
  * どちらも dump の外に出すので、load は外部キーでも版の衝突でも失敗しない。
  *   - 読んだ後に作られたページ: pages に無いので、その revisions は書かない
  *   - 読んだ後に保存されたページ: revisions のうち pages.version より新しい版は書かない
- * revisions は追記だけで更新も削除もないので、書いた分は pages の版と整合する。
+ * revisions の行は削除されないが、owner の保存は最新の塊の行の版と内容を新しい版に進める（revisions.ts）。
+ * その行を読む前にそれが起きると、行は pages.version より新しい版になって外れ、そのページの最新の塊の
+ * revision が dump から欠ける（読んだ後なら古い内容のまま残る）。本文は pages にあり、残る revisions は
+ * どれも pages の版以下なので load は失敗しない。読んだ後に版が進んだ行を主キーの順の続きでもう一度
+ * 読んでも、新しい版は pages.version を超えて外れるので、同じ行が dump で重ならない。
  * ページ同士の時点は揃わず、先に読んだページは古く、後に読んだページは新しい。
  * そのため、先に読んだページが削除や改名で title を手放し、後に読んだページがその title を取ると、
  * 生きたページの title_key が dump の中で重なる。load は部分一意索引で失敗するので、
