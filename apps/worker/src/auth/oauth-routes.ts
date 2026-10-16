@@ -6,8 +6,10 @@ import {
   type GrantSummary,
 } from "@cloudflare/workers-oauth-provider";
 import type { Context, Hono } from "hono";
+import themeCss from "../../../web/src/theme.css";
 import type { AppEnv } from "../env";
 import { allowAnonymous, requireOwner } from "./middleware";
+import pageCss from "./oauth-page.css";
 import { boundRegistrationRequest } from "./oauth-registration";
 import {
   AUTHORIZATION_SERVER_METADATA_PATH,
@@ -363,17 +365,17 @@ function grantsPage(
     const scope = describeScopes(grant.scope) ?? "（なし）";
     const host = grant.redirectUri === undefined ? "" : safeHost(grant.redirectUri);
     return `<li>
-<p><strong>${label}</strong><br><small>client_id: <code>${escapeHtml(grant.clientId)}</code></small></p>
-<p>権限: ${scope}${host === "" ? "" : `<br>送り先: ${escapeHtml(host)}`}<br>許可: ${formatEpochSeconds(grant.createdAt)}<br>期限: ${formatEpochSeconds(grant.expiresAt)}</p>
+<p><strong>${label}</strong><small class="note">client_id: <code>${escapeHtml(grant.clientId)}</code></small></p>
+<p class="meta">権限: ${scope}${host === "" ? "" : `<br>送り先: ${escapeHtml(host)}`}<br>許可: ${formatEpochSeconds(grant.createdAt)}<br>期限: ${formatEpochSeconds(grant.expiresAt)}</p>
 <form method="post" action="${OAUTH_GRANTS_REVOKE_PATH}">
 <input type="hidden" name="grant" value="${escapeHtml(grant.id)}">
-<button>取り消す</button>
+<button class="button button-danger">取り消す</button>
 </form>
 </li>`;
   });
   const list =
     rows.length > 0
-      ? `<p>取り消すと、その接続はすぐに使えなくなります。同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
+      ? `<p class="lead">取り消すと、その接続はすぐに使えなくなります。同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
 <ul class="grants">\n${rows.join("\n")}\n</ul>`
       : "<p>許可した接続はありません。</p>";
   const more =
@@ -478,30 +480,30 @@ export function consentPage(
   const registered =
     registeredAt === null
       ? ""
-      : `<dt>登録</dt>
-<dd>${escapeHtml(describeRegistration(registeredAt, now))}<br><small>つなぎ直した接続では、以前に登録した日時が出ることがあります。日時だけでは、自分が始めた接続かは判断できません。</small></dd>
+      : `<div><dt>登録</dt>
+<dd>${escapeHtml(describeRegistration(registeredAt, now))}<small class="note">つなぎ直した接続では、以前に登録した日時が出ることがあります。日時だけでは、自分が始めた接続かは判断できません。</small></dd></div>
 `;
   return pageHtml(
     "接続の許可",
     `<h1>${name} に wiki への接続を許可しますか</h1>
-<dl>
-<dt>接続するアプリ</dt>
-<dd>${name}<br><small>この名前はアプリ自身が名乗ったもので、確かめられていません。</small><br><small>client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd>
-<dt>トークンの送り先</dt>
-<dd><strong>${escapeHtml(consent.redirectHost)}</strong><br><code>${escapeHtml(consent.redirectUri)}</code></dd>
-${registered}<dt>要求された権限</dt>
-<dd>${requested}</dd>
+<dl class="facts">
+<div><dt>接続するアプリ</dt>
+<dd>${name}<small class="note">この名前はアプリ自身が名乗ったもので、確かめられていません。</small><small class="note">client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd></div>
+<div><dt>トークンの送り先</dt>
+<dd><strong>${escapeHtml(consent.redirectHost)}</strong><code class="uri">${escapeHtml(consent.redirectUri)}</code></dd></div>
+${registered}<div><dt>要求された権限</dt>
+<dd>${requested}</dd></div>
 </dl>
 <p class="warn">この接続を、いま自分で始めた場合だけ許可してください。他の人から送られたリンクで開いた場合は、許可しないでください。送り先が claude.ai でも、接続を始めた人が自分とは限りません。</p>
 ${loopback}
-<form method="post">
+<form method="post" class="consent-form">
 <input type="hidden" name="handle" value="${escapeHtml(handle)}">
-<fieldset>
+<fieldset class="choices">
 <legend>許可する権限</legend>
-<label><input type="radio" name="access" value="read" checked> 読み取り: 下書きを含むすべてのページを読めます。</label>
-<label><input type="radio" name="access" value="write"> 読み書き: 読み取りに加えて、ページの作成と書き換えができます。公開中のページも書き換えられます。削除、画像の添付、公開と下書きの切り替えはできません。</label>
+<label class="choice"><input type="radio" name="access" value="read" checked><span><strong>読み取り</strong>: 下書きを含むすべてのページを読めます。</span></label>
+<label class="choice"><input type="radio" name="access" value="write"><span><strong>読み書き</strong>: 読み取りに加えて、ページの作成と書き換えができます。公開中のページも書き換えられます。削除、画像の添付、公開と下書きの切り替えはできません。</span></label>
 </fieldset>
-<p><button name="decision" value="approve">許可する</button> <button name="decision" value="deny">拒否する</button></p>
+<div class="actions"><button class="button button-primary" name="decision" value="approve">許可する</button><button class="button button-quiet" name="decision" value="deny">拒否する</button></div>
 </form>`,
   );
 }
@@ -511,17 +513,14 @@ function pageHtml(title: string, main: string): string {
 <html lang="ja">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>${title}</title>
 <style>
-body { font-family: system-ui, sans-serif; line-height: 1.6; margin: 0 auto; max-width: 40rem; padding: 1rem; }
-dt { font-weight: bold; margin-top: 0.5rem; }
-dd { margin-left: 0; overflow-wrap: anywhere; }
-label { display: block; margin: 0.25rem 0; }
-.grants { list-style: none; padding: 0; }
-.grants li { border-top: 1px solid #ccc; padding: 0.5rem 0; }
-.warn { border-left: 4px solid #c60; padding-left: 0.5rem; }
+${themeCss}
+${pageCss}
 </style>
-<main>
+<p class="brand">personal-wiki</p>
+<main class="sheet">
 ${main}
 </main>
 </html>

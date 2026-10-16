@@ -1,0 +1,298 @@
+/*
+ * Worker が返す OAuth の画面（同意、接続の一覧、誤り）。SPA の theme.css の token の後ろに埋めるので、
+ * 値は token だけを使う。script を持たない画面なので、状態の見た目は :checked と :has() で作る。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  line-height: var(--line-height);
+  color: var(--color-fg);
+  background: var(--color-surface);
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+body {
+  margin: 0;
+  padding: var(--space-6) var(--gutter);
+  font-size: var(--font-size-base);
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration-thickness: var(--border-width);
+  text-underline-offset: 0.2em; /* token-ok: 文字の大きさに比例させる。rem の token では大きさの違う文字に合わない */
+}
+
+:focus-visible {
+  outline: calc(var(--border-width) * 2) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.brand {
+  margin: 0 auto var(--space-4);
+  max-width: var(--auth-sheet-width);
+  font-family: var(--font-serif);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: var(--letter-spacing-brand);
+  text-align: center;
+}
+
+.sheet {
+  display: grid;
+  gap: var(--space-4);
+  max-width: var(--auth-sheet-width);
+  margin: 0 auto;
+  padding: var(--space-5);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* 枠が画面の幅に収まらなくなる幅。media query には var() を使えないので --auth-sheet-width と同じ値を書く */
+@media (max-width: 30rem) {
+  body {
+    padding-block: var(--space-4);
+  }
+
+  .sheet {
+    padding: var(--space-4);
+  }
+}
+
+.sheet > * {
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-heading);
+  text-wrap: balance;
+}
+
+/* 同意画面の事実の並び */
+.facts > div {
+  padding-block: var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.facts > div:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.facts > div:last-child {
+  padding-bottom: 0;
+}
+
+.facts dt {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--color-fg-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.note,
+.uri {
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.warn {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  background: var(--color-warn-bg);
+  border: var(--border-width) solid var(--color-warn-border);
+  border-radius: var(--radius-md);
+}
+
+.consent-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.choices {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.choices legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--color-fg-muted);
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-height: var(--tap-size);
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.choice strong {
+  font-size: var(--font-size-base);
+}
+
+.choice input {
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.choice:has(:checked) {
+  background: var(--color-tag-bg);
+  border-color: var(--color-accent);
+}
+
+.choice:has(:focus-visible) {
+  outline: calc(var(--border-width) * 2) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+.choice input:focus-visible {
+  outline: none;
+}
+
+.actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-size);
+  padding: 0 var(--space-4);
+  font: inherit;
+  line-height: var(--line-height-tight);
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    transform 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+@media (hover: hover) {
+  .button:hover {
+    background-color: var(--color-selected);
+  }
+}
+
+.button:active {
+  transform: scale(0.98);
+}
+
+.button-primary {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-accent-fg);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+@media (hover: hover) {
+  .button-primary:hover {
+    background-color: var(--color-accent);
+    opacity: 0.88;
+  }
+}
+
+.button-quiet {
+  color: var(--color-fg-muted);
+  background: none;
+  border-color: transparent;
+}
+
+.button-danger {
+  color: var(--color-danger);
+}
+
+/* 接続の一覧 */
+.grants {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grants li {
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.grants li:last-child {
+  padding-bottom: 0;
+}
+
+.grants li > * {
+  margin: 0;
+}
+
+.grants .meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.grants form {
+  justify-self: start;
+}
+
+.lead {
+  color: var(--color-fg-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice,
+  .button {
+    transition: none;
+  }
+
+  .button:active {
+    transform: none;
+  }
+}

@@ -256,7 +256,7 @@ describe("check-css-tokens", () => {
       expect(r.stderr).toContain("2 件");
     });
 
-    it("引数なしでは repo の apps/web/src を検査し、今のコードは通る", () => {
+    it("引数なしでは repo の apps/web/src と apps/worker/src を検査し、今のコードは通る", () => {
       const r = spawnSync("node", [script], { cwd: dir, encoding: "utf8" });
       expect(r.stderr).toBe("");
       expect(r.status).toBe(0);

@@ -7,6 +7,9 @@
   "name": "personal-wiki",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
+  // OAuth の画面（src/auth/oauth-routes.ts）は、web の theme.css を文字列で取り込んで <style> に埋める。
+  // token の値を写すと SPA と食い違い、別のファイルとして読ませると CSP に style-src 'self' が要る
+  "rules": [{ "type": "Text", "globs": ["**/*.css"], "fallthrough": true }],
   // 正規の URL を 1 つにし、OGP と cookie の扱いを揃える
   "workers_dev": false,
   "preview_urls": false,

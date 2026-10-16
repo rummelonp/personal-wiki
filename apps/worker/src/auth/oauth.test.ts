@@ -418,6 +418,11 @@ describe("認可と同意画面", () => {
     expect(csp).toContain("form-action 'self' https://claude.ai");
     expect(res.headers.get("Set-Cookie")).toMatch(/^__Host-oauth-consent-/);
     expect(html).not.toContain("<script>");
+    // 画面の CSS は web の theme の token を参照するので、token の定義が先に入っていること。
+    // CSS は escape せずに埋めるので、途中に </style> があると後ろの規則が本文に漏れる
+    const style = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(style).toMatch(/--color-accent:[\s\S]*\.sheet \{/);
+    expect(style).toContain(".button-danger {");
     expect(html).toContain("&#60;script&#62;x&#60;/script&#62;");
     expect(html).toContain("<strong>claude.ai</strong>");
     expect(html).toContain(CALLBACK);
@@ -456,7 +461,7 @@ describe("認可と同意画面", () => {
     const { html } = await openConsent(request, path);
     expect(html).toContain('value="read" checked');
     expect(html).not.toContain('value="write" checked');
-    expect(html).toContain("読み取り: 下書きを含むすべてのページを読めます。");
+    expect(html).toContain("<strong>読み取り</strong>: 下書きを含むすべてのページを読めます。");
     expect(html).toContain("削除、画像の添付、公開と下書きの切り替えはできません。");
     expect(html).toContain(`${"あ".repeat(40)}…`);
     expect(html).not.toContain("あ".repeat(41));

@@ -1,5 +1,5 @@
 // 部品の CSS が、見た目の値を theme.css の token を通さずに直書きしていないか検査する。
-//   引数なし:     apps/web/src 以下の *.css（theme.css を除く）
+//   引数なし:     apps/web/src と apps/worker/src 以下の *.css（theme.css を除く）
 //   ファイル/dir: 指定したものだけ（dir は再帰して *.css を集める。theme.css は常に除く）
 // 見つかれば `file:行: 値 (種類)` を出力して終了コード 1 で終わる。
 //
@@ -18,7 +18,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_TARGET = join(ROOT, "apps/web/src");
+const DEFAULT_TARGETS = [join(ROOT, "apps/web/src"), join(ROOT, "apps/worker/src")];
 const THEME_FILE = "theme.css";
 
 const LENGTH_UNITS =
@@ -291,7 +291,7 @@ function collect(path) {
 }
 
 const args = process.argv.slice(2);
-const files = (args.length === 0 ? [DEFAULT_TARGET] : args.map((a) => resolve(a))).flatMap(collect);
+const files = (args.length === 0 ? DEFAULT_TARGETS : args.map((a) => resolve(a))).flatMap(collect);
 
 let total = 0;
 for (const file of files) {
