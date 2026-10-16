@@ -152,7 +152,9 @@ export function calloutTitleText(
   header: CalloutHeader,
   lineTo: number,
 ): string {
-  const written = header.hasTitle ? extractPlainText(state.sliceDoc(header.titleFrom, lineTo)) : "";
+  const written = header.hasTitle
+    ? extractPlainText(state.sliceDoc(header.titleFrom, lineTo), { inline: true })
+    : "";
   return written || defaultCalloutTitle(header.identifier);
 }
 
@@ -352,6 +354,13 @@ export class CalloutFoldWidget extends WidgetType {
       toggleFold(view, button, !this.collapsed);
     });
     return button;
+  }
+
+  // タイトルを打つたびに名前だけが変わるので、開閉の状態が同じなら DOM を残して名前を書き換える。
+  override updateDOM(dom: HTMLElement): boolean {
+    if (dom.getAttribute("aria-expanded") !== String(!this.collapsed)) return false;
+    dom.setAttribute("aria-label", `「${this.title}」の内容`);
+    return true;
   }
 
   override ignoreEvent(): boolean {

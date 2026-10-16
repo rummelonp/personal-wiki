@@ -86,7 +86,16 @@ interface ExtractPlainTextOptions {
    * 先頭の `---` を frontmatter の区切りとして読まない（水平線や setext 見出しの下線でありうる）。
    */
   readonly fragment?: boolean;
+  /**
+   * `markdown` が 1 つの段落の中身（task の本文や callout の題）で、行頭の `1. `、`- `、`# ` などが
+   * 記号でなく文字として表示されているとき true。block の記法として読まず、inline の記法だけ除く。
+   * 先頭の `---` も frontmatter や水平線として読まない。
+   */
+  readonly inline?: boolean;
 }
+
+// 先頭に置いて block の記法を無効にする。空白と見なされず、行頭の記号の判定に当たらない文字を選ぶ
+const INLINE_GUARD = "\u200b";
 
 /**
  * Markdown の本文を、記法を除いた 1 行の plain text にする。検索結果の抜粋と全文検索の索引の元になる。
@@ -125,6 +134,19 @@ export function extractPlainTextParts(
   markdown: string,
   options: ExtractPlainTextOptions = {},
 ): PlainTextParts {
+  if (options.inline !== true) return plainTextParts(markdown, options);
+  const parts = plainTextParts(INLINE_GUARD + markdown, { ...options, fragment: true });
+  return {
+    text: withoutInlineGuard(parts.text),
+    textWithoutTrailingTags: withoutInlineGuard(parts.textWithoutTrailingTags),
+  };
+}
+
+function withoutInlineGuard(text: string): string {
+  return text.startsWith(INLINE_GUARD) ? text.slice(INLINE_GUARD.length).trimStart() : text;
+}
+
+function plainTextParts(markdown: string, options: ExtractPlainTextOptions): PlainTextParts {
   const fragment = options.fragment === true;
   const source =
     options.truncated === true ? withoutTruncationDebris(markdown, fragment) : markdown;

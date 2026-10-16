@@ -371,3 +371,21 @@ describe("extractPlainTextParts", () => {
     });
   });
 });
+
+describe("extractPlainText inline", () => {
+  const inline = (markdown: string) => extractPlainText(markdown, { inline: true });
+
+  it("keeps a line-leading marker that is displayed as text", () => {
+    expect(inline("1. 手順")).toBe("1. 手順");
+    expect(inline("2026. 年の目標")).toBe("2026. 年の目標");
+    expect(inline("- 牛乳")).toBe("- 牛乳");
+    expect(inline("# 見出し風")).toBe("# 見出し風");
+    expect(inline("> 引用風")).toBe("> 引用風");
+    expect(inline("---")).toBe("---");
+  });
+
+  it("still drops inline markup and a leading space", () => {
+    expect(inline("  **太字** と [[ページ|別名]] と %%メモ%%")).toBe("太字 と 別名 と");
+    expect(inline("")).toBe("");
+  });
+});

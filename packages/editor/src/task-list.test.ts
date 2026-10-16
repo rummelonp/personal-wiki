@@ -73,10 +73,32 @@ describe("task list checkbox name", () => {
     expect(names(mount("- [ ] \n- [ ] %%コメントだけ%%"))).toEqual(["空のタスク", "空のタスク"]);
   });
 
+  it("行頭の記号に見える本文は、見えている文字のまま名前にする", () => {
+    expect(
+      names(mount("- [ ] 1. 手順\n- [ ] 2026. 年の目標\n- [ ] - 牛乳\n- [ ] # 見出し風")),
+    ).toEqual(["1. 手順", "2026. 年の目標", "- 牛乳", "# 見出し風"]);
+  });
+
   it("本文を書き換えると名前も変わる", () => {
     const v = mount("- [ ] 牛乳");
     v.dispatch({ changes: { from: "- [ ] 牛乳".length, insert: "を買う" } });
     expect(names(v)).toEqual(["牛乳を買う"]);
+  });
+
+  it("名前だけが変わるときは同じ checkbox の要素を使い続ける", () => {
+    const v = mount("- [ ] 牛乳");
+    const before = checkboxes(v)[0];
+    v.dispatch({ changes: { from: "- [ ] 牛乳".length, insert: "を買う" } });
+    expect(checkboxes(v)[0]).toBe(before);
+    expect(before?.getAttribute("aria-label")).toBe("牛乳を買う");
+  });
+
+  it("チェックの状態が変わるときは checkbox の要素を作り直す", () => {
+    const v = mount("- [ ] 牛乳");
+    const before = checkboxes(v)[0];
+    press(before);
+    expect(checkboxes(v)[0]).not.toBe(before);
+    expect(checkboxes(v)[0]?.checked).toBe(true);
   });
 });
 

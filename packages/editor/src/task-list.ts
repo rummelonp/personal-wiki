@@ -61,7 +61,7 @@ function toggleTask(view: EditorView, dom: HTMLElement): void {
  * 本文が空のタスクは名前が空になるので、代わりの語を返す。
  */
 function taskLabel(state: EditorState, from: number, to: number): string {
-  return extractPlainText(state.sliceDoc(from, to)) || "空のタスク";
+  return extractPlainText(state.sliceDoc(from, to), { inline: true }) || "空のタスク";
 }
 
 class TaskCheckboxWidget extends WidgetType {
@@ -100,6 +100,14 @@ class TaskCheckboxWidget extends WidgetType {
     // doc を書かなかったときに見た目と doc が食い違う。
     checkbox.addEventListener("click", (event) => event.preventDefault());
     return checkbox;
+  }
+
+  // 本文を打つたびに名前が変わるので、名前だけの違いでは checkbox の要素を差し替えない。
+  override updateDOM(dom: HTMLElement): boolean {
+    if (!(dom instanceof HTMLInputElement)) return false;
+    if (dom.checked !== this.checked || dom.disabled !== this.readOnly) return false;
+    dom.setAttribute("aria-label", this.label);
+    return true;
   }
 
   override ignoreEvent(): boolean {

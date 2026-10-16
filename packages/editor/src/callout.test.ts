@@ -274,6 +274,29 @@ describe("callout fold button name", () => {
     expect(nameOf("> [!note]+ %%メモ%%\n> 本文")).toBe("「Note」の内容");
   });
 
+  it("行頭の記号に見えるタイトルは、見えている文字のまま名前にする", () => {
+    expect(nameOf("> [!note]+ 2026. 振り返り\n> 本文")).toBe("「2026. 振り返り」の内容");
+    expect(nameOf("> [!note]+ - 項目\n> 本文")).toBe("「- 項目」の内容");
+  });
+
+  it("名前だけが変わるときは同じボタンの要素を使い続ける", () => {
+    const v = mount("> [!note]+ 旧\n> 本文");
+    const before = foldButtons(v)[0];
+    v.dispatch({
+      changes: { from: "> [!note]+ ".length, to: "> [!note]+ 旧".length, insert: "新" },
+    });
+    expect(foldButtons(v)[0]).toBe(before);
+    expect(before?.getAttribute("aria-label")).toBe("「新」の内容");
+  });
+
+  it("開閉の状態が変わるときはボタンの要素を作り直す", () => {
+    const v = mount("> [!note]+ 手順\n> 本文");
+    const before = foldButtons(v)[0];
+    pressFold(before);
+    expect(foldButtons(v)[0]).not.toBe(before);
+    expect(foldButtons(v)[0]?.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("タイトルを書き換えると名前も変わる", () => {
     const v = mount("> [!note]+ 旧\n> 本文");
     v.dispatch({
