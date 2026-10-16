@@ -24,6 +24,13 @@ import {
   VISIBILITY_NOT_ALLOWED_MESSAGE,
   type WriteMetric,
 } from "./operations";
+import {
+  clientNameLookup,
+  findRevision,
+  listRevisions,
+  parseRevisionCursor,
+  parseVersion,
+} from "./revision-history";
 import { actorOf } from "./revisions";
 import {
   type Cursor,
@@ -425,6 +432,43 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         });
         if (list === null) return c.notFound();
         return c.json({ pages: list.pages, nextCursor: list.nextCursor });
+      })
+      // 履歴は read の scope を持つ principal だけに出す。匿名は public のページでも 401 で、ページを引く前に
+      // 断るので、id の有無や draft かどうかで応答が変わらない
+      .get("/api/pages/:id/revisions", requireScope("read"), async (c) => {
+        const id = c.req.param("id");
+        if (!isPageId(id)) return c.notFound();
+        const limit = readLimit(c, LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
+        if (!limit.ok) return limit.response;
+        const rawCursor = c.req.query("cursor");
+        const before = rawCursor === undefined ? null : parseRevisionCursor(rawCursor);
+        if (before === null && rawCursor !== undefined) {
+          return errorResponse(c, 400, "invalid_field", { field: "cursor" });
+        }
+        const list = await listRevisions(c.env.DB, id, {
+          limit: limit.value,
+          before,
+          clientName: clientNameLookup(c.env, new URL(c.req.url).origin),
+        });
+        if (list === null) return c.notFound();
+        return c.json(list);
+      })
+      .get("/api/pages/:id/revisions/:version", requireScope("read"), async (c) => {
+        const id = c.req.param("id");
+        const version = parseVersion(c.req.param("version"));
+        if (!isPageId(id) || version === null) return c.notFound();
+        const found = await findRevision(
+          c.env.DB,
+          id,
+          version,
+          clientNameLookup(c.env, new URL(c.req.url).origin),
+        );
+        if (!found.ok) {
+          return found.reason === "page_not_found"
+            ? c.notFound()
+            : errorResponse(c, 404, "revision_not_found");
+        }
+        return c.json({ pageId: id, ...found.revision });
       })
       .put("/api/pages/:id", requireScope("write"), async (c) => {
         const id = c.req.param("id");
