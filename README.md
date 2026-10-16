@@ -12,6 +12,10 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
   public のページと一覧は、ログインしていない閲覧者にも見え、リンクのプレビュー用に OGP のメタ情報を返します。
   draft は id を知っている人だけが開け、検索エンジンには載せません（`noindex`）
 - title を変えたときの、他のページの `[[旧 title]]` の書き換え
+- ページの版の履歴。
+  保存のたびに版を残し、owner のブラウザからの保存は、最初の保存から 10 分までを 1 つの版にまとめます。
+  過去の版は、owner がブラウザの右の列から、read 以上の API token が REST（`/api/pages/:id/revisions`）と MCP（`list_revisions` と `read_page` の `revision`）から、OAuth の接続が MCP から読めます。
+  ログインしていない閲覧者には見せません
 - API token による REST と MCP の認証。
   claude.ai などのカスタムコネクタからは OAuth でも接続できます
 - ブラウザで閲覧と編集をする owner のログイン（Cloudflare Access）
