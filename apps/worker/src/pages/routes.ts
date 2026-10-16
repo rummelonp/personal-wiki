@@ -344,10 +344,22 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
             ...tagFilterErrorFields(tag.reason),
           });
         }
+        // 匿名の draft の指定は 400 にせず、200 の空の一覧で返す。principal で応答の形を分けないので、
+        // 匿名の draft の指定は存在しない tag の指定と同じに見える
+        const visibility = c.req.query("visibility");
+        if (visibility !== undefined && !isVisibility(visibility)) {
+          return errorResponse(c, 400, "invalid_field", { field: "visibility" });
+        }
+        const readable = readableVisibilityOf(c.get("principal"));
+        // 結果は必ず空なので DB を引かない。引くと合う行が無いまま生きている全行を読む
+        if (readable === "public" && visibility === "draft") {
+          return c.json({ pages: [], nextCursor: null });
+        }
         const { pages, nextCursor } = await listRecentPages(c.env.DB, {
           ...paging.value,
           tagKey: tag?.key ?? null,
-          readable: readableVisibilityOf(c.get("principal")),
+          visibility: visibility ?? null,
+          readable,
         });
         return c.json({ pages, nextCursor });
       })

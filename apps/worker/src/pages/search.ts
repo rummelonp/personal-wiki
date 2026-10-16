@@ -193,9 +193,13 @@ export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["
  * 使える。LIKE は大文字小文字を畳むため索引を使えず、tag_key の畳み方とも合わない。
  * 子のタグを複数持つページは 1 件にまとめる。
  *
+ * visibility を渡すと、その公開範囲のページに絞る。readable との AND で、readable が public なら
+ * draft を指定しても 1 件も返らない（読めない範囲を絞り込みで広げない）。
+ *
  * keyset のページングなので、走査中に更新されたページは先頭へ移り、後続のページでは返らない。
  * 差分の同期には使えず、先頭から取り直す。
  * タグで絞らない一覧は pages_alive_updated の索引を新しい順にたどり、limit + 1 件で止まる。
+ * visibility と readable の条件は索引でなく行ごとに照合するので、合う行が少ないと多くの行を読む。
  */
 export async function listRecentPages(
   db: D1Database,
@@ -203,11 +207,13 @@ export async function listRecentPages(
     limit,
     cursor,
     tagKey = null,
+    visibility = null,
     readable,
   }: {
     limit: number;
     cursor: Cursor | null;
     tagKey?: string | null;
+    visibility?: Visibility | null;
     readable: ReadableVisibility;
   },
 ): Promise<PageList<ListedPage>> {
@@ -216,6 +222,7 @@ export async function listRecentPages(
       `SELECT p.id, p.title, p.visibility, p.updated_at, e.excerpt
        FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE p.deleted_at IS NULL AND (?7 = 0 OR p.visibility = 'public')
+         AND (?8 IS NULL OR p.visibility = ?8)
          ${afterCursor(cursor, "p.")}
          AND (?4 IS NULL OR p.id IN (
            SELECT page_id FROM tags WHERE tag_key = ?4 OR (tag_key >= ?5 AND tag_key < ?6)))
@@ -229,6 +236,7 @@ export async function listRecentPages(
       tagKey === null ? null : `${tagKey}/`,
       tagKey === null ? null : `${tagKey}0`,
       publicOnlyFlag(readable),
+      visibility,
     )
     .all<ExcerptRow>();
   const list = pageOf(results, limit, toSummary);

@@ -886,6 +886,7 @@ describe("OAuth のトークンでの /mcp", () => {
     const { tokens } = await connect(request, "write");
     const headers = { Authorization: `Bearer ${tokens.access_token}` };
     expect((await request("/api/pages/recent", { headers })).status).toBe(401);
+    expect((await request("/api/pages/recent?visibility=draft", { headers })).status).toBe(401);
     expect((await request("/api/me", { headers })).status).toBe(401);
   });
 

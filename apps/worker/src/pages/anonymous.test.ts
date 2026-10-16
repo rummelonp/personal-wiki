@@ -521,6 +521,12 @@ describe("匿名向けの応答の総当たり", () => {
         "/api/pages/recent?tag=shared/inner",
         "/api/pages/recent?tag=draftonly",
         "/api/pages/recent?tag=pub",
+        "/api/pages/recent?visibility=draft",
+        "/api/pages/recent?visibility=draft&tag=shared",
+        "/api/pages/recent?visibility=draft&tag=draftonly",
+        "/api/pages/recent?visibility=public",
+        "/api/pages/recent?visibility=public&tag=shared",
+        "/api/pages/recent?visibility=bogus",
       ],
       "GET /api/pages/titles": [
         "/api/pages/titles",
@@ -702,6 +708,18 @@ describe("owner と token の読み取りは変わらない", () => {
     expect(await (await call("/api/search?q=秘蔵", { headers })).text()).toContain(draft.id);
   });
 
+  it("read の token は公開範囲で一覧を絞り込め、draft の指定で draft を見られる", async () => {
+    const { call, draft, open, linker } = await seed();
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    const headers = { Authorization: `Bearer ${token}` };
+    const ids = async (query: string) =>
+      (
+        await (await call(`/api/pages/recent${query}`, { headers })).json<{ pages: Listed[] }>()
+      ).pages.map((page) => page.id);
+    expect(await ids("?visibility=draft")).toEqual([draft.id]);
+    expect(await ids("?visibility=public")).toEqual([linker.id, open.id]);
+  });
+
   it("同じパスでも、owner の応答と匿名の応答は principal で分かれ、匿名には draft が出ない", async () => {
     const { asOwner, anonymous, draft } = await seed();
     const owner = await asOwner("/api/pages/recent");
@@ -710,5 +728,100 @@ describe("owner と token の読み取りは変わらない", () => {
     expect(await anon.text()).not.toContain(draft.id);
     expect(anon.headers.get("Cache-Control")).toBe("no-store");
     expect(anon.headers.get("Vary")).toBe("Authorization, Cookie");
+  });
+});
+
+describe("GET /api/pages/recent?visibility=", () => {
+  type ListJson = { pages: Listed[]; nextCursor: string | null };
+  const ids = (list: ListJson) => list.pages.map((page) => page.id);
+
+  it("owner は公開範囲で絞り込め、tag と cursor を併用できる", async () => {
+    const { asOwner, draft, open, linker } = await seed();
+    const list = async (query: string) =>
+      (await asOwner(`/api/pages/recent${query}`)).json<ListJson>();
+    expect(ids(await list("?visibility=draft"))).toEqual([draft.id]);
+    expect(ids(await list("?visibility=public"))).toEqual([linker.id, open.id]);
+    // tag と AND で絞る。shared は draft と public の両方に付いている
+    expect(ids(await list("?visibility=draft&tag=shared"))).toEqual([draft.id]);
+    expect(ids(await list("?visibility=public&tag=shared"))).toEqual([open.id]);
+    expect(ids(await list("?visibility=public&tag=draftonly"))).toEqual([]);
+
+    const first = await list("?visibility=public&limit=1");
+    expect(ids(first)).toEqual([linker.id]);
+    const second = await list(`?visibility=public&limit=1&cursor=${first.nextCursor}`);
+    expect(ids(second)).toEqual([open.id]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("owner の draft の指定は limit=1 でたどっても draft だけを順に返し、public を挟まない", async () => {
+    const { asOwner, create, draft } = await seed();
+    const newer = await create("Newer Draft", "後から作った下書き");
+    const list = async (query: string) =>
+      (await asOwner(`/api/pages/recent${query}`)).json<ListJson>();
+    const first = await list("?visibility=draft&limit=1");
+    expect(ids(first)).toEqual([newer.id]);
+    const second = await list(`?visibility=draft&limit=1&cursor=${first.nextCursor}`);
+    expect(ids(second)).toEqual([draft.id]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("write の token も draft の指定で draft を見られる", async () => {
+    const { call, draft } = await seed();
+    const token = await insertToken({ name: "writer", scopes: "read write" });
+    const res = await call("/api/pages/recent?visibility=draft", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    expect(ids(await res.json<ListJson>())).toEqual([draft.id]);
+  });
+
+  it("visibility を重ねて渡すと最初の値で絞る", async () => {
+    const { asOwner, anonymous, draft } = await seed();
+    const query = "/api/pages/recent?visibility=draft&visibility=public";
+    expect(ids(await (await asOwner(query)).json<ListJson>())).toEqual([draft.id]);
+    expect(await (await anonymous(query)).json()).toEqual({ pages: [], nextCursor: null });
+  });
+
+  it("匿名の draft の指定は、tag の有無に関係なく 200 の空の一覧で、public の指定は指定なしと同じ", async () => {
+    const { anonymous } = await seed();
+    for (const query of ["?visibility=draft", "?visibility=draft&tag=draftonly"]) {
+      const res = await anonymous(`/api/pages/recent${query}`);
+      expect(res.status, query).toBe(200);
+      expect(await res.json(), query).toEqual({ pages: [], nextCursor: null });
+    }
+    // public のページが無いタグの指定（DB を引いて 0 件になる）と、本文もヘッダーも同じ
+    const viaFilter = await anonymous("/api/pages/recent?visibility=draft");
+    const viaTag = await anonymous("/api/pages/recent?tag=draftonly");
+    expect(await viaFilter.text()).toBe(await viaTag.text());
+    expect([...viaFilter.headers]).toEqual([...viaTag.headers]);
+    // 空を返すのを入力の検証より前に動かすと、誤った指定で tag の側だけが 400 になって見分けられる
+    for (const bad of ["limit=0", "cursor=x"]) {
+      const filterBad = await anonymous(`/api/pages/recent?visibility=draft&${bad}`);
+      const tagBad = await anonymous(`/api/pages/recent?tag=draftonly&${bad}`);
+      expect(filterBad.status, bad).toBe(400);
+      expect(await filterBad.text(), bad).toBe(await tagBad.text());
+    }
+    const all = await (await anonymous("/api/pages/recent")).json<ListJson>();
+    const onlyPublic = await (
+      await anonymous("/api/pages/recent?visibility=public")
+    ).json<ListJson>();
+    expect(onlyPublic).toEqual(all);
+  });
+
+  it("公開範囲に無い値は、principal に関係なく 400", async () => {
+    const { anonymous, asOwner } = await seed();
+    for (const value of ["", "bogus", "Draft", "all"]) {
+      for (const [who, request] of [
+        ["anonymous", anonymous],
+        ["owner", asOwner],
+      ] as const) {
+        const res = await request(`/api/pages/recent?visibility=${value}`);
+        expect(res.status, `${who} ${value}`).toBe(400);
+        expect(await res.json(), `${who} ${value}`).toEqual({
+          error: "invalid_field",
+          field: "visibility",
+        });
+      }
+    }
   });
 });
