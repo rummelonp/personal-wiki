@@ -668,7 +668,7 @@ describe("保存の前の検査の表示", () => {
     expect(alert?.querySelector(".notice-title")?.textContent).toBe(
       "同じタイトルのページがあるため、保存できません",
     );
-    expect(alert?.textContent).toContain("タイトルを変えて Enter を押すと、保存します。");
+    expect(alert?.textContent).toContain("タイトルを変えて欄を離れると、保存します。");
     expect(alert?.querySelector("a")?.textContent).toBe("そのページを開く");
     expect(alert?.textContent).not.toContain("もう一度保存する");
   });
@@ -1202,7 +1202,7 @@ describe("まだ作っていないページ（page が null）", () => {
     const alert = container?.querySelector("[role='alert']")?.textContent;
     expect(alert).toContain("同じタイトルのページがあるため、作成できません");
     expect(alert).toContain("「重なる題」というページがすでにあります。");
-    expect(alert).toContain("タイトルを変えて Enter を押すと、もう一度作ります。");
+    expect(alert).toContain("タイトルを変えて欄を離れると、もう一度作ります。");
     expect(alert).not.toContain("大文字と小文字");
     // 送り直しても同じ応答になるので、再試行は出さない
     expect(alert).not.toContain("もう一度作成する");
