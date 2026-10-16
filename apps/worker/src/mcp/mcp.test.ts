@@ -4,6 +4,7 @@ import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
+import { parseActor } from "../pages/revision-history";
 import { buildClient, snapshotDb, T0 } from "../test/pages";
 import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";
@@ -17,6 +18,7 @@ const TOOL_NAMES = [
   "list_recent",
   "list_backlinks",
   "read_page",
+  "list_revisions",
   "create_page",
   "update_page",
   "append_to_page",
@@ -247,7 +249,7 @@ describe("/mcp の認可", () => {
 });
 
 describe("tools/list", () => {
-  it("7 つの tool を、知らないキーを拒む入力の schema で返す", async () => {
+  it("8 つの tool を、知らないキーを拒む入力の schema で返す", async () => {
     const { rpc } = await mcpClient({ scopes: "read" });
     const { result } = await rpc("tools/list");
     const tools = result?.tools as {
@@ -283,7 +285,11 @@ describe("tools/list", () => {
       expect.arrayContaining(["id", "title"]),
     );
     expect(byName.list_backlinks?.description).toContain("まだ作られていないページ");
-    for (const name of ["search", "list_recent", "list_backlinks", "read_page"]) {
+    expect(byName.list_revisions?.inputSchema.required ?? []).toEqual([]);
+    expect(byName.list_revisions?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
+    expect(byName.list_revisions?.description).toContain("版の番号は連続しない");
+    expect(byName.read_page?.description).toContain("update_page には上の階層の version を渡す");
+    for (const name of ["search", "list_recent", "list_backlinks", "read_page", "list_revisions"]) {
       expect(byName[name]?.annotations.readOnlyHint).toBe(true);
     }
     expect(byName.create_page?.annotations.readOnlyHint).toBe(false);
@@ -793,6 +799,125 @@ describe("ページの tool", () => {
   });
 });
 
+describe("版の履歴の tool", () => {
+  /** create_page と 2 回の update_page で版 1〜3 を積む。token の書き込みはまとめない */
+  async function threeVersions() {
+    const client = await mcpClient();
+    const { call, clock } = client;
+    clock.now = T0;
+    const { json: created } = await call("create_page", { title: "Draft", body: "v1" });
+    const id = created.id as string;
+    clock.now = T0 + 10;
+    await call("update_page", { id, version: 1, title: "Draft", body: "v2" });
+    clock.now = T0 + 20;
+    await call("update_page", { id, version: 2, title: "Final", body: "v3" });
+    return { ...client, id, author: parseActor(client.actor) };
+  }
+
+  it("list_revisions は id と title のどちらでも、版の新しい順に本文を除いて返し、cursor で続きを取る", async () => {
+    const { call, id, author } = await threeVersions();
+    const all = {
+      revisions: [
+        { version: 3, title: "Final", createdAt: T0 + 20, author },
+        { version: 2, title: "Draft", createdAt: T0 + 10, author },
+        { version: 1, title: "Draft", createdAt: T0, author },
+      ],
+      nextCursor: null,
+    };
+    expect(await call("list_revisions", { id })).toEqual({ isError: false, json: all });
+    expect(await call("list_revisions", { title: "final" })).toEqual({ isError: false, json: all });
+
+    const first = await call("list_revisions", { id, limit: 2 });
+    expect(first.json).toEqual({ revisions: all.revisions.slice(0, 2), nextCursor: "2" });
+    const rest = await call("list_revisions", { id, limit: 2, cursor: "2" });
+    expect(rest.json).toEqual({ revisions: all.revisions.slice(2), nextCursor: null });
+  });
+
+  it("read_page に revision を渡すと、上の階層は今のページの値だけにし、版の title と本文は revision に入れる", async () => {
+    const { call, id, author } = await threeVersions();
+    const res = await call("read_page", { id, revision: 1 });
+    expect(res).toEqual({
+      isError: false,
+      json: {
+        id,
+        title: "Final",
+        visibility: "draft",
+        version: 3,
+        createdAt: T0,
+        updatedAt: T0 + 20,
+        url: `${ORIGIN}/p/${id}`,
+        titleUrl: null,
+        revision: { version: 1, title: "Draft", body: "v1", createdAt: T0, author },
+      },
+    });
+    expect(res.json).not.toHaveProperty("body");
+    const byTitle = await call("read_page", { title: "Final", revision: 2 });
+    expect(byTitle.json).toMatchObject({
+      id,
+      title: "Final",
+      revision: { version: 2, title: "Draft", body: "v2" },
+    });
+    expect(byTitle.json).not.toHaveProperty("body");
+  });
+
+  it("read の token でも draft の履歴を読める", async () => {
+    const { id } = await threeVersions();
+    const reader = await mcpClient({ name: "reader", scopes: "read" });
+    expect((await reader.call("list_revisions", { id })).isError).toBe(false);
+    expect(await reader.call("read_page", { id, revision: 1 })).toMatchObject({
+      isError: false,
+      json: { revision: { body: "v1" } },
+    });
+  });
+
+  it("無い版は revision_not_found、無いページは not_found で、別のページの版の番号は読めない", async () => {
+    const { call, id } = await threeVersions();
+    const { json: other } = await call("create_page", { title: "Other", body: "one" });
+    expect(await call("read_page", { id, revision: 4 })).toEqual({
+      isError: true,
+      json: { error: "revision_not_found" },
+    });
+    expect(await call("read_page", { id: other.id, revision: 3 })).toEqual({
+      isError: true,
+      json: { error: "revision_not_found" },
+    });
+    for (const args of [
+      { id: "short", revision: 1 },
+      { id: "A".repeat(22), revision: 1 },
+      { title: "missing", revision: 1 },
+    ]) {
+      expect(await call("read_page", args)).toEqual({
+        isError: true,
+        json: { error: "not_found" },
+      });
+    }
+    for (const args of [{ id: "short" }, { id: "A".repeat(22) }, { title: "missing" }]) {
+      expect(await call("list_revisions", args)).toEqual({
+        isError: true,
+        json: { error: "not_found" },
+      });
+    }
+  });
+
+  it("list_revisions の id と title と cursor の誤りは isError", async () => {
+    const { call, id } = await threeVersions();
+    expect(await call("list_revisions", {})).toMatchObject({
+      isError: true,
+      json: { error: "invalid_arguments" },
+    });
+    expect(await call("list_revisions", { id, title: "Final" })).toMatchObject({
+      isError: true,
+      json: { error: "invalid_arguments" },
+    });
+    for (const cursor of ["", "0", "x", "01", "1".repeat(16)]) {
+      expect(await call("list_revisions", { id, cursor }), cursor).toEqual({
+        isError: true,
+        json: { error: "invalid_field", field: "cursor" },
+      });
+    }
+  });
+});
+
 describe("検索と一覧の tool", () => {
   it("read の token で search を使え、抜粋と URL を返す", async () => {
     const writer = await mcpClient({ name: "writer" });
@@ -1108,11 +1233,11 @@ describe("リクエストをまたいだ状態", () => {
     expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
-  it("tools/call のあとの tools/list は 7 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {
+  it("tools/call のあとの tools/list は 8 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {
     const { rpc, create } = await sharedApp();
     await create("alice", "First");
     const listed = await rpc("bob", "tools/list");
-    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(7);
+    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(8);
 
     const unknown = await rpc("alice", "tools/call", { name: "no_such_tool", arguments: {} });
     expect(unknown.error).toEqual({ code: -32602, message: "Tool no_such_tool not found" });

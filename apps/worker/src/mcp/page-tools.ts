@@ -10,6 +10,8 @@ import {
   linkRewritesField,
   updatePageAs,
 } from "../pages/operations";
+import { findRevision, listRevisions, parseRevisionCursor } from "../pages/revision-history";
+import { LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT } from "../pages/search";
 import { type AppendError, findPageByTitle, type Page, type WriteError } from "../pages/store";
 import { pageUrls } from "../pages/urls";
 import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool";
@@ -41,6 +43,15 @@ function writeError(error: WriteError | AppendError) {
 
 export const pageIdSchema = z.string().describe("ページの id（read_page などが返す 22 文字の id）");
 
+/** REST の If-Match が受け付ける 15 桁と同じ上限。Number で誤差なく表せる範囲に収まる */
+const MAX_VERSION = 999_999_999_999_999;
+
+const versionSchema = z.number().int().positive().max(MAX_VERSION);
+
+/** 版の番号が飛ぶことと、まとめで番号が進むこと。list_revisions と read_page の両方の説明に載せる */
+const REVISION_NUMBERS =
+  "版の番号は連続しない。オーナーがブラウザで続けて保存した分は、最初の保存から 10 分までを 1 つの版にまとめ、まとめるたびにその版の番号が進む（前の番号の版は無くなる）。";
+
 export const readPageTool = defineTool({
   name: "read_page",
   scope: "read",
@@ -49,13 +60,18 @@ export const readPageTool = defineTool({
     "ページを id か title で 1 件読み、本文（Markdown）、version、visibility、URL を返す。",
     "id と title はどちらか一方だけを指定する。本文の `[[title]]` のリンクは title を渡して辿る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "titleUrl は public のページで、title が予約語と重ならないときだけ返る。",
+    "revision に list_revisions の各件の version を渡すと、上の階層は今のページの値（id、title、version、visibility、createdAt、updatedAt、URL）だけで body を含まず、読んだ版の中身は revision（version、title、body、createdAt、author）に入る。update_page には上の階層の version を渡す。",
+    `その版が無ければ revision_not_found になる。${REVISION_NUMBERS}少し前に見た番号が無くなっていたら、list_revisions を呼び直す。`,
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema.optional(),
     title: z.string().describe("ページの title").optional(),
+    revision: versionSchema
+      .optional()
+      .describe("読む版の番号（list_revisions の version）。省くと今の版を読む"),
   }),
   annotations: { readOnlyHint: true, openWorldHint: false },
-  async run({ id, title }, ctx) {
+  async run({ id, title, revision }, ctx) {
     if ((id === undefined) === (title === undefined)) {
       return toolError({
         error: "invalid_arguments",
@@ -67,16 +83,93 @@ export const readPageTool = defineTool({
         ? await findPageByTitle(ctx.db, title as string, readableVisibilityOf(ctx.principal))
         : await findPageByInputId(ctx.db, id);
     if (page === null) return toolError({ error: "not_found" });
+    if (revision === undefined) {
+      return toolResult({
+        id: page.id,
+        title: page.title,
+        body: page.body,
+        visibility: page.visibility,
+        version: page.version,
+        createdAt: page.createdAt,
+        updatedAt: page.updatedAt,
+        ...pageUrls(ctx.origin, page),
+      });
+    }
+    const found = await findRevision(ctx.db, page.id, revision, ctx.clientName);
+    // ページを読んだ直後に消されたときも、ページが無いときと同じ応答にする
+    if (!found.ok) {
+      return toolError({ error: found.reason === "page_not_found" ? "not_found" : found.reason });
+    }
+    const current = found.page;
+    // 今のページと過去の版を同じ階層に混ぜると、古い title を今の title と取り違える
     return toolResult({
-      id: page.id,
-      title: page.title,
-      body: page.body,
-      visibility: page.visibility,
-      version: page.version,
-      createdAt: page.createdAt,
-      updatedAt: page.updatedAt,
-      ...pageUrls(ctx.origin, page),
+      id: current.id,
+      title: current.title,
+      visibility: current.visibility,
+      version: current.version,
+      createdAt: current.createdAt,
+      updatedAt: current.updatedAt,
+      ...pageUrls(ctx.origin, current),
+      revision: {
+        version: found.revision.version,
+        title: found.revision.title,
+        body: found.revision.body,
+        createdAt: found.revision.createdAt,
+        author: found.revision.author,
+      },
     });
+  },
+});
+
+export const listRevisionsTool = defineTool({
+  name: "list_revisions",
+  scope: "read",
+  title: "版の履歴",
+  description: [
+    "ページの版の履歴を新しい順に返す。各件は version、title、createdAt、author で、本文は含まない。本文は read_page に id と revision（各件の version）を渡して読む。nextCursor が null でなければ、cursor に渡して続きを取る。",
+    "id と title はどちらか一方だけを指定する。ページが無ければ not_found。",
+    REVISION_NUMBERS,
+    "createdAt はその版の編集を始めた時刻（まとめた版では最初の保存の時刻）。先頭の版の version が read_page の version と同じなら、read_page の updatedAt がその版の最後の保存の時刻になる（公開範囲の切り替えは version と updatedAt を進めるが、版を積まない）。",
+    "author.kind は owner（オーナー）、token（API token。name は token の名前）、oauth（OAuth の接続。name は接続の名前で、登録が消えていれば null）、other（どれにも当たらない記録。actor にそのまま入る）のどれか。",
+  ].join("\n"),
+  inputSchema: z.strictObject({
+    id: pageIdSchema.optional(),
+    title: z.string().describe("ページの title").optional(),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(LIST_MAX_LIMIT)
+      .optional()
+      .describe(`返す件数。既定 ${LIST_DEFAULT_LIMIT}、上限 ${LIST_MAX_LIMIT}`),
+    cursor: z
+      .string()
+      .optional()
+      .describe("続きを取るときに、前の結果の nextCursor をそのまま渡す"),
+  }),
+  annotations: { readOnlyHint: true, openWorldHint: false },
+  async run({ id, title, limit, cursor }, ctx) {
+    if ((id === undefined) === (title === undefined)) {
+      return toolError({
+        error: "invalid_arguments",
+        message: "id と title のどちらか一方だけを指定する",
+      });
+    }
+    const before = cursor === undefined ? null : parseRevisionCursor(cursor);
+    if (cursor !== undefined && before === null) {
+      return toolError({ error: "invalid_field", field: "cursor" });
+    }
+    const pageId =
+      id ??
+      (await findPageByTitle(ctx.db, title as string, readableVisibilityOf(ctx.principal)))?.id;
+    if (pageId === undefined) return toolError({ error: "not_found" });
+    const list = await listRevisions(ctx.db, pageId, {
+      limit: limit ?? LIST_DEFAULT_LIMIT,
+      before,
+      clientName: ctx.clientName,
+    });
+    if (list === null) return toolError({ error: "not_found" });
+    return toolResult(list);
   },
 });
 
@@ -107,9 +200,6 @@ export const createPageTool = defineTool({
   },
 });
 
-/** REST の If-Match が受け付ける 15 桁と同じ上限。Number で誤差なく表せる範囲に収まる */
-const MAX_VERSION = 999_999_999_999_999;
-
 export const updatePageTool = defineTool({
   name: "update_page",
   scope: "write",
@@ -126,12 +216,7 @@ export const updatePageTool = defineTool({
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema,
-    version: z
-      .number()
-      .int()
-      .positive()
-      .max(MAX_VERSION)
-      .describe("read_page で読んだときの version"),
+    version: versionSchema.describe("read_page で読んだときの version"),
     title: z.string().describe("保存後の title（変えないときは読んだ title）"),
     body: z.string().describe("保存後の本文の Markdown 全体"),
   }),
@@ -196,4 +281,10 @@ export const appendToPageTool = defineTool({
   },
 });
 
-export const PAGE_TOOLS = [readPageTool, createPageTool, updatePageTool, appendToPageTool];
+export const PAGE_TOOLS = [
+  readPageTool,
+  listRevisionsTool,
+  createPageTool,
+  updatePageTool,
+  appendToPageTool,
+];

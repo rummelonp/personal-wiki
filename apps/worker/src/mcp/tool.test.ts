@@ -32,6 +32,7 @@ async function callAs(principal: Principal): Promise<CallToolResult> {
     now: () => 0,
     recordWrite: () => {},
     origin: "http://localhost",
+    clientName: async () => null,
   });
   const result = await (callback as NonNullable<typeof callback>)({});
   if (result.isError) expect(ran).toBe(false);

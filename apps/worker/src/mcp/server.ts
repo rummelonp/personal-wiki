@@ -12,6 +12,7 @@ import type { Hono } from "hono";
 import { requireToken } from "../auth/middleware";
 import type { AppEnv } from "../env";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
+import { clientNameLookup } from "../pages/revision-history";
 import { siteNameOf } from "../site-name";
 import { PAGE_TOOLS } from "./page-tools";
 import { SEARCH_TOOLS } from "./search-tools";
@@ -133,12 +134,14 @@ export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRo
       }
     }
     const principal = c.get("principal");
+    const origin = new URL(c.req.url).origin;
     const context: WikiToolContext = {
       db: c.env.DB,
       principal,
-      origin: new URL(c.req.url).origin,
+      origin,
       now,
       recordWrite,
+      clientName: clientNameLookup(c.env, origin),
     };
     return handler.fetch(c.req.raw, {
       authInfo: {

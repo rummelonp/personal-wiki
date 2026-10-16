@@ -7,12 +7,15 @@ import type {
 import type * as z from "zod/v4";
 import { principalHasScope, type Scope } from "../auth/principal";
 import type { PageWriteContext } from "../pages/operations";
+import type { ClientNameLookup } from "../pages/revision-history";
 import { describeInputError } from "./input-error";
 
 /** tool がリクエストごとに受け取る値。principal は /mcp の認可で決まったもの。 */
 export interface WikiToolContext extends PageWriteContext {
   /** URL を組み立てる origin。リクエストの URL から取る */
   origin: string;
+  /** 版の作成者の OAuth の接続の名前を引く */
+  clientName: ClientNameLookup;
 }
 
 export interface WikiToolDefinition<S extends z.ZodObject> {
