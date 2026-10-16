@@ -63,7 +63,7 @@ test("作る POST が遅くても、待つ間に打った本文は残り、本�
   await expectCreatedAndKept(page, title, body);
 });
 
-test("title の URL にできないリンクの「作成して開く」から、すぐ打った最初の文字から残る", async ({
+test("title の URL にできないリンクの「このタイトルで作成」から、すぐ打った最初の文字から残る", async ({
   page,
   api,
 }, testInfo) => {
@@ -79,7 +79,7 @@ test("title の URL にできないリンクの「作成して開く」から、
   const notice = page
     .getByRole("alert")
     .filter({ hasText: `「${missing}」のページはまだありません` });
-  await notice.getByRole("button", { name: "作成して開く" }).click();
+  await notice.getByRole("button", { name: "このタイトルで作成" }).click();
   const body = "リンクから作ったページの本文";
   await page.keyboard.type(body);
   await expectCreatedAndKept(page, missing, body);

@@ -420,9 +420,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   }
 
   async function handleDelete() {
-    const unsaved = isDirty(state) ? "保存していない変更も捨てます。" : "";
-    if (!window.confirm(`「${state.base.title}」を削除しますか？${unsaved}元に戻せません。`))
-      return;
+    const warning = isDirty(state) ? "未保存の変更も含めて、元に戻せません。" : "元に戻せません。";
+    if (!window.confirm(`「${state.base.title}」を削除しますか？${warning}`)) return;
     if (await session.remove()) navigate(homeHref());
   }
 
@@ -766,16 +765,14 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                     // このページの未保存の変更は、離れるときの leave が送る
                     onClick={() => openNewPage({ title: linkNotice.title })}
                   >
-                    作成して開く
+                    このタイトルで作成
                   </button>
                   <button type="button" className="button" onClick={() => setLinkNotice(null)}>
                     閉じる
                   </button>
                 </>
               }
-            >
-              <p>作成して開くと、このタイトルの新しいページに移ります。</p>
-            </Notice>
+            />
           ))}
 
         {unsafeTitle !== null && unsafeTitle === savedTitle && (

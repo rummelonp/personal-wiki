@@ -864,7 +864,7 @@ describe("PageEditor の wikilink", () => {
     expect(createPage).not.toHaveBeenCalled();
   });
 
-  it("title の URL にできない無いページの link は、作成の案内を出し、「作成して開く」で新規作成の画面へ移る", async () => {
+  it("title の URL にできない無いページの link は、作成の案内を出し、「このタイトルで作成」で新規作成の画面へ移る", async () => {
     vi.mocked(resolvePages).mockImplementation(async (titles) => ok(titles.map(() => null)));
     const { button } = renderPage({ ...PAGE, body: "[[api]]" });
     clickLink("api");
@@ -874,7 +874,7 @@ describe("PageEditor の wikilink", () => {
     expect(location.pathname).toBe(new URL(startUrl).pathname);
 
     // 作るのは移った先の新規作成の画面
-    act(() => button("作成して開く").click());
+    act(() => button("このタイトルで作成").click());
     expect(`${location.pathname}${location.search}`).toBe("/?new");
     expect(createPage).not.toHaveBeenCalled();
   });
@@ -2159,7 +2159,7 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => typeAtEnd(view(), "追記"));
     act(() => button("このページを削除").click());
     expect(confirm).toHaveBeenLastCalledWith(
-      `「${PAGE.title}」を削除しますか？保存していない変更も捨てます。元に戻せません。`,
+      `「${PAGE.title}」を削除しますか？未保存の変更も含めて、元に戻せません。`,
     );
     expect(deletePage).not.toHaveBeenCalled();
   });
