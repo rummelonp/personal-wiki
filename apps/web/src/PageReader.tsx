@@ -148,7 +148,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
             title={
               linkNotice.kind === "error"
                 ? "リンク先を調べられませんでした"
-                : `「${linkNotice.title}」のページはありません`
+                : `「${linkNotice.title}」を開けません`
             }
             actions={
               <button type="button" className="button" onClick={() => setLinkNotice(null)}>
@@ -159,7 +159,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
             <p>
               {linkNotice.kind === "error"
                 ? "通信を確かめて、もう一度クリックしてください。"
-                : "リンク先のページは、まだ作られていないか、公開されていません。"}
+                : "まだ作られていないか、公開されていないページです。"}
             </p>
           </Notice>
         )}

@@ -263,16 +263,17 @@ describe("PageReader", () => {
     await flushAsync();
     clickLink("無い");
     await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
-    expect(container?.textContent).not.toContain("ページはありません");
+    expect(container?.textContent).not.toContain("を開けません");
     expect(createPage).not.toHaveBeenCalled();
   });
 
-  it("title の URL にできない開けない link は「ページはありません」とだけ出し、作成の操作を出さない", async () => {
+  it("title の URL にできない開けない link は「開けません」とだけ出し、作成の操作を出さない", async () => {
     renderReader({ ...PAGE, body: "[[api]]" });
     await vi.waitFor(() => expect(resolvePages).toHaveBeenCalled());
     await flushAsync();
     clickLink("api");
-    await vi.waitFor(() => expect(container?.textContent).toContain("「api」のページはありません"));
+    await vi.waitFor(() => expect(container?.textContent).toContain("「api」を開けません"));
+    expect(container?.textContent).toContain("まだ作られていないか、公開されていないページです。");
     expect(container?.textContent).not.toContain("下書き");
     expect(buttonTexts()).toEqual(["閉じる"]);
     expect(location.pathname).toBe(new URL(startUrl).pathname);
@@ -288,14 +289,12 @@ describe("PageReader", () => {
     expect(location.hash).toBe("");
   });
 
-  it("保存できる長さを超える title への link は、空のページへ移らず「ページはありません」を出す", async () => {
+  it("保存できる長さを超える title への link は、空のページへ移らず「開けません」を出す", async () => {
     const long = "あ".repeat(800);
     renderReader({ ...PAGE, body: `[[${long}]]` });
     await flushAsync();
     clickLink(long);
-    await vi.waitFor(() =>
-      expect(container?.textContent).toContain(`「${long}」のページはありません`),
-    );
+    await vi.waitFor(() => expect(container?.textContent).toContain(`「${long}」を開けません`));
     expect(location.pathname).toBe(new URL(startUrl).pathname);
     expect(createPage).not.toHaveBeenCalled();
   });
