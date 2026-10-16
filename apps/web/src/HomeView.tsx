@@ -36,10 +36,12 @@ function PreviousEntries({
   previous,
   now,
   showVisibility,
+  visibility,
 }: {
   previous: PreviousList;
   now: number;
   showVisibility: boolean;
+  visibility: VisibilityFilter;
 }) {
   const painted = useSkeletonPainted();
   return (
@@ -47,6 +49,7 @@ function PreviousEntries({
       entries={previous.entries}
       now={now}
       showVisibility={showVisibility}
+      visibility={visibility}
       className={painted ? "entries-stale skeleton-painted" : "entries-stale"}
     />
   );
@@ -125,7 +128,12 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
         )}
         {state.status === "loading" && state.previous === undefined && <SkeletonEntries />}
         {state.status === "loading" && state.previous !== undefined && (
-          <PreviousEntries previous={state.previous} now={now} showVisibility={owner} />
+          <PreviousEntries
+            previous={state.previous}
+            now={now}
+            showVisibility={owner}
+            visibility={effectiveVisibility}
+          />
         )}
         {state.status === "query_too_short" && (
           <EmptyState
@@ -195,6 +203,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
               now={now}
               highlight={searching ? trimmed : ""}
               showVisibility={owner}
+              visibility={effectiveVisibility}
             >
               {state.loadingMore && <LoadingMoreRows />}
             </EntryList>

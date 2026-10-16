@@ -70,7 +70,7 @@ test("トップの一覧とタグに draft が出ない @smoke", async ({ page, 
   await expectNoDraftTrace(page);
   await expect(page.locator(".entries")).not.toContainText(draftTitle);
   await expect(page.getByRole("complementary", { name: "補助情報" })).not.toContainText(draftTag);
-  await expect(page.locator(".chip-public")).toHaveCount(0);
+  await expect(page.locator(".entry-visibility")).toHaveCount(0);
   await expectNoHorizontalScroll(page);
 });
 

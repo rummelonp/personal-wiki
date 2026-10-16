@@ -16,9 +16,9 @@ test("トップの一覧から開ける @smoke", async ({ page, api }, testInfo)
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "最近の更新" })).toBeVisible();
   // 並列に走る他のテストがページを作り、先頭に来るページが変わるので、どのページかは決め打ちしない。
-  // owner の一覧では公開の行にだけ印が付き、draft（作られたばかりのページ）には付かない。
-  await expect(page.locator(".entries .chip-public").first()).toBeVisible();
-  await expect(page.locator(".entries .entry:not(:has(.chip-public))").first()).toBeVisible();
+  // owner の一覧では公開の行に「公開」、draft（作られたばかりのページ）の行に「下書き」の印が付く。
+  await expect(page.locator(".entries .entry-visibility-public").first()).toHaveText("●公開");
+  await expect(page.locator(".entries .entry-visibility-draft").first()).toHaveText("○下書き");
   const first = page.locator(".entries .entry-title").first();
   const title = (await first.textContent()) ?? "";
   expect(title).not.toBe("");
@@ -368,7 +368,7 @@ test("owner は公開範囲で絞り込め、タグと組み合わせられ、�
   await expect(entries).toHaveCount(1);
   await expect(entries.getByRole("link", entryLink(publicTitle))).toBeVisible();
   // 絞り込み中も公開の印は出したままにする
-  await expect(entries.locator(".chip-public")).toHaveText("公開");
+  await expect(entries.locator(".entry-visibility")).toHaveText("●公開");
 
   // 選択中のタグを押すと、タグの絞り込みだけが外れる
   await page.locator(".rail .chip-link[aria-current='page']").click();
@@ -379,7 +379,7 @@ test("owner は公開範囲で絞り込め、タグと組み合わせられ、�
   await expect(page.locator(".home:not([aria-busy])")).toBeVisible();
   const fresh = page.locator(".entries:not(.entries-stale) .entry");
   await expect(fresh.first()).toBeVisible();
-  await expect(fresh.filter({ hasNot: page.locator(".chip-public") })).toHaveCount(0);
+  await expect(fresh.filter({ hasNot: page.locator(".entry-visibility-public") })).toHaveCount(0);
   await expect(page.locator(".entries").getByRole("link", entryLink(draftTitle))).toHaveCount(0);
 
   await page.goBack();

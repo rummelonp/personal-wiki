@@ -130,7 +130,7 @@ test.describe("タップ対象", () => {
       // 他のテストが作ったページは抜粋もタグも持たないので、両方を持つ行を選ぶ。短い title のすぐ隣に
       // 印が付くことも見るので、公開の印を持つ行にする
       const entry = document.querySelector(
-        ".entries .entry:has(.entry-excerpt):has(.chip-link):has(.chip-public)",
+        ".entries .entry:has(.entry-excerpt):has(.chip-link):has(.entry-visibility-public)",
       );
       // 他のテストが作ったページが上に積もると画面の外へ押し出され、elementFromPoint が何も返さない
       entry?.scrollIntoView({ block: "center" });
@@ -154,8 +154,8 @@ test.describe("タップ対象", () => {
         const text = link.textContent;
         link.textContent = "夜";
         const rect = link.getBoundingClientRect();
-        const badge = entry?.querySelector(".chip-public")?.getBoundingClientRect();
-        if (badge === undefined) throw new Error(".chip-public が無い");
+        const badge = entry?.querySelector(".entry-visibility-public")?.getBoundingClientRect();
+        if (badge === undefined) throw new Error(".entry-visibility-public が無い");
         const result = {
           shortTitleWidth: rect.width,
           badgeGap: badge.left - rect.right,

@@ -282,25 +282,66 @@ describe("条件を変えて取り直している間の一覧", () => {
   });
 });
 
-describe("HomeView の公開の印", () => {
+describe("HomeView の公開範囲の印", () => {
   const rows = () => [...(container?.querySelectorAll(".entry") ?? [])];
   const pages = [
     summary("AAAAAAAAAAAAAAAAAAAAAA", "公開の行"),
     { ...summary("BBBBBBBBBBBBBBBBBBBBBB", "まだ書きかけの行"), visibility: "draft" as const },
   ];
 
-  it("owner の一覧では公開の行にだけ印を付け、draft の行には付けない", async () => {
+  const mark = (index: number) => rows()[index]?.querySelector(".entry-visibility");
+
+  it("owner の一覧では公開の行に「公開」、draft の行に「下書き」の印を付ける", async () => {
     vi.mocked(listRecent).mockResolvedValue(ok({ pages, nextCursor: null }));
     await renderHome("", true);
-    expect(rows()[0]?.querySelector(".chip-public")?.textContent).toBe("公開");
-    expect(rows()[1]?.querySelector(".chip-public")).toBeNull();
-    expect(container?.querySelector(".entries")?.textContent).not.toContain("下書き");
+    expect(mark(0)?.textContent).toBe("●公開");
+    expect(mark(0)?.classList.contains("entry-visibility-public")).toBe(true);
+    expect(mark(1)?.textContent).toBe("○下書き");
+    expect(mark(1)?.classList.contains("entry-visibility-draft")).toBe(true);
+  });
+
+  it("点は読み上げから外し、語だけを読ませる", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages, nextCursor: null }));
+    await renderHome("", true);
+    for (const index of [0, 1]) {
+      expect(mark(index)?.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    }
+  });
+
+  it("公開範囲で絞り込んでいる間も印を出す", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [pages[1] as never], nextCursor: null }));
+    await mountHome("", true, "", "draft");
+    await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+    expect(mark(0)?.textContent).toBe("○下書き");
   });
 
   it("匿名の一覧は全行が公開なので、印を付けない", async () => {
     vi.mocked(listRecent).mockResolvedValue(ok({ pages: [pages[0] as never], nextCursor: null }));
     await renderHome("", false);
-    expect(container?.querySelector(".chip-public")).toBeNull();
+    expect(container?.querySelector(".entry-visibility")).toBeNull();
+  });
+
+  it("行のタグは、公開範囲の絞り込みを保つリンクにする", async () => {
+    const tagged = { ...pages[1], tags: ["x"] } as never;
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [tagged], nextCursor: null }));
+    vi.mocked(searchPages).mockResolvedValue(ok([{ ...(tagged as object), excerpt: "" } as never]));
+    for (const [query, owner, visibility, href] of [
+      ["", true, "draft", "/?tag=x&visibility=draft"],
+      ["", true, "public", "/?tag=x&visibility=public"],
+      ["", true, "", "/?tag=x"],
+      // 検索中と匿名は絞り込みが効いていないので、URL に残っていても渡さない
+      ["x", true, "draft", "/?tag=x"],
+      ["", false, "draft", "/?tag=x"],
+    ] as const) {
+      await mountHome(query, owner, "", visibility);
+      await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+      expect(
+        container?.querySelector(".entries .chip-link")?.getAttribute("href"),
+        `${query}/${owner}/${visibility}`,
+      ).toBe(href);
+      act(() => root?.unmount());
+      container?.remove();
+    }
   });
 });
 

@@ -597,12 +597,22 @@ a.segmented-option {
   font-variant-numeric: tabular-nums;
 }
 
-.chip-public {
-  padding: 0 var(--space-2);
-  font-size: var(--font-size-xs);
+/*
+ * 一覧の行の公開範囲の印。タグの chip と同じ丸い地にすると「公開」という名前のタグと紛れるので、
+ * 地も枠も付けず、点と語だけにする。公開は差し色、下書きは補助の文字の色で、公開が先に目に入る。
+ */
+.entry-visibility {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: baseline;
+  font-size: var(--font-size-sm);
   color: var(--color-fg-muted);
-  background: none;
-  border: var(--border-width) solid var(--color-border);
+  white-space: nowrap;
+}
+
+.entry-visibility-public {
+  color: var(--color-accent);
 }
 
 .actions {
@@ -1781,7 +1791,7 @@ a.segmented-option {
   }
 
   /*
-   * 1〜2 文字の title でも横に 44px 押せるようにする。title の箱を広げると「公開」の印が離れて
+   * 1〜2 文字の title でも横に 44px 押せるようにする。title の箱を広げると公開範囲の印が離れて
    * 間が空くので、箱は字の幅のまま疑似要素で広げる。title は省略表示のため overflow: hidden で、
    * title を基準にすると疑似要素が切られるので、.entry-head を基準にする
    */
