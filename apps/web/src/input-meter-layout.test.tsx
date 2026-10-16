@@ -79,12 +79,12 @@ afterEach(() => {
 
 const flushAsync = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
-function mountEditor() {
+function mountEditor(page = PAGE) {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
   root = mounted;
-  act(() => mounted.render(<PageEditor page={PAGE} attachments={false} />));
+  act(() => mounted.render(<PageEditor page={page} attachments={false} />));
   const query = (selector: string) => {
     const found = container?.querySelector<HTMLElement>(selector);
     if (!found) throw new Error(`${selector} が無い`);
@@ -156,6 +156,31 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     const meter = query(".title-hint .input-meter");
     expect(meter.getBoundingClientRect().right).toBeLessThanOrEqual(rect.right + 0.5);
     expect(meter.scrollWidth).toBeLessThanOrEqual(meter.clientWidth + 1);
+    noHorizontalScroll();
+  });
+
+  it("title を空にしたときの案内は、前の title が長くても 1 行の帯に収まる", async () => {
+    await browserPage.viewport(width, 800);
+    const { query, title, replace } = mountEditor({ ...PAGE, title: "長い題".repeat(40) });
+    await flushAsync();
+    const gap = () =>
+      query(".publish-bar").getBoundingClientRect().top -
+      query(".title-input").getBoundingClientRect().bottom;
+    // 長い title は折り返して行が増えるので、案内の出ない 1 行の title と比べる
+    replace(title(), "a");
+    expect(query(".title-hint").textContent).toBe("");
+    const before = gap();
+    replace(title(), "");
+    act(() => title().contentDOM.blur());
+    await flushAsync();
+    const hint = query(".title-hint");
+    expect(hint.textContent).toContain("空のタイトルは保存しません。");
+    const rect = hint.getBoundingClientRect();
+    expect(rect.right).toBeLessThanOrEqual(query(".note").getBoundingClientRect().right + 0.5);
+    expect(rect.bottom).toBeLessThanOrEqual(
+      query(".publish-bar").getBoundingClientRect().top + 0.5,
+    );
+    expect(gap()).toBeCloseTo(before, 0);
     noHorizontalScroll();
   });
 

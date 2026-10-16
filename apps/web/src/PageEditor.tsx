@@ -825,6 +825,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           value={state.titleInput ?? state.draft.title}
           readOnly={readOnly}
           autoFocus={focusTarget === "title"}
+          keptTitle={uncreated ? "" : state.draft.title}
           bodyView={() => editor.current?.view() ?? null}
           onChange={(title) => session.editTitle(title)}
           onCommit={() => void session.commitTitle()}

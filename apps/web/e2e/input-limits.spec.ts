@@ -192,3 +192,24 @@ test("保存で title の重複と言われたら、再試行を出さずに既�
   await expect(page).toHaveURL(new RegExp(`/p/${existing.id}`));
   await expect(bodyEditor(page)).toHaveText("先");
 });
+
+test("作成済みのページで title を空にすると、欄の下で前の title のまま保存することを伝える", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({ title: uniqueTitle(testInfo, "空にする"), body: "本文" });
+  await page.goto(`/p/${created.id}`);
+  await expect(saveState(page)).toHaveText("保存済み");
+  await titleEditor(page).click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".title-hint")).toHaveText(
+    `空のタイトルは保存しません。「${created.title}」のままです`,
+  );
+  await expectNoHorizontalScroll(page);
+  // 本文は前の title のまま保存する
+  await typeAtBodyEnd(page, "追記");
+  await expect.poll(async () => (await api.getPage(created.id)).body).toBe("本文追記");
+  expect((await api.getPage(created.id)).title).toBe(created.title);
+});

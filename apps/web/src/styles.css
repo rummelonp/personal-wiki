@@ -1280,7 +1280,7 @@ a {
   white-space: nowrap;
 }
 
-.title-hint-unsafe {
+.title-hint-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

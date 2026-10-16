@@ -695,6 +695,24 @@ describe("保存の前の検査の表示", () => {
       "「#」「|」はリンクに書けない文字です",
     );
   });
+
+  it("作成済みのページで title を空にすると、欄の下で前の title のまま保存することを伝える", async () => {
+    renderPage();
+    act(() => titleView().focus());
+    typeTitle("");
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    expect(container?.querySelector(".title-hint")?.textContent).toBe(
+      "空のタイトルは保存しません。「題」のままです",
+    );
+    expect(updatePage).not.toHaveBeenCalled();
+    typeTitle("  ");
+    expect(container?.querySelector(".title-hint")?.textContent).toBe(
+      "空のタイトルは保存しません。「題」のままです",
+    );
+    typeTitle("新しい題");
+    expect(container?.querySelector(".title-hint")?.textContent).toBe("");
+  });
 });
 
 describe("PageEditor の tag", () => {
@@ -1131,6 +1149,8 @@ describe("まだ作っていないページ（page が null）", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(createPage).not.toHaveBeenCalled();
+    // 作る前のページには残る title が無い
+    expect(container?.querySelector(".title-hint")?.textContent).toBe("");
   });
 
   it("title を打って Enter を押すと、打った本文ごと作って本文へ移る", async () => {

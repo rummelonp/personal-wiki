@@ -37,6 +37,11 @@ export interface TitleEditorProps {
   bodyView: () => EditorView | null;
   /** 作った時点で 1 度だけ、エディタに focus する（新規作成の画面）。読み取り専用なら focus しない */
   autoFocus?: boolean;
+  /**
+   * 欄を空にしたときに残る title。空の title は確定しても入らず、この title のまま保存されるので、
+   * 帯でそれを伝える。作る前のページは残る title が無い（作成が title を待つだけ）ので、空にする
+   */
+  keptTitle?: string;
   ref?: Ref<TitleEditorHandle>;
 }
 
@@ -53,8 +58,8 @@ const TITLE_METER_RATIO = 0.8;
  * BodyEditor と同じく、EditorView は mount で 1 回だけ作り、title は replaceDoc、readOnly は
  * setReadOnly で届ける（作り直すと変換中の未確定文字が消える）。onChange は変換中の入力でも呼ぶ。
  *
- * 欄の下の余白に、リンクに書けない文字と、上限に近づいた長さを出す。余白に重ねるので、出入りしても
- * 本文の位置は動かない。
+ * 欄の下の余白に、欄を空にしたときに保存される title、リンクに書けない文字、上限に近づいた長さを
+ * 出す。余白に重ねるので、出入りしても本文の位置は動かない。
  */
 export function TitleEditor({
   value,
@@ -64,6 +69,7 @@ export function TitleEditor({
   readOnly,
   bodyView,
   autoFocus = false,
+  keptTitle = "",
   ref,
 }: TitleEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -171,8 +177,11 @@ export function TitleEditor({
     <div className="title-field">
       <div ref={host} className="title-input" />
       <p id={hintId} className="title-hint">
+        {title === "" && keptTitle !== "" && (
+          <span className="title-hint-text">{`空のタイトルは保存しません。「${keptTitle}」のままです`}</span>
+        )}
         {unsafe.length > 0 && (
-          <span className="title-hint-unsafe">
+          <span className="title-hint-text">
             {`${unsafe.map((ch) => `「${ch}」`).join("")}はリンクに書けない文字です`}
           </span>
         )}
