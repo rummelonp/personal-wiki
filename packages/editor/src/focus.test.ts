@@ -95,49 +95,79 @@ function activeLineText(view: EditorView): string | null {
   return lines[0]?.textContent ?? null;
 }
 
-describe("focus の枠", () => {
+describe("本文の focus の枠", () => {
   it("pointer で入ったときは枠を出さない", async () => {
     const view = mount();
     await clickInto(view);
     expect(outlineOf(view).outlineStyle).toBe("none");
   });
 
-  // 枠の有無は focus した時点の操作で決まる。update のたびに判定すると、pointer で入った後に
-  // 打鍵しただけで枠が出る
-  it("pointer で入った後に打鍵しても枠は出ない", async () => {
+  it("keyboard で入ったときも枠を出さない", async () => {
+    const view = mount();
+    await tabInto(view);
+    expect(outlineOf(view).outlineStyle).toBe("none");
+    expect(view.contentDOM.matches(":focus-visible")).toBe(true);
+    expect(getComputedStyle(view.contentDOM).outlineStyle).toBe("none");
+  });
+
+  // 別のタブから戻ると、ブラウザは打鍵の後のまま元の要素へ focus を戻す
+  it("直前の操作が打鍵のまま focus が戻っても枠を出さない", async () => {
     const view = mount();
     await clickInto(view);
-    await userEvent.keyboard("あ");
+    await userEvent.keyboard("{ArrowRight}");
+    const before = focusChanges;
+    view.contentDOM.blur();
+    await waitForFocusChange(before);
+    const afterBlur = focusChanges;
+    view.focus();
+    await waitForFocusChange(afterBlur);
+    expect(view.hasFocus).toBe(true);
     expect(outlineOf(view).outlineStyle).toBe("none");
   });
 
-  it("keyboard で入ったときは accent の枠を出す", async () => {
+  it("枠が無くても caret とカーソル行の地で居場所が分かる", async () => {
     const view = mount();
     await tabInto(view);
-    const outline = outlineOf(view);
-    expect(outline.outlineStyle).toBe("solid");
-    expect(outline.outlineWidth).toBe("2px");
-    expect(toRgb(outline.outlineColor)).toEqual(resolve(view.contentDOM, "var(--ui-color-accent)"));
+    expect(view.dom.querySelector(".cm-cursor")).not.toBeNull();
+    expect(activeLineText(view)).toBe("一行目");
   });
+});
 
-  it("keyboard で入った後に pointer で入り直すと枠は消える", async () => {
-    const view = mount();
-    await tabInto(view);
-    expect(outlineOf(view).outlineStyle).toBe("solid");
-
-    await clickOutside(view);
-    await clickInto(view);
-    expect(outlineOf(view).outlineStyle).toBe("none");
-  });
-
-  it("title 欄も本文と同じ枠になる", async () => {
+describe("title 欄の focus の枠", () => {
+  it("pointer で入ったときは枠を出さない", async () => {
     const title = mountTitle();
     await clickInto(title);
     expect(outlineOf(title).outlineStyle).toBe("none");
+  });
 
-    await clickOutside(title);
+  // 枠の有無は focus した時点の操作で決まる。update のたびに判定すると、pointer で入った後に
+  // 打鍵しただけで枠が出る
+  it("pointer で入った後に打鍵しても枠は出ない", async () => {
+    const title = mountTitle();
+    await clickInto(title);
+    await userEvent.keyboard("あ");
+    expect(outlineOf(title).outlineStyle).toBe("none");
+  });
+
+  it("keyboard で入ったときは accent の枠を出す", async () => {
+    const title = mountTitle();
+    await tabInto(title);
+    const outline = outlineOf(title);
+    expect(outline.outlineStyle).toBe("solid");
+    expect(outline.outlineWidth).toBe("2px");
+    expect(toRgb(outline.outlineColor)).toEqual(
+      resolve(title.contentDOM, "var(--ui-color-accent)"),
+    );
+  });
+
+  it("keyboard で入った後に pointer で入り直すと枠は消える", async () => {
+    const title = mountTitle();
     await tabInto(title);
     expect(outlineOf(title).outlineStyle).toBe("solid");
+
+    await clickOutside(title);
+    await clickInto(title);
+    expect(outlineOf(title).outlineStyle).toBe("none");
   });
 
   // Enter と ↓ は keyboard の操作だが、移り先は本文の caret で分かるので、本文の全体を枠で囲まない

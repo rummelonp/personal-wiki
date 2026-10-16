@@ -46,15 +46,6 @@ const inputModalityTracker = ViewPlugin.define(() => {
   };
 });
 
-/**
- * keyboard の操作に続けて、移り先が caret で分かる場所へ focus を移す（title の Enter で本文へ移るなど）。
- * 枠は Tab で飛んだ先を示すためのものなので、pointer で入ったときと同じく枠を出さない。
- */
-export function focusWithoutRing(view: EditorView): void {
-  lastInputWasKeyboard = false;
-  view.focus();
-}
-
 const setKeyboardFocus = StateEffect.define<boolean>();
 
 /**
@@ -88,16 +79,16 @@ const keyboardFocusAttribute = EditorView.editorAttributes.of((view) =>
 /**
  * class を重ねて詳細度を上げてあるのは、消す相手が CodeMirror 自身の base theme の
  * `&.cm-focused { outline: 1px dotted }` で、どちらも base theme として注入されるためである
- * （`editorSurfaceTheme` と同じ理由。適用順に頼らない）。keyboard の枠はさらに 1 つ重ねて、
- * 枠を消す規則に確実に勝たせる。
+ * （`editorSurfaceTheme` と同じ理由。適用順に頼らない）。
  */
-const focusTheme = EditorView.baseTheme({
-  // 点線の枠は focus していることしか示さない。どこを書いているかは caret とカーソル行の地
-  // （`activeLine`）が示すので、pointer で入ったときはそちらに任せる
+const noOutlineTheme = EditorView.baseTheme({
   "&.cm-focused.cm-focused": { outline: "none" },
-  // keyboard で入ったときだけ枠を残す。pointer は自分で置いた場所が分かっているが、Tab で
-  // 飛んできたときは focus がどの部品に入ったかを caret だけでは追えない。太さと色は
-  // ホストのフォーム部品の focus 表示に揃える
+});
+
+// 枠を消す規則に確実に勝つよう、class をさらに 1 つ重ねる
+const keyboardRingTheme = EditorView.baseTheme({
+  // 枠は Tab で飛んだ先を示すためのもの。欄が小さく、どの部品に focus が入ったかを caret だけでは
+  // 追えない。太さと色はホストのフォーム部品の focus 表示に揃える
   "&.cm-focused.cm-focused.cm-focus-keyboard": {
     outline: "2px solid var(--ui-color-accent)",
     outlineOffset: "1px",
@@ -105,8 +96,19 @@ const focusTheme = EditorView.baseTheme({
 });
 
 /**
- * CodeMirror 既定の点線の focus 枠を消し、keyboard で入ったときだけ accent の枠を出す。
- * 本文の view と title 欄の両方に入れる。
+ * CodeMirror 既定の点線の focus 枠を消す。本文の view に入れる。
+ *
+ * 本文は枠を出さない。focus の有無と居場所は caret とカーソル行の地（`activeLine`）が示す。
+ * 別のタブやウィンドウから戻ると、ブラウザが元の要素へ focus を戻すが、そのとき直前の操作は
+ * 打鍵のままなので、keyboard で入ったと見なして枠を出すと、本文の全体が不意に囲まれる。
+ */
+export function noFocusOutline(): Extension {
+  return noOutlineTheme;
+}
+
+/**
+ * 既定の点線の枠を消し、keyboard で入ったときだけ accent の枠を出す。title 欄に入れる。
+ * pointer で入ったときは自分で置いた場所が分かるので、枠を出さない。
  */
 export function focusRing(): Extension {
   return [
@@ -114,7 +116,8 @@ export function focusRing(): Extension {
     keyboardFocus,
     trackKeyboardFocus,
     keyboardFocusAttribute,
-    focusTheme,
+    noOutlineTheme,
+    keyboardRingTheme,
   ];
 }
 

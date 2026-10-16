@@ -30,7 +30,7 @@ import {
   type PageEmbedResolver,
 } from "./embed";
 import { externalLinks } from "./external-link";
-import { activeLine, focusRing } from "./focus";
+import { activeLine, noFocusOutline } from "./focus";
 import { frontmatterBlock } from "./frontmatter-block";
 import type { ImeEvent } from "./ime";
 import { lineBreakInput } from "./line-break-input";
@@ -173,7 +173,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     editorSurfaceTheme,
     typographyTheme,
     livePreviewTheme,
-    focusRing(),
+    noFocusOutline(),
     activeLine(),
     wikiLinks(
       options.onWikiLinkClick,

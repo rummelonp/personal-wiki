@@ -17,7 +17,7 @@ import {
 } from "@codemirror/state";
 import { type Command, drawSelection, EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { imeDebug } from "./debug-ime";
-import { focusRing, focusWithoutRing } from "./focus";
+import { focusRing } from "./focus";
 import { type ImeEvent, isComposing } from "./ime";
 import { readOnlyCompartment, readOnlySafeHistoryKeymap } from "./read-only";
 import { docReplacement, resettableHistory } from "./replace-doc";
@@ -167,7 +167,7 @@ function titleKeymap(
   const moveToBody = (place: (body: EditorView) => number): boolean => {
     const body = bodyView?.();
     if (!body) return false;
-    focusWithoutRing(body);
+    body.focus();
     body.dispatch({
       selection: EditorSelection.cursor(place(body)),
       scrollIntoView: true,
