@@ -14,7 +14,8 @@
 
 受け付ける種類は PNG、JPEG、GIF、WebP、AVIF（`image/png`、`image/jpeg`、`image/gif`、`image/webp`、`image/avif`）です。
 SVG は、直接開くと同じオリジンでスクリプトが動くので受け付けません。
-1 枚の上限は 10 MiB です。
+1 枚の上限は 10 MB（10,000,000 バイト）です。
+Finder などの表示と同じ 1,000 単位です。
 
 受け付けないときは、次の状態と `error` を返します。
 

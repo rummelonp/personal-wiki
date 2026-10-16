@@ -30,8 +30,12 @@ export const ATTACHMENT_CONTENT_TYPES: readonly AttachmentContentType[] = Object
   EXTENSION_BY_TYPE,
 ) as AttachmentContentType[];
 
-/** 添付 1 件の上限（バイト）。 */
-export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+/**
+ * 添付 1 件の上限（バイト）。
+ * 1,000 単位にしているのは、利用者が Finder などで見るファイルの大きさと、画面の「10 MB まで」が
+ * 同じ尺度で読めるようにするため。1,024 単位だと、Finder で 10.5 MB と出るファイルが通ってしまう。
+ */
+export const ATTACHMENT_MAX_BYTES = 10_000_000;
 
 /** 乱数 22 文字（base64url、128 ビット分）と拡張子。拡張子は小文字だけで、大文字は別の名前として受けない。 */
 const ATTACHMENT_NAME_PATTERN = /^[A-Za-z0-9_-]{22}\.(png|jpg|gif|webp|avif)$/;
@@ -70,7 +74,7 @@ const AVIF_BRANDS = [ascii("avif"), ascii("avis")];
 
 /**
  * brand を探す範囲の上限（バイト）。ftyp box の大きさは入力が決めるので、0 や巨大な値でも
- * 10 MiB の入力全体を走査しないよう、先頭のここまでで打ち切る。実在する ftyp は数十バイトで収まる。
+ * 上限いっぱいの入力全体を走査しないよう、先頭のここまでで打ち切る。実在する ftyp は数十バイトで収まる。
  */
 export const AVIF_BRAND_SEARCH_LIMIT = 4096;
 

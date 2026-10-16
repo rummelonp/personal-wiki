@@ -1320,10 +1320,10 @@ describe("添付の貼り付けと表示", () => {
     const { view } = renderPage(PAGE, true);
     const v = view();
     v.focus();
-    paste(v, png("big.png", 10 * 1024 * 1024 + 1));
+    paste(v, png("big.png", 10_000_001));
     await vi.waitFor(() => expect(container?.textContent).toContain("big.png"));
     await flushAsync();
-    expect(container?.querySelector("[role=alert]")?.textContent).toContain("10 MiB");
+    expect(container?.querySelector("[role=alert]")?.textContent).toContain("10 MB までです");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(v.state.doc.toString()).toBe("本文");
   });
@@ -1331,6 +1331,7 @@ describe("添付の貼り付けと表示", () => {
   it.each([
     [413, {}, "大きすぎる"],
     [415, {}, "添付できない形式"],
+    [415, { error: "content_mismatch" }, "として読めませんでした"],
     [503, { error: "attachments_unavailable" }, "添付を使えません"],
     [500, {}, "添付できませんでした"],
   ])("%i の失敗は理由を通知し、placeholder を除く", async (status, body, text) => {

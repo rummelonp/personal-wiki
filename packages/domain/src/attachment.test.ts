@@ -100,8 +100,8 @@ describe("content type と拡張子の対応", () => {
 });
 
 describe("ATTACHMENT_MAX_BYTES", () => {
-  it("10 MiB", () => {
-    expect(ATTACHMENT_MAX_BYTES).toBe(10 * 1024 * 1024);
+  it("10 MB（1,000 単位）", () => {
+    expect(ATTACHMENT_MAX_BYTES).toBe(10_000_000);
   });
 });
 
@@ -166,14 +166,14 @@ describe("matchesAttachmentMagic", () => {
     function hugeFtyp(size: number, total: number, brandAt?: number): Uint8Array {
       const data = new Uint8Array(total);
       data.set([...u32(size), ...ascii("ftyp"), ...ascii("heic"), ...u32(0)]);
-      // 10 MiB を 4 バイトずつ埋めると数秒かかり、並行して負荷が高いと timeout に届く。倍々に複製する
+      // 上限いっぱいの入力を 4 バイトずつ埋めると数秒かかり、並行して負荷が高いと timeout に届く。倍々に複製する
       data.set(ascii("mif1"), 16);
       for (let filled = 4; 16 + filled < total; filled *= 2)
         data.copyWithin(16 + filled, 16, 16 + filled);
       if (brandAt !== undefined) data.set(ascii("avif"), brandAt);
       return data;
     }
-    const TEN_MIB = 10 * 1024 * 1024;
+    const TEN_MIB = ATTACHMENT_MAX_BYTES;
 
     it("size が 0 でも上限の内側の brand は読む", () => {
       expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB, 64))).toBe(true);
@@ -191,7 +191,7 @@ describe("matchesAttachmentMagic", () => {
       );
     });
 
-    it("brand が無い 10 MiB の入力は false", () => {
+    it("brand が無い上限いっぱいの入力は false", () => {
       expect(matchesAttachmentMagic("image/avif", hugeFtyp(0, TEN_MIB))).toBe(false);
     });
 

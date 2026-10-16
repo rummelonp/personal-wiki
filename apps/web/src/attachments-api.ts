@@ -13,6 +13,7 @@ export type UploadFailureKind =
   | "forbidden"
   | "too_large"
   | "unsupported_type"
+  | "content_mismatch"
   | "unavailable"
   | "error";
 
@@ -34,7 +35,9 @@ async function readJson(res: Response): Promise<unknown> {
 
 /**
  * 添付を上げる。本文は File の生のバイト列で、種類は `Content-Type` に File の type を書く。
- * 失敗は kind で分ける。通信の失敗と、想定外の status や応答の形（411 を含む）は `error` にまとめる。
+ * 失敗は kind で分ける。415 は、Content-Type が受けない種類のとき（`unsupported_type`）と、
+ * 中身が申告した種類として読めないとき（`content_mismatch`）で別の kind にする。直し方が違うため。
+ * 通信の失敗と、想定外の status や応答の形（411 を含む）は `error` にまとめる。
  */
 export async function uploadAttachment(file: File, fetchFn: Fetch = fetch): Promise<UploadResult> {
   let res: Response;
@@ -72,8 +75,10 @@ export async function uploadAttachment(file: File, fetchFn: Fetch = fetch): Prom
       return { ok: false, kind: "forbidden" };
     case 413:
       return { ok: false, kind: "too_large" };
-    case 415:
-      return { ok: false, kind: "unsupported_type" };
+    case 415: {
+      const mismatch = recordOf(await readJson(res)).error === "content_mismatch";
+      return { ok: false, kind: mismatch ? "content_mismatch" : "unsupported_type" };
+    }
     case 503: {
       // 503 は Worker の一時的な不調でも返る。保存先が無い環境だけを「使えない」と伝える
       const unavailable = recordOf(await readJson(res)).error === "attachments_unavailable";

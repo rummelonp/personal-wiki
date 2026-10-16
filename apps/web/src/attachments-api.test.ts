@@ -46,6 +46,7 @@ describe("uploadAttachment", () => {
     [401, { error: "unauthorized" }, "unauthorized"],
     [413, { error: "payload_too_large" }, "too_large"],
     [415, { error: "unsupported_media_type" }, "unsupported_type"],
+    [415, { error: "content_mismatch", contentType: "image/png" }, "content_mismatch"],
     [503, { error: "attachments_unavailable" }, "unavailable"],
     [503, { error: "something_else" }, "error"],
     [403, { error: "forbidden" }, "forbidden"],
@@ -54,6 +55,11 @@ describe("uploadAttachment", () => {
   ])("%i %j は %s", async (status, body, kind) => {
     const result = await uploadAttachment(png(), async () => Response.json(body, { status }));
     expect(result).toEqual({ ok: false, kind });
+  });
+
+  it("本文が JSON でない 415 は unsupported_type にする", async () => {
+    const result = await uploadAttachment(png(), async () => new Response("nope", { status: 415 }));
+    expect(result).toEqual({ ok: false, kind: "unsupported_type" });
   });
 
   it("本文が JSON でない 503 は error にする", async () => {

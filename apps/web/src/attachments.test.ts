@@ -17,6 +17,7 @@ const SAVED: UploadResult = {
 const KINDS: UploadFailureKind[] = [
   "too_large",
   "unsupported_type",
+  "content_mismatch",
   "unauthorized",
   "forbidden",
   "unavailable",
@@ -60,7 +61,26 @@ describe("createAttachmentUploader", () => {
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ kind: "too_large" });
     expect(notices[0]?.message).toContain("big.png");
-    expect(notices[0]?.message).toContain("10 MiB");
+    expect(notices[0]?.message).toContain("10 MB までです");
+    // 上限を 1 バイト超えただけでも「10.0 MB」と書かない
+    expect(notices[0]?.message).toContain("10.1 MB あります");
+  });
+
+  it("上限を超える File の大きさは 1,000 単位の MB で出す", async () => {
+    const { uploader, notices } = setup(SAVED);
+    const big = new File([new Uint8Array(12_300_000)], "big.png", { type: "image/png" });
+    await expect(uploader.upload(big)).rejects.toThrow();
+    expect(notices[0]?.message).toContain("12.3 MB あります");
+  });
+
+  it("content_mismatch は形式が違う場合と別の文で、申告した形式を示す", async () => {
+    const { uploader, notices } = setup({ ok: false, kind: "content_mismatch" });
+    const jpeg = new File([new Uint8Array([1])], "photo.jpg", { type: "image/jpeg" });
+    await expect(uploader.upload(jpeg)).rejects.toThrow();
+    expect(notices[0]).toMatchObject({ kind: "content_mismatch" });
+    expect(notices[0]?.message).toContain("photo.jpg");
+    expect(notices[0]?.message).toContain("JPEG として読めませんでした");
+    expect(notices[0]?.message).not.toContain("添付できない形式");
   });
 
   it.each(["image/svg+xml", "image/heic", "image/bmp"])(
