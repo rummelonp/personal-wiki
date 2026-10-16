@@ -11,6 +11,17 @@ import type { WikiToolContext } from "./tool";
 
 const ORIGIN = "http://localhost";
 
+/** tools/list が返す順。tool の増減と入れ替えに気づけるよう、名前で比べる */
+const TOOL_NAMES = [
+  "search",
+  "list_recent",
+  "list_backlinks",
+  "read_page",
+  "create_page",
+  "update_page",
+  "append_to_page",
+];
+
 interface RpcResponse {
   jsonrpc: "2.0";
   id: number;
@@ -126,7 +137,7 @@ describe("/mcp の認可", () => {
     const { result } = await reader.rpc("tools/list");
     const tools = (result?.tools ?? []) as { name: string }[];
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(7);
+    expect(names.toSorted()).toEqual(TOOL_NAMES.toSorted());
     const before = await snapshotDb();
     const writeOnly: string[] = [];
     // scope は引数の検証より先に調べるので、空の引数で呼べば read の token では何も書かずに判定できる
@@ -249,15 +260,7 @@ describe("tools/list", () => {
       };
       annotations: { readOnlyHint?: boolean };
     }[];
-    expect(tools.map((t) => t.name)).toEqual([
-      "search",
-      "list_recent",
-      "list_backlinks",
-      "read_page",
-      "create_page",
-      "update_page",
-      "append_to_page",
-    ]);
+    expect(tools.map((t) => t.name)).toEqual(TOOL_NAMES);
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
     for (const tool of tools) {
       expect(tool.inputSchema.additionalProperties).toBe(false);
@@ -319,7 +322,8 @@ describe("tools/list", () => {
       expect(instructions).toContain(rule);
     }
     const listed = await rpc("tools/list", undefined, { "MCP-Protocol-Version": "2025-06-18" });
-    expect(listed.result?.tools).toHaveLength(7);
+    const listedTools = (listed.result?.tools ?? []) as { name: string }[];
+    expect(listedTools.map((tool) => tool.name)).toEqual(TOOL_NAMES);
   });
 });
 
@@ -1141,11 +1145,11 @@ describe("リクエストをまたいだ状態", () => {
 
       registerTool.mockClear();
       createWikiMcpServer(ctx, "no_such");
-      expect(registeredNames()).toHaveLength(7);
+      expect(registeredNames()).toEqual(TOOL_NAMES);
 
       registerTool.mockClear();
       createWikiMcpServer(ctx);
-      expect(registeredNames()).toHaveLength(7);
+      expect(registeredNames()).toEqual(TOOL_NAMES);
     } finally {
       registerTool.mockRestore();
     }
