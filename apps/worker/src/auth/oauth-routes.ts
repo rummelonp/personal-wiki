@@ -312,9 +312,17 @@ async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
   });
 }
 
+/**
+ * `2026/10/01 12:34 UTC` の形。同意画面と一覧は CSP で script を持たず、端末のタイムゾーンで書き直せない
+ * ので、UTC と明記して出す。
+ */
+function formatUtcMinutes(epochMs: number): string {
+  const iso = new Date(epochMs).toISOString();
+  return `${iso.slice(0, 10).replaceAll("-", "/")} ${iso.slice(11, 16)} UTC`;
+}
+
 function formatEpochSeconds(seconds: number | undefined): string {
-  if (seconds === undefined) return "なし";
-  return new Date(seconds * 1000).toISOString().replace(".000Z", "Z");
+  return seconds === undefined ? "なし" : formatUtcMinutes(seconds * 1000);
 }
 
 function grantsPage(
@@ -341,7 +349,8 @@ function grantsPage(
   });
   const list =
     rows.length > 0
-      ? `<ul class="grants">\n${rows.join("\n")}\n</ul>`
+      ? `<p>取り消すと、その接続からはすぐに読み書きできなくなります。同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
+<ul class="grants">\n${rows.join("\n")}\n</ul>`
       : "<p>許可した接続はありません。</p>";
   const more =
     nextCursor === undefined
@@ -350,8 +359,6 @@ function grantsPage(
   return pageHtml(
     "許可した接続",
     `<h1>許可した接続</h1>
-<p>取り消すと、その接続のトークンはすぐに使えなくなります。同じクライアントを同意画面で許可し直すと、
-以前の許可は自動で取り消されます。</p>
 ${list}
 ${more}`,
   );
@@ -392,7 +399,7 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-/** 「3 分前（2026-10-01 00:00 UTC）」の形。時計のずれで未来になった場合も 1 分以内に丸める */
+/** 「3 分前（2026/10/01 00:00 UTC）」の形。時計のずれで未来になった場合も 1 分以内に丸める */
 export function describeRegistration(registeredAt: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - registeredAt) / 60_000));
   const age =
@@ -403,8 +410,7 @@ export function describeRegistration(registeredAt: number, now: number): string 
         : minutes < 24 * 60
           ? `${Math.floor(minutes / 60)} 時間前`
           : `${Math.floor(minutes / (24 * 60))} 日前`;
-  const utc = new Date(registeredAt).toISOString().slice(0, 16).replace("T", " ");
-  return `${age}（${utc} UTC）`;
+  return `${age}（${formatUtcMinutes(registeredAt)}）`;
 }
 
 /**

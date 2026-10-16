@@ -431,7 +431,7 @@ describe("認可と同意画面", () => {
     const { html } = await openConsent(request, path);
     expect(html).toContain("この接続を、いま自分で始めた場合だけ許可してください");
     expect(html).toContain("他の人から送られたリンクで開いた場合は、許可しないでください");
-    expect(html).toMatch(/<dt>登録<\/dt>\s*<dd>[^<]*（\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC）/);
+    expect(html).toMatch(/<dt>登録<\/dt>\s*<dd>[^<]*（\d{4}\/\d{2}\/\d{2} \d{2}:\d{2} UTC）/);
     expect(html).not.toContain("<b>");
     expect(html).not.toContain("このコンピュータ上のアプリ");
   });
@@ -898,7 +898,18 @@ describe("許可した接続の一覧と取り消し", () => {
     expect(html).toContain("<strong>Claude</strong>");
     expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
     expect(html).toContain("権限: 読み取り<br>");
+    expect(html).toMatch(
+      /許可: \d{4}\/\d{2}\/\d{2} \d{2}:\d{2} UTC<br>期限: (なし|\d{4}\/\d{2}\/\d{2} \d{2}:\d{2} UTC)<\/p>/,
+    );
+    expect(html).toContain("取り消すと、その接続からはすぐに読み書きできなくなります。");
     expect(grantIdsOf(html)).toHaveLength(1);
+  });
+
+  it("接続が無ければ、取り消しの説明を出さずに無いことだけを伝える", async () => {
+    const { request } = setup();
+    const { html } = await openGrants(request);
+    expect(html).toContain("<p>許可した接続はありません。</p>");
+    expect(html).not.toContain("取り消すと");
   });
 
   it("取り消すと、その接続のアクセストークンと更新トークンだけが使えなくなる", async () => {
@@ -1030,7 +1041,7 @@ describe("describeRegistration", () => {
   const minute = 60_000;
 
   it("経過時間を分、時間、日で表し、UTC の日時を添える", () => {
-    const utc = "（2026-10-01 12:34 UTC）";
+    const utc = "（2026/10/01 12:34 UTC）";
     for (const [elapsed, label] of [
       [10_000, "1 分以内"],
       [3 * minute, "3 分前"],
@@ -1048,7 +1059,7 @@ describe("describeRegistration", () => {
 
   it("時計のずれで登録が未来になっても 1 分以内に丸める", () => {
     expect(describeRegistration(registeredAt, registeredAt - 5 * minute)).toBe(
-      "1 分以内（2026-10-01 12:34 UTC）",
+      "1 分以内（2026/10/01 12:34 UTC）",
     );
   });
 });
