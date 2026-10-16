@@ -5,6 +5,9 @@ const numberFormat = new Intl.NumberFormat("ja-JP");
 /** 画面に出す数。桁区切りを付ける（「65,536」）。 */
 export const formatCount = (value: number): string => numberFormat.format(value);
 
+// 数と単位の間を NBSP にする。普通の空白だと狭い幅で「18」と「バイト」が別の行に分かれる
+const withUnit = (value: number, unit: string): string => `${formatCount(value)} ${unit}`;
+
 /**
  * 保存できない入力の説明。送る前の検査とサーバーの失敗の両方で同じ文を出す。
  * 長さはバイトのまま出す。上限がバイトで決まっていて、文字数に直すと文字の種類でずれるため。
@@ -15,14 +18,14 @@ export function inputProblemMessage(problem: PageInputProblem): string {
       // title の比較は _ を空白とみなすので、_ だけの title も空として拒まれる
       return "タイトルが空か、空白と _ だけです。ほかの文字を入れてください。";
     case "title_too_long":
-      return `タイトルが ${formatCount(problem.bytes)} バイトあり、上限の ${formatCount(problem.max)} バイトを超えているため保存できません。タイトルを短くしてください。`;
+      return `タイトルが ${withUnit(problem.bytes, "バイト")}あり、上限の ${withUnit(problem.max, "バイト")}を超えているため保存できません。${withUnit(problem.bytes - problem.max, "バイト")}以上短くしてください。`;
     case "body_too_large":
-      return `本文が ${formatCount(problem.bytes)} バイトあり、上限の ${formatCount(problem.max)} バイトを超えているため保存できません。${formatCount(problem.bytes - problem.max)} バイト以上減らすか、ページを分けてください。`;
+      return `本文が ${withUnit(problem.bytes, "バイト")}あり、上限の ${withUnit(problem.max, "バイト")}を超えているため保存できません。${withUnit(problem.bytes - problem.max, "バイト")}以上減らすか、ページを分けてください。`;
     case "control_char":
       // 本文で拒むのは NUL だけ。印はエディタが赤く付ける
       return problem.field === "title"
-        ? `タイトルの ${formatCount(problem.at.column)} 文字目に、目に見えない制御文字（${problem.at.codePoint}）が入っていて保存できません。その文字を消してください。`
-        : `本文の ${formatCount(problem.at.line)} 行目に、目に見えない文字（NUL）が入っていて保存できません。赤い印の文字を消してください。`;
+        ? `タイトルの ${withUnit(problem.at.column, "文字目")}に、目に見えない制御文字（${problem.at.codePoint}）が入っていて保存できません。その文字を消してください。`
+        : `本文の ${withUnit(problem.at.line, "行目")}に、目に見えない文字（NUL）が入っていて保存できません。赤い印の文字を消してください。`;
   }
 }
 

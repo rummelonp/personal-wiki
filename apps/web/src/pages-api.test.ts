@@ -184,7 +184,7 @@ describe("失敗の分類", () => {
       reason: "invalid_input",
       problem: { reason: "title_too_long", bytes: 1530, max: 1024 },
       message:
-        "タイトルが 1,530 バイトあり、上限の 1,024 バイトを超えているため保存できません。タイトルを短くしてください。",
+        "タイトルが 1,530\u00a0バイトあり、上限の 1,024\u00a0バイトを超えているため保存できません。506\u00a0バイト以上短くしてください。",
     });
     const body = failing(413, {
       error: "body_too_large",
@@ -195,7 +195,7 @@ describe("失敗の分類", () => {
     expect(await createPage({ title: "a", body: "" }, body.fetchFn)).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "body_too_large", bytes: 65612, max: 65536 },
-      message: expect.stringContaining("76 バイト以上減らすか"),
+      message: expect.stringContaining("76\u00a0バイト以上減らすか"),
     });
   });
 
@@ -229,14 +229,14 @@ describe("失敗の分類", () => {
     expect(title).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "control_char", field: "title", at: { index: 2, column: 3 } },
-      message: expect.stringContaining("タイトルの 3 文字目"),
+      message: expect.stringContaining("タイトルの 3 文字目"),
     });
     const nul = failing(400, { error: "invalid_field", field: "body", reason: "control_char" });
     const body = await createPage({ title: "a", body: "1\n2\u0000" }, nul.fetchFn);
     expect(body).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "control_char", field: "body", at: { index: 3, line: 2 } },
-      message: expect.stringContaining("本文の 2 行目"),
+      message: expect.stringContaining("本文の 2 行目"),
     });
     for (const res of [title, body]) expect(JSON.stringify(res)).not.toContain("再読み込み");
   });
