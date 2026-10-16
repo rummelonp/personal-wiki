@@ -8,3 +8,14 @@ describe("listTitleClass", () => {
     expect(listTitleClass(listHeading("", ""))).toBe("list-title");
   });
 });
+
+describe("listHeading", () => {
+  it("公開範囲の絞り込みを見出しに入れ、tag と組み合わせる。検索中はどちらも使わない", () => {
+    expect(listHeading("", "", "draft")).toBe("下書き");
+    expect(listHeading("", "", "public")).toBe("公開ページ");
+    expect(listHeading("", "設計", "draft")).toBe("タグ「設計」の下書き");
+    expect(listHeading("", "設計", "public")).toBe("タグ「設計」の公開ページ");
+    expect(listHeading("", "設計", "")).toBe("タグ「設計」");
+    expect(listHeading("メモ", "設計", "draft")).toBe("「メモ」の検索結果");
+  });
+});

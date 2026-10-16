@@ -74,6 +74,23 @@ test("トップの一覧とタグに draft が出ない @smoke", async ({ page, 
   await expectNoHorizontalScroll(page);
 });
 
+test("公開範囲の絞り込みの欄を出さず、URL の visibility=draft でも公開ページの一覧を出す", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "匿名の絞り込み");
+  await api.createPage({ title, body: "本文", visibility: "public" });
+  await page.goto("/?visibility=draft");
+  await expect(page.getByRole("heading", { name: "最近の更新" })).toBeVisible();
+  await expect(
+    page.locator(".entries").getByRole("link", { name: title, exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "補助情報" })).toContainText("database");
+  await expect(page.getByRole("navigation", { name: "公開範囲で絞り込む" })).toHaveCount(0);
+  await expect(page.locator(".rail")).not.toContainText("公開範囲");
+  await expectNoDraftTrace(page);
+});
+
 test("draft の title の URL は存在しないページと同じ空のページになる", async ({ page }) => {
   const shown: string[] = [];
   for (const title of [SEED.draftSecret, "本当に存在しないページ"]) {

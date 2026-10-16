@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "./Link";
 import { listTags, type TagCount } from "./pages-api";
 import { RailSection } from "./Rail";
-import { homeHref, tagHref } from "./route";
+import { listHref, type VisibilityFilter } from "./route";
 
 /**
  * タグの一覧。tags が null は「出さない」を表す（読み込み中、または API がまだタグを返せない）。
@@ -26,7 +26,16 @@ export function useTags(): { tags: TagCount[] | null; settled: boolean } {
   return result;
 }
 
-export function TagsPanel({ tags, active }: { tags: TagCount[]; active: string }) {
+export function TagsPanel({
+  tags,
+  active,
+  visibility = "",
+}: {
+  tags: TagCount[];
+  active: string;
+  /** 一覧の公開範囲の絞り込み。タグを選んでも外しても保つ。 */
+  visibility?: VisibilityFilter;
+}) {
   return (
     <RailSection title="タグ">
       {tags.length === 0 ? (
@@ -38,14 +47,14 @@ export function TagsPanel({ tags, active }: { tags: TagCount[]; active: string }
             return (
               <li key={tag}>
                 {/*
-                  選択中のタグは、押すと絞り込みを外してトップへ戻るリンクにする。
+                  選択中のタグは、押すとタグの絞り込みだけを外すリンクにする（公開範囲の絞り込みは残す）。
                   名前は変えず（タグ名と件数のまま）、外れることは title の説明で伝える。
                 */}
                 <Link
                   className="chip chip-link"
-                  href={selected ? homeHref() : tagHref(tag)}
+                  href={listHref({ tag: selected ? "" : tag, visibility })}
                   aria-current={selected ? "page" : undefined}
-                  title={selected ? "絞り込みを外す" : undefined}
+                  title={selected ? "タグの絞り込みを外す" : undefined}
                 >
                   {tag}
                   <span className="chip-count">{count}</span>

@@ -178,6 +178,7 @@ export function App() {
               key={isOwner ? "owner" : "reader"}
               query={route.query}
               tag={route.tag}
+              visibility={route.visibility}
               owner={isOwner}
             />
           )}

@@ -2,21 +2,30 @@ import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
 import { LoadingMoreRows, LoadingStatus, SkeletonEntries, useSkeletonPainted } from "./Loading";
-import { listHeading, listTitleClass } from "./list-heading";
+import { listHeading, listTitleClass, VISIBILITY_FILTER_NOUNS } from "./list-heading";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
-import { homeHref, tagHref } from "./route";
+import { homeHref, tagHref, type VisibilityFilter } from "./route";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScroll } from "./scroll-restore";
 import { TagsPanel, useTags } from "./TagsPanel";
 import { useNow } from "./use-now";
 import { type PreviousList, useEntryList } from "./useEntryList";
+import { VisibilityFilterPanel } from "./VisibilityFilterPanel";
 
 interface HomeViewProps {
   query: string;
   tag: string;
+  visibility: VisibilityFilter;
   owner: boolean;
+}
+
+/** 絞り込んだ一覧が空のときの見出し。 */
+function filteredEmptyTitle(tag: string, visibility: VisibilityFilter): string {
+  if (visibility === "") return "このタグのページがありません";
+  const noun = VISIBILITY_FILTER_NOUNS[visibility];
+  return tag !== "" ? `このタグの${noun}がありません` : `${noun}がありません`;
 }
 
 /**
@@ -47,12 +56,22 @@ function PreviousEntries({
  * トップの配置。中央に抜粋付きの一覧、右にタグの一覧を置く。
  * データは useEntryList、行は EntryRow が受け持つので、配置を変えるときはこのファイルだけを直す。
  */
-export function HomeView({ query, tag, owner }: HomeViewProps) {
+export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
   const trimmed = query.trim();
   const searching = trimmed !== "";
   // 検索 API に tag の絞り込みは無いので、検索中は tag を一覧の取得にも強調にも使わない
   const effectiveTag = searching ? "" : tag;
-  const { state, loadMore, reload } = useEntryList({ query: trimmed, tag: effectiveTag, owner });
+  // 公開範囲も同じく検索中は使わない。匿名には絞り込みの欄が無く、API に draft を渡しても空になるだけなので、
+  // URL に残っていても絞り込まない
+  const ownerVisibility = owner ? visibility : "";
+  const effectiveVisibility = searching ? "" : ownerVisibility;
+  const filtered = effectiveTag !== "" || effectiveVisibility !== "";
+  const { state, loadMore, reload } = useEntryList({
+    query: trimmed,
+    tag: effectiveTag,
+    visibility: effectiveVisibility,
+    owner,
+  });
   const { tags, settled: tagsSettled } = useTags();
   // 狭い画面ではタグが一覧の下に続き、描かれる前は戻す位置に届かないので、タグが済むまで待つ
   useRestoreScroll(
@@ -70,11 +89,27 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
     </Link>
   );
 
-  const heading = listHeading(trimmed, tag);
+  const heading = listHeading(trimmed, tag, ownerVisibility);
+  // 公開範囲の欄もタグの取得が済むまで出さない。先に出すと、後から届いたタグの欄に押し下げられる。
+  // 検索中は公開範囲で絞れず、欄のリンクを押すと検索語も落ちるので出さない
+  const showVisibilityFilter = owner && tagsSettled && !searching;
   const busy = state.status === "loading" || (state.status === "ready" && state.loadingMore);
 
   return (
-    <RailLayout rail={tags === null ? null : <TagsPanel tags={tags} active={effectiveTag} />}>
+    <RailLayout
+      rail={
+        tags === null && !showVisibilityFilter ? null : (
+          <>
+            {tags !== null && (
+              <TagsPanel tags={tags} active={effectiveTag} visibility={effectiveVisibility} />
+            )}
+            {showVisibilityFilter && (
+              <VisibilityFilterPanel tag={effectiveTag} active={effectiveVisibility} />
+            )}
+          </>
+        )
+      }
+    >
       {busy && (
         <LoadingStatus
           text={state.status === "ready" ? "続きを読み込み中…" : "一覧を読み込み中…"}
@@ -141,10 +176,13 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
             }
           />
         )}
-        {state.status === "ready" && state.entries.length === 0 && !searching && tag !== "" && (
-          <EmptyState title="このタグのページがありません" actions={backToRecent} />
+        {state.status === "ready" && state.entries.length === 0 && filtered && (
+          <EmptyState
+            title={filteredEmptyTitle(effectiveTag, effectiveVisibility)}
+            actions={backToRecent}
+          />
         )}
-        {state.status === "ready" && state.entries.length === 0 && !searching && tag === "" && (
+        {state.status === "ready" && state.entries.length === 0 && !searching && !filtered && (
           <EmptyState
             title={owner ? "ページがまだありません" : "公開されているページはまだありません"}
             text={owner ? "ヘッダーの「新規作成」から、最初のページを作れます。" : undefined}

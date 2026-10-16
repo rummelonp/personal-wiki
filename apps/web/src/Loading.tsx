@@ -268,7 +268,13 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
   useHoldScrollRestore();
   switch (route.name) {
     case "home":
-      return <ListSkeleton heading={listHeading(route.query, route.tag)} />;
+      // 見出しは URL だけから作り、データは出さない。起動時は owner か分からない（undefined）ので、
+      // 公開範囲も URL のとおりに出す
+      return (
+        <ListSkeleton
+          heading={listHeading(route.query, route.tag, owner === false ? "" : route.visibility)}
+        />
+      );
     case "title":
       return <PageSkeleton title={loadingTitleFor(route.title)} owner={owner} />;
     case "page":

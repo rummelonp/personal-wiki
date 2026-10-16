@@ -399,15 +399,20 @@ a {
  * 選択中は中立の地で示し、公開の選択中だけ差し色の文字と薄い地にする（差し色が「公開中」の印になる）。
  * どちらも塗りの強調ではなく、1 画面の塗りはヘッダーの新規作成に譲る
  */
-.segmented-option[aria-pressed="true"] {
+.segmented-option:is([aria-pressed="true"], [aria-current="page"]) {
   font-weight: var(--font-weight-medium);
   color: var(--color-fg);
   background-color: var(--color-selected);
 }
 
-.segmented-option[aria-pressed="true"][data-value="public"] {
+.segmented-option:is([aria-pressed="true"], [aria-current="page"])[data-value="public"] {
   color: var(--color-tag-fg);
   background-color: var(--color-tag-bg);
+}
+
+/* 枠の overflow で切れないよう、focus の輪は内側に引く */
+.segmented-option:focus-visible {
+  outline-offset: calc(-2 * var(--border-width));
 }
 
 .segmented-option:disabled {
@@ -418,6 +423,13 @@ a {
 /* 応答を待っている間は、押した選択を薄くせず、押したことが分かるようにする */
 .segmented[data-pending] .segmented-option[aria-pressed="true"]:disabled {
   opacity: 1;
+}
+
+a.segmented-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 /* 公開の状態と操作の行。title の下に置く */

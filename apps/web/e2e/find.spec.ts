@@ -319,7 +319,7 @@ test("選択中のタグをもう一度押すと、絞り込みが外れてト�
   const selected = page.locator(".rail .chip-link[aria-current='page']");
   await expect(selected).toHaveCount(1);
   await expect(selected).toHaveAttribute("href", "/");
-  await expect(selected).toHaveAttribute("title", "絞り込みを外す");
+  await expect(selected).toHaveAttribute("title", "タグの絞り込みを外す");
   await expect(page.locator(".rail .chip-link:not([aria-current])").first()).not.toHaveAttribute(
     "href",
     "/",
@@ -337,6 +337,54 @@ test("選択中のタグをもう一度押すと、絞り込みが外れてト�
   await page.goBack();
   await expect(page).toHaveURL(`/?tag=${encodeURIComponent("database")}`);
   await expect(page.getByRole("heading", { name: "タグ「database」" })).toBeVisible();
+});
+
+test("owner は公開範囲で絞り込め、タグと組み合わせられ、タグを外しても公開範囲は残る", async ({
+  page,
+  api,
+}, testInfo) => {
+  // 他のテストが作るページと混ざらないよう、このテストだけのタグで 1 件ずつ作る
+  const tag = `vis${Math.random().toString(36).slice(2, 8)}`;
+  const publicTitle = uniqueTitle(testInfo, "公開範囲の公開");
+  const draftTitle = uniqueTitle(testInfo, "公開範囲の下書き");
+  await api.createPage({ title: publicTitle, body: `#${tag}`, visibility: "public" });
+  await api.createPage({ title: draftTitle, body: `#${tag}` });
+
+  await page.goto(`/?tag=${tag}`);
+  const entries = page.locator(".entries .entry");
+  const filter = page.getByRole("navigation", { name: "公開範囲で絞り込む" });
+  await expect(entries).toHaveCount(2);
+  await expect(filter.locator("[aria-current='page']")).toHaveText("すべて");
+
+  await filter.getByRole("link", { name: "下書き", exact: true }).click();
+  await expect(page).toHaveURL(`/?tag=${tag}&visibility=draft`);
+  await expect(page.getByRole("heading", { name: `タグ「${tag}」の下書き` })).toBeVisible();
+  await expect(entries).toHaveCount(1);
+  await expect(entries.getByRole("link", entryLink(draftTitle))).toBeVisible();
+
+  await filter.getByRole("link", { name: "公開", exact: true }).click();
+  await expect(page).toHaveURL(`/?tag=${tag}&visibility=public`);
+  await expect(page.getByRole("heading", { name: `タグ「${tag}」の公開ページ` })).toBeVisible();
+  await expect(entries).toHaveCount(1);
+  await expect(entries.getByRole("link", entryLink(publicTitle))).toBeVisible();
+  // 絞り込み中も公開の印は出したままにする
+  await expect(entries.locator(".chip-public")).toHaveText("公開");
+
+  // 選択中のタグを押すと、タグの絞り込みだけが外れる
+  await page.locator(".rail .chip-link[aria-current='page']").click();
+  await expect(page).toHaveURL("/?visibility=public");
+  await expect(page.getByRole("heading", { name: "公開ページ" })).toBeVisible();
+  await expect(filter.locator("[aria-current='page']")).toHaveText("公開");
+  // 取り直しの間は前の一覧（タグで絞った公開の 1 件）が残るので、取り直した一覧を待ってから見る
+  await expect(page.locator(".home:not([aria-busy])")).toBeVisible();
+  const fresh = page.locator(".entries:not(.entries-stale) .entry");
+  await expect(fresh.first()).toBeVisible();
+  await expect(fresh.filter({ hasNot: page.locator(".chip-public") })).toHaveCount(0);
+  await expect(page.locator(".entries").getByRole("link", entryLink(draftTitle))).toHaveCount(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL(`/?tag=${tag}&visibility=public`);
+  await expect(page.getByRole("heading", { name: `タグ「${tag}」の公開ページ` })).toBeVisible();
 });
 
 test("backlink から参照元へ移れる", async ({ page, seedIds }) => {

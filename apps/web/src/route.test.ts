@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { forgetTitles, loadingTitleFor } from "./page-titles";
 import {
   homeHref,
+  listHref,
   missingPagePath,
   navigate,
   newPageHref,
@@ -15,13 +16,25 @@ const ID = "AAAAAAAAAAAAAAAAAAAAAA";
 
 describe("parseRoute", () => {
   it("/ はクエリ q を検索語として読む", () => {
-    expect(parseRoute("/", "")).toEqual({ name: "home", query: "", tag: "" });
+    expect(parseRoute("/", "")).toEqual({ name: "home", query: "", tag: "", visibility: "" });
     expect(parseRoute("/", "?q=%E6%A4%9C%E7%B4%A2")).toEqual({
       name: "home",
       query: "検索",
       tag: "",
+      visibility: "",
     });
     expect(parseRoute("/", "?tag=%E6%97%A5%E8%A8%98")).toMatchObject({ query: "", tag: "日記" });
+  });
+
+  it("/ はクエリ visibility を公開範囲の絞り込みとして読み、知らない値は絞り込まない", () => {
+    expect(parseRoute("/", "?visibility=draft")).toMatchObject({ visibility: "draft" });
+    expect(parseRoute("/", "?tag=a&visibility=public")).toMatchObject({
+      tag: "a",
+      visibility: "public",
+    });
+    for (const value of ["", "all", "Draft", "bogus"]) {
+      expect(parseRoute("/", `?visibility=${value}`), value).toMatchObject({ visibility: "" });
+    }
   });
 
   it("/?new は新規作成の画面にする。ほかのパスの new は title として読む", () => {
@@ -65,6 +78,17 @@ describe("href", () => {
     expect(homeHref(" a b ")).toBe("/?q=a%20b");
     expect(tagHref("日記 a")).toBe("/?tag=%E6%97%A5%E8%A8%98%20a");
     expect(pageHref(ID)).toBe(`/p/${ID}`);
+  });
+
+  it("一覧の絞り込みは tag と visibility を組み合わせ、どちらも無ければ / にする", () => {
+    expect(listHref({})).toBe("/");
+    expect(listHref({ tag: "a b" })).toBe(tagHref("a b"));
+    expect(listHref({ visibility: "draft" })).toBe("/?visibility=draft");
+    expect(listHref({ tag: "日記", visibility: "public" })).toBe(
+      "/?tag=%E6%97%A5%E8%A8%98&visibility=public",
+    );
+    const href = listHref({ tag: "a/b", visibility: "draft" });
+    expect(parseRoute("/", href.slice(1))).toMatchObject({ tag: "a/b", visibility: "draft" });
   });
 
   it("public のページは /<title>、draft と予約語の title は /p/<id> にする", () => {

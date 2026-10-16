@@ -5,6 +5,7 @@ import { HomeView } from "./HomeView";
 import { setLoadingDelay } from "./Loading";
 import { openNewPage } from "./new-page";
 import { type ApiResult, listRecent, listTags, searchPages } from "./pages-api";
+import type { VisibilityFilter } from "./route";
 import { useEntryList } from "./useEntryList";
 
 vi.mock("./pages-api", async (importOriginal) => {
@@ -48,11 +49,18 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function mountHome(query: string, owner: boolean, tag = "") {
+async function mountHome(
+  query: string,
+  owner: boolean,
+  tag = "",
+  visibility: VisibilityFilter = "",
+) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<HomeView query={query} tag={tag} owner={owner} />));
+  await act(async () =>
+    root?.render(<HomeView query={query} tag={tag} visibility={visibility} owner={owner} />),
+  );
 }
 
 async function renderHome(query: string, owner = true) {
@@ -151,7 +159,10 @@ describe("useEntryList の条件の切り替え", () => {
     vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
     const seen: { tag: string; status: string }[] = [];
     function Probe({ tag }: { tag: string }) {
-      seen.push({ tag, status: useEntryList({ query: "", tag, owner: true }).state.status });
+      seen.push({
+        tag,
+        status: useEntryList({ query: "", tag, visibility: "", owner: true }).state.status,
+      });
       return null;
     }
     container = document.createElement("div");
@@ -170,7 +181,7 @@ describe("条件を変えて取り直している間の一覧", () => {
   async function mountProbe() {
     const seen: { tag: string; status: string; previous: string[] | undefined }[] = [];
     function Probe({ tag }: { tag: string }) {
-      const { state } = useEntryList({ query: "", tag, owner: true });
+      const { state } = useEntryList({ query: "", tag, visibility: "", owner: true });
       seen.push({
         tag,
         status: state.status,
@@ -220,7 +231,7 @@ describe("条件を変えて取り直している間の一覧", () => {
       );
       await mountHome("", true);
       await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
-      await act(async () => root?.render(<HomeView query="" tag="x" owner={true} />));
+      await act(async () => root?.render(<HomeView query="" tag="x" visibility="" owner={true} />));
       expect(container?.querySelector(".home")?.getAttribute("aria-busy")).toBe("true");
       expect(container?.querySelector(".entries-stale .entry-title")?.textContent).toBe("前の一覧");
       expect(container?.querySelector(".entries-stale.skeleton-painted")).not.toBeNull();
@@ -283,7 +294,7 @@ describe("HomeView の公開の印", () => {
     await renderHome("", true);
     expect(rows()[0]?.querySelector(".chip-public")?.textContent).toBe("公開");
     expect(rows()[1]?.querySelector(".chip-public")).toBeNull();
-    expect(container?.textContent).not.toContain("下書き");
+    expect(container?.querySelector(".entries")?.textContent).not.toContain("下書き");
   });
 
   it("匿名の一覧は全行が公開なので、印を付けない", async () => {
@@ -470,5 +481,119 @@ describe("HomeView の取得の失敗", () => {
     expect(listRecent).toHaveBeenCalledTimes(2);
     expect(vi.mocked(listRecent).mock.calls[1]?.[1]).toMatchObject({ tag: "x" });
     expect(container?.textContent).not.toContain("一覧を取得できませんでした");
+  });
+});
+
+describe("HomeView の公開範囲の絞り込み", () => {
+  const filter = () =>
+    container?.querySelector<HTMLElement>("nav[aria-label='公開範囲で絞り込む']");
+  const options = () =>
+    [...(filter()?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].map((a) => ({
+      label: a.textContent,
+      href: a.getAttribute("href"),
+      current: a.getAttribute("aria-current"),
+    }));
+
+  it("owner にはタグの下に欄を出し、選択中のタグを保ったリンクにする", async () => {
+    vi.mocked(listTags).mockResolvedValue(
+      ok([
+        { tag: "x", count: 1 },
+        { tag: "y", count: 1 },
+      ]),
+    );
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: null }),
+    );
+    await mountHome("", true, "x", "draft");
+    await vi.waitFor(() => expect(filter()).not.toBeNull());
+    expect(vi.mocked(listRecent).mock.calls[0]?.[1]).toMatchObject({
+      tag: "x",
+      visibility: "draft",
+    });
+    expect(container?.querySelector("h1")?.textContent).toBe("タグ「x」の下書き");
+    expect(options()).toEqual([
+      { label: "すべて", href: "/?tag=x", current: null },
+      { label: "公開", href: "/?tag=x&visibility=public", current: null },
+      { label: "下書き", href: "/?tag=x&visibility=draft", current: "page" },
+    ]);
+    const sections = [...(container?.querySelectorAll(".rail .rail-label") ?? [])];
+    expect(sections.map((label) => label.textContent)).toEqual(["タグ", "公開範囲"]);
+    // タグを外しても別のタグに移っても、公開範囲の絞り込みは残す
+    const tagHrefs = [...(container?.querySelectorAll(".rail .chip-link") ?? [])].map((chip) =>
+      chip.getAttribute("href"),
+    );
+    expect(tagHrefs).toEqual(["/?visibility=draft", "/?tag=y&visibility=draft"]);
+  });
+
+  it("「さらに表示」も同じ公開範囲で読み足す", async () => {
+    vi.mocked(listRecent).mockResolvedValueOnce(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: "c1" }),
+    );
+    vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+    await mountHome("", true, "", "public");
+    await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+    await act(async () => container?.querySelector<HTMLButtonElement>("button.button")?.click());
+    expect(vi.mocked(listRecent).mock.calls[1]).toMatchObject(["c1", { visibility: "public" }]);
+  });
+
+  it("絞り込んだ一覧が空なら、公開範囲とタグに合わせた見出しを出す", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    for (const [tag, visibility, expected] of [
+      ["", "draft", "下書きがありません"],
+      ["", "public", "公開ページがありません"],
+      ["x", "draft", "このタグの下書きがありません"],
+    ] as const) {
+      await mountHome("", true, tag, visibility);
+      await vi.waitFor(() => expect(container?.querySelector(".empty")).not.toBeNull());
+      expect(container?.querySelector(".empty-title")?.textContent, expected).toBe(expected);
+      act(() => root?.unmount());
+      container?.remove();
+    }
+  });
+
+  it("匿名には欄を出さず、URL に残った公開範囲で絞り込まない", async () => {
+    vi.mocked(listTags).mockResolvedValue(ok([{ tag: "x", count: 1 }]));
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: null }),
+    );
+    await mountHome("", false, "", "draft");
+    await vi.waitFor(() => expect(container?.querySelector(".rail .chip-link")).not.toBeNull());
+    expect(filter()).toBeNull();
+    expect(vi.mocked(listRecent).mock.calls[0]?.[1]).toMatchObject({ visibility: "" });
+    expect(container?.querySelector("h1")?.textContent).toBe("最近の更新");
+    expect(container?.querySelector(".rail .chip-link")?.getAttribute("href")).toBe("/?tag=x");
+  });
+
+  it("検索中は公開範囲で絞り込まず、欄も出さない", async () => {
+    vi.mocked(listTags).mockResolvedValue(ok([{ tag: "x", count: 1 }]));
+    vi.mocked(searchPages).mockResolvedValue(
+      ok([{ ...summary("AAAAAAAAAAAAAAAAAAAAAA", "行"), excerpt: "語" }]),
+    );
+    await mountHome("語", true, "", "draft");
+    await vi.waitFor(() => {
+      expect(container?.querySelector(".entries .entry")).not.toBeNull();
+      expect(container?.querySelector(".rail .chip-link")).not.toBeNull();
+    });
+    expect(filter()).toBeNull();
+    expect(listRecent).not.toHaveBeenCalled();
+  });
+
+  it("タグの取得が済むまでは欄を出さない", async () => {
+    vi.mocked(listTags).mockReturnValue(new Promise(() => {}));
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: null }),
+    );
+    await mountHome("", true, "", "draft");
+    await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+    expect(filter()).toBeNull();
+  });
+
+  it("タグの取得に失敗しても、owner には公開範囲の欄を出す", async () => {
+    vi.mocked(listTags).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    await mountHome("", true);
+    await vi.waitFor(() => expect(filter()).not.toBeNull());
+    expect(container?.querySelector(".rail .chip-link")).toBeNull();
+    expect(options().find((o) => o.current === "page")?.label).toBe("すべて");
   });
 });

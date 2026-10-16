@@ -15,17 +15,30 @@ import { rememberScroll, stateForReplace } from "./scroll-restore";
  * ページの URL の読み方は Worker（OGP の差し込み）と同じ parsePagePath に任せる。
  */
 export type Route =
-  | { name: "home"; query: string; tag: string }
+  | { name: "home"; query: string; tag: string; visibility: VisibilityFilter }
   | { name: "new" }
   | { name: "page"; id: string }
   | { name: "title"; title: string }
   | { name: "unknown" };
 
+/** 一覧の公開範囲の絞り込み。空文字列は絞り込まない。 */
+export type VisibilityFilter = "" | "public" | "draft";
+
+/** 知らない値は絞り込まない扱いにする。API に渡すと 400 になり、一覧が出なくなるため。 */
+function parseVisibilityFilter(value: string | null): VisibilityFilter {
+  return value === "public" || value === "draft" ? value : "";
+}
+
 export function parseRoute(pathname: string, search: string): Route {
   if (pathname === "/") {
     const params = new URLSearchParams(search);
     if (params.has("new")) return { name: "new" };
-    return { name: "home", query: params.get("q") ?? "", tag: params.get("tag") ?? "" };
+    return {
+      name: "home",
+      query: params.get("q") ?? "",
+      tag: params.get("tag") ?? "",
+      visibility: parseVisibilityFilter(params.get("visibility")),
+    };
   }
   const path = parsePagePath(pathname);
   if (path === null) return { name: "unknown" };
@@ -40,7 +53,21 @@ export function homeHref(query = ""): string {
 export const newPageHref = "/?new";
 
 /** タグで絞った一覧。パスは増やさず、クエリで表す。 */
-export const tagHref = (tag: string): string => `/?tag=${encodeURIComponent(tag)}`;
+export const tagHref = (tag: string): string => listHref({ tag });
+
+/** タグと公開範囲で絞った一覧。どちらも空なら `/`。 */
+export function listHref({
+  tag = "",
+  visibility = "",
+}: {
+  tag?: string;
+  visibility?: VisibilityFilter;
+}): string {
+  const params: string[] = [];
+  if (tag !== "") params.push(`tag=${encodeURIComponent(tag)}`);
+  if (visibility !== "") params.push(`visibility=${visibility}`);
+  return params.length === 0 ? "/" : `/?${params.join("&")}`;
+}
 
 export const pageHref = pageIdPath;
 

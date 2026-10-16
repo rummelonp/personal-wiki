@@ -550,12 +550,15 @@ async function listResult<T extends PageSummary>(
 
 export async function listRecent(
   cursor: string | null,
-  options: { tag?: string; limit?: number } = {},
+  options: { tag?: string; visibility?: Visibility | ""; limit?: number } = {},
   fetchFn: Fetch = fetch,
 ): Promise<ApiResult<PageList<ListedPage>>> {
   const params = new URLSearchParams();
   if (cursor !== null) params.set("cursor", cursor);
   if (options.tag !== undefined && options.tag !== "") params.set("tag", options.tag);
+  if (options.visibility !== undefined && options.visibility !== "") {
+    params.set("visibility", options.visibility);
+  }
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.size === 0 ? "" : `?${params}`;
   return listResult(await request(fetchFn, `/api/pages/recent${query}`), isListedPage);
