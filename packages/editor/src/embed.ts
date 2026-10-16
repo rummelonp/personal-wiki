@@ -19,7 +19,7 @@ import {
   type WikiLinkParts,
   wikiLinkNodes,
 } from "@personal-wiki/markdown";
-import { isUploadPlaceholderTarget } from "./attachment-upload";
+import { isUploadingTarget } from "./attachment-upload";
 import {
   type BuiltDecorations,
   decorationPlugin,
@@ -255,7 +255,7 @@ class ImageEmbedWidget extends WidgetType {
   }
 }
 
-/** アップロード中の仮の記法（attachment-upload.ts）を、仮のファイル名の代わりに描く表示 */
+/** この view でアップロード中の仮の記法（attachment-upload.ts）を、仮のファイル名の代わりに描く表示 */
 class UploadingEmbedWidget extends WidgetType {
   constructor(readonly target: string) {
     super();
@@ -474,6 +474,7 @@ class PageEmbedWidget extends WidgetType {
 const sectionContents = new WeakMap<EditorView, SectionContents>();
 
 type MediaWidgetFactory = (
+  state: EditorState,
   parts: WikiLinkParts,
   resolveUrl: AttachmentUrlResolver | null,
   block: boolean,
@@ -484,8 +485,8 @@ type MediaWidgetFactory = (
  * `MediaEmbedKind` に種類を足すと、ここに widget が無い限り型検査で落ちる。
  */
 const mediaWidgetFactories: { readonly [K in MediaEmbedKind]: MediaWidgetFactory } = {
-  image: (parts, resolveUrl, block) =>
-    isUploadPlaceholderTarget(parts.target)
+  image: (state, parts, resolveUrl, block) =>
+    isUploadingTarget(state, parts.target)
       ? new UploadingEmbedWidget(parts.target)
       : new ImageEmbedWidget(
           parts.target,
@@ -494,7 +495,7 @@ const mediaWidgetFactories: { readonly [K in MediaEmbedKind]: MediaWidgetFactory
           block,
         ),
   // `|` より後ろは読まない。Obsidian の help は動画のサイズ指定を定めていない
-  video: (parts, resolveUrl, block) =>
+  video: (_state, parts, resolveUrl, block) =>
     new VideoEmbedWidget(parts.target, resolveUrl ? resolveUrl(parts.target) : null, block),
 };
 
@@ -811,7 +812,7 @@ function build(
               page,
             );
         } else {
-          render = (block) => mediaWidgetFactories[kind](parts, resolveUrl, block);
+          render = (block) => mediaWidgetFactories[kind](state, parts, resolveUrl, block);
         }
         placeEmbed(state, tree, previous, reveal, decorations, atomic, embedFrom, node.to, render);
         return false;

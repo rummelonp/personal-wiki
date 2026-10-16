@@ -1,4 +1,4 @@
-import type { Extension } from "@codemirror/state";
+import { type EditorState, type Extension, StateEffect, StateField } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { docReplacement } from "./replace-doc";
 import { dispatchWhenSettled } from "./settled-dispatch";
@@ -33,25 +33,62 @@ function extractFiles(dataTransfer: DataTransfer | null, accept: AcceptAttachmen
 
 let uploadSeq = 0;
 
+/** アップロードごとの識別子。仮の記法の名前に入れ、完了時に doc から探す手がかりにする。 */
+export function newUploadToken(): string {
+  return `${Date.now()}-${uploadSeq++}`;
+}
+
 /**
- * アップロード中を示す一時的な記法。
+ * アップロード中を示す一時的な記法の embed の target。
  * アップロード中も自動保存は走るので、拡張子の無い `![[Uploading:…]]` はページ embed として
  * links に偽の title を入れてしまう。画像の拡張子を付けると添付の embed に分類されて links には
  * 入らない。拡張子の前に `.` を入れるのは、サーバーが振る名前（base64url の 22 文字と拡張子）の
  * 文字クラスに無い文字を含め、長さに頼らず添付の参照にもならないようにするため。
  */
-function placeholderText(token: string): string {
-  return `![[uploading.${token}.png]]`;
+export function placeholderTarget(token: string): string {
+  return `uploading.${token}.png`;
 }
 
-const PLACEHOLDER_TARGET = /^uploading\.\d+-\d+\.png$/;
+const PLACEHOLDER_TARGET = /^uploading\.(\d+-\d+)\.png$/;
+
+/** `placeholderTarget` が作る形の target から token を取り出す。その形でなければ null。 */
+export function uploadTokenOf(target: string): string | null {
+  return PLACEHOLDER_TARGET.exec(target)?.[1] ?? null;
+}
+
+function placeholderText(token: string): string {
+  return `![[${placeholderTarget(token)}]]`;
+}
+
+const startUpload = StateEffect.define<string>();
+const finishUpload = StateEffect.define<string>();
 
 /**
- * `placeholderText` が書く embed の target か。画像の widget が、この形のときだけ
- * 添付中の表示に切り替えるために使う。名前を見るだけなので、アップロードの状態は持たない。
+ * この view で進行中のアップロードの token。仮の記法の名前だけでは、途中で閉じて本文に残ったものや
+ * 別の端末から届いたものを、進行中のものと見分けられない。state に持つので、開き直した view は空から
+ * 始まり、残った仮の記法は未解決の画像として描かれる。
  */
-export function isUploadPlaceholderTarget(target: string): boolean {
-  return PLACEHOLDER_TARGET.test(target);
+const uploadingTokens = StateField.define<ReadonlySet<string>>({
+  create: () => new Set(),
+  update(tokens, transaction) {
+    let next: Set<string> | null = null;
+    for (const effect of transaction.effects) {
+      if (effect.is(startUpload)) {
+        next ??= new Set(tokens);
+        next.add(effect.value);
+      } else if (effect.is(finishUpload)) {
+        next ??= new Set(tokens);
+        next.delete(effect.value);
+      }
+    }
+    return next ?? tokens;
+  },
+});
+
+/** `target` が、この state でアップロード中の仮の記法か。 */
+export function isUploadingTarget(state: EditorState, target: string): boolean {
+  const token = uploadTokenOf(target);
+  return token !== null && (state.field(uploadingTokens, false)?.has(token) ?? false);
 }
 
 function insertPlaceholder(view: EditorView, pos: number, token: string): number {
@@ -59,6 +96,7 @@ function insertPlaceholder(view: EditorView, pos: number, token: string): number
   view.dispatch({
     changes: { from: pos, to: pos, insert: text },
     selection: { anchor: pos + text.length },
+    effects: startUpload.of(token),
   });
   return text.length;
 }
@@ -81,15 +119,23 @@ function resolvePlaceholder(
   dispatchWhenSettled(view, key, () => {
     const text = placeholderText(token);
     const index = view.state.doc.toString().indexOf(text);
-    if (index === -1) return;
-    view.dispatch({ changes: { from: index, to: index + text.length, insert: replacement } });
+    // 編集で消えていても、token は進行中から外す（元に戻す操作で仮の記法が戻ったときに「添付中」と出さない）
+    const effects = finishUpload.of(token);
+    if (index === -1) {
+      view.dispatch({ effects });
+      return;
+    }
+    view.dispatch({
+      changes: { from: index, to: index + text.length, insert: replacement },
+      effects,
+    });
   });
 }
 
 function uploadFiles(view: EditorView, pos: number, files: File[], upload: UploadAttachment): void {
   let insertPos = pos;
   for (const file of files) {
-    const token = `${Date.now()}-${uploadSeq++}`;
+    const token = newUploadToken();
     const key = Symbol(token);
     insertPos += insertPlaceholder(view, insertPos, token);
     upload(file).then(
@@ -116,6 +162,7 @@ export function attachmentUpload(
     // 完了時の置換に要る。createEditor の view は持っているが、単独で使っても投げないようにする。
     // 同じ extension の重複は CodeMirror が 1 つにまとめる。
     docReplacement,
+    uploadingTokens,
     EditorView.domEventHandlers({
       paste(event, view) {
         // domEventHandlers は CodeMirror 自身の builtin handler（`readOnly` を見る）より先に

@@ -2,7 +2,14 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { extractDerived, extractWikiLinks, isAttachmentTarget } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { attachmentUpload, type UploadAttachment } from "./attachment-upload";
+import {
+  attachmentUpload,
+  isUploadingTarget,
+  newUploadToken,
+  placeholderTarget,
+  type UploadAttachment,
+  uploadTokenOf,
+} from "./attachment-upload";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 
 /** サーバーが振る添付の名前（packages/domain の規則と同じ形） */
@@ -221,6 +228,80 @@ describe("attachmentUpload", () => {
     const embed = v.contentDOM.querySelector<HTMLElement>(".cm-embed-image");
     expect(embed?.querySelector(".cm-embed-unresolved")?.textContent).toBe("uploading.draft.png");
     expect(embed?.textContent).not.toContain("画像を添付中…");
+  });
+
+  it("draws a leftover placeholder that no upload in this view owns as an unresolved image", () => {
+    const target = placeholderTarget(newUploadToken());
+    const v = mountWithOptions({ doc: `![[${target}]]`, resolveAttachmentUrl: () => null });
+    v.dispatch({ selection: { anchor: 0 } });
+
+    const embed = v.contentDOM.querySelector<HTMLElement>(".cm-embed-image");
+    expect(embed?.querySelector(".cm-embed-unresolved")?.textContent).toBe(target);
+    expect(embed?.querySelector(".cm-embed-edit")).not.toBeNull();
+    expect(embed?.textContent).not.toContain("画像を添付中…");
+  });
+
+  it("stops treating the token as uploading once the upload succeeds", async () => {
+    let finish: (filename: string) => void = () => {};
+    const upload: UploadAttachment = () =>
+      new Promise((resolve) => {
+        finish = (filename) => resolve({ filename });
+      });
+    const v = mount(upload, "");
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    const target = /!\[\[(.+)\]\]/.exec(v.state.doc.toString())?.[1] ?? "";
+    expect(isUploadingTarget(v.state, target)).toBe(true);
+
+    finish("DONE.png");
+
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("![[DONE.png]]"));
+    expect(isUploadingTarget(v.state, target)).toBe(false);
+  });
+
+  it("stops treating the token as uploading once the upload fails, even if undo brings the placeholder back", async () => {
+    let fail: () => void = () => {};
+    const upload: UploadAttachment = () =>
+      new Promise((_resolve, reject) => {
+        fail = () => reject(new Error("failed"));
+      });
+    const v = mountWithOptions({ onUploadAttachment: upload, resolveAttachmentUrl: () => null });
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    const placeholder = v.state.doc.toString();
+    const target = /!\[\[(.+)\]\]/.exec(placeholder)?.[1] ?? "";
+
+    fail();
+
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe(""));
+    expect(isUploadingTarget(v.state, target)).toBe(false);
+    v.dispatch({ changes: { from: 0, insert: placeholder }, selection: { anchor: 0 } });
+    const embed = v.contentDOM.querySelector<HTMLElement>(".cm-embed-image");
+    expect(embed?.textContent).not.toContain("画像を添付中…");
+  });
+
+  it("stops treating the token as uploading when the user removed the placeholder before it finished", async () => {
+    let finish: (filename: string) => void = () => {};
+    const upload: UploadAttachment = () =>
+      new Promise((resolve) => {
+        finish = (filename) => resolve({ filename });
+      });
+    const v = mount(upload, "");
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    const target = /!\[\[(.+)\]\]/.exec(v.state.doc.toString())?.[1] ?? "";
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: "" } });
+
+    finish("DONE.png");
+
+    await vi.waitFor(() => expect(isUploadingTarget(v.state, target)).toBe(false));
+    expect(v.state.doc.toString()).toBe("");
+  });
+
+  // 判定の形を変えずに生成だけ変える（またはその逆）と、実際のアップロードが「添付中」と描かれなくなる
+  it("recognises every target that placeholderTarget builds from a generated token", () => {
+    for (let i = 0; i < 3; i += 1) {
+      const token = newUploadToken();
+      expect(uploadTokenOf(placeholderTarget(token))).toBe(token);
+    }
+    expect(uploadTokenOf("uploading.draft.png")).toBeNull();
   });
 
   // 保留した action の中で placeholder を探す（IME 不変条件 1 の保留の間に位置が動く）
