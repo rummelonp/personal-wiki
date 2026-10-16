@@ -23,7 +23,7 @@ async function typeAt(page: Page, lineIndex: number, text: string): Promise<void
   await page.keyboard.type(text);
 }
 
-const CONFLICT_HEADING = "サーバーの内容と食い違っています";
+const CONFLICT_HEADING = "別の場所でも更新されています";
 
 test("失敗の通知からマウスで再試行して衝突になっても、見出しに focus の枠を出さない", async ({
   page,

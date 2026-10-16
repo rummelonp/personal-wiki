@@ -134,7 +134,7 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
   await expect.poll(() => external, "保存が送られない").toBeDefined();
   await external;
   const conflict = page.getByRole("alert").filter({
-    has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+    has: page.getByRole("heading", { name: "別の場所でも更新されています" }),
   });
   await expect(conflict).toBeVisible();
   await expect(saveState(page)).toHaveText("別の場所でも更新あり");
@@ -142,10 +142,10 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
 
   await page.unroute(pagePath);
   // 上書きはサーバーの最新を置き換えるので、押す前に確かめる。断れば何も変わらない
-  await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  await conflict.getByRole("button", { name: "この画面の内容で上書きする" }).click();
   await conflict.getByRole("button", { name: "やめる" }).click();
   await expect(conflict).toBeVisible();
-  await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  await conflict.getByRole("button", { name: "この画面の内容で上書きする" }).click();
   await conflict.getByRole("button", { name: "上書きする" }).click();
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(conflict).toBeHidden();

@@ -65,7 +65,7 @@ const button = (label: string) => {
 describe("衝突の操作の確認", () => {
   it("確認の問いを、実行とやめるの両方のボタンの説明に結ぶ", () => {
     mount();
-    act(() => button("手元で上書き").click());
+    act(() => button("この画面の内容で上書きする").click());
     const question = document.querySelector(".notice-question");
     expect(question?.id).toBeTruthy();
     expect(button("上書きする").getAttribute("aria-describedby")).toBe(question?.id);
@@ -73,15 +73,15 @@ describe("衝突の操作の確認", () => {
   });
 
   it.each([
-    ["サーバーの版を取り込む", "手元の変更を破棄して"],
-    ["手元で上書き", "サーバーの版を破棄して"],
+    ["別の場所の内容を使う", "この画面の内容を破棄して"],
+    ["この画面の内容で上書きする", "別の場所の内容を破棄して"],
   ])("%s の確認の問いは、失われる側を言い切る", (label, lost) => {
     mount();
     act(() => button(label).click());
     expect(document.querySelector(".notice-question")?.textContent).toContain(lost);
   });
 
-  it.each(["サーバーの版を取り込む", "手元で上書き"])(
+  it.each(["別の場所の内容を使う", "この画面の内容で上書きする"])(
     "%s の確認をやめると、押したボタンに focus が戻る",
     (choice) => {
       mount();
@@ -94,16 +94,16 @@ describe("衝突の操作の確認", () => {
 
   it("戻る先のボタンが押せないときは、通知の見出しに focus を戻す", () => {
     const { render } = mount();
-    act(() => button("手元で上書き").click());
+    act(() => button("この画面の内容で上書きする").click());
     render(true);
     act(() => button("やめる").click());
-    expect(button("手元で上書き").disabled).toBe(true);
+    expect(button("この画面の内容で上書きする").disabled).toBe(true);
     expect(document.activeElement).toBe(document.querySelector(".notice-title"));
   });
 
   it("実行は、選んだ側の処理だけを呼ぶ", () => {
     const { onOverwrite, onTakeServer } = mount();
-    act(() => button("手元で上書き").click());
+    act(() => button("この画面の内容で上書きする").click());
     act(() => button("上書きする").click());
     expect(onOverwrite).toHaveBeenCalledTimes(1);
     expect(onTakeServer).not.toHaveBeenCalled();
@@ -113,7 +113,7 @@ describe("衝突の操作の確認", () => {
     mount();
     const legend = document.querySelector(".diff-legend");
     const diff = document.querySelector(".diff");
-    expect(legend?.textContent).toContain("サーバーだけにある行");
+    expect(legend?.textContent).toContain("別の場所の内容だけにある行");
     expect(diff).not.toBeNull();
     expect(legend?.compareDocumentPosition(diff as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(document.querySelector(".notice-details")?.contains(legend as Node)).toBe(false);
@@ -137,7 +137,7 @@ async function mountInDock(options: {
   titleDiffers?: boolean;
   viewportHeight?: number;
 }) {
-  await browserPage.viewport(393, options.viewportHeight ?? 500);
+  await browserPage.viewport(393, options.viewportHeight ?? 700);
   let maxHeight = options.detailsMaxHeight;
   if (options.detailsRows !== undefined) {
     const probe = document.createElement("div");
@@ -205,7 +205,7 @@ describe("差分の欄", () => {
     details.scrollTop = 5;
     render(true);
     expect(details.scrollTop).toBe(5);
-    act(() => button("手元で上書き").click());
+    act(() => button("この画面の内容で上書きする").click());
     expect(details.scrollTop).toBe(5);
   });
 
@@ -326,9 +326,9 @@ describe("差分の欄", () => {
         titleDiffers: true,
       });
       const hint = document.querySelector(".conflict-hint") as Element;
-      expect(hint.textContent).toBe(`サーバーのタイトル：${SERVER.title}`);
+      expect(hint.textContent).toBe(`別の場所のタイトル：${SERVER.title}`);
       const take = [...document.querySelectorAll(".notice button")].find(
-        (button) => button.textContent === "サーバーの版を取り込む",
+        (button) => button.textContent === "別の場所の内容を使う",
       ) as Element;
       expect(hint.compareDocumentPosition(take) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(details.contains(hint)).toBe(false);

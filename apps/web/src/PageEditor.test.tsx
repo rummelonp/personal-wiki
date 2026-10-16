@@ -313,7 +313,7 @@ describe("PageEditor と本文のエディタ", () => {
     await flushAsync();
     // 衝突が決まったら、進行の通知は衝突の通知と並ばずに消える
     expect(notices().map((n) => n.querySelector(".notice-title")?.textContent)).toEqual([
-      "サーバーの内容と食い違っています",
+      "別の場所でも更新されています",
     ]);
   });
 
@@ -411,21 +411,21 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.state.doc.toString()).toBe("本文の手元の変更");
 
     // 押すと通知の中で確かめる。やめれば何も変わらず、衝突の画面が残る
-    act(() => button("サーバーの版を取り込む").click());
+    act(() => button("別の場所の内容を使う").click());
     await flushAsync();
     expect(container?.textContent).toContain(
-      "手元の変更を破棄して、サーバーの版を取り込みますか？",
+      "この画面の内容を破棄して、別の場所の内容に置き換えますか？",
     );
     expect(document.activeElement).toBe(button("やめる"));
     act(() => button("やめる").click());
     await flushAsync();
     expect(v.state.readOnly).toBe(true);
     expect(v.state.doc.toString()).toBe("本文の手元の変更");
-    expect(document.activeElement).toBe(button("サーバーの版を取り込む"));
+    expect(document.activeElement).toBe(button("別の場所の内容を使う"));
 
-    act(() => button("サーバーの版を取り込む").click());
+    act(() => button("別の場所の内容を使う").click());
     await flushAsync();
-    act(() => button("取り込む").click());
+    act(() => button("置き換える").click());
     await flushAsync();
     expect(view()).toBe(v);
     expect(v.state.doc.toString()).toBe("サーバーの本文");
@@ -462,12 +462,12 @@ describe("PageEditor と本文のエディタ", () => {
       act(() => v.contentDOM.blur());
       await flushAsync();
 
-      act(() => button("サーバーの版を取り込む").click());
+      act(() => button("別の場所の内容を使う").click());
       await flushAsync();
       window.scrollTo(0, 4000);
       const scrolled = window.scrollY;
       expect(scrolled).toBeGreaterThan(0);
-      act(() => button("取り込む").click());
+      act(() => button("置き換える").click());
       await flushAsync();
       expect(v.state.doc.toString()).toBe("サーバーの本文");
       const article = container?.querySelector("article");
@@ -497,8 +497,8 @@ describe("PageEditor と本文のエディタ", () => {
     typeAtEnd(v, "の手元の変更");
     act(() => v.contentDOM.blur());
     await flushAsync();
-    act(() => button("サーバーの版を取り込む").click());
-    act(() => button("取り込む").click());
+    act(() => button("別の場所の内容を使う").click());
+    act(() => button("置き換える").click());
     await flushAsync();
     expect(v.state.doc.toString()).toBe(server.body);
 
@@ -1868,8 +1868,8 @@ describe("title の確定", () => {
     await flushAsync();
     expect(v.state.readOnly).toBe(true);
 
-    act(() => button("サーバーの版を取り込む").click());
-    act(() => button("取り込む").click());
+    act(() => button("別の場所の内容を使う").click());
+    act(() => button("置き換える").click());
     await flushAsync();
     expect(titleView()).toBe(v);
     expect(titleText()).toBe("サーバーの題");

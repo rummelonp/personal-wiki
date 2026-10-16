@@ -12,9 +12,12 @@ type Choice = "take" | "overwrite";
 
 /** 選んだ内容を実行する前に、失われるものを言い切って確かめる。 */
 const CONFIRMS: Record<Choice, { question: string; run: string }> = {
-  take: { question: "手元の変更を破棄して、サーバーの版を取り込みますか？", run: "取り込む" },
+  take: {
+    question: "この画面の内容を破棄して、別の場所の内容に置き換えますか？",
+    run: "置き換える",
+  },
   overwrite: {
-    question: "サーバーの版を破棄して、手元の内容で上書きしますか？",
+    question: "別の場所の内容を破棄して、この画面の内容で上書きしますか？",
     run: "上書きする",
   },
 };
@@ -137,9 +140,9 @@ export function ConflictPanel({
   }
   const titles = titleChanged && (
     <dl className="conflict-titles">
-      <dt>サーバーのタイトル</dt>
+      <dt>別の場所のタイトル</dt>
       <dd>{server.title}</dd>
-      <dt>手元のタイトル</dt>
+      <dt>この画面のタイトル</dt>
       <dd>{local.title}</dd>
     </dl>
   );
@@ -147,7 +150,7 @@ export function ConflictPanel({
   return (
     <Notice
       tone="warn"
-      title="サーバーの内容と食い違っています"
+      title="別の場所でも更新されています"
       claimFocus
       actions={
         confirm === null ? (
@@ -159,7 +162,7 @@ export function ConflictPanel({
               onClick={() => setChoice("take")}
               disabled={busy}
             >
-              サーバーの版を取り込む
+              別の場所の内容を使う
             </button>
             <button
               ref={overwrite}
@@ -168,7 +171,7 @@ export function ConflictPanel({
               onClick={() => setChoice("overwrite")}
               disabled={busy}
             >
-              手元で上書き
+              この画面の内容で上書きする
             </button>
           </>
         ) : (
@@ -204,7 +207,9 @@ export function ConflictPanel({
           <div className="conflict-summary">
             {!hasDiff && titles}
             {hasDiff ? (
-              <p className="muted diff-legend">− はサーバーだけにある行、＋ は手元だけにある行</p>
+              <p className="muted diff-legend">
+                − は別の場所の内容だけにある行、＋ はこの画面だけにある行
+              </p>
             ) : (
               <p className="notice-text muted">本文に差分はありません。</p>
             )}
@@ -228,9 +233,9 @@ export function ConflictPanel({
                       <span className="diff-text">{row.text === "" ? " " : row.text}</span>
                       <span className="visually-hidden">
                         {row.kind === "delete"
-                          ? "（サーバーだけにある行）"
+                          ? "（別の場所の内容だけにある行）"
                           : row.kind === "insert"
-                            ? "（手元だけにある行）"
+                            ? "（この画面だけにある行）"
                             : ""}
                       </span>
                     </div>
@@ -243,7 +248,7 @@ export function ConflictPanel({
       }
     >
       <p>
-        {`このページは ${formatTime(server.updatedAt)} に別の場所で更新されました。どちらを残すか選んでください。`}
+        {`${formatTime(server.updatedAt)} に別の場所で保存された内容と、この画面の内容のどちらを残すか選んでください。`}
       </p>
       {/* 欄の先頭の title の比較は、最初の変更を見せるために送ると外へ流れる。上書きはサーバーの title も
           消すので、選ぶ前に読む位置にサーバーの title を置く。末尾だけ違う title も見分けられるよう 1 行で省略せずに
@@ -251,7 +256,7 @@ export function ConflictPanel({
       {hasDiff && titleChanged && (
         <p className="conflict-hint">
           <span className="conflict-hint-label">
-            サーバーのタイトル<span className="visually-hidden">：</span>
+            別の場所のタイトル<span className="visually-hidden">：</span>
           </span>
           {server.title}
         </p>

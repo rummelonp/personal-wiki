@@ -325,7 +325,7 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   await expect.poll(() => external, "保存が送られない").toBeDefined();
   await external;
   const conflict = page.getByRole("alert").filter({
-    has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+    has: page.getByRole("heading", { name: "別の場所でも更新されています" }),
   });
   await expect(conflict).toBeVisible();
   await expectBodyNotShifted(page, before);
@@ -341,8 +341,8 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
 
   // 枠は role を持つ内側の要素ではなく、線と余白を持つ通知の要素
   const panel = await boxOf(page.locator(".notice").filter({ has: conflict }));
-  const take = conflict.getByRole("button", { name: "サーバーの版を取り込む" });
-  const overwrite = conflict.getByRole("button", { name: "手元で上書き" });
+  const take = conflict.getByRole("button", { name: "別の場所の内容を使う" });
+  const overwrite = conflict.getByRole("button", { name: "この画面の内容で上書きする" });
   for (const button of [take, overwrite]) {
     const box = await boxOf(button);
     expect(box.x, "操作が枠の左の線を越えている").toBeGreaterThanOrEqual(panel.x);
@@ -357,7 +357,7 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   await expect(overwrite).not.toHaveClass(/button-main/);
 
   // 見出しの最後の 1 文字だけが次の行に落ちない
-  const heading = conflict.getByRole("heading", { name: "サーバーの内容と食い違っています" });
+  const heading = conflict.getByRole("heading", { name: "別の場所でも更新されています" });
   const lines = await heading.evaluate((element) => {
     const range = document.createRange();
     range.selectNodeContents(element);
@@ -395,7 +395,7 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   await expect(take).toBeFocused();
   await expect(conflict).toBeVisible();
   await take.click();
-  await conflict.getByRole("button", { name: "取り込む", exact: true }).click();
+  await conflict.getByRole("button", { name: "置き換える", exact: true }).click();
   await expect(conflict).toBeHidden();
   // 押したボタンが消えても focus は body に落ちず、本文に戻る。タッチ端末では、確認の操作で閉じた
   // キーボードを開き直さないよう、ページの枠に移る
@@ -477,7 +477,7 @@ async function provokeLongConflict(page: Page, api: OwnerApi, title: string): Pr
   await expect.poll(() => external, "保存が送られない").toBeDefined();
   await external;
   const conflict = page.getByRole("alert").filter({
-    has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+    has: page.getByRole("heading", { name: "別の場所でも更新されています" }),
   });
   await expect(conflict).toBeVisible();
   return conflict;
@@ -510,7 +510,7 @@ test.describe("差分の長い衝突の通知は、台の中と差分の欄が�
       expect(dockScrolls, "台の中がスクロールしている（二重のスクロール）").toBe(false);
       await expect(dock(page)).not.toHaveAttribute("data-more-below");
       await expectDockOnScreen(page);
-      for (const name of ["サーバーの版を取り込む", "手元で上書き"]) {
+      for (const name of ["別の場所の内容を使う", "この画面の内容で上書きする"]) {
         await expect(conflict.getByRole("button", { name })).toBeInViewport({ ratio: 1 });
       }
       // 凡例は差分をスクロールする欄の外にあり、差分を送っても同じ位置で見え続ける
@@ -553,7 +553,7 @@ test("最初の変更の前に共通の行が続いても、最初の表示で�
   await external;
   await expect(
     page.getByRole("alert").filter({
-      has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+      has: page.getByRole("heading", { name: "別の場所でも更新されています" }),
     }),
   ).toBeVisible();
   const details = await boxOf(dock(page).locator(".notice-details"));
@@ -601,12 +601,14 @@ test("台の上限に達して中でスクロールするとき、続きのあ�
     element.scrollTop = 0;
   });
   await expect(dock(page)).not.toHaveAttribute("data-more-above");
-  await expect(conflict.getByRole("button", { name: "手元で上書き" })).toBeInViewport({
-    ratio: 1,
-  });
+  await expect(conflict.getByRole("button", { name: "この画面の内容で上書きする" })).toBeInViewport(
+    {
+      ratio: 1,
+    },
+  );
 
   // 確認の段でも、実行とやめるの両方が台の中に見えて押せる
-  await conflict.getByRole("button", { name: "手元で上書き" }).click();
+  await conflict.getByRole("button", { name: "この画面の内容で上書きする" }).click();
   const dockBox = await boxOf(dock(page));
   for (const name of ["上書きする", "やめる"]) {
     const button = conflict.getByRole("button", { name });

@@ -161,7 +161,7 @@ const SCENES: Scene[] = [
       await expect.poll(() => external, "保存が送られない").toBeDefined();
       await external;
       await expect(
-        page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
+        page.getByRole("heading", { name: "別の場所でも更新されています" }),
       ).toBeVisible();
     },
   },
