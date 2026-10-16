@@ -2,7 +2,12 @@ import { isolateHistory } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { parseTaskMarker, taskListNodes, toggledTaskStatus } from "@personal-wiki/markdown";
+import {
+  extractPlainText,
+  parseTaskMarker,
+  taskListNodes,
+  toggledTaskStatus,
+} from "@personal-wiki/markdown";
 import { type BuiltDecorations, decorationPlugin } from "./decoration-plugin";
 import { isCompositionUnsettled } from "./ime";
 import { TASK_CHECKBOX_EM, taskSyntax } from "./list-syntax";
@@ -51,16 +56,29 @@ function toggleTask(view: EditorView, dom: HTMLElement): void {
   });
 }
 
+/**
+ * checkbox の名前にする、タスクの本文。強調やリンクなどの記法の記号は読み上げに出さない。
+ * 本文が空のタスクは名前が空になるので、代わりの語を返す。
+ */
+function taskLabel(state: EditorState, from: number, to: number): string {
+  return extractPlainText(state.sliceDoc(from, to)) || "空のタスク";
+}
+
 class TaskCheckboxWidget extends WidgetType {
   constructor(
     readonly checked: boolean,
     readonly readOnly: boolean,
+    readonly label: string,
   ) {
     super();
   }
 
   override eq(other: TaskCheckboxWidget): boolean {
-    return other.checked === this.checked && other.readOnly === this.readOnly;
+    return (
+      other.checked === this.checked &&
+      other.readOnly === this.readOnly &&
+      other.label === this.label
+    );
   }
 
   override toDOM(view: EditorView): HTMLElement {
@@ -69,6 +87,7 @@ class TaskCheckboxWidget extends WidgetType {
     checkbox.className = "cm-lp-task-checkbox";
     checkbox.checked = this.checked;
     checkbox.disabled = this.readOnly;
+    checkbox.setAttribute("aria-label", this.label);
     // Tab で checkbox に止まると、contentDOM から focus が外れて入力位置を見失う
     checkbox.tabIndex = -1;
     // mousedown で処理する。click まで待つと editor がカーソルを task の行へ動かし、source が出る。
@@ -112,7 +131,11 @@ function build(view: EditorView): BuiltDecorations {
         // ブラケットだけを置き換える。source に戻す判定は両方が同じ範囲（revealFrom から）で行う。
         if (!reveal(task.revealFrom, marker.to)) {
           const checkbox = Decoration.replace({
-            widget: new TaskCheckboxWidget(task.checked, state.readOnly),
+            widget: new TaskCheckboxWidget(
+              task.checked,
+              state.readOnly,
+              taskLabel(state, marker.to, node.to),
+            ),
           });
           decorations.push(checkbox.range(marker.from, marker.to));
           atomic.push(checkbox.range(marker.from, marker.to));

@@ -11,6 +11,7 @@ import {
 } from "@codemirror/state";
 import { type EditorView, WidgetType } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
+import { extractPlainText } from "@personal-wiki/markdown";
 import { isCompositionUnsettled } from "./ime";
 import { byScheme } from "./scheme";
 
@@ -140,6 +141,19 @@ export function parseCalloutHeader(text: string, offset: number): CalloutHeader 
 /** Obsidian は識別子を title case にしたものを既定のタイトルにする */
 export function defaultCalloutTitle(identifier: string): string {
   return identifier.charAt(0).toUpperCase() + identifier.slice(1).toLowerCase();
+}
+
+/**
+ * 開閉ボタンの名前にする、callout のタイトル。強調やリンクなどの記号は除く。
+ * タイトルが無いか、記号を除くと空になるときは、表示と同じ既定のタイトルを使う。
+ */
+export function calloutTitleText(
+  state: EditorState,
+  header: CalloutHeader,
+  lineTo: number,
+): string {
+  const written = header.hasTitle ? extractPlainText(state.sliceDoc(header.titleFrom, lineTo)) : "";
+  return written || defaultCalloutTitle(header.identifier);
 }
 
 export interface Callout {
@@ -313,12 +327,15 @@ export class CalloutTitleWidget extends WidgetType {
 
 /** 見出し行の末尾に置く開閉ボタン。`collapsed` は見た目の状態（カーソルによる展開を含む） */
 export class CalloutFoldWidget extends WidgetType {
-  constructor(readonly collapsed: boolean) {
+  constructor(
+    readonly collapsed: boolean,
+    readonly title: string,
+  ) {
     super();
   }
 
   override eq(other: CalloutFoldWidget): boolean {
-    return other.collapsed === this.collapsed;
+    return other.collapsed === this.collapsed && other.title === this.title;
   }
 
   override toDOM(view: EditorView): HTMLElement {
@@ -326,7 +343,8 @@ export class CalloutFoldWidget extends WidgetType {
     button.className = "cm-lp-callout-fold";
     button.setAttribute("role", "button");
     button.setAttribute("aria-expanded", String(!this.collapsed));
-    button.setAttribute("aria-label", this.collapsed ? "展開する" : "折りたたむ");
+    // 開閉の状態は aria-expanded が伝えるので、名前は開閉の対象に固定する
+    button.setAttribute("aria-label", `「${this.title}」の内容`);
     // mousedown で処理する。click まで待つと editor がカーソルを見出し行へ動かし、source が出る。
     button.addEventListener("mousedown", (event) => {
       if (event.button !== 0) return;

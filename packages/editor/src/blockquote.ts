@@ -7,6 +7,7 @@ import {
   CalloutTitleWidget,
   type CalloutType,
   calloutOf,
+  calloutTitleText,
   defaultCalloutTitle,
   isCalloutCollapsed,
 } from "./callout";
@@ -129,7 +130,13 @@ export class BlockquoteDecorations {
     // 本文の無い callout は畳むものが無いので、ボタンを出さない。
     if (header.fold && hasBody && !this.widgetPositions.has(headerLine.to)) {
       this.widgetPositions.add(headerLine.to);
-      const fold = Decoration.widget({ widget: new CalloutFoldWidget(collapsed), side: 1 });
+      const fold = Decoration.widget({
+        widget: new CalloutFoldWidget(
+          collapsed,
+          calloutTitleText(this.state, header, headerLine.to),
+        ),
+        side: 1,
+      });
       this.widgets.push(fold.range(headerLine.to));
     }
     return collapsed && hasBody;

@@ -249,6 +249,40 @@ describe("callout Live Preview", () => {
   );
 });
 
+describe("callout fold button name", () => {
+  const nameOf = (doc: string) => foldButtons(mount(doc))[0]?.getAttribute("aria-label");
+
+  it("タイトルを名前にし、開閉の状態は名前に入れない", () => {
+    const v = mount("> [!note]- 手順\n> 本文");
+    const button = foldButtons(v)[0];
+    expect(button?.getAttribute("aria-label")).toBe("「手順」の内容");
+    expect(button?.getAttribute("aria-expanded")).toBe("false");
+    pressFold(button);
+    expect(foldButtons(v)[0]?.getAttribute("aria-label")).toBe("「手順」の内容");
+    expect(foldButtons(v)[0]?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("タイトルを省くと既定のタイトルを名前にする", () => {
+    expect(nameOf("> [!tip]+\n> 本文")).toBe("「Tip」の内容");
+  });
+
+  it("タイトルの強調やリンクの記号は名前から除く", () => {
+    expect(nameOf("> [!note]+ **大事** な [[ページ|別名]]\n> 本文")).toBe("「大事 な 別名」の内容");
+  });
+
+  it("記号を除くと空になるタイトルは既定のタイトルにする", () => {
+    expect(nameOf("> [!note]+ %%メモ%%\n> 本文")).toBe("「Note」の内容");
+  });
+
+  it("タイトルを書き換えると名前も変わる", () => {
+    const v = mount("> [!note]+ 旧\n> 本文");
+    v.dispatch({
+      changes: { from: "> [!note]+ ".length, to: "> [!note]+ 旧".length, insert: "新" },
+    });
+    expect(foldButtons(v)[0]?.getAttribute("aria-label")).toBe("「新」の内容");
+  });
+});
+
 describe("callout folding", () => {
   it("collapses the body of a - callout without touching the document", () => {
     const doc = "> [!faq]- 質問\n> 答え\n> 続き\n\n後";

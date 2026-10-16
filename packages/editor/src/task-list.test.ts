@@ -51,6 +51,35 @@ const countTransactions = (onCount: () => void): Extension =>
     for (const _ of update.transactions) onCount();
   });
 
+describe("task list checkbox name", () => {
+  const names = (v: EditorView) => checkboxes(v).map((box) => box.getAttribute("aria-label"));
+
+  it("タスクの本文を名前にする", () => {
+    expect(names(mount("- [ ] 牛乳を買う\n- [x] 掃除"))).toEqual(["牛乳を買う", "掃除"]);
+  });
+
+  it("番号付きリストのタスクも本文を名前にする", () => {
+    expect(names(mount("1. [ ] 手順"))).toEqual(["手順"]);
+  });
+
+  it("強調、リンク、WikiLink の記号は名前から除く", () => {
+    const v = mount(
+      "- [ ] **大事** な [リンク](https://example.com) と [[ページ|別名]] を `code` で",
+    );
+    expect(names(v)).toEqual(["大事 な リンク と 別名 を code で"]);
+  });
+
+  it("本文が空のタスクは「空のタスク」にする", () => {
+    expect(names(mount("- [ ] \n- [ ] %%コメントだけ%%"))).toEqual(["空のタスク", "空のタスク"]);
+  });
+
+  it("本文を書き換えると名前も変わる", () => {
+    const v = mount("- [ ] 牛乳");
+    v.dispatch({ changes: { from: "- [ ] 牛乳".length, insert: "を買う" } });
+    expect(names(v)).toEqual(["牛乳を買う"]);
+  });
+});
+
 describe("task list checkbox", () => {
   it.each([
     ["- [ ] 未完了", false, " 未完了"],
