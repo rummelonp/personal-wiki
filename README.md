@@ -75,7 +75,7 @@ Cloudflare アカウントと、そのアカウントの DNS にあるホスト�
   `WIKI_TOKEN` の入れ方は [docs/operations.md](./docs/operations.md) の「API token」にあります。
   token の scope が `read` だけのときは、write が要るツールを呼ぶとエラーになります。
 - claude.ai や Claude Desktop のカスタムコネクタ: コネクタの URL に上の URL を入れて接続します。
-  ブラウザで同意画面が開くので、クライアント名と送り先を確かめ、`read` か `read` と `write` を選んで許可します。
+  ブラウザで同意画面が開くので、「接続するアプリ」の名前と「トークンの送り先」を確かめ、「読み取り」か「読み書き」を選んで許可します。
   OAuth と owner のログインの設定が要ります
 
 ## 運用

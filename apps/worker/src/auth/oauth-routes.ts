@@ -120,9 +120,12 @@ async function showConsent(c: Context<AppEnv>, now: () => number): Promise<Respo
     headers.set("Content-Type", "text/html; charset=utf-8");
     headers.set("Content-Security-Policy", consentPagePolicy(consent.redirectUri));
     headers.set("X-Robots-Tag", "noindex");
-    return new Response(consentPage(consent, handle, { registeredAt, now: now() }), { headers });
+    return new Response(
+      consentPage(consent, handle, { registeredAt, now: now(), siteName: siteNameOf(c.env) }),
+      { headers },
+    );
   } catch (error) {
-    return authorizationFailure(error, failureMessage);
+    return authorizationFailure(siteNameOf(c.env), error, failureMessage);
   }
 }
 
@@ -157,19 +160,21 @@ const ACCESS_CHOICES: ReadonlyMap<string, readonly Scope[]> = new Map([
 
 async function decideConsent(c: Context<AppEnv>): Promise<Response> {
   if (!isOAuthEnabled(c.env)) return c.notFound();
+  const siteName = siteNameOf(c.env);
   let form: FormData;
   try {
     form = await c.req.formData();
   } catch {
-    return errorPage(400, "送信の内容を読み取れませんでした。");
+    return errorPage(siteName, 400, UNREADABLE_SUBMISSION);
   }
   const handle = form.get("handle");
   const decision = form.get("decision");
   const oauth = helpersOf(c);
   let failureMessage = FAILURE_MESSAGES.consent;
   try {
-    if (typeof handle !== "string") {
-      return errorPage(400, "送信の内容を読み取れませんでした。");
+    // 空の handle は使用済みや期限切れとは違い、同意画面から送られた値ではない
+    if (typeof handle !== "string" || handle === "") {
+      return errorPage(siteName, 400, UNREADABLE_SUBMISSION);
     }
     if (decision === "deny") {
       const denied = await oauth.denyConsent(c.req.raw, handle);
@@ -178,7 +183,7 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
     const access = form.get("access");
     const scope = typeof access === "string" ? ACCESS_CHOICES.get(access) : undefined;
     if (decision !== "approve" || scope === undefined) {
-      return errorPage(400, "送信の内容を読み取れませんでした。");
+      return errorPage(siteName, 400, UNREADABLE_SUBMISSION);
     }
     const approved = await oauth.approveConsent(c.req.raw, handle, { scope: [...scope] });
     failureMessage = FAILURE_MESSAGES.other;
@@ -199,14 +204,14 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
         !(error instanceof AuthorizationError) &&
         (await oauth.lookupClient(approved.request.clientId)) === null
       ) {
-        return errorPage(400, "接続しようとしたアプリの登録が見つかりません。");
+        return errorPage(siteName, 400, "接続しようとしたアプリの登録が見つかりません。");
       }
       throw error;
     }
     approved.headers.set("Location", redirectTo);
     return new Response(null, { status: 302, headers: approved.headers });
   } catch (error) {
-    return authorizationFailure(error, failureMessage);
+    return authorizationFailure(siteName, error, failureMessage);
   }
 }
 
@@ -217,11 +222,14 @@ function redirectToClient(location: string): Response {
   });
 }
 
+const UNREADABLE_SUBMISSION = "送信の内容を読み取れませんでした。";
+
 /**
  * この画面で出す誤りの文。ライブラリの誤りはほぼ invalid_request で code では見分けられず、英語の
  * description を照合すると版上げで黙って外れるので、失敗した呼び出しで文を選ぶ。
  * - request: 認可の要求の解析（client_id や redirect URI を確かめられない）
  * - consent: 同意の送信（handle が使用済み、期限切れ、別のブラウザのもの）
+ * - other: 上のどちらでもない失敗（同意を受け付けた後の処理、承認する scope の検証など）
  */
 const FAILURE_MESSAGES = {
   request: "接続を求めたアプリか、トークンの送り先を確かめられませんでした。",
@@ -235,7 +243,7 @@ const FAILURE_MESSAGES = {
  * 誤り、使用済みや期限切れの handle、別のブラウザで開いた同意画面）は、送り先を信用できないので
  * この画面で表示する。KV の障害などは 500 にする。
  */
-function authorizationFailure(error: unknown, message: string): Response {
+export function authorizationFailure(siteName: string, error: unknown, message: string): Response {
   if (error instanceof AuthorizationError) {
     if (error.redirectTo !== undefined) return redirectToClient(error.redirectTo);
     console.error(
@@ -245,10 +253,16 @@ function authorizationFailure(error: unknown, message: string): Response {
         description: error.description,
       }),
     );
-    return errorPage(400, message);
+    // approveConsent は handle の失敗と同じ呼び出しで scope の検証の失敗も投げ、呼び出しでは分けられないので
+    // code で分ける。handle を消費する前の失敗なので、使用済みと伝える consent の文は当てない
+    return errorPage(
+      siteName,
+      400,
+      error.code === "invalid_scope" ? FAILURE_MESSAGES.other : message,
+    );
   }
   if (error instanceof CimdFetchError) {
-    return errorPage(400, "接続するアプリの情報を取得できませんでした。");
+    return errorPage(siteName, 400, "接続するアプリの情報を取得できませんでした。");
   }
   throw error;
 }
@@ -290,6 +304,7 @@ async function showGrants(c: Context<AppEnv>): Promise<Response> {
   const cursor = c.req.query("cursor");
   if (cursor !== undefined && !KV_CURSOR_PATTERN.test(cursor)) {
     return errorPage(
+      siteNameOf(c.env),
       400,
       "一覧の続きを開けませんでした。",
       "最初のページから開き直してください。",
@@ -308,7 +323,7 @@ async function showGrants(c: Context<AppEnv>): Promise<Response> {
     ),
   );
   const grants = page.items.toSorted((a, b) => b.createdAt - a.createdAt);
-  return new Response(grantsPage(grants, clients, page.cursor), {
+  return new Response(grantsPage(grants, clients, page.cursor, siteNameOf(c.env)), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": [...BASE_PAGE_POLICY, "form-action 'self'"].join("; "),
@@ -326,6 +341,7 @@ async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
     .catch(() => null);
   if (typeof grantId !== "string" || !GRANT_ID_PATTERN.test(grantId)) {
     return errorPage(
+      siteNameOf(c.env),
       400,
       "どの接続を取り消すかを読み取れませんでした。",
       "接続の一覧から開き直してください。",
@@ -356,6 +372,7 @@ function grantsPage(
   grants: readonly GrantSummary[],
   clientNames: ReadonlyMap<string, string | undefined>,
   nextCursor: string | undefined,
+  siteName: string,
 ): string {
   const rows = grants.map((grant) => {
     const name = clientNames.get(grant.clientId);
@@ -363,7 +380,7 @@ function grantsPage(
       name === undefined
         ? "（登録が消えたアプリ）"
         : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
-    const scope = describeScopes(grant.scope) ?? "（なし）";
+    const scope = describeScopesHtml(grant.scope) ?? "（なし）";
     const host = grant.redirectUri === undefined ? "" : safeHost(grant.redirectUri);
     return `<li>
 <p><strong>${label}</strong><small class="note">client_id: <code>${escapeHtml(grant.clientId)}</code></small></p>
@@ -376,7 +393,7 @@ function grantsPage(
   });
   const list =
     rows.length > 0
-      ? `<p class="lead">取り消すと、その接続はすぐに使えなくなります。同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
+      ? `<p class="lead">取り消すと、その接続はすぐに使えなくなります。client_id が同じアプリを許可し直すと、以前の許可は自動で取り消されます。</p>
 <ul class="grants">\n${rows.join("\n")}\n</ul>`
       : "<p>許可した接続はありません。</p>";
   const more =
@@ -388,6 +405,7 @@ function grantsPage(
     `<h1>許可した接続</h1>
 ${list}
 ${more}`,
+    siteName,
   );
 }
 
@@ -400,6 +418,7 @@ function safeHost(uri: string): string {
 }
 
 function errorPage(
+  siteName: string,
   status: number,
   message: string,
   hint = "接続するアプリから、接続をやり直してください。",
@@ -410,6 +429,7 @@ function errorPage(
     `<h1>${escapeHtml(heading)}</h1>
 <p>${escapeHtml(message)}</p>
 <p>${escapeHtml(hint)}</p>`,
+    siteName,
   );
   return new Response(body, {
     status,
@@ -445,7 +465,7 @@ export function describeRegistration(registeredAt: number, now: number): string 
  * write は read を含む（principal.ts の hasScope）ので、write があれば read の有無によらず「読み書き」に
  * まとめる。知らない scope は client が要求できる任意の文字列なので、名前を当てずにそのまま並べる。
  */
-export function describeScopes(scopes: readonly string[]): string | null {
+export function describeScopesHtml(scopes: readonly string[]): string | null {
   const known = scopes.includes("write")
     ? ["読み書き"]
     : scopes.includes("read")
@@ -471,10 +491,10 @@ function truncate(value: string, length: number): string {
 export function consentPage(
   consent: ConsentDescription,
   handle: string,
-  { registeredAt, now }: { registeredAt: number | null; now: number },
+  { registeredAt, now, siteName }: { registeredAt: number | null; now: number; siteName: string },
 ): string {
   const name = escapeHtml(truncate(consent.clientName, CONSENT_NAME_LENGTH));
-  const requested = describeScopes(consent.scope) ?? "（指定なし）";
+  const requested = describeScopesHtml(consent.scope) ?? "（指定なし）";
   const loopback = consent.redirectIsLoopback
     ? `<p class="warn">送り先はこのコンピュータ上のアプリです。どのアプリでも待ち受けられます。</p>`
     : "";
@@ -506,10 +526,11 @@ ${loopback}
 </fieldset>
 <div class="actions"><button class="button button-primary" name="decision" value="approve">許可する</button><button class="button button-quiet" name="decision" value="deny">拒否する</button></div>
 </form>`,
+    siteName,
   );
 }
 
-function pageHtml(title: string, main: string): string {
+function pageHtml(title: string, main: string, siteName: string): string {
   return `<!doctype html>
 <html lang="ja">
 <meta charset="utf-8">
@@ -520,7 +541,7 @@ function pageHtml(title: string, main: string): string {
 ${themeCss}
 ${pageCss}
 </style>
-<p class="brand">personal-wiki</p>
+<p class="brand">${escapeHtml(siteName)}</p>
 <main class="sheet">
 ${main}
 </main>

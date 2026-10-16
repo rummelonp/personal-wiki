@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { AuthorizationError, CimdFetchError } from "@cloudflare/workers-oauth-provider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { Bindings } from "../env";
@@ -7,9 +8,10 @@ import { T0 } from "../test/pages";
 import { insertApiToken, insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
 import {
+  authorizationFailure,
   consentPage,
   describeRegistration,
-  describeScopes,
+  describeScopesHtml,
   registrationTimeOf,
 } from "./oauth-routes";
 import { oauthServerFor } from "./oauth-server";
@@ -619,6 +621,19 @@ describe("認可と同意画面", () => {
     expectErrorPage(await res.text(), "接続できません", "送信の内容を読み取れませんでした。");
   });
 
+  it("handle が空の送信は、使用済みの文でなく送信の内容を読めない文にする", async () => {
+    const { request } = setup();
+    const client = await register(request);
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const consent = await openConsent(request, path);
+    for (const decision of ["approve", "deny"]) {
+      const res = await submitConsent(request, path, consent, { handle: "", decision });
+      expect(res.status, decision).toBe(400);
+      expectErrorPage(await res.text(), "接続できません", "送信の内容を読み取れませんでした。");
+    }
+    expect((await submitConsent(request, path, consent)).status).toBe(302);
+  });
+
   it("登録されていない redirect URI には戻さず、この画面で誤りを出し、ライブラリの説明はログにだけ書く", async () => {
     const { request } = setup();
     const client = await register(request);
@@ -1094,17 +1109,17 @@ describe("OAuth を閉じた環境", () => {
   });
 });
 
-describe("describeScopes", () => {
+describe("describeScopesHtml", () => {
   it("write があれば読み書き、read だけなら読み取りにし、知らない scope はエスケープして添える", () => {
-    expect(describeScopes(["read"])).toBe("読み取り");
-    expect(describeScopes(["read", "write"])).toBe("読み書き");
-    expect(describeScopes(["write"])).toBe("読み書き");
-    expect(describeScopes(["read", "<x>"])).toBe("読み取り、&#60;x&#62;");
-    expect(describeScopes(["admin"])).toBe("admin");
+    expect(describeScopesHtml(["read"])).toBe("読み取り");
+    expect(describeScopesHtml(["read", "write"])).toBe("読み書き");
+    expect(describeScopesHtml(["write"])).toBe("読み書き");
+    expect(describeScopesHtml(["read", "<x>"])).toBe("読み取り、&#60;x&#62;");
+    expect(describeScopesHtml(["admin"])).toBe("admin");
   });
 
   it("scope が無ければ null にする", () => {
-    expect(describeScopes([])).toBeNull();
+    expect(describeScopesHtml([])).toBeNull();
   });
 });
 
@@ -1179,16 +1194,81 @@ describe("同意画面の登録の行", () => {
   });
 
   it("registeredAt が null なら登録の行を出さず、あれば出す", () => {
-    const without = consentPage(consent, "h", { registeredAt: null, now: T0 });
+    const without = consentPage(consent, "h", { registeredAt: null, now: T0, siteName: "wiki" });
     expect(without).not.toContain("<dt>登録</dt>");
     expect(without).toContain("<dt>要求された権限</dt>");
     const withRow = consentPage(consent, "h", {
       registeredAt: T0 - 35 * 24 * 60 * 60_000,
       now: T0,
+      siteName: "wiki",
     });
     expect(withRow).toContain("<dt>登録</dt>");
     expect(withRow).toContain("35 日前");
     expect(withRow).toContain("つなぎ直した接続では、以前に登録した日時が出ることがあります。");
     expect(withRow).toContain("日時だけでは、自分が始めた接続かは判断できません。");
+  });
+});
+
+describe("authorizationFailure", () => {
+  const unredirectable = (code: string) =>
+    new AuthorizationError(code as never, { description: "d" });
+
+  it("client の情報を取得できない失敗は、取得できなかった文にする", async () => {
+    const res = authorizationFailure(
+      "wiki",
+      new CimdFetchError("https://client.example/cid", new Error("boom")),
+      "使わない文",
+    );
+    expect(res.status).toBe(400);
+    expectErrorPage(
+      await res.text(),
+      "接続できません",
+      "接続するアプリの情報を取得できませんでした。",
+    );
+  });
+
+  it("承認する scope の検証の失敗は、同意画面が使えない文でなく完了できない文にする", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = authorizationFailure("wiki", unredirectable("invalid_scope"), STALE_CONSENT);
+      expect(res.status).toBe(400);
+      expectErrorPage(await res.text(), "接続できません", "接続を完了できませんでした。");
+      const other = authorizationFailure("wiki", unredirectable("invalid_request"), STALE_CONSENT);
+      expectErrorPage(await other.text(), "接続できません", STALE_CONSENT);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("ライブラリ以外の誤りは握りつぶさずに投げ直す", () => {
+    expect(() => authorizationFailure("wiki", new Error("kv"), "m")).toThrow("kv");
+  });
+});
+
+describe("画面のブランド", () => {
+  const brandOf = (html: string) => /<p class="brand">([^<]*)<\/p>/.exec(html)?.[1];
+
+  it("既定ではサイト名を personal-wiki にし、設定があれば同意画面、一覧、誤りの画面に出す", async () => {
+    const plain = setup();
+    const path = authorizePath(
+      (await register(plain.request)).client_id,
+      (await pkcePair()).challenge,
+    );
+    expect(brandOf((await openConsent(plain.request, path)).html)).toBe("personal-wiki");
+
+    const { request } = setup({ overrides: { SITE_NAME: " R&D <wiki> " } });
+    const client = await register(request);
+    const consentPath = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const escaped = "R&#38;D &#60;wiki&#62;";
+    expect(brandOf((await openConsent(request, consentPath)).html)).toBe(escaped);
+
+    const session = await ownerCookie(T0);
+    const grants = await request("/_auth/oauth/grants", { headers: { Cookie: session } });
+    expect(brandOf(await grants.text())).toBe(escaped);
+    const failed = await request("/_auth/oauth/grants?cursor=%00%00", {
+      headers: { Cookie: session },
+    });
+    expect(failed.status).toBe(400);
+    expect(brandOf(await failed.text())).toBe(escaped);
   });
 });
