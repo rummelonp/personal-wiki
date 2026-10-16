@@ -153,6 +153,15 @@ describe("StrictMode", () => {
   });
 });
 
+describe("貼り付け", () => {
+  it("保存で拒まれる制御文字は取り除き、改行とタブは空白にして持ち主に渡す", () => {
+    const { view, onChange } = controlled("題");
+    typeAtEnd(view(), "\u0000a\tb\nc\u007f", "input.paste");
+    expect(onChange).toHaveBeenLastCalledWith("題a b c");
+    expect(view().state.selection.main.head).toBe("題a b c".length);
+  });
+});
+
 describe.each([
   ["同期で描き直す持ち主", "sync"],
   ["microtask で描き直す持ち主", "microtask"],

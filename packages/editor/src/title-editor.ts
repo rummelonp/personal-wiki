@@ -6,7 +6,15 @@ import {
   insertNewlineAndIndent,
   splitLine,
 } from "@codemirror/commands";
-import { EditorSelection, EditorState, type Extension, Prec, Transaction } from "@codemirror/state";
+import {
+  ChangeSet,
+  EditorSelection,
+  EditorState,
+  type Extension,
+  Prec,
+  StateEffect,
+  Transaction,
+} from "@codemirror/state";
 import { type Command, drawSelection, EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { imeDebug } from "./debug-ime";
 import { focusRing, focusWithoutRing } from "./focus";
@@ -31,6 +39,11 @@ export interface CreateTitleEditorOptions {
   readonly extensions?: Extension;
   readonly onUpdate?: (update: ViewUpdate) => void;
   /**
+   * 入力された文字列を title に入れる形に直す。直した後に残った改行は空白にするので、省略すると
+   * 改行だけを直す。変換中の入力と `replaceDoc` の差し替えには使わない。
+   */
+  readonly normalizeInput?: (inserted: string) => string;
+  /**
    * Enter で title を打ち終えたとみなしたとき、本文へ移る前に呼ぶ。
    * 本文を 1 文字も書かずに title だけ打った人にも page を作らせるための合図で、
    * 変換の確定に使われた Enter では呼ばない。
@@ -38,35 +51,39 @@ export interface CreateTitleEditorOptions {
   readonly onCommit?: () => void;
 }
 
+const newlinesToSpaces = (inserted: string): string => inserted.replaceAll("\n", " ");
+
 /**
- * この view への入力（貼り付け、drop、改行を入れる command）に含まれる改行を空白に置き換える。
+ * この view への入力（貼り付け、drop、改行を入れる command など）を `normalize` で書き換える。
  * userEvent を持たない transaction は書き換えない。ホストからの差し替え（`replaceDoc`）は
  * ホストが正規化した title を渡す取り決めで、ここで書き換えると保存済みの title と doc が食い違う。
  * composition の transaction も書き換えない。変換中に doc を書き換えると確定前の文字列が壊れる。
  */
-const newlinesToSpaces = EditorState.transactionFilter.of((tr) => {
-  if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.type.compose")) {
-    return tr;
-  }
-  let multiline = false;
-  tr.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
-    if (inserted.lines > 1) multiline = true;
-  });
-  if (!multiline) return tr;
+function inputNormalizer(normalize: (inserted: string) => string): Extension {
+  return EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.type.compose")) {
+      return tr;
+    }
+    // 書き換えは変更後の doc の上の変更として作り、tr.changes と合成する。書き換えで長さが変わると
+    // tr.newSelection の位置はずれるので、selection もこの変更で写す（挿入の後ろのカーソルは後ろに残る）
+    const fixes: { from: number; to: number; insert: string }[] = [];
+    tr.changes.iterChanges((_fromA, _toA, fromB, toB, inserted) => {
+      const text = inserted.sliceString(0);
+      const normalized = normalize(text);
+      if (normalized !== text) fixes.push({ from: fromB, to: toB, insert: normalized });
+    });
+    if (fixes.length === 0) return tr;
 
-  const changes: { from: number; to: number; insert: string }[] = [];
-  tr.changes.iterChanges((from, to, _fromB, _toB, inserted) => {
-    changes.push({ from, to, insert: inserted.sliceString(0, inserted.length, " ") });
+    const fix = ChangeSet.of(fixes, tr.newDoc.length);
+    return {
+      changes: tr.changes.compose(fix),
+      selection: tr.newSelection.map(fix),
+      effects: StateEffect.mapEffects(tr.effects, fix),
+      scrollIntoView: tr.scrollIntoView,
+      userEvent: tr.annotation(Transaction.userEvent) ?? "input",
+    };
   });
-  return {
-    changes,
-    // 改行も空白も 1 文字なので、変更後の selection はそのまま使える
-    selection: tr.newSelection,
-    effects: tr.effects,
-    scrollIntoView: tr.scrollIntoView,
-    userEvent: tr.annotation(Transaction.userEvent) ?? "input",
-  };
-});
+}
 
 const TITLE_LABEL = "タイトル";
 /** 空の欄に出す誘い。ラベル（`TITLE_LABEL`）と別にするのは、欄の名前ではなく「ここに打て」を伝えるため */
@@ -188,7 +205,7 @@ function titleKeymap(
 }
 
 /**
- * 行を足す command。title 欄では newlinesToSpaces を通って、空白の挿入や title の複製になる。
+ * 行を足す command。title 欄では inputNormalizer を通って、空白の挿入や title の複製になる。
  * Enter と Mod-Enter は titleKeymap が先に取るが、修飾キーの組み合わせで漏れないよう一緒に外す。
  */
 const lineCommands = new Set<unknown>([
@@ -210,7 +227,7 @@ export function createTitleEditor(
   options: CreateTitleEditorOptions = {},
 ): EditorView {
   const extensions: Extension[] = [
-    newlinesToSpaces,
+    inputNormalizer((inserted) => newlinesToSpaces(options.normalizeInput?.(inserted) ?? inserted)),
     titleKeymap(options.bodyView, options.onCommit),
     resettableHistory(),
     keymap.of([...titleDefaultKeymap, ...readOnlySafeHistoryKeymap]),

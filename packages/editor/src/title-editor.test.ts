@@ -56,6 +56,57 @@ describe("createTitleEditor", () => {
     expect(titleView.state.selection.main.head).toBe(7);
   });
 
+  describe("normalizeInput", () => {
+    const dropControls = (text: string) =>
+      [...text].filter((char) => (char.codePointAt(0) ?? 0) >= 0x20).join("");
+
+    function mountWith(normalizeInput: (inserted: string) => string) {
+      const view = mount((parent) => createTitleEditor(parent, { doc: "題名", normalizeInput }));
+      view.dispatch({ selection: EditorSelection.cursor(2) });
+      return view;
+    }
+
+    test("長さの変わる書き換えでも、カーソルは貼り付けた文字の後ろに残る", () => {
+      const view = mountWith(dropControls);
+      view.dispatch({
+        changes: { from: 1, insert: "a\u0000\u0001b" },
+        selection: { anchor: 5 },
+        userEvent: "input.paste",
+      });
+      expect(view.state.doc.toString()).toBe("題ab名");
+      expect(view.state.selection.main.head).toBe(3);
+    });
+
+    test("渡した関数が残した改行は空白にする", () => {
+      const view = mountWith(dropControls);
+      view.dispatch({
+        changes: { from: 2, insert: "\u0000a\nb" },
+        selection: { anchor: 6 },
+        userEvent: "input.paste",
+      });
+      expect(view.state.doc.toString()).toBe("題名ab");
+      // dropControls は改行も消すので、空白は入らない
+      expect(view.state.selection.main.head).toBe(4);
+
+      const keep = mountWith((text) => text.replaceAll("\u0000", ""));
+      keep.dispatch({
+        changes: { from: 2, insert: "\u0000a\nb" },
+        selection: { anchor: 6 },
+        userEvent: "input.paste",
+      });
+      expect(keep.state.doc.toString()).toBe("題名a b");
+      expect(keep.state.selection.main.head).toBe(5);
+    });
+
+    test("変換中の入力と、userEvent の無い差し替えは書き換えない", () => {
+      const view = mountWith(dropControls);
+      view.dispatch({ changes: { from: 2, insert: "\u0001" }, userEvent: "input.type.compose" });
+      expect(view.state.doc.toString()).toBe("題名\u0001");
+      replaceDoc(view, "外\u0001");
+      expect(view.state.doc.toString()).toBe("外\u0001");
+    });
+  });
+
   test("Enter moves to the end of the body's first line without touching the title", () => {
     const { titleView, bodyView } = setup();
     expect(press(titleView, "Enter")).toBe(true);

@@ -37,6 +37,7 @@ import { lineBreakInput } from "./line-break-input";
 import { linkActivation } from "./link-activation";
 import { listKeymap } from "./list-keymap";
 import { livePreview } from "./live-preview";
+import { nulMarker } from "./nul-marker";
 import type { PageIndex } from "./page-index";
 import { readOnlyCompartment, readOnlySafeHistoryKeymap } from "./read-only";
 import { docReplacement, resettableHistory } from "./replace-doc";
@@ -186,6 +187,8 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
     linkActivation(),
     blockIdAssignment(),
     blockIdHighlight(),
+    // livePreview を切った source の表示でも出す。NUL は保存で拒まれるので、どの表示でも消せる必要がある
+    nulMarker(),
     docReplacement,
   ];
   // frontmatter を畳むのは記法を隠す表示なので、livePreview を切ったときは source のまま出す

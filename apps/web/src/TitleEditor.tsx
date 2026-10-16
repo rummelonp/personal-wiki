@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { titleInputText } from "@personal-wiki/domain/title";
 import {
   createTitleEditor,
   dispatchWhenSettled,
@@ -77,6 +78,8 @@ export function TitleEditor({
       readOnly: initial.readOnly,
       bodyView: () => latest.current.bodyView(),
       onCommit: () => latest.current.onCommit(),
+      // 保存で拒まれる制御文字は、貼った時点で取り除く。見えない文字を後から探させない
+      normalizeInput: titleInputText,
       extensions: EditorView.domEventHandlers({
         blur: () => {
           latest.current.onBlur();
