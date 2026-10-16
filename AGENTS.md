@@ -71,6 +71,7 @@ Worker の開発とデプロイは `apps/worker` で実行する。
 ```sh
 pnpm db:migrate         # ローカルの D1 に migration を適用
 pnpm dev                # apps/web を build してから wrangler dev
+pnpm dev:owner [--port <n>]  # owner でログインした状態で開く（http://localhost:8780。wrangler dev は 8781）
 pnpm deploy:remote      # deploy.env から設定を合成してデプロイ
 pnpm db:migrate:remote  # 本番の D1 に migration を適用
 pnpm api-token issue <name> --scopes read|read,write [--remote]
@@ -81,6 +82,16 @@ pnpm link-rewrites [--remote] [--target <page id>]  # title の変更で待っ�
 pnpm backup [--remote] [--out <dir>] [--with-tokens]  # D1 の本文を SQL のダンプにして手元に残す
 pnpm backup load <dir> [--remote]  # ダンプを新しい D1 に流し込む
 ```
+
+`dev:owner` は、乱数の `SESSION_SECRET` と Access の仮の値を一時ディレクトリに書いて wrangler dev を起動し、前段の loopback の proxy がリクエストごとに owner の cookie を足す。
+`.dev.vars` は読まず、D1 は `pnpm dev` と同じローカルのものを使う。
+migration は適用しないので、先に `pnpm db:migrate` を実行する。
+ログアウトしても、再読み込みで owner に戻る。
+匿名の画面は、proxy を通らない `<port> + 1`（既定は 8781）で見る。
+Host が loopback でないリクエストと `--remote` は拒む。
+inspector は `<port> + 549`（既定は 9329）を使う。
+別の worktree と同時に動かすときは `--port` を変える（wrangler dev と inspector も一緒にずれる）。
+cookie の値は `scripts/session-cookie.mjs` が作り、E2E も同じものを使う。
 
 `derived:rebuild` と `link-rewrites` は、環境変数 `WIKI_TOKEN` から write の token を読む。
 平文をコマンド行に書くとシェルの履歴に残るので、`read -rs WIKI_TOKEN && export WIKI_TOKEN` で入れる。
@@ -129,8 +140,9 @@ CI（`.github/workflows/ci.yml`）も同じ 3 つを実行する。
   取り込む各コミットで `pnpm typecheck` が通ることも確かめる。
 - 同時に動かすレーン: 3〜4 本まで（E2E を流すレーンが重なると手元のマシンが重くなる）。
 - 排他の資源: `--repeat-each` などで繰り返す E2E は、ほかのレーンの検証と重ねない（負荷で、関係のないテストが時間切れで落ちる）。
-- 開発サーバー: 開発の `wrangler dev` は 8787、E2E は既定で 8790 を使う。
+- 開発サーバー: 開発の `wrangler dev` は 8787、`dev:owner` は既定で 8780 と 8781、E2E は既定で 8790 を使う。
   8790 は統括の E2E に空けておき、レーンには 8800 から 10 ずつ `E2E_PORT` を渡す。
+  8780 は統括の `dev:owner` に空けておき、レーンには 8700 から 10 ずつ `--port` を渡す（4 本までなら、開発、E2E、統括の `dev:owner` のポートと重ならない）。
   E2E は `.dev.vars` を読まないので、レーンの worktree に写さない。
 - 不変条件: エディタは `packages/editor/src/ime.ts` 冒頭の IME の不変条件を守る。
   高リスクの領域は、認証と権限、draft と public の公開範囲、D1 の migration。

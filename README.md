@@ -43,6 +43,15 @@ pnpm dev
 
 ローカルの D1 に migration を適用し、`apps/web` をビルドしてから `wrangler dev` を起動します。
 
+`pnpm dev` の画面は匿名です。
+owner として編集を試すときは、`pnpm dev` の代わりに `pnpm dev:owner` を実行し、http://localhost:8780 を開きます。
+Cloudflare Access の設定は要りません。
+起動ごとに乱数の `SESSION_SECRET` を作り、前段の proxy がリクエストごとに owner の cookie を足します。
+ブラウザには cookie を置かないので、iOS の Simulator の Safari からも同じ URL で入れます。
+ログアウトしても、再読み込みすると owner に戻ります。
+ポートは `--port <n>` で変えられ、proxy を通らない `wrangler dev` は `<n> + 1` で動きます。
+匿名の画面は、その `wrangler dev`（既定では http://localhost:8781）で見られます。
+
 ## デプロイ
 
 Cloudflare アカウントと、そのアカウントの DNS にあるホスト名のゾーンが要ります。
