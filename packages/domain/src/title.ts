@@ -1,3 +1,4 @@
+import { CONTROL_CHARS } from "./control-char";
 import { err, ok, type Result } from "./result";
 
 declare const titleKeyBrand: unique symbol;
@@ -60,6 +61,14 @@ const LINE_BREAK_OR_TAB = /\r\n|[\n\r\t\u2028\u2029]/g;
  */
 export function singleLineTitle(text: string): string {
   return text.replace(LINE_BREAK_OR_TAB, " ").trim();
+}
+
+/**
+ * title 欄に打った文字列や貼った文字列から、保存で拒まれる文字を除く。改行とタブは singleLineTitle と
+ * 同じく空白にし、ほかの C0 と DEL は取り除く。入力の途中の値に掛けるので trim はしない。
+ */
+export function titleInputText(text: string): string {
+  return text.replace(LINE_BREAK_OR_TAB, " ").replace(CONTROL_CHARS, "");
 }
 
 /** WikiLink の構文（`[[target|label]]`、`#heading`、`^blockid`）と重なり、target に書けない文字 */

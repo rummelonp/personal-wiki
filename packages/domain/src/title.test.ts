@@ -5,8 +5,19 @@ import {
   foldTitle,
   normalizeTitleKey,
   singleLineTitle,
+  titleInputText,
   wikiLinkUnsafeChars,
 } from "./title";
+
+describe("titleInputText", () => {
+  it("改行とタブを 1 つずつ空白にし、ほかの C0 と DEL を除き、trim しない", () => {
+    expect(titleInputText(" a\r\nb\tc\u0000d\u0001e\u001ff\u007fg ")).toBe(" a b cdefg ");
+  });
+
+  it("C0 の外の文字と、改行のない入力はそのまま返す", () => {
+    expect(titleInputText("会議\u0080メモ 😀")).toBe("会議\u0080メモ 😀");
+  });
+});
 
 describe("wikiLinkUnsafeChars", () => {
   it("returns nothing for a title a WikiLink can target", () => {

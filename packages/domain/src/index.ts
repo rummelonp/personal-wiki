@@ -8,7 +8,19 @@ export {
   isAttachmentName,
   matchesAttachmentMagic,
 } from "./attachment";
-export { textHasNul, titleHasControlChar } from "./page-input";
+export {
+  type CharAt,
+  checkPageInput,
+  findControlChar,
+  findNul,
+  MAX_BODY_BYTES,
+  MAX_TITLE_BYTES,
+  type PageInputCheck,
+  type PageInputProblem,
+  textHasNul,
+  titleHasControlChar,
+  utf8ByteLength,
+} from "./page-input";
 export {
   canonicalPagePath,
   isPageId,
@@ -24,6 +36,9 @@ export { type Err, err, isErr, isOk, mapResult, type Ok, ok, type Result } from 
 export {
   ANONYMOUS_SEARCH_MIN_CHARS,
   foldForSearch,
+  prepareSearchQuery,
+  SEARCH_MAX_QUERY_CHARS,
+  type SearchQuery,
   searchQueryLength,
   TRIGRAM_MIN_CHARS,
 } from "./search";
@@ -35,5 +50,6 @@ export {
   singleLineTitle,
   type TitleKey,
   type TitleKeyError,
+  titleInputText,
   wikiLinkUnsafeChars,
 } from "./title";
