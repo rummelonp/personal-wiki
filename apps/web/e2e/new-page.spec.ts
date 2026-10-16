@@ -245,10 +245,10 @@ test("title の一覧を取れなかったときの [[ の補完は失敗を案�
     `[[${SEED.welcome.slice(0, 2)}`,
   );
   const popup = page.locator(".cm-tooltip-autocomplete");
-  // 失敗なのか一致なしなのか区別できるよう、案内の行を出す。「作成」は出さない
+  // 失敗なのか一致なしなのか区別できるよう、案内の行を出す。「まだ無いページ」への行は出さない
   const notice = popup.getByText("候補を取得できません");
   await expect(notice).toBeVisible();
-  await expect(popup.getByText(/を作成$/)).toHaveCount(0);
+  await expect(popup.getByText(/へリンク（まだ無いページ）$/)).toHaveCount(0);
   // 待つか打ち直すかを案内し、窓の幅（iOS 幅を含む）に収まって 2 行までで読める。選べる候補としては伝えない
   await expect(notice).toContainText("打ち直してください");
   const row = popup.locator("li");

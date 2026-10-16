@@ -166,7 +166,7 @@ const deselectNotices = ViewPlugin.define(() => ({
  */
 function failureNotice(): Completion {
   const notice: Completion = {
-    label: "候補を取得できません。少し待って、打ち直してください。",
+    label: "候補を取得できませんでした。少し待って、打ち直してください。",
     type: "text",
     apply: (view) => {
       closeCompletion(view);
@@ -177,7 +177,7 @@ function failureNotice(): Completion {
 }
 
 /**
- * 候補が 1 つも無いときに出す「「…」を作成」。選ぶと候補と同じく link を閉じるだけで、page は
+ * 候補が 1 つも無いときに出す「「…」へリンク（まだ無いページ）」。選ぶと候補と同じく link を閉じるだけで、page は
  * まだ作らない。存在しない page への link は書いてよく、page は
  * 未解決の link を開いたときにホストが作る（`onWikiLinkClick`）。ここで作ると、書いている
  * 途中で使わないかもしれない page が増える。
@@ -188,7 +188,12 @@ function createOptions(query: string): Completion[] {
   const title = query.trim();
   if (title === "" || /[#^]/.test(title)) return [];
   return [
-    { label: title, displayLabel: `「${title}」を作成`, type: "text", apply: applyText(title) },
+    {
+      label: title,
+      displayLabel: `「${title}」へリンク（まだ無いページ）`,
+      type: "text",
+      apply: applyText(title),
+    },
   ];
 }
 
@@ -253,8 +258,9 @@ async function sectionCompletion(
 }
 
 /**
- * `[[Title` の候補。取得前の「作成」は既にあるページを無いと見せる偽の候補になる。取得に失敗して
- * 空のままのときも同じなので、「作成」の代わりに失敗を案内する。取得が済んでいない間は何も出さない。
+ * `[[Title` の候補。取得前に「まだ無いページ」の行を出すと、既にあるページを無いと見せる偽の
+ * 候補になる。取得に失敗して空のままのときも同じなので、その行の代わりに失敗を案内する。
+ * 取得が済んでいない間は何も出さない。
  */
 function titleOptions(index: PageIndex, query: string, candidates: PageCandidate[]): Completion[] {
   if (candidates.length > 0) return candidates.map(candidateOption);

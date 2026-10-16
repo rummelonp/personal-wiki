@@ -81,8 +81,10 @@ describe("the create option", () => {
     expect(labels(v)).toEqual(["Code"]);
 
     await typeQuery(v, "Zeta");
-    expect(labels(v)).toEqual(["「Zeta」を作成"]);
-    expect(host?.querySelector(".cm-tooltip-autocomplete li")?.textContent).toBe("「Zeta」を作成");
+    expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]);
+    expect(host?.querySelector(".cm-tooltip-autocomplete li")?.textContent).toBe(
+      "「Zeta」へリンク（まだ無いページ）",
+    );
   });
 
   it("is not offered until the index has finished its first load", async () => {
@@ -104,7 +106,7 @@ describe("the create option", () => {
     await typeQuery(v, "Code");
     expect(labels(v)).toEqual(["Code"]);
     await typeQuery(v, "Zeta");
-    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+    expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]);
   });
 
   it("is replaced by a failure notice while the index has failed to load and has no candidates", async () => {
@@ -120,13 +122,13 @@ describe("the create option", () => {
     };
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Code");
-    expect(labels(v)).toEqual(["候補を取得できません。少し待って、打ち直してください。"]);
+    expect(labels(v)).toEqual(["候補を取得できませんでした。少し待って、打ち直してください。"]);
 
     failed = false;
     await typeQuery(v, "Code");
     expect(labels(v)).toEqual(["Code"]);
     await typeQuery(v, "Zeta");
-    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+    expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]);
   });
 
   it("is not offered for a blank query or a heading or block reference", async () => {
@@ -148,7 +150,7 @@ describe("the create option", () => {
   it("uses the query without its surrounding spaces as the title", async () => {
     const { view: v } = mount();
     await typeQuery(v, " Zeta ");
-    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+    expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]);
     expect(acceptCompletion(v)).toBe(true);
     expect(v.state.doc.toString()).toBe("[[Zeta]]");
     expect(v.state.selection.main.head).toBe("[[Zeta]]".length);
@@ -161,7 +163,7 @@ describe("the create option", () => {
       selection: { anchor: 6 },
       userEvent: "input.type",
     });
-    await vi.waitFor(() => expect(labels(v)).toEqual(["「Zeta」を作成"]));
+    await vi.waitFor(() => expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]));
     await afterInteractionDelay();
     acceptCompletion(v);
     expect(v.state.doc.toString()).toBe("[[Zeta]]");
@@ -179,7 +181,7 @@ describe("the failure notice", () => {
   it("is not selectable: Enter and Tab do not pick it, and are left to the editor", async () => {
     const { view: v } = mount("", undefined, failingIndex());
     await typeQuery(v, "Co");
-    expect(labels(v)).toEqual(["候補を取得できません。少し待って、打ち直してください。"]);
+    expect(labels(v)).toEqual(["候補を取得できませんでした。少し待って、打ち直してください。"]);
     await afterInteractionDelay();
     runScopeHandlers(v, new KeyboardEvent("keydown", { key: "Enter" }), "editor");
     // 案内が Enter を取ると改行できない（選んでも何も書かない）。取らなければ、editor の改行になる
@@ -256,7 +258,7 @@ describe("the index retry", () => {
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Co");
     expect(state.retries).toBe(1);
-    expect(labels(v)).toEqual(["候補を取得できません。少し待って、打ち直してください。"]);
+    expect(labels(v)).toEqual(["候補を取得できませんでした。少し待って、打ち直してください。"]);
   });
 
   it("is also awaited while the first load has not finished, then offers create for a missing page", async () => {
@@ -271,7 +273,7 @@ describe("the index retry", () => {
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Zeta");
     expect(state.retries).toBe(1);
-    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+    expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]);
   });
 
   it("is not called when candidates are found", async () => {
@@ -289,7 +291,7 @@ describe("the index retry", () => {
     const { view: v } = mount("", undefined, index);
     await typeQuery(v, "Zeta");
     expect(state.retries).toBe(0);
-    expect(labels(v)).toEqual(["「Zeta」を作成"]);
+    expect(labels(v)).toEqual(["「Zeta」へリンク（まだ無いページ）"]);
   });
 
   it("drops the result when a composition starts while it waits", async () => {
