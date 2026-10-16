@@ -137,7 +137,7 @@ async function mountInDock(options: {
   titleDiffers?: boolean;
   viewportHeight?: number;
 }) {
-  await browserPage.viewport(393, options.viewportHeight ?? 700);
+  await browserPage.viewport(393, options.viewportHeight ?? 500);
   let maxHeight = options.detailsMaxHeight;
   if (options.detailsRows !== undefined) {
     const probe = document.createElement("div");

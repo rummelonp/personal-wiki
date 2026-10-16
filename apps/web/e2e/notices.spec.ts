@@ -627,8 +627,8 @@ test("台の上限の手前の低さでは、台が数 px だけスクロール�
   api,
 }, testInfo) => {
   await provokeLongConflict(page, api, uniqueTitle(testInfo, "低い画面"));
-  // 通知の下限の高さ（20rem）が、台の既定の上限（0.6）に収まらなくなる高さから、広げた上限（0.85）の手前まで
-  for (const height of [560, 500, 440, 420]) {
+  // 通知の下限の高さ（24rem）が、台の既定の上限（0.6）に収まらなくなる高さから、広げた上限（0.85）の手前まで
+  for (const height of [560, 520, 500, 485]) {
     await page.setViewportSize({ width: 393, height });
     await expect
       .poll(

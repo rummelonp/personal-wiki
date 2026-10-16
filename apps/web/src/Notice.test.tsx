@@ -529,11 +529,11 @@ describe("台の高さの上限", () => {
       </NoticeDockProvider>,
     );
     const limit = () => Number.parseFloat(getComputedStyle(dock() as Element).maxHeight);
-    // 下限の高さ（20rem）と台の余白（上下 0.75rem ずつ）を足した 344px
+    // 下限の高さ（24rem）と台の余白（上下 0.75rem ずつ）を足した 408px
     expect(limit()).toBeCloseTo(420, 0);
     await browserPage.viewport(375, 500);
     viewport.set({ height: 500 });
-    expect(limit()).toBeCloseTo(344, 0);
+    expect(limit()).toBeCloseTo(408, 0);
     // 見える高さの 0.85 でも収まらない低さでは、限りで止めて台の中をスクロールさせる
     await browserPage.viewport(375, 360);
     viewport.set({ height: 360 });
