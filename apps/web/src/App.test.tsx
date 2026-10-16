@@ -987,10 +987,7 @@ describe("App の owner の画面", () => {
       serve("anonymous", [PUBLIC]);
       await renderAt("/?new");
       await vi.waitFor(() =>
-        expect(main()?.querySelector("h1")?.textContent).toBe("ログインが必要です"),
-      );
-      expect(main()?.querySelector(".empty-text")?.textContent).toBe(
-        "ページの作成はログインした後に使えます。",
+        expect(main()?.querySelector("h1")?.textContent).toBe("ページを作るにはログインが必要です"),
       );
       expect(main()?.querySelector(".cm-editor")).toBeNull();
       expect(createPage).not.toHaveBeenCalled();

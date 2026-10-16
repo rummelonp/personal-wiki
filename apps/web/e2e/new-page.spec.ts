@@ -365,7 +365,9 @@ test.describe("匿名", () => {
 
   test("/?new を開くと、作成の画面を出さずにログインを案内する", async ({ page }) => {
     await page.goto("/?new");
-    await expect(page.getByRole("heading", { name: "ログインが必要です" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "ページを作るにはログインが必要です" }),
+    ).toBeVisible();
     await expect(page.locator(".cm-editor")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "新規作成" })).toHaveCount(0);
   });
