@@ -57,11 +57,11 @@ describe("MissingPage", () => {
     expect(view.textContent).toContain("まだ作られていないか、公開されていないページです。");
   });
 
-  it("owner には、リンク元が 0 件でも節と「ありません」を出す", async () => {
+  it("owner には、リンク元が 0 件でも節と「まだありません」を出す", async () => {
     const view = await renderMissing(true);
     const section = view.querySelector(".rail-section-links");
     expect(section?.textContent).toContain("このページへのリンク");
-    expect(section?.textContent).toContain("ありません。");
+    expect(section?.textContent).toContain("まだありません。");
   });
 
   it("匿名にも、リンク元があれば節を出す", async () => {

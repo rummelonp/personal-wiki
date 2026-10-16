@@ -87,12 +87,12 @@ describe("Backlinks の title での取得", () => {
     );
   }
 
-  it("title で引き、届いた後に onSettled を 1 回呼び、0 件なら「ありません」と出す", async () => {
+  it("title で引き、届いた後に onSettled を 1 回呼び、0 件なら「まだありません」と出す", async () => {
     vi.mocked(listBacklinksByTitle).mockResolvedValue(ok({ pages: [], nextCursor: null }));
     const onSettled = vi.fn();
     await mountTitle(onSettled);
     await vi.waitFor(() =>
-      expect(container?.querySelector(".muted")?.textContent).toBe("ありません。"),
+      expect(container?.querySelector(".muted")?.textContent).toBe("まだありません。"),
     );
     expect(listBacklinksByTitle).toHaveBeenCalledWith("Ruby", null);
     expect(listBacklinks).not.toHaveBeenCalled();

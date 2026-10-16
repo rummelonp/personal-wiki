@@ -43,7 +43,7 @@ interface BacklinksProps {
   /**
    * 読み込み中とリンク元が 0 件のあいだ節ごと出さない。リンク元が無いことは読者にとって
    * 情報にならない。1 件以上あれば読み込みの後に節が現れ、取得に失敗したときは節を出して失敗を伝える。
-   * owner には「ありません」を出し、リンクを張る手がかりにする。
+   * owner には「まだありません」を出し、リンクを張る手がかりにする。
    */
   hideEmpty?: boolean;
   /** target ごとの最初の取得が済み（失敗も含む）、その結果を描いた後に呼ぶ。画面の高さが決まったことを伝える */
@@ -120,7 +120,7 @@ export function Backlinks({ target, hideEmpty = false, onSettled }: BacklinksPro
       {state.status === "loading" && <PendingLinks />}
       {state.status === "error" && <p className="muted">取得できませんでした。</p>}
       {state.status === "ready" && state.pages.length === 0 && (
-        <p className="muted">ありません。</p>
+        <p className="muted">まだありません。</p>
       )}
       {state.status === "ready" && state.pages.length > 0 && (
         <ul className="rail-list">

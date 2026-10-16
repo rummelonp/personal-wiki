@@ -1054,7 +1054,7 @@ describe("PageEditor の wikilink", () => {
     renderPage({ ...PAGE, body: "[[無い]]" });
     clickLink("無い");
     await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
-    expect(container?.textContent).not.toContain("まだありません");
+    expect(container?.textContent).not.toContain("のページはまだありません");
     expect(createPage).not.toHaveBeenCalled();
   });
 
@@ -1113,7 +1113,7 @@ describe("PageEditor の wikilink", () => {
     renderPage({ ...PAGE, body: "[[別]]" });
     clickLink("別");
     await vi.waitFor(() => expect(container?.textContent).toContain("調べられませんでした"));
-    expect(container?.textContent).not.toContain("まだありません");
+    expect(container?.textContent).not.toContain("のページはまだありません");
     expect(location.pathname).toBe(new URL(startUrl).pathname);
   });
 
