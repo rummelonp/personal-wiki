@@ -605,6 +605,17 @@ export class EditorSession {
     if (!kept) this.stashIfDirty();
   }
 
+  /**
+   * 前の失敗を消す。ただし title の重複の失敗は、draft の title がその title のままなら残す。
+   * 重複は title を変えるまで同じ応答になり、holdsBack はこの記録を見て送るのを止める。消すと、
+   * 版の取り込みや visibility の変更のあとに、重複と言われた title をもう一度送る。
+   */
+  private clearedError(): Pick<EditorState, "error" | "failedOp"> | Record<string, never> {
+    const { failedOp, draft } = this.state;
+    const rejected = failedOp?.kind === "create" || failedOp?.kind === "save" ? failedOp : null;
+    return rejected?.titleTaken?.title === draft.title ? {} : NO_ERROR;
+  }
+
   /** 保存できなかった手元の内容を localStorage に残す。 */
   private stashIfDirty(): void {
     if (isDirty(this.state)) this.stash();
@@ -912,7 +923,7 @@ export class EditorSession {
       base: server,
       draft: { title: draft.title, body },
       externalBases: this.state.externalBases + 1,
-      ...NO_ERROR,
+      ...this.clearedError(),
     });
     return true;
   }
@@ -1135,7 +1146,7 @@ export class EditorSession {
   /** ログイン切れの後、別のタブなどでログインし直したときの再試行。 */
   retry(): Promise<void> {
     this.markActive();
-    this.set({ authLost: false, ...NO_ERROR });
+    this.set({ authLost: false, ...this.clearedError() });
     return this.state.uncreated ? this.create() : this.flush();
   }
 
@@ -1230,8 +1241,9 @@ export class EditorSession {
     return this.enqueue(async () => {
       if (this.state.uncreated) return;
       this.clearTimer();
-      // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える
-      this.set(NO_ERROR);
+      // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える。title の重複は保存できない
+      // ままなので残し、visibility を変えない
+      this.set(this.clearedError());
       await this.saveIfDirty();
       // 保存できなかった（衝突、ログイン切れ、失敗、送れない内容）なら、画面の状態表示に任せて
       // visibility は変えない。手元に保存できない内容を残したまま、公開範囲だけを変えない

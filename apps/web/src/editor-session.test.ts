@@ -2523,6 +2523,57 @@ describe("保存の前の検査", () => {
     expect(session.getState()).toMatchObject({ error: null, base: { title: "週報 2" } });
   });
 
+  describe("重複と言われた title の記録は、title を変えるまで残す", () => {
+    function takenSetup() {
+      const ctx = setup({ server: page({ body: "[[旧]] 本文" }) });
+      const update = ctx.api.updatePage.bind(ctx.api);
+      const titles: string[] = [];
+      ctx.api.updatePage = async (id, version, input, options) => {
+        titles.push(input.title);
+        if (input.title === "週報") {
+          return { ok: false, reason: "title_conflict", message: "重複" };
+        }
+        return update(id, version, input, options);
+      };
+      return { ...ctx, titles };
+    }
+
+    it("リンクの書き換えを取り込んで本文を重ねても、同じ title を送り直さない", async () => {
+      const { session, server, titles } = takenSetup();
+      session.editTitle("週報");
+      await session.commitTitle();
+      expect(titles).toEqual(["週報"]);
+
+      server.page = { ...server.page, body: "[[新]] 本文", version: 2 };
+      await session.linkRewritten({ sourcePageId: ID, version: 2 });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await session.flush();
+      expect(session.getState()).toMatchObject({
+        base: { version: 2 },
+        draft: { title: "週報", body: "[[新]] 本文" },
+        failedOp: { kind: "save", titleTaken: { title: "週報" } },
+      });
+      expect(titles).toEqual(["週報"]);
+
+      session.editTitle("週報 2");
+      await session.commitTitle();
+      expect(titles).toEqual(["週報", "週報 2"]);
+      expect(server.page.title).toBe("週報 2");
+    });
+
+    it("visibility を変えようとしても同じ title を送らず、visibility も変えない", async () => {
+      const { session, api, server, titles } = takenSetup();
+      api.setVisibility = vi.fn(api.setVisibility);
+      session.editTitle("週報");
+      await session.commitTitle();
+      await session.changeVisibility("public");
+      expect(titles).toEqual(["週報"]);
+      expect(api.setVisibility).not.toHaveBeenCalled();
+      expect(server.page.visibility).toBe("draft");
+      expect(session.getState().failedOp).toMatchObject({ titleTaken: { title: "週報" } });
+    });
+  });
+
   it("サーバーが入力の誤りで拒んだら、送り直しても通らないと印を付ける", async () => {
     const { session, api } = setup();
     api.updatePage = async () => ({
