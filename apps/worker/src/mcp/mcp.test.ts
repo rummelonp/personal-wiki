@@ -487,7 +487,8 @@ describe("ページの tool", () => {
       isError: true,
       json: {
         error: "version_conflict",
-        message: "版が合わない。最新版を読み直してから保存し直す",
+        message:
+          "version が合わない。最新の title と body を読み直し、変更を載せ直してから保存し直す",
         currentVersion: 2,
         current: { title: "Doc", body: "v2", version: 2 },
       },
@@ -575,9 +576,18 @@ describe("ページの tool", () => {
     const { call } = await mcpClient();
     const { json: created } = await call("create_page", { title: "Ctl", body: "元" });
     const before = await snapshotDb();
+    // 位置は REST の試験で細かく確かめるので、ここでは MCP にも同じ項目が載ることだけを見る
     const fieldError = (field: string) => ({
       isError: true,
-      json: { error: "invalid_field", field, reason: "control_char", message: expect.any(String) },
+      json: {
+        error: "invalid_field",
+        field,
+        reason: "control_char",
+        line: 1,
+        column: expect.any(Number),
+        codePoint: expect.stringMatching(/^U\+00/),
+        message: expect.stringContaining(`${field} の `),
+      },
     });
     expect(await call("create_page", { title: "a\u0001b", body: "" })).toEqual(fieldError("title"));
     expect(await call("create_page", { title: "x", body: "a\u0000" })).toEqual(fieldError("body"));
@@ -608,7 +618,8 @@ describe("ページの tool", () => {
         isError: true,
         json: {
           error: "visibility_not_allowed",
-          message: "visibility は API から変えられない。ページは draft で作られる",
+          message:
+            "visibility は API から変えられない。visibility を外して送り直す（ページは draft で作られ、公開はオーナーがブラウザで行う）",
         },
       });
     }
@@ -666,8 +677,28 @@ describe("ページの tool", () => {
     const longTitle = "あ".repeat(Math.floor(MAX_TITLE_BYTES / 3) + 1);
     // 3 バイトの文字で、文字数ではなくバイト数で数えることを確かめる
     const largeBody = "あ".repeat(Math.floor(MAX_BODY_BYTES / 3) + 1);
-    const tooLong = { isError: true, json: { error: "title_too_long", max: MAX_TITLE_BYTES } };
-    const tooLarge = { isError: true, json: { error: "body_too_large", max: MAX_BODY_BYTES } };
+    const tooLong = {
+      isError: true,
+      json: {
+        error: "title_too_long",
+        field: "title",
+        max: MAX_TITLE_BYTES,
+        actual: longTitle.length * 3,
+        unit: "utf8_bytes",
+        message: expect.any(String),
+      },
+    };
+    const tooLarge = {
+      isError: true,
+      json: {
+        error: "body_too_large",
+        field: "body",
+        max: MAX_BODY_BYTES,
+        actual: largeBody.length * 3,
+        unit: "utf8_bytes",
+        message: expect.any(String),
+      },
+    };
     expect(await call("create_page", { title: longTitle, body: "" })).toEqual(tooLong);
     expect(await call("create_page", { title: "Big", body: largeBody })).toEqual(tooLarge);
     expect(
@@ -676,7 +707,10 @@ describe("ページの tool", () => {
     expect(
       await call("update_page", { id: created.id, version: 1, title: "Limit", body: largeBody }),
     ).toEqual(tooLarge);
-    expect(await call("append_to_page", { id: created.id, text: largeBody })).toEqual(tooLarge);
+    expect(await call("append_to_page", { id: created.id, text: largeBody })).toEqual({
+      isError: true,
+      json: { ...tooLarge.json, field: "text", currentBytes: 0 },
+    });
     expect(await snapshotDb()).toEqual(before);
   });
 

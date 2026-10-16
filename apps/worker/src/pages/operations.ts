@@ -1,4 +1,4 @@
-import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
+import { type CharAt, MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import type { Principal } from "../auth/principal";
 import { isPageId } from "./id";
 import {
@@ -182,7 +182,7 @@ export async function setVisibilityAs(
 
 /** visibility_not_allowed の説明。REST の本文のキーと MCP の tool の入力で共通にする。 */
 export const VISIBILITY_NOT_ALLOWED_MESSAGE =
-  "visibility は API から変えられない。ページは draft で作られる";
+  "visibility は API から変えられない。visibility を外して送り直す（ページは draft で作られ、公開はオーナーがブラウザで行う）";
 
 export interface WriteErrorDescription {
   /** REST の応答に使う HTTP ステータス */
@@ -205,18 +205,47 @@ export function describeWriteError(error: WriteError | AppendError): WriteErrorD
           error: "invalid_field",
           field: error.field,
           reason: "control_char",
-          message:
-            error.field === "title"
-              ? "title に制御文字（NUL など）を含められない"
-              : error.field === "body"
-                ? "本文に NUL を含められない"
-                : "text に NUL を含められない",
+          line: error.at.line,
+          column: error.at.column,
+          codePoint: error.at.codePoint,
+          message: controlCharMessage(error.field, error.at),
         },
       };
     case "title_too_long":
-      return { status: 400, body: { error: "title_too_long", max: MAX_TITLE_BYTES } };
+      return {
+        status: 400,
+        body: {
+          error: "title_too_long",
+          field: "title",
+          max: error.max,
+          actual: error.bytes,
+          unit: "utf8_bytes",
+          message: `title が長すぎる（UTF-8 で ${error.bytes} バイト、上限 ${error.max} バイト）。短くして送り直す`,
+        },
+      };
     case "body_too_large":
-      return { status: 413, body: { error: "body_too_large", max: MAX_BODY_BYTES } };
+      return {
+        status: 413,
+        body:
+          error.field === "text"
+            ? {
+                error: "body_too_large",
+                field: "text",
+                max: error.max,
+                actual: error.bytes,
+                currentBytes: error.currentBytes,
+                unit: "utf8_bytes",
+                message: `追記後の本文が上限を超える（追記後 ${error.bytes} バイト、今の本文 ${error.currentBytes} バイト、上限 ${error.max} バイト）。text を短くするか、別のページに書く`,
+              }
+            : {
+                error: "body_too_large",
+                field: "body",
+                max: error.max,
+                actual: error.bytes,
+                unit: "utf8_bytes",
+                message: `body が長すぎる（UTF-8 で ${error.bytes} バイト、上限 ${error.max} バイト）。短くするか、ページを分ける`,
+              },
+      };
     case "not_found":
       return { status: 404, body: { error: "not_found" } };
     case "version_conflict":
@@ -224,7 +253,8 @@ export function describeWriteError(error: WriteError | AppendError): WriteErrorD
         status: 409,
         body: {
           error: "version_conflict",
-          message: "版が合わない。最新版を読み直してから保存し直す",
+          message:
+            "version が合わない。最新の title と body を読み直し、変更を載せ直してから保存し直す",
           currentVersion: error.currentVersion,
         },
       };
@@ -242,4 +272,14 @@ export function describeWriteError(error: WriteError | AppendError): WriteErrorD
         },
       };
   }
+}
+
+/**
+ * title の位置は 1 行に整えた後の title で数える。送った文字列の位置とずれうるので、数え方も文に書く。
+ */
+function controlCharMessage(field: "title" | "body" | "text", at: CharAt): string {
+  if (field === "title") {
+    return `title の ${at.column} 文字目に制御文字 ${at.codePoint} がある（位置は、改行とタブを空白にし前後の空白を除いた後の title で数える）。取り除いて送り直す`;
+  }
+  return `${field} の ${at.line} 行 ${at.column} 文字目に NUL（${at.codePoint}）がある。取り除いて送り直す`;
 }

@@ -109,7 +109,15 @@ describe("POST /api/pages", () => {
       json: { title: "big", body: "あ".repeat(Math.floor(MAX_BODY_BYTES / 3) + 1) },
     });
     expect(over.status).toBe(413);
-    expect(await over.json()).toEqual({ error: "body_too_large", max: MAX_BODY_BYTES });
+    const overBytes = (Math.floor(MAX_BODY_BYTES / 3) + 1) * 3;
+    expect(await over.json()).toEqual({
+      error: "body_too_large",
+      field: "body",
+      max: MAX_BODY_BYTES,
+      actual: overBytes,
+      unit: "utf8_bytes",
+      message: `body が長すぎる（UTF-8 で ${overBytes} バイト、上限 ${MAX_BODY_BYTES} バイト）。短くするか、ページを分ける`,
+    });
   });
 
   it("JSON を解析する前に、Content-Length が上限を大きく超えるリクエストを 413 にする", async () => {
@@ -138,7 +146,15 @@ describe("POST /api/pages", () => {
       json: { title: "あ".repeat(Math.floor(MAX_TITLE_BYTES / 3) + 1), body: "" },
     });
     expect(over.status).toBe(400);
-    expect(await over.json()).toEqual({ error: "title_too_long", max: MAX_TITLE_BYTES });
+    const overBytes = (Math.floor(MAX_TITLE_BYTES / 3) + 1) * 3;
+    expect(await over.json()).toEqual({
+      error: "title_too_long",
+      field: "title",
+      max: MAX_TITLE_BYTES,
+      actual: overBytes,
+      unit: "utf8_bytes",
+      message: `title が長すぎる（UTF-8 で ${overBytes} バイト、上限 ${MAX_TITLE_BYTES} バイト）。短くして送り直す`,
+    });
     expect(await snapshotDb()).toEqual(before);
   });
 
@@ -146,14 +162,22 @@ describe("POST /api/pages", () => {
     const { create, request } = await buildClient();
     const page = await create("元の title", "本文");
     const before = await snapshotDb();
-    for (const title of ["a\u0000b", "a\u0001b", "a\u001fb", "a\u007fb"]) {
+    for (const [title, codePoint] of [
+      ["a\u0000b", "U+0000"],
+      ["a\u0001b", "U+0001"],
+      ["a\u001fb", "U+001F"],
+      ["a\u007fb", "U+007F"],
+    ]) {
       const created = await request("/api/pages", { method: "POST", json: { title, body: "" } });
       expect(created.status).toBe(400);
       expect(await created.json()).toEqual({
         error: "invalid_field",
         field: "title",
         reason: "control_char",
-        message: expect.any(String),
+        line: 1,
+        column: 2,
+        codePoint,
+        message: expect.stringContaining(`title の 2 文字目に制御文字 ${codePoint} がある`),
       });
       const updated = await request(`/api/pages/${page.id}`, {
         method: "PUT",
@@ -182,14 +206,17 @@ describe("POST /api/pages", () => {
     const before = await snapshotDb();
     const created = await request("/api/pages", {
       method: "POST",
-      json: { title: "NUL", body: "a\u0000b" },
+      json: { title: "NUL", body: "1\r\n😀a\u0000b" },
     });
     expect(created.status).toBe(400);
     expect(await created.json()).toEqual({
       error: "invalid_field",
       field: "body",
       reason: "control_char",
-      message: expect.any(String),
+      line: 2,
+      column: 3,
+      codePoint: "U+0000",
+      message: "body の 2 行 3 文字目に NUL（U+0000）がある。取り除いて送り直す",
     });
     const updated = await request(`/api/pages/${page.id}`, {
       method: "PUT",
@@ -217,7 +244,15 @@ describe("POST /api/pages", () => {
       json: { text: "a\u0000b" },
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: "invalid_field", field: "text" });
+    expect(await res.json()).toEqual({
+      error: "invalid_field",
+      field: "text",
+      reason: "control_char",
+      line: 1,
+      column: 2,
+      codePoint: "U+0000",
+      message: "text の 1 行 2 文字目に NUL（U+0000）がある。取り除いて送り直す",
+    });
     expect(await snapshotDb()).toEqual(before);
     const ok = await request(`/api/pages/${page.id}/append`, {
       method: "POST",
@@ -455,6 +490,29 @@ describe("POST /api/pages/:id/append", () => {
     const latest = await (await request(`/api/pages/${page.id}`)).json<PageJson>();
     expect(latest.version).toBe(4);
     expect(latest.body.split("\n").sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("追記後の本文が上限を超えると 413 で、追記後と今の本文のバイト数を返し、書かない", async () => {
+    const { create, request } = await buildClient();
+    const page = await create("追記の上限", "あ".repeat(10));
+    const before = await snapshotDb();
+    const res = await request(`/api/pages/${page.id}/append`, {
+      method: "POST",
+      json: { text: "a".repeat(MAX_BODY_BYTES) },
+    });
+    expect(res.status).toBe(413);
+    // 今の本文 30 バイト、区切りの改行 1 バイト、text
+    const actual = 30 + 1 + MAX_BODY_BYTES;
+    expect(await res.json()).toEqual({
+      error: "body_too_large",
+      field: "text",
+      max: MAX_BODY_BYTES,
+      actual,
+      currentBytes: 30,
+      unit: "utf8_bytes",
+      message: `追記後の本文が上限を超える（追記後 ${actual} バイト、今の本文 30 バイト、上限 ${MAX_BODY_BYTES} バイト）。text を短くするか、別のページに書く`,
+    });
+    expect(await snapshotDb()).toEqual(before);
   });
 
   it("無いページは 404、空の text と visibility は 400", async () => {
