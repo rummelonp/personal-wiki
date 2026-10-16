@@ -890,7 +890,7 @@ describe("App の owner の画面", () => {
       expect(bodyContent()).toBe(body);
       expect(body?.textContent).toBe("打ちかけ");
       expect(document.activeElement).toBe(titleContent());
-      expect(screenText()).not.toContain("この端末に退避されています");
+      expect(screenText()).not.toContain("この端末に残っています");
       await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
       expect(createPage).not.toHaveBeenCalled();
     });
@@ -906,7 +906,7 @@ describe("App の owner の画面", () => {
       expect(history.length).toBe(length);
       expect(bodyContent()).not.toBe(body);
       expect(document.activeElement).toBe(titleContent());
-      expect(screenText()).not.toContain("この端末に退避されています");
+      expect(screenText()).not.toContain("この端末に残っています");
     });
 
     it("内容のある作る前の画面からアプリ内のリンクで離れると、+ で開いた次の画面が復元を尋ねる", async () => {
@@ -918,7 +918,7 @@ describe("App の owner の画面", () => {
       await vi.waitFor(() => expect(main()?.querySelector(".title-input")).toBeNull());
       act(() => plus()?.click());
       expect(here()).toBe("/?new");
-      await vi.waitFor(() => expect(screenText()).toContain("この端末に退避されています"));
+      await vi.waitFor(() => expect(screenText()).toContain("この端末に残っています"));
       expect(createPage).not.toHaveBeenCalled();
     });
 
@@ -940,7 +940,7 @@ describe("App の owner の画面", () => {
       expect(here()).toBe("/?new");
       expect(titleText()).toBe("");
       expect(statusText()).toBe("タイトルを入れて欄を離れると作成します");
-      expect(screenText()).not.toContain("この端末に退避されています");
+      expect(screenText()).not.toContain("この端末に残っています");
       expect(newBackupKeys()).toEqual([]);
     });
 

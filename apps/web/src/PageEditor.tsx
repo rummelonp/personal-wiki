@@ -110,18 +110,18 @@ const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
  */
 const keptContent = (backupFailed: boolean, held = false) =>
   backupFailed
-    ? "入力した内容はこの画面に残っていますが、この端末には退避できませんでした。画面を閉じる前に、内容をコピーして残してください。"
+    ? "入力した内容は、この画面にしか残っていません。再読み込みや画面の移動をする前に、内容をコピーしてください。"
     : held
-      ? "入力した内容はこの画面に残り、この端末にも退避します。"
-      : "入力した内容はこの画面に残り、この端末にも退避してあります。";
+      ? "入力した内容は、この端末に残します。"
+      : "入力した内容は、この端末に残してあります。";
 
 /**
  * 退避が書けなかったときは、見出しに内容を失う恐れを入れる。通知を畳むと本文の段落は隠れ、
  * 見出しだけが残るので、失う恐れが見出しに無いと畳んだまま見落とす。
  */
 const UNKEPT_TITLES = {
-  create: "作成できず、内容を端末に退避できませんでした",
-  save: "保存できず、内容を端末に退避できませんでした",
+  create: "作成できず、内容をこの端末に残せませんでした",
+  save: "保存できず、内容をこの端末に残せませんでした",
 };
 
 /**
@@ -581,27 +581,28 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                   className="button button-main"
                   onClick={() => session.restoreBackup()}
                 >
-                  復元する
+                  {state.pendingBackup.deletedFrom !== undefined
+                    ? "新しいページとして作る"
+                    : "残った内容に戻す"}
                 </button>
                 <button type="button" className="button" onClick={() => session.discardBackup()}>
-                  破棄する
+                  残った内容を破棄する
                 </button>
               </>
             }
           >
             {state.pendingBackup.deletedFrom !== undefined ? (
-              // 見出しがどのページの内容かを言い切っているので、本文は選んだ後に何が起きるかから始める。
               // 文字列を 1 つにするのは、JSX の改行が文の間に半角の空白を入れるため
               <p>
-                {`復元すると、「${state.pendingBackup.title}」の内容が新しいページになります。破棄すると、この端末に退避した内容（${formatTime(state.pendingBackup.savedAt)}）は消えます。`}
+                {`この端末に残っている「${state.pendingBackup.title}」の内容（${formatTime(state.pendingBackup.savedAt)}）から、新しいページを作れます。`}
               </p>
             ) : (
               <p>
                 {state.pendingBackup.createFailed
-                  ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に退避されています（`
-                  : "保存できなかった内容が、この端末に退避されています（"}
+                  ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に残っています（`
+                  : "保存できなかった内容が、この端末に残っています（"}
                 {formatTime(state.pendingBackup.savedAt)}
-                ）。復元して続けるか、破棄してください。
+                ）。戻すか破棄すると、編集を続けられます。
               </p>
             )}
           </Notice>

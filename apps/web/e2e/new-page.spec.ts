@@ -130,7 +130,7 @@ test("内容のある /?new の + は title 欄へ移るだけで、離れた後
   await page.getByRole("link", { name: "personal-wiki" }).click();
   await expect(page.locator(".entries .entry").first()).toBeVisible();
   await page.getByRole("button", { name: "新規作成" }).click();
-  await expect(page.getByText("この端末に退避されています", { exact: false })).toBeVisible();
+  await expect(page.getByText("この端末に残っています", { exact: false })).toBeVisible();
 });
 
 test("title が重複して作れないと、打った内容を残して直し方を出し、title を直すと作れる", async ({

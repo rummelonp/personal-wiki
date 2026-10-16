@@ -37,7 +37,7 @@ async function typeUnsaved(page: Page, created: ApiPage, typed: string): Promise
   );
   await typeAtBodyEnd(page, typed);
   const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
-  await expect(alert).toContainText("この端末にも退避してあります。");
+  await expect(alert).toContainText("入力した内容は、この端末に残してあります。");
 }
 
 async function deleteFromRail(page: Page): Promise<void> {
@@ -48,13 +48,13 @@ async function deleteFromRail(page: Page): Promise<void> {
 
 async function restoreAsNewPage(page: Page, title: string, body: string, api: OwnerApi) {
   await expect(
-    page.getByText(`復元すると、「${title}」の内容が新しいページになります。`, { exact: false }),
+    page.getByText(`この端末に残っている「${title}」の内容`, { exact: false }),
   ).toBeVisible();
   // 通知が重なって本文が畳まれても、見出しだけで削除されたページの内容と分かる
   await expect(
     page.getByRole("heading", { name: "削除されたページで保存できなかった内容があります" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "復元する" }).click();
+  await page.getByRole("button", { name: "新しいページとして作る" }).click();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   await expect(saveState(page)).toHaveText("保存済み");
   await expect(bodyEditor(page)).toHaveText(body);
@@ -118,5 +118,5 @@ test("開いていたタブは、別のタブの削除を知ると、未保存�
   await expect(other).toHaveURL(/\/\?new$/);
   // 画面が描かれる前の toBeHidden は、案内が出る前に通ってしまう
   await expect(other.locator(".title-input .cm-content")).toBeVisible();
-  await expect(other.getByRole("button", { name: "復元する" })).toBeHidden();
+  await expect(other.getByRole("button", { name: "新しいページとして作る" })).toBeHidden();
 });

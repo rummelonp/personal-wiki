@@ -531,7 +531,7 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.contentDOM.getAttribute("inputmode")).toBe("none");
     expect(v.state.doc.toString()).toBe("本文");
 
-    act(() => button("復元する").click());
+    act(() => button("残った内容に戻す").click());
     await flushAsync();
     expect(v.state.doc.toString()).toBe("退避した本文");
     expect(v.state.readOnly).toBe(false);
@@ -580,7 +580,7 @@ describe("保存の前の検査の表示", () => {
       `本文が上限を ${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")}\u00a0バイト超えています。`,
     );
     // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わない
-    expect(alertNotice()?.textContent).toContain("この端末にも退避します。");
+    expect(alertNotice()?.textContent).toContain("この端末に残します。");
     // 数は打つたびに変わるので、通知自体は読み上げず、原因だけを status で伝える
     expect(alertNotice()?.querySelector("[role]")).toBeNull();
     const meter = container?.querySelector(".body-meter .input-meter");
@@ -1361,11 +1361,11 @@ describe("まだ作っていないページ（page が null）", () => {
       pressEnter(false);
       await vi.waitFor(() =>
         expect(container?.querySelector(".notice-title")?.textContent).toBe(
-          "作成できず、内容を端末に退避できませんでした",
+          "作成できず、内容をこの端末に残せませんでした",
         ),
       );
-      expect(container?.textContent).toContain("この端末には退避できませんでした");
-      expect(container?.textContent).not.toContain("この端末にも退避してあります");
+      expect(container?.textContent).toContain("この画面にしか残っていません");
+      expect(container?.textContent).not.toContain("この端末に残してあります");
     } finally {
       setItem.mockRestore();
     }
@@ -1381,11 +1381,11 @@ describe("まだ作っていないページ（page が null）", () => {
     });
     const { view } = renderNew();
     expect(container?.textContent).toContain(
-      "作成できなかったページ「残った題」の内容が、この端末に退避されています",
+      "作成できなかったページ「残った題」の内容が、この端末に残っています",
     );
     expect(view().state.readOnly).toBe(true);
     const restore = [...(container?.querySelectorAll("button") ?? [])].find(
-      (b) => b.textContent === "復元する",
+      (b) => b.textContent === "残った内容に戻す",
     );
     act(() => restore?.click());
     await vi.waitFor(() =>
@@ -1406,10 +1406,9 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(container?.querySelector(".notice-title")?.textContent).toBe(
       "削除されたページで保存できなかった内容があります",
     );
-    // 本文は見出しを繰り返さず、選んだ後に何が起きるかから始まる
     const text = container?.querySelector(".notice-text")?.textContent ?? "";
     expect(text).toMatch(
-      /^復元すると、「消えた題」の内容が新しいページになります。破棄すると、この端末に退避した内容（[^）]+）は消えます。$/,
+      /^この端末に残っている「消えた題」の内容（[^）]+）から、新しいページを作れます。$/,
     );
     expect(text).not.toContain("削除されたページ");
   });
@@ -1418,7 +1417,7 @@ describe("まだ作っていないページ（page が null）", () => {
     const key = seedOrphan({ title: "残った題", body: "残った本文", baseVersion: 0, savedAt: 0 });
     renderNew("渡した題");
     await flushAsync();
-    expect(container?.textContent).not.toContain("この端末に退避されています");
+    expect(container?.textContent).not.toContain("この端末に残っています");
     expect(createPage).toHaveBeenCalledWith({ title: "渡した題", body: "" });
     expect(localStorage.getItem(key)).not.toBeNull();
   });
@@ -1820,7 +1819,7 @@ describe("title の確定", () => {
     typeTitle("打てない");
     expect(titleText()).toBe("題");
 
-    act(() => button("復元する").click());
+    act(() => button("残った内容に戻す").click());
     await flushAsync();
     expect(titleView()).toBe(v);
     expect(titleText()).toBe("退避した題");

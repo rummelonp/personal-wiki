@@ -103,7 +103,7 @@ test("上限を超えたまま画面を離れると送らずに退避し、開�
   await page.goto(`/p/${created.id}`);
   const kept = notice(page, "前回、保存できなかった内容があります");
   await expect(kept).toBeVisible();
-  await kept.getByRole("button", { name: "復元する" }).click();
+  await kept.getByRole("button", { name: "残った内容に戻す" }).click();
   await expect(notice(page, "本文が長すぎて保存できません")).toBeVisible();
   expect(puts()).toBe(0);
 });

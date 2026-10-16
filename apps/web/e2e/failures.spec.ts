@@ -79,7 +79,7 @@ test("保存が 500 になると失敗の案内が出て、もう一度保存で
   const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toContainText("サーバーで問題が起きました");
   await expect(alert).toContainText("時間をおいて、もう一度試してください。");
-  await expect(alert).toContainText("入力した内容はこの画面に残り、この端末にも退避してあります。");
+  await expect(alert).toContainText("入力した内容は、この端末に残してあります。");
   await expect(saveState(page)).toHaveText("保存に失敗");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 

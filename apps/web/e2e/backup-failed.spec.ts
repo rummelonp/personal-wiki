@@ -74,8 +74,8 @@ test("保存が 500 で退避も書けないと、見出しで内容が画面に
   const created = await openFreshPage(page, api, uniqueTitle(testInfo, "退避できない保存"));
   const typed = "、退避できない保存";
   await typeWithSaveFailing(page, created, 500, "internal", typed);
-  const alert = alertWithHeading(page, "保存できず、内容を端末に退避できませんでした");
-  await expect(alert).toContainText("画面を閉じる前に、内容をコピーして残してください。");
+  const alert = alertWithHeading(page, "保存できず、内容をこの端末に残せませんでした");
+  await expect(alert).toContainText("再読み込みや画面の移動をする前に、内容をコピーしてください。");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
   await shoot(page, testInfo, "save-failed");
 });
@@ -96,8 +96,8 @@ test("作成が 500 で退避も書けないと、見出しで内容が画面に
   await page.keyboard.press("Enter");
   const body = "作れず退避もできない本文";
   await page.keyboard.type(body);
-  const alert = alertWithHeading(page, "作成できず、内容を端末に退避できませんでした");
-  await expect(alert).toContainText("画面を閉じる前に、内容をコピーして残してください。");
+  const alert = alertWithHeading(page, "作成できず、内容をこの端末に残せませんでした");
+  await expect(alert).toContainText("再読み込みや画面の移動をする前に、内容をコピーしてください。");
   await expect(page).toHaveURL(/\/\?new$/);
   await expect(bodyEditor(page)).toHaveText(body);
   await shoot(page, testInfo, "create-failed");
