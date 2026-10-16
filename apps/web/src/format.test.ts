@@ -16,6 +16,7 @@ describe("formatRelativeTime", () => {
   it("30 秒未満は「1 分未満」、30 秒からは分にする", () => {
     expect(ago(0)).toBe("1 分未満");
     expect(ago(29 * SECOND)).toBe("1 分未満");
+    expect(ago(29.5 * SECOND - 1)).toBe("1 分未満");
     expect(ago(30 * SECOND)).toBe("1 分前");
     expect(ago(3 * MINUTE)).toBe("3 分前");
   });
@@ -65,5 +66,11 @@ describe("formatRelativeTime", () => {
     const base = at(2025, 3, 1, 12);
     expect(formatRelativeTime(at(2024, 3, 1, 12), base)).toBe("約 1 年前");
     expect(formatRelativeTime(at(2023, 3, 1, 12), base)).toBe("約 2 年前");
+  });
+
+  it("うるう日をまたいで 1 年に 1 日足りないときは「1 年近く」にする", () => {
+    expect(formatRelativeTime(at(2024, 2, 15, 12), at(2025, 2, 14, 12))).toBe("1 年近く前");
+    expect(formatRelativeTime(at(2023, 6, 1, 12), at(2024, 5, 31, 12))).toBe("1 年近く前");
+    expect(formatRelativeTime(at(2025, 3, 1, 12), at(2026, 3, 1, 12))).toBe("約 1 年前");
   });
 });

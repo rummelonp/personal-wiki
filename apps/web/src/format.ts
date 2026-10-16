@@ -28,8 +28,8 @@ function formatYears(minutes: number, from: Date, to: Date): string {
   for (let year = fromYear; year <= toYear; year++) if (isLeapYear(year)) leapDays++;
   const offset = minutes - leapDays * MINUTES_IN_DAY;
   const remainder = offset % MINUTES_IN_YEAR;
-  // うるう日を引くと 1 年に満たなくなる境目があるので、年数は 1 を下回らせない
-  const years = Math.max(1, Math.floor(offset / MINUTES_IN_YEAR));
+  // うるう日を引くと 1 年に満たないことがあり、そのときは years が 0 で「1 年近く」になる
+  const years = Math.floor(offset / MINUTES_IN_YEAR);
   if (remainder < MINUTES_IN_YEAR / 4) return `約${NBSP}${years}${NBSP}年前`;
   if (remainder < (MINUTES_IN_YEAR * 3) / 4) return `${years}${NBSP}年以上前`;
   return `${years + 1}${NBSP}年近く前`;
@@ -41,8 +41,7 @@ function formatYears(minutes: number, from: Date, to: Date): string {
  * 「1 分未満」は「前」を付けると読みづらいので付けない。
  */
 export function formatRelativeTime(ms: number, now: number): string {
-  const seconds = Math.max(0, Math.round((now - ms) / 1000));
-  const minutes = Math.round(seconds / 60);
+  const minutes = Math.max(0, Math.round((now - ms) / 60_000));
   if (minutes < 1) return `1${NBSP}分未満`;
   if (minutes < 45) return `${minutes}${NBSP}分前`;
   if (minutes < 90) return `約${NBSP}1${NBSP}時間前`;
