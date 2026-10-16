@@ -184,9 +184,9 @@ export function TitleEditor({
     title === "" && keptTitle !== ""
       ? saveHeldBack
         ? "空のタイトルは保存しません。"
-        : `空のタイトルは保存しません。「${keptTitle}」のままです`
+        : `空のタイトルは保存しません。「${keptTitle}」のままです。`
       : unsafe.length > 0
-        ? `${unsafe.map((ch) => `「${ch}」`).join("")}はリンクに書けない文字です`
+        ? `${unsafe.map((ch) => `「${ch}」`).join("")}を含むタイトルには、[[ ]] でリンクできません。`
         : "";
   return (
     <div className="title-field">

@@ -288,13 +288,13 @@ describe("帯の読み上げ", () => {
   it("文は live region に入り、同じ要素の中身が入れ替わる", () => {
     const { rerender } = render({ value: "a#b" });
     const region = live();
-    expect(region?.textContent).toBe("「#」はリンクに書けない文字です");
+    expect(region?.textContent).toBe("「#」を含むタイトルには、[[ ]] でリンクできません。");
     rerender({ value: "ab" });
     expect(live()).toBe(region);
     expect(live()?.textContent).toBe("");
     rerender({ value: "", keptTitle: "前の題" });
     expect(live()).toBe(region);
-    expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです");
+    expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです。");
   });
 
   it("保存を止めているときは、同じ要素の中身が「のまま」の無い文に替わる", () => {
@@ -304,7 +304,7 @@ describe("帯の読み上げ", () => {
     expect(live()).toBe(region);
     expect(live()?.textContent).toBe("空のタイトルは保存しません。");
     rerender({ saveHeldBack: false });
-    expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです");
+    expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです。");
   });
 
   it("残る title が無い（作る前の）ときは、保存を止めていても文を出さない", () => {

@@ -791,9 +791,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
             }
           >
             <p>
-              {`このタイトルの${wikiLinkUnsafeChars(savedTitle)
+              {`${wikiLinkUnsafeChars(savedTitle)
                 .map((ch) => `「${ch}」`)
-                .join("")}はリンクに書けないので、旧タイトルへのリンクは手で直してください。`}
+                .join(
+                  "",
+                )}を含むタイトルには [[ ]] でリンクできないため、旧タイトルへのリンクは、このページを指さなくなりました。`}
             </p>
           </Notice>
         )}

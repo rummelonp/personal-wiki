@@ -158,7 +158,9 @@ test("title が上限に近づくと欄の下に長さを出し、超えたら�
   await expectNoHorizontalScroll(page);
 
   await page.keyboard.insertText("#".repeat(MAX_TITLE_BYTES));
-  await expect(page.locator(".title-hint")).toContainText("「#」はリンクに書けない文字です");
+  await expect(page.locator(".title-hint")).toContainText(
+    "「#」を含むタイトルには、[[ ]] でリンクできません。",
+  );
   await expect(hintMeter).toHaveClass(/input-meter-over/);
   await page.keyboard.press("Enter");
   const tooLong = notice(page, "タイトルが長すぎて保存できません");
@@ -212,7 +214,7 @@ test("作成済みのページで title を空にすると、欄の下で前の 
   await page.keyboard.press("Backspace");
   await page.keyboard.press("Enter");
   await expect(page.locator(".title-hint")).toHaveText(
-    `空のタイトルは保存しません。「${created.title}」のままです`,
+    `空のタイトルは保存しません。「${created.title}」のままです。`,
   );
   await expectNoHorizontalScroll(page);
   // 本文は前の title のまま保存する

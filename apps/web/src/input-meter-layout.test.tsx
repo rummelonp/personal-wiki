@@ -140,7 +140,7 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
 
     replace(title(), `${base}#|`.padEnd(base.length + 4, "a"));
     const hint = query(".title-hint");
-    expect(hint.textContent).toContain("はリンクに書けない文字です");
+    expect(hint.textContent).toContain("を含むタイトルには、[[ ]] でリンクできません。");
     expect(hint.querySelector(".input-meter")).not.toBeNull();
     expect(gap()).toBeCloseTo(before, 0);
 

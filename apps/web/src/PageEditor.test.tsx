@@ -692,7 +692,7 @@ describe("保存の前の検査の表示", () => {
     act(() => titleView().focus());
     typeTitle("a#b|c");
     expect(container?.querySelector(".title-hint")?.textContent).toBe(
-      "「#」「|」はリンクに書けない文字です",
+      "「#」「|」を含むタイトルには、[[ ]] でリンクできません。",
     );
   });
 
@@ -703,12 +703,12 @@ describe("保存の前の検査の表示", () => {
     act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(container?.querySelector(".title-hint")?.textContent).toBe(
-      "空のタイトルは保存しません。「題」のままです",
+      "空のタイトルは保存しません。「題」のままです。",
     );
     expect(updatePage).not.toHaveBeenCalled();
     typeTitle("  ");
     expect(container?.querySelector(".title-hint")?.textContent).toBe(
-      "空のタイトルは保存しません。「題」のままです",
+      "空のタイトルは保存しません。「題」のままです。",
     );
     typeTitle("新しい題");
     expect(container?.querySelector(".title-hint")?.textContent).toBe("");
@@ -738,7 +738,7 @@ describe("保存の前の検査の表示", () => {
     act(() => titleView().contentDOM.blur());
     await flushAsync();
     typeTitle("");
-    expect(hint()).toBe("空のタイトルは保存しません。「新しい題」のままです");
+    expect(hint()).toBe("空のタイトルは保存しません。「新しい題」のままです。");
   });
 
   it("title の上限の超過で保存を止めている間に欄を空にしても、「のまま」を付けない", async () => {
@@ -1977,7 +1977,7 @@ describe("リンクの書き換えの取り込み", () => {
     typeTitle("新#");
     act(() => titleView().contentDOM.blur());
     await flushAsync();
-    expect(container?.textContent).toContain("このタイトルの「#」はリンクに書けないので");
+    expect(container?.textContent).toContain("「#」を含むタイトルには [[ ]] でリンクできないため");
     expect(stepLinkRewrites).not.toHaveBeenCalled();
   });
 
@@ -1995,7 +1995,7 @@ describe("リンクの書き換えの取り込み", () => {
     typeTitle("新#");
     act(() => titleView().contentDOM.blur());
     await flushAsync();
-    expect(container?.textContent).toContain("このタイトルの「#」はリンクに書けないので");
+    expect(container?.textContent).toContain("「#」を含むタイトルには [[ ]] でリンクできないため");
 
     // 本文だけの保存（title が変わらない）では消さない
     view().focus();
@@ -2003,7 +2003,7 @@ describe("リンクの書き換えの取り込み", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(2);
-    expect(container?.textContent).toContain("このタイトルの「#」はリンクに書けないので");
+    expect(container?.textContent).toContain("「#」を含むタイトルには [[ ]] でリンクできないため");
 
     // リンク元が無い title への変更は、応答に linkRewrites が付かない
     act(() => titleView().focus());
@@ -2011,7 +2011,7 @@ describe("リンクの書き換えの取り込み", () => {
     act(() => titleView().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(3);
-    expect(container?.textContent).not.toContain("はリンクに書けないので");
+    expect(container?.textContent).not.toContain("でリンクできないため");
   });
 });
 
