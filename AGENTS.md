@@ -115,3 +115,20 @@ token を識別するのは id で、name は重複してよい。
 PR を出す前に `lint`、`typecheck`、`test` がすべて通ることを確認する。
 CI（`.github/workflows/ci.yml`）も同じ 3 つを実行する。
 コミット時は lefthook が、ステージしたファイルに biome を実行する。
+
+## 並列レーン
+
+複数の項目をレーン（サブエージェントか別のセッション）に分けて並列に進めるときの、この repo の値。
+
+- 検証: `pnpm lint`、`pnpm typecheck`、`pnpm test`。
+  UI とエディタに触るレーンは、レーンごとに別の `E2E_PORT` を付けて `pnpm e2e` も流す。
+- 終える前にまとめて回す検証: `pnpm e2e:full`。
+  レーンを取り込むたびには回さず、最後に取り込んだ後の master で 1 回回す。
+- 取り込み方: ローカルの fast-forward。
+  取り込む各コミットで `pnpm typecheck` が通ることも確かめる。
+- 同時に動かすレーン: 3〜4 本まで（E2E を流すレーンが重なると手元のマシンが重くなる）。
+- 開発サーバー: 開発の `wrangler dev` は 8787、E2E は既定で 8790 を使う。
+  8790 は統括の E2E に空けておき、レーンには 8800 から 10 ずつ `E2E_PORT` を渡す。
+  E2E は `.dev.vars` を読まないので、レーンの worktree に写さない。
+- 不変条件: エディタは `packages/editor/src/ime.ts` 冒頭の IME の不変条件を守る。
+  高リスクの領域は、認証と権限、draft と public の公開範囲、D1 の migration。
