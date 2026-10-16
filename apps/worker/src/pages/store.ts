@@ -61,7 +61,12 @@ export type WriteError =
   | InputError
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "version_conflict"; currentVersion: number }
-  | { ok: false; reason: "title_conflict" };
+  | {
+      ok: false;
+      reason: "title_conflict";
+      /** 重なった既存のページ。書いた主体が読めるときだけ operations が添える */
+      existing?: ResolvedPage;
+    };
 
 export interface WriteSuccess {
   ok: true;

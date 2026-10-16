@@ -1,5 +1,10 @@
-import { type CharAt, MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
-import type { Principal } from "../auth/principal";
+import {
+  type CharAt,
+  MAX_BODY_BYTES,
+  MAX_TITLE_BYTES,
+  singleLineTitle,
+} from "@personal-wiki/domain";
+import { type Principal, readableVisibilityOf } from "../auth/principal";
 import { isPageId } from "./id";
 import {
   type LinkRewriteStepInput,
@@ -12,6 +17,7 @@ import {
   appendToPage,
   createPage,
   findPageById,
+  findPageByTitle,
   type LinkRewritesQueued,
   type Page,
   setVisibility,
@@ -86,8 +92,30 @@ export async function createPageAs(
       pageId: result.page.id,
       rowsWritten: result.rowsWritten,
     });
+    return result;
   }
-  return result;
+  return withExisting(ctx, input.title, result);
+}
+
+/**
+ * title_conflict に、重なった既存のページを添える。呼び出し元はそのページへ追記するか title を
+ * 変えるかを、読み直さずに決められる。主体が読める範囲でだけ引くので、read の scope の無い主体に
+ * draft の id と title は渡らない。引けない（読めない、競合の後に消えた）ときは添えない。
+ */
+async function withExisting<E extends WriteError>(
+  ctx: PageWriteContext,
+  title: string,
+  error: E,
+  selfId?: string,
+): Promise<E> {
+  if (error.reason !== "title_conflict") return error;
+  const page = await findPageByTitle(
+    ctx.db,
+    singleLineTitle(title),
+    readableVisibilityOf(ctx.principal),
+  );
+  if (page === null || page.id === selfId) return error;
+  return { ...error, existing: { id: page.id, title: page.title, visibility: page.visibility } };
 }
 
 /**
@@ -109,8 +137,9 @@ export async function updatePageAs(
   const result = await updatePage(ctx.db, { ...input, actor, now: ctx.now() });
   if (result.ok) {
     ctx.recordWrite({ op: "update", actor, pageId: input.id, rowsWritten: result.rowsWritten });
+    return result;
   }
-  return result;
+  return withExisting(ctx, input.title, result, input.id);
 }
 
 export async function appendToPageAs(
@@ -261,7 +290,12 @@ export function describeWriteError(error: WriteError | AppendError): WriteErrorD
     case "title_conflict":
       return {
         status: 409,
-        body: { error: "title_conflict", message: "同じ title のページがすでにある" },
+        body: {
+          error: "title_conflict",
+          ...(error.existing === undefined ? {} : { existing: error.existing }),
+          message:
+            "同じ title とみなすページがすでにある（大文字小文字、全角半角、_ と空白の違いは区別しない）。そのページに追記するか、title を変える",
+        },
       };
     case "append_conflict":
       return {

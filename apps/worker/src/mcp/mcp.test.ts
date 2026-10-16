@@ -561,10 +561,15 @@ describe("ページの tool", () => {
 
   it("書き込みのエラーは REST と同じ本文で返す", async () => {
     const { call } = await mcpClient();
-    await call("create_page", { title: "Dup", body: "" });
+    const { json: dup } = await call("create_page", { title: "Dup", body: "" });
     expect(await call("create_page", { title: "dup", body: "" })).toEqual({
       isError: true,
-      json: { error: "title_conflict", message: "同じ title のページがすでにある" },
+      json: {
+        error: "title_conflict",
+        existing: { id: dup.id, title: "Dup", visibility: "draft" },
+        message:
+          "同じ title とみなすページがすでにある（大文字小文字、全角半角、_ と空白の違いは区別しない）。そのページに追記するか、title を変える",
+      },
     });
     expect(await call("create_page", { title: "   ", body: "" })).toMatchObject({
       isError: true,

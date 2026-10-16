@@ -278,14 +278,17 @@ describe("POST /api/pages", () => {
 
   it("title_key が同じページがあれば 409 title_conflict", async () => {
     const { create, request } = await buildClient();
-    await create("Hello World");
+    const taken = await create("Hello World");
     const before = await snapshotDb();
     const res = await request("/api/pages", {
       method: "POST",
       json: { title: "ＨＥＬＬＯ   world", body: "[[Other]] #tag" },
     });
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: "title_conflict" });
+    expect(await res.json()).toMatchObject({
+      error: "title_conflict",
+      existing: { id: taken.id, title: "Hello World", visibility: "draft" },
+    });
     expect(await snapshotDb()).toEqual(before);
   });
 });
@@ -402,12 +405,15 @@ describe("PUT /api/pages/:id", () => {
 
   it("title_key の UNIQUE 違反は 409 title_conflict で、版の競合と区別でき、何も変わらない", async () => {
     const { create, update } = await buildClient();
-    await create("Taken");
+    const taken = await create("Taken");
     const page = await create("p", "#a [[x]]");
     const before = await snapshotDb();
     const res = await update(page, "taken", "#b [[y]]");
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: "title_conflict" });
+    expect(await res.json()).toMatchObject({
+      error: "title_conflict",
+      existing: { id: taken.id, title: "Taken" },
+    });
     expect(await snapshotDb()).toEqual(before);
   });
 
