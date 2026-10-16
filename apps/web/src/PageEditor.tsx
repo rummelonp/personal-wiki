@@ -105,11 +105,14 @@ const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
 /**
  * 保存や作成が失敗しても、打った内容は画面に残り、session が端末にも退避する（editor-session の stashIfDirty）。
  * 退避は容量超過や private window で書けないことがあり、そのときは画面を閉じると内容が失われる。
+ * 送らずに止めた入力（held）の退避は、打つのが止まってから書くので、通知を出した時点ではまだ無い。
  */
-const keptContent = (backupFailed: boolean) =>
+const keptContent = (backupFailed: boolean, held = false) =>
   backupFailed
     ? "入力した内容はこの画面に残っていますが、この端末には退避できませんでした。画面を閉じる前に、内容をコピーして残してください。"
-    : "入力した内容はこの画面に残り、この端末にも退避してあります。";
+    : held
+      ? "入力した内容はこの画面に残り、この端末にも退避します。"
+      : "入力した内容はこの画面に残り、この端末にも退避してあります。";
 
 /**
  * 退避が書けなかったときは、見出しに内容を失う恐れを入れる。通知を畳むと本文の段落は隠れ、
@@ -893,7 +896,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 {inputProblemMessage(problem)}
               </p>
             ))}
-            <p>{keptContent(state.backupFailed)}</p>
+            <p>{keptContent(state.backupFailed, true)}</p>
           </Notice>
         )}
         <span className="visually-hidden" role="status">

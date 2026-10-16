@@ -579,6 +579,8 @@ describe("保存の前の検査の表示", () => {
     expect(alertNotice()?.textContent).toContain(
       `${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")} バイト以上減らすか`,
     );
+    // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わない
+    expect(alertNotice()?.textContent).toContain("この端末にも退避します。");
     // 数は打つたびに変わるので、通知自体は読み上げず、原因だけを status で伝える
     expect(alertNotice()?.querySelector("[role]")).toBeNull();
     const meter = container?.querySelector(".body-meter .input-meter");
