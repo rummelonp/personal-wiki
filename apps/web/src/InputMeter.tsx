@@ -1,5 +1,11 @@
 import { formatCount } from "./input-messages";
 
+/**
+ * 長さをこの割合から出す。短い入力が大半なので、常に出すと数が入力欄の下で目に付くだけになる。
+ * title と本文のメーターで共通にする。
+ */
+export const METER_SHOW_RATIO = 0.8;
+
 /** この割合から、上限が近いことを強めて見せる */
 const NEAR_RATIO = 0.9;
 

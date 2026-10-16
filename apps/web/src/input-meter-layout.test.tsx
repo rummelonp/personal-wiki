@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { page as browserPage } from "vitest/browser";
+import { METER_SHOW_RATIO } from "./InputMeter";
 import { linkRewrites } from "./link-rewrites";
 import { PageEditor } from "./PageEditor";
 import {
@@ -189,6 +190,14 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     const { query, body, replace } = mountEditor();
     await flushAsync();
     const meter = () => query(".body-meter .input-meter");
+    expect(container?.querySelector(".body-meter")).toBeNull();
+
+    replace(body(), "a".repeat(Math.ceil(MAX_BODY_BYTES * METER_SHOW_RATIO) - 1));
+    await flushAsync();
+    expect(container?.querySelector(".body-meter")).toBeNull();
+
+    replace(body(), "a".repeat(Math.ceil(MAX_BODY_BYTES * METER_SHOW_RATIO)));
+    await flushAsync();
     expect(meter().className).toContain("input-meter-normal");
     expect(getComputedStyle(meter()).color).toBe(colorOf("--color-fg-muted"));
 

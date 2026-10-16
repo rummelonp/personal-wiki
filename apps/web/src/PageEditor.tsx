@@ -29,7 +29,7 @@ import {
 } from "./editor-session";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
-import { InputMeter } from "./InputMeter";
+import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
 import { isInView } from "./in-view";
 import { inputProblemMessage, inputProblemTitle } from "./input-messages";
 import { Link } from "./Link";
@@ -515,6 +515,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     : uncreated
       ? "もう一度作成する"
       : "もう一度保存する";
+  const bodyBytes = inputCheckOf(state.draft).bodyBytes;
   const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
   const rail = (
@@ -952,13 +953,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           onChange={(body) => session.edit({ ...session.getState().draft, body })}
           onBlur={() => void session.flush()}
         />
-        <p className="body-meter">
-          <InputMeter
-            label="本文の長さ"
-            bytes={inputCheckOf(state.draft).bodyBytes}
-            max={MAX_BODY_BYTES}
-          />
-        </p>
+        {bodyBytes >= MAX_BODY_BYTES * METER_SHOW_RATIO && (
+          <p className="body-meter">
+            <InputMeter label="本文の長さ" bytes={bodyBytes} max={MAX_BODY_BYTES} />
+          </p>
+        )}
       </article>
     </RailLayout>
   );

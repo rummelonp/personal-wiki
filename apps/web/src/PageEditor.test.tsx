@@ -765,9 +765,7 @@ describe("保存の前の検査の表示", () => {
       ),
     );
     expect(alertNotice()).toBeUndefined();
-    expect(container?.querySelector(".body-meter .input-meter")?.classList).toContain(
-      "input-meter-normal",
-    );
+    expect(container?.querySelector(".body-meter")).toBeNull();
   });
 
   it("本文の NUL は、通知のボタンでその文字を選択して消せる", async () => {

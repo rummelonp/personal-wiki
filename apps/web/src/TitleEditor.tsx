@@ -9,7 +9,7 @@ import {
   setReadOnly,
 } from "@personal-wiki/editor";
 import { type Ref, useId, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { InputMeter } from "./InputMeter";
+import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
 
 export interface TitleEditorHandle {
   /**
@@ -51,11 +51,6 @@ export interface TitleEditorProps {
 }
 
 const settledKey = Symbol("whenSettled");
-
-/**
- * title の長さをこの割合から出す。短い title が大半なので、常に出すと数が title の下で目に付くだけになる。
- */
-const TITLE_METER_RATIO = 0.8;
 
 /**
  * title 欄。packages/editor の title エディタを React に載せる。長い title は折り返して全文を出す。
@@ -199,7 +194,7 @@ export function TitleEditor({
         <span role="status" className="title-hint-text">
           {hintText}
         </span>
-        {bytes >= MAX_TITLE_BYTES * TITLE_METER_RATIO && (
+        {bytes >= MAX_TITLE_BYTES * METER_SHOW_RATIO && (
           <InputMeter label="タイトルの長さ" bytes={bytes} max={MAX_TITLE_BYTES} />
         )}
       </p>
