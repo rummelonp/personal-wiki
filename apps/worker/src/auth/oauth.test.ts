@@ -1273,3 +1273,77 @@ describe("画面のブランド", () => {
     expect(brandOf(await failed.text())).toBe(escaped);
   });
 });
+
+describe("一覧の取り消しボタンと wiki へ戻る導線", () => {
+  const BACK_LINK = '<p class="back"><a href="/">wiki に戻る</a></p>';
+
+  async function grantsHtml(request: Request) {
+    const res = await request("/_auth/oauth/grants", {
+      headers: { Cookie: await ownerCookie(T0) },
+    });
+    expect(res.status).toBe(200);
+    return res.text();
+  }
+
+  const buttonsOf = (html: string) =>
+    [...html.matchAll(/<button class="button button-danger">(.*?)<\/button>/g)].map((m) => m[1]);
+
+  it("取り消すボタンの読み上げに、接続の名前と許可の日時を添え、見える文言は変えない", async () => {
+    const { request } = setup();
+    await connect(request, "read", { client: await register(request, { client_name: "Claude" }) });
+    await connect(request, "write", { client: await register(request, { client_name: "Cursor" }) });
+    const buttons = buttonsOf(await grantsHtml(request));
+    expect(buttons).toHaveLength(2);
+    for (const name of ["Claude", "Cursor"]) {
+      expect(buttons).toContainEqual(
+        expect.stringMatching(
+          new RegExp(
+            `^取り消す<span class="visually-hidden">: ${name}、\\d{4}/\\d{2}/\\d{2} \\d{2}:\\d{2} UTC に許可</span>$`,
+          ),
+        ),
+      );
+    }
+  });
+
+  it("client の名前は、ボタンの中でもエスケープして長ければ切る", async () => {
+    const { request } = setup();
+    const hostile = `"><img src=x onerror=alert(1)>&`;
+    await connect(request, "read", {
+      client: await register(request, { client_name: `${hostile}${"あ".repeat(60)}` }),
+    });
+    const [button = ""] = buttonsOf(await grantsHtml(request));
+    expect(button).not.toContain("<img");
+    expect(button).toContain("&#34;&#62;&#60;img src=x onerror=alert(1)&#62;&#38;");
+    expect(button).not.toContain("あ".repeat(41));
+    expect(button).toContain("…");
+  });
+
+  it("登録が消えた接続のボタンには、その旨を添える", async () => {
+    const { request } = setup();
+    const { client } = await connect(request, "read");
+    // deleteClient は grant も道連れに失効させるので、登録の KV だけを消して「登録が消えたアプリ」を作る
+    await ownerEnv().OAUTH_KV?.delete(`client:${client.client_id}`);
+    const [button = ""] = buttonsOf(await grantsHtml(request));
+    expect(button).toContain("（登録が消えたアプリ）");
+  });
+
+  it("一覧は、接続があってもなくても wiki へ戻るリンクを持つ", async () => {
+    const { request } = setup();
+    expect(await grantsHtml(request)).toContain(BACK_LINK);
+    await connect(request, "read");
+    expect(await grantsHtml(request)).toContain(BACK_LINK);
+  });
+
+  it("誤りの画面は wiki へ戻るリンクを持ち、同意の画面は持たない", async () => {
+    const { request } = setup();
+    const failed = await request("/_auth/oauth/grants?cursor=%00%00", {
+      headers: { Cookie: await ownerCookie(T0) },
+    });
+    expect(failed.status).toBe(400);
+    expect(await failed.text()).toContain(BACK_LINK);
+
+    const client = await register(request);
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    expect((await openConsent(request, path)).html).not.toContain('class="back"');
+  });
+});

@@ -91,6 +91,16 @@ h1 {
   text-wrap: balance;
 }
 
+/* ボタンの名前に添える、読み上げだけの文字。web の styles.css と同じ手法 */
+.visually-hidden {
+  position: absolute;
+  width: 1px; /* token-ok: 視覚的に隠す定型の手法が要る 1px。罫線の太さの token とは役割が違う */
+  height: 1px; /* token-ok: 同上 */
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* 同意画面の事実の並び */
 .facts > div {
   padding-block: var(--space-3);
@@ -280,6 +290,14 @@ h1 {
 
 .grants form {
   justify-self: start;
+}
+
+.back {
+  font-size: var(--font-size-sm);
+}
+
+.back a {
+  color: var(--color-fg-muted);
 }
 
 .lead {

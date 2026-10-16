@@ -368,6 +368,12 @@ function formatEpochSeconds(seconds: number | undefined): string {
   return seconds === undefined ? "なし" : formatUtcMinutes(seconds * 1000);
 }
 
+/**
+ * 誤りの画面と一覧は行き止まりになりやすいので、wiki のトップへの出口を 1 つ置く。同意の画面には置かない。
+ * 許可か拒否を選ばせる画面で、別の出口があると選ばずに離れる操作が増える。
+ */
+const BACK_LINK = `<p class="back"><a href="/">wiki に戻る</a></p>`;
+
 function grantsPage(
   grants: readonly GrantSummary[],
   clientNames: ReadonlyMap<string, string | undefined>,
@@ -382,12 +388,14 @@ function grantsPage(
         : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
     const scope = describeScopesHtml(grant.scope) ?? "（なし）";
     const host = grant.redirectUri === undefined ? "" : safeHost(grant.redirectUri);
+    // 読み上げでボタンを区別する。名前は client が決める値で重複しうるので、許可の日時も添える。
+    // aria-label は中身を置き換えるので、見える「取り消す」を属性に書き写すことになり、片方だけ直すと食い違う
     return `<li>
 <p><strong>${label}</strong><small class="note">client_id: <code>${escapeHtml(grant.clientId)}</code></small></p>
 <p class="meta">権限: ${scope}${host === "" ? "" : `<br>送り先: ${escapeHtml(host)}`}<br>許可: ${formatEpochSeconds(grant.createdAt)}<br>期限: ${formatEpochSeconds(grant.expiresAt)}</p>
 <form method="post" action="${OAUTH_GRANTS_REVOKE_PATH}">
 <input type="hidden" name="grant" value="${escapeHtml(grant.id)}">
-<button class="button button-danger">取り消す</button>
+<button class="button button-danger">取り消す<span class="visually-hidden">: ${label}、${formatEpochSeconds(grant.createdAt)} に許可</span></button>
 </form>
 </li>`;
   });
@@ -404,7 +412,8 @@ function grantsPage(
     "許可した接続",
     `<h1>許可した接続</h1>
 ${list}
-${more}`,
+${more}
+${BACK_LINK}`,
     siteName,
   );
 }
@@ -428,7 +437,8 @@ function errorPage(
     escapeHtml(heading),
     `<h1>${escapeHtml(heading)}</h1>
 <p>${escapeHtml(message)}</p>
-<p>${escapeHtml(hint)}</p>`,
+<p>${escapeHtml(hint)}</p>
+${BACK_LINK}`,
     siteName,
   );
   return new Response(body, {
