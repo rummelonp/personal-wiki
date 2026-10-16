@@ -185,8 +185,8 @@ test("保存で title の重複と言われたら、再試行を出さずに既�
 
   const taken = notice(page, "同じタイトルのページがあるため、保存できません");
   await expect(taken).toBeVisible();
-  await expect(taken).toContainText(`「${existing.title}」というページがすでにあります。`);
-  await expect(taken).toContainText("大文字と小文字、全角と半角、_ と空白の違いは");
+  await expect(taken).toContainText(`「${existing.title}」と同じタイトルとみなします。`);
+  await expect(taken).toContainText("大文字と小文字、全角と半角、_ と空白は区別しません。");
   await expect(taken.getByRole("button", { name: "もう一度保存する" })).toHaveCount(0);
   // 保存を止めている間は、前の title のまま保存するとは言わない
   await titleEditor(page).click();

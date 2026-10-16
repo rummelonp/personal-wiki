@@ -1261,8 +1261,7 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(link()?.textContent).toBe("そのページを開く");
     const alert = container?.querySelector("[role='alert']")?.textContent;
     expect(alert).toContain("同じタイトルのページがあるため、作成できません");
-    expect(alert).toContain("「重なる題」というページがすでにあります。");
-    expect(alert).toContain("タイトルを変えて欄を離れると、もう一度作ります。");
+    expect(alert).toContain("タイトルを変えて欄を離れると、作成します。");
     expect(alert).not.toContain("大文字と小文字");
     // 送り直しても同じ応答になるので、再試行は出さない
     expect(alert).not.toContain("もう一度作成する");
@@ -1291,10 +1290,10 @@ describe("まだ作っていないページ（page が null）", () => {
     typeTitle("wiki_page");
     pressEnter(false);
     await vi.waitFor(() =>
-      expect(container?.textContent).toContain("「Wiki Page」というページがすでにあります。"),
+      expect(container?.textContent).toContain("「Wiki Page」と同じタイトルとみなします。"),
     );
     expect(container?.textContent).toContain(
-      "大文字と小文字、全角と半角、_ と空白の違いは、同じタイトルとみなします。",
+      "大文字と小文字、全角と半角、_ と空白は区別しません。",
     );
   });
 

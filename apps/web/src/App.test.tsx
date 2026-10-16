@@ -856,7 +856,7 @@ describe("App の owner の画面", () => {
           titleUrl(PUBLIC.title),
         ),
       );
-      expect(screenText()).toContain("タイトルを変えて欄を離れると、もう一度作ります。");
+      expect(screenText()).toContain("タイトルを変えて欄を離れると、作成します。");
       expect(here()).toBe("/?new");
       expect(titleText()).toBe("まだ無い題");
     });

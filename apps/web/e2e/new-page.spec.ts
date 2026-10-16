@@ -142,7 +142,7 @@ test("title が重複して作れないと、打った内容を残して直し�
   const alert = page
     .getByRole("alert")
     .filter({ hasText: "同じタイトルのページがあるため、作成できません" });
-  await expect(alert).toContainText("タイトルを変えて欄を離れると、もう一度作ります。");
+  await expect(alert).toContainText("タイトルを変えて欄を離れると、作成します。");
   await expect(alert.getByRole("link", { name: "そのページを開く" })).toBeVisible();
   await expect(alert.getByRole("button", { name: "もう一度作成する" })).toHaveCount(0);
   await expect(saveState(page)).toHaveText("作成に失敗");

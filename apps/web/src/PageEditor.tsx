@@ -164,13 +164,14 @@ function TakenGuide({
   taken: NonNullable<WriteRejection["titleTaken"]>;
   kind: "create" | "save";
 }) {
-  const looksDifferent = taken.existing !== undefined && taken.existing.title !== taken.title;
+  const { existing } = taken;
   return (
     <p>
-      {`「${taken.existing?.title ?? taken.title}」というページがすでにあります。`}
-      {looksDifferent && "大文字と小文字、全角と半角、_ と空白の違いは、同じタイトルとみなします。"}
+      {existing !== undefined &&
+        existing.title !== taken.title &&
+        `「${existing.title}」と同じタイトルとみなします。大文字と小文字、全角と半角、_ と空白は区別しません。`}
       {kind === "create"
-        ? "タイトルを変えて欄を離れると、もう一度作ります。"
+        ? "タイトルを変えて欄を離れると、作成します。"
         : "タイトルを変えて欄を離れると、保存します。"}
     </p>
   );
