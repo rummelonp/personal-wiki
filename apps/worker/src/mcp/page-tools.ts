@@ -16,7 +16,8 @@ import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool"
 
 const LIMITS = [
   `上限は UTF-8 で title が ${MAX_TITLE_BYTES} バイト、body が ${MAX_BODY_BYTES} バイト。`,
-  "title の改行とタブは空白に置き換わる。title に NUL などの制御文字、body と text に NUL を含めると invalid_field になる。",
+  "title の改行とタブは空白に置き換わる。title に NUL などの C0 の制御文字か DEL、body と text に NUL を含めると invalid_field になる。",
+  "上限を超えたときの応答には今のバイト数（actual）が、制御文字の応答には位置（line、column、codePoint）が入る。",
 ].join("");
 /** instructions を AI に渡さないクライアントもあるので、書き込みの tool ごとに description にも書く */
 const NO_SECRETS =
@@ -117,7 +118,7 @@ export const updatePageTool = defineTool({
     "ページの title と body を丸ごと置き換える。構成を直すときだけ使い、メモや調べた結果は append_to_page で足す。",
     "read_page で取った version が必須。title を変えないときも読んだ title を渡す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して変更を載せ直し、current.version で保存し直す。上書きで押し切らない。",
-    "title を変えても、他のページの `[[旧 title]]` はすぐには書き換わらない。オーナーが wiki を開いたときか、運用者が書き換えを回したときに 1 ページずつ新しい title に書き換わり、それまでリンク元は旧 title のリンクのままで、新しい title の list_backlinks にも出ない。linkRewrites.queued は書き換えを待つページの数。",
+    "title を変えても、他のページの `[[旧 title]]` はすぐには書き換わらない。オーナーが wiki を開いたときや、定期実行を設定していればその発火ごとに 1 ページずつ新しい title に書き換わり、それまでリンク元は旧 title のリンクのままで、新しい title の list_backlinks にも出ない。linkRewrites.queued は書き換えを待つページの数。",
     "書き換わったページ（このページ自身を含む）は version が進むので、続けて書き換えるときは read_page で読み直す。書き換えるのは、title を変えた時点で旧 title にリンクしていたページだけ。そのページの `[[旧 title]]` は、書き換わる前に足したものも、旧 title で別のページを作ったあとに書いたものも、新しい title に書き換わる（新しく作った同名のページは指さない）。それ以外のページが title を変えたあとに書いた `[[旧 title]]` は書き換わらない。",
     "title に `[ ] | # ^` を含む、または `\\` で終わると書き換えを積まずに linkRewrites.skipped を返す。そのときの旧 title のリンクは、あとで別の title に変えても書き換わらない。",
     LIMITS,

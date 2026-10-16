@@ -43,7 +43,8 @@ export function describeInputError(
         .filter((i) => i.code === "too_big" && i.path.join(".") === field)
         .map((i) => Number((i as z.core.$ZodIssueTooBig).maximum)),
     );
-    return { error: "invalid_field", field, max };
+    const unit = issue.origin === "string" ? " 文字" : " ";
+    return { error: "invalid_field", field, max, message: `${max}${unit}以下で渡す` };
   }
   if (issue.code === "too_small") {
     const unit = issue.origin === "string" ? " 文字" : " ";

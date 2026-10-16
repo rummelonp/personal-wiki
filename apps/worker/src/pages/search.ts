@@ -148,7 +148,7 @@ async function tagsByPage(db: D1Database, pageIds: string[]): Promise<Map<string
 }
 
 /** タグの絞り込みに渡す tag_key。 */
-export type TagFilter = { ok: true; key: string } | { ok: false };
+export type TagFilter = { ok: true; key: string } | { ok: false; reason: "empty" | "too_long" };
 
 /**
  * tag_key の長さ（UTF-16 単位）の上限。本文のタグは長くても数十字で、検索語と同様に照合量を抑える。
@@ -165,7 +165,23 @@ const TAG_MAX_LENGTH = 200;
 export function prepareTagFilter(raw: string): TagFilter {
   const folded = foldKeepingUnderscore(raw);
   const key = folded.startsWith("#") ? folded.slice(1) : folded;
-  return key === "" || key.length > TAG_MAX_LENGTH ? { ok: false } : { ok: true, key };
+  if (key === "") return { ok: false, reason: "empty" };
+  if (key.length > TAG_MAX_LENGTH) return { ok: false, reason: "too_long" };
+  return { ok: true, key };
+}
+
+const TAG_FILTER_MESSAGES: Record<Extract<TagFilter, { ok: false }>["reason"], string> = {
+  empty: "tag が空か、`#` だけになっている",
+  too_long: `tag が長すぎる（上限 ${TAG_MAX_LENGTH} 文字）`,
+};
+
+/** タグの絞り込みの誤りに添える項目。上限は too_long のときだけ返す。 */
+export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["reason"]) {
+  return {
+    reason,
+    ...(reason === "too_long" ? { max: TAG_MAX_LENGTH } : {}),
+    message: TAG_FILTER_MESSAGES[reason],
+  };
 }
 
 /**
@@ -381,13 +397,20 @@ export async function listBacklinksByTitle(
   return pageOf(results, limit, toSummary);
 }
 
-/** REST と MCP が検索語の誤りに返す説明 */
-export const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["reason"], string> =
-  {
-    empty: "検索語が空か、空白だけになっている",
-    too_long: `検索語が長すぎる（上限 ${SEARCH_MAX_QUERY_CHARS} 文字）`,
-    control_char: "検索語に制御文字を含められない",
+const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["reason"], string> = {
+  empty: "検索語が空か、空白だけになっている",
+  too_long: `検索語が長すぎる（上限 ${SEARCH_MAX_QUERY_CHARS} 文字）`,
+  control_char: "検索語に制御文字を含められない",
+};
+
+/** REST と MCP が検索語の誤りに添える項目。上限は too_long のときだけ返す。 */
+export function searchQueryErrorFields(reason: Extract<SearchQuery, { ok: false }>["reason"]) {
+  return {
+    reason,
+    ...(reason === "too_long" ? { max: SEARCH_MAX_QUERY_CHARS } : {}),
+    message: SEARCH_QUERY_MESSAGES[reason],
   };
+}
 
 interface FtsRow extends SummaryRow {
   excerpt: string;

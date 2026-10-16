@@ -38,9 +38,10 @@ import {
   prepareTagFilter,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
-  SEARCH_QUERY_MESSAGES,
   searchPages,
+  searchQueryErrorFields,
   TITLES_MAX_LIMIT,
+  tagFilterErrorFields,
 } from "./search";
 import {
   type AppendError,
@@ -337,7 +338,12 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!paging.ok) return paging.response;
         const rawTag = c.req.query("tag");
         const tag = rawTag === undefined ? null : prepareTagFilter(rawTag);
-        if (tag?.ok === false) return errorResponse(c, 400, "invalid_field", { field: "tag" });
+        if (tag?.ok === false) {
+          return errorResponse(c, 400, "invalid_field", {
+            field: "tag",
+            ...tagFilterErrorFields(tag.reason),
+          });
+        }
         const { pages, nextCursor } = await listRecentPages(c.env.DB, {
           ...paging.value,
           tagKey: tag?.key ?? null,
@@ -366,8 +372,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (!query.ok) {
           return errorResponse(c, 400, "invalid_field", {
             field: "q",
-            reason: query.reason,
-            message: SEARCH_QUERY_MESSAGES[query.reason],
+            ...searchQueryErrorFields(query.reason),
           });
         }
         const principal = c.get("principal");

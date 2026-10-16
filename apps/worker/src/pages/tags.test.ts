@@ -189,11 +189,25 @@ describe("GET /api/pages/recent?tag=", () => {
 
   it("空や長すぎる tag は 400", async () => {
     const client = await buildClient();
-    for (const tag of ["", "%20", "%23", "a".repeat(201)]) {
+    for (const tag of ["", "%20", "%23"]) {
       const res = await client.request(`/api/pages/recent?tag=${tag}`);
       expect(res.status, tag).toBe(400);
-      expect(await res.json()).toMatchObject({ error: "invalid_field", field: "tag" });
+      expect(await res.json()).toEqual({
+        error: "invalid_field",
+        field: "tag",
+        reason: "empty",
+        message: expect.any(String),
+      });
     }
+    const tooLong = await client.request(`/api/pages/recent?tag=${"a".repeat(201)}`);
+    expect(tooLong.status).toBe(400);
+    expect(await tooLong.json()).toEqual({
+      error: "invalid_field",
+      field: "tag",
+      reason: "too_long",
+      max: 200,
+      message: "tag が長すぎる（上限 200 文字）",
+    });
   });
 });
 

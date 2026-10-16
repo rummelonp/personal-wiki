@@ -15,8 +15,8 @@ import {
   parseCursor,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
-  SEARCH_QUERY_MESSAGES,
   searchPages,
+  searchQueryErrorFields,
 } from "../pages/search";
 import { pageUrls } from "../pages/urls";
 import { pageIdSchema } from "./page-tools";
@@ -72,7 +72,7 @@ export const searchTool = defineTool({
       return toolError({
         error: "invalid_field",
         field: "query",
-        message: SEARCH_QUERY_MESSAGES[prepared.reason],
+        ...searchQueryErrorFields(prepared.reason),
       });
     }
     const results = await searchPages(

@@ -749,7 +749,12 @@ describe("ページの tool", () => {
     });
     expect(tooLarge).toEqual({
       isError: true,
-      json: { error: "invalid_field", field: "version", max: 999_999_999_999_999 },
+      json: {
+        error: "invalid_field",
+        field: "version",
+        max: 999_999_999_999_999,
+        message: "999999999999999 以下で渡す",
+      },
     });
     // 2^53 を超える数でも、安全な整数の上限ではなく version の上限を返す
     expect(
@@ -809,17 +814,27 @@ describe("検索と一覧の tool", () => {
       });
       expect(result.json.message).toEqual(expect.any(String));
     }
+    expect(await call("search", { query: "x".repeat(201) })).toEqual({
+      isError: true,
+      json: {
+        error: "invalid_field",
+        field: "query",
+        reason: "too_long",
+        max: 200,
+        message: "検索語が長すぎる（上限 200 文字）",
+      },
+    });
     expect(await call("search", { query: "abc", limit: 0 })).toEqual({
       isError: true,
       json: { error: "invalid_field", field: "limit", message: "1 以上で渡す" },
     });
     expect(await call("search", { query: "abc", limit: 51 })).toEqual({
       isError: true,
-      json: { error: "invalid_field", field: "limit", max: 50 },
+      json: { error: "invalid_field", field: "limit", max: 50, message: "50 以下で渡す" },
     });
     expect(await call("search", { query: "abc", limit: 1e300 })).toEqual({
       isError: true,
-      json: { error: "invalid_field", field: "limit", max: 50 },
+      json: { error: "invalid_field", field: "limit", max: 50, message: "50 以下で渡す" },
     });
     expect(await call("search", { query: "abc", limit: 1.5 })).toEqual({
       isError: true,
@@ -860,7 +875,7 @@ describe("検索と一覧の tool", () => {
     });
     expect(await call("list_recent", { limit: 101 })).toEqual({
       isError: true,
-      json: { error: "invalid_field", field: "limit", max: 100 },
+      json: { error: "invalid_field", field: "limit", max: 100, message: "100 以下で渡す" },
     });
   });
 

@@ -180,6 +180,13 @@ describe("GET /api/search", () => {
     expect(await missing.json()).toMatchObject({ error: "missing_field", field: "q" });
     const tooLong = await client.request(`/api/search?q=${"a".repeat(201)}`);
     expect(tooLong.status).toBe(400);
+    expect(await tooLong.json()).toEqual({
+      error: "invalid_field",
+      field: "q",
+      reason: "too_long",
+      max: 200,
+      message: "検索語が長すぎる（上限 200 文字）",
+    });
   });
 
   it("関連度の順に返し、title の一致を本文の一致より上に置く", async () => {
