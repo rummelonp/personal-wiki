@@ -192,7 +192,7 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
         !(error instanceof AuthorizationError) &&
         (await oauth.lookupClient(approved.request.clientId)) === null
       ) {
-        return errorPage(400, "接続しようとしたクライアントの登録が見つかりません。");
+        return errorPage(400, "接続しようとしたアプリの登録が見つかりません。");
       }
       throw error;
     }
@@ -221,7 +221,7 @@ function authorizationFailure(error: unknown): Response {
     return errorPage(400, error.description);
   }
   if (error instanceof CimdFetchError) {
-    return errorPage(400, "クライアントの情報を取得できませんでした。");
+    return errorPage(400, "接続するアプリの情報を取得できませんでした。");
   }
   throw error;
 }
@@ -326,9 +326,9 @@ function grantsPage(
     const name = clientNames.get(grant.clientId);
     const label =
       name === undefined
-        ? "（登録が消えたクライアント）"
+        ? "（登録が消えたアプリ）"
         : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
-    const scope = grant.scope.length > 0 ? grant.scope.map(escapeHtml).join(" ") : "（なし）";
+    const scope = describeScopes(grant.scope) ?? "（なし）";
     const host = grant.redirectUri === undefined ? "" : safeHost(grant.redirectUri);
     return `<li>
 <p><strong>${label}</strong><br><small>client_id: <code>${escapeHtml(grant.clientId)}</code></small></p>
@@ -407,6 +407,22 @@ export function describeRegistration(registeredAt: number, now: number): string 
   return `${age}（${utc} UTC）`;
 }
 
+/**
+ * scope の並びを、同意画面と一覧に出す権限の名前にして HTML にエスケープする。空なら null。
+ * write は read を含む（principal.ts の hasScope）ので、write があれば read の有無によらず「読み書き」に
+ * まとめる。知らない scope は client が要求できる任意の文字列なので、名前を当てずにそのまま並べる。
+ */
+export function describeScopes(scopes: readonly string[]): string | null {
+  const known = scopes.includes("write")
+    ? ["読み書き"]
+    : scopes.includes("read")
+      ? ["読み取り"]
+      : [];
+  const unknown = scopes.filter((scope) => scope !== "read" && scope !== "write").map(escapeHtml);
+  const names = [...known, ...unknown];
+  return names.length > 0 ? names.join("、") : null;
+}
+
 /** 登録では 100 文字まで受け付けるが、見出しが画面を埋めないよう短く切る */
 const CONSENT_NAME_LENGTH = 40;
 
@@ -425,8 +441,7 @@ export function consentPage(
   { registeredAt, now }: { registeredAt: number | null; now: number },
 ): string {
   const name = escapeHtml(truncate(consent.clientName, CONSENT_NAME_LENGTH));
-  const requested =
-    consent.scope.length > 0 ? consent.scope.map(escapeHtml).join(" ") : "（指定なし）";
+  const requested = describeScopes(consent.scope) ?? "（指定なし）";
   const loopback = consent.redirectIsLoopback
     ? `<p class="warn">送り先はこのコンピュータ上のアプリです。どのアプリでも待ち受けられます。</p>`
     : "";
@@ -440,8 +455,8 @@ export function consentPage(
     "接続の許可",
     `<h1>${name} に wiki への接続を許可しますか</h1>
 <dl>
-<dt>クライアント</dt>
-<dd>${name}<br><small>名前はクライアントの自己申告で、確認されていません。</small><br><small>client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd>
+<dt>接続するアプリ</dt>
+<dd>${name}<br><small>この名前はアプリ自身が名乗ったもので、確かめられていません。</small><br><small>client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd>
 <dt>トークンの送り先</dt>
 <dd><strong>${escapeHtml(consent.redirectHost)}</strong><br><code>${escapeHtml(consent.redirectUri)}</code></dd>
 ${registered}<dt>要求された権限</dt>

@@ -6,7 +6,12 @@ import { fakeJwks, generateSigningKey, ownerCookie, ownerEnv, signAccessJwt } fr
 import { T0 } from "../test/pages";
 import { insertApiToken, insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
-import { consentPage, describeRegistration, registrationTimeOf } from "./oauth-routes";
+import {
+  consentPage,
+  describeRegistration,
+  describeScopes,
+  registrationTimeOf,
+} from "./oauth-routes";
 import { oauthServerFor } from "./oauth-server";
 import { safeReturnUrl } from "./routes";
 
@@ -415,6 +420,8 @@ describe("認可と同意画面", () => {
     expect(html).toContain("<strong>claude.ai</strong>");
     expect(html).toContain(CALLBACK);
     expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
+    expect(html).toContain("<dt>接続するアプリ</dt>");
+    expect(html).toMatch(/<dt>要求された権限<\/dt>\s*<dd>読み書き<\/dd>/);
   });
 
   it("redirect の種類にかかわらず自分で始めた接続だけを許可する警告と、client の登録時刻を出す", async () => {
@@ -556,7 +563,11 @@ describe("認可と同意画面", () => {
     const res = await submitConsent(request, path, consent);
     expect(res.status).toBe(400);
     expect(res.headers.get("Location")).toBeNull();
-    expect(await res.text()).toContain("登録が見つかりません");
+    expectErrorPage(
+      await res.text(),
+      "接続できません",
+      "接続しようとしたアプリの登録が見つかりません。",
+    );
   });
 
   it("handle を含まない送信は、既定の見出しの誤りにする", async () => {
@@ -886,7 +897,7 @@ describe("許可した接続の一覧と取り消し", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
     expect(html).toContain("<strong>Claude</strong>");
     expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
-    expect(html).toContain("権限: read<br>");
+    expect(html).toContain("権限: 読み取り<br>");
     expect(grantIdsOf(html)).toHaveLength(1);
   });
 
@@ -997,6 +1008,20 @@ describe("OAuth を閉じた環境", () => {
     expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(401);
     const token = await insertToken({ name: "laptop", scopes: "read" });
     expect((await postMcp(request, token, "tools/list")).status).toBe(200);
+  });
+});
+
+describe("describeScopes", () => {
+  it("write があれば読み書き、read だけなら読み取りにし、知らない scope はエスケープして添える", () => {
+    expect(describeScopes(["read"])).toBe("読み取り");
+    expect(describeScopes(["read", "write"])).toBe("読み書き");
+    expect(describeScopes(["write"])).toBe("読み書き");
+    expect(describeScopes(["read", "<x>"])).toBe("読み取り、&#60;x&#62;");
+    expect(describeScopes(["admin"])).toBe("admin");
+  });
+
+  it("scope が無ければ null にする", () => {
+    expect(describeScopes([])).toBeNull();
   });
 });
 
