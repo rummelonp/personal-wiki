@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
 import { Link } from "./Link";
@@ -12,6 +11,7 @@ import { SearchBox } from "./SearchBox";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScroll } from "./scroll-restore";
 import { TagsPanel, useTags } from "./TagsPanel";
+import { useNow } from "./use-now";
 import { type PreviousList, useEntryList } from "./useEntryList";
 
 interface HomeViewProps {
@@ -61,8 +61,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
     state.status === "ready" ? state.entries.length : 0,
     tagsSettled,
   );
-  // 一覧を描く時刻。再描画のたびに変えず、表示中は固定する
-  const [now] = useState(() => Date.now());
+  const now = useNow();
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 

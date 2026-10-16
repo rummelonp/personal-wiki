@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { formatRowTime } from "./format";
+import { formatRelativeTime, formatTime } from "./format";
 import { highlightMatches } from "./highlight";
 import { Link } from "./Link";
 import { rememberTitle } from "./page-titles";
@@ -40,8 +40,12 @@ export function EntryRow({
         {showVisibility && entry.visibility === "public" && (
           <span className="chip chip-public">公開</span>
         )}
-        <time className="entry-time" dateTime={new Date(entry.updatedAt).toISOString()}>
-          {formatRowTime(entry.updatedAt, now)}
+        <time
+          className="entry-time"
+          dateTime={new Date(entry.updatedAt).toISOString()}
+          title={formatTime(entry.updatedAt)}
+        >
+          {formatRelativeTime(entry.updatedAt, now)}
         </time>
       </div>
       {entry.excerpt !== undefined && entry.excerpt !== "" && (

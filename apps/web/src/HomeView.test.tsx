@@ -342,21 +342,27 @@ describe("HomeView の空の状態", () => {
 describe("HomeView の更新日", () => {
   const DAY = 24 * 60 * 60 * 1000;
 
-  it("今日の更新は時刻だけ、それ以外は日付を出す", async () => {
+  it("更新を相対の表記で出し、絶対の日時は datetime と title に残す", async () => {
     const now = Date.now();
     vi.mocked(listRecent).mockResolvedValue(
       ok({
         pages: [
-          { ...summary("AAAAAAAAAAAAAAAAAAAAAA", "今日"), updatedAt: now },
-          { ...summary("BBBBBBBBBBBBBBBBBBBBBB", "去年以前"), updatedAt: now - 800 * DAY },
+          { ...summary("AAAAAAAAAAAAAAAAAAAAAA", "今"), updatedAt: now },
+          { ...summary("BBBBBBBBBBBBBBBBBBBBBB", "5 日前"), updatedAt: now - 5 * DAY },
+          { ...summary("CCCCCCCCCCCCCCCCCCCCCC", "去年以前"), updatedAt: now - 800 * DAY },
         ],
         nextCursor: null,
       }),
     );
     await renderHome("");
-    const times = [...(container?.querySelectorAll(".entry-time") ?? [])].map((t) => t.textContent);
-    expect(times[0]).toMatch(/^\d{2}:\d{2}$/);
-    expect(times[1]).toMatch(/^\d{4}\/\d{1,2}\/\d{1,2}$/);
+    const rows = [...(container?.querySelectorAll(".entry-time") ?? [])];
+    expect(rows.map((t) => t.textContent)).toEqual([
+      "1 分未満",
+      "5 日前",
+      expect.stringMatching(/年.*前$/),
+    ]);
+    expect(rows[1]?.getAttribute("datetime")).toBe(new Date(now - 5 * DAY).toISOString());
+    expect(rows[1]?.getAttribute("title")).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/);
   });
 });
 

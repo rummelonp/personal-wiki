@@ -1,19 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { formatRowTime } from "./format";
+import { formatRelativeTime } from "./format";
 
 // ローカルのタイムゾーンで組み立てるので、実行環境の TZ に依らない
 const at = (y: number, m: number, d: number, h = 0, min = 0) =>
   new Date(y, m - 1, d, h, min).getTime();
 
-describe("formatRowTime", () => {
-  const now = at(2026, 10, 14, 12);
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
+const DAY = 24 * 60 * MINUTE;
 
-  it("今日は時刻だけを出す", () => {
-    expect(formatRowTime(at(2026, 10, 14, 9, 5), now)).toBe("09:05");
+describe("formatRelativeTime", () => {
+  const now = at(2026, 10, 17, 12);
+  const ago = (ms: number) => formatRelativeTime(now - ms, now);
+
+  it("30 秒未満は「1 分未満」、30 秒からは分にする", () => {
+    expect(ago(0)).toBe("1 分未満");
+    expect(ago(29 * SECOND)).toBe("1 分未満");
+    expect(ago(30 * SECOND)).toBe("1 分前");
+    expect(ago(3 * MINUTE)).toBe("3 分前");
   });
 
-  it("今年の別の日は月日、前の年は年も出す", () => {
-    expect(formatRowTime(at(2026, 10, 13, 23, 59), now)).toBe("10/13");
-    expect(formatRowTime(at(2025, 12, 31), now)).toBe("2025/12/31");
+  it("未来の時刻（時計のずれ）は「1 分未満」にする", () => {
+    expect(formatRelativeTime(now + 5 * MINUTE, now)).toBe("1 分未満");
+  });
+
+  it("44 分 30 秒未満は分、そこから 89 分 30 秒未満は「約 1 時間」", () => {
+    expect(ago(44 * MINUTE + 29 * SECOND)).toBe("44 分前");
+    expect(ago(44 * MINUTE + 30 * SECOND)).toBe("約 1 時間前");
+    expect(ago(89 * MINUTE + 29 * SECOND)).toBe("約 1 時間前");
+  });
+
+  it("89 分 30 秒からは時間にする", () => {
+    expect(ago(89 * MINUTE + 30 * SECOND)).toBe("約 2 時間前");
+    expect(ago(5 * 60 * MINUTE)).toBe("約 5 時間前");
+    expect(ago(23 * 60 * MINUTE)).toBe("約 23 時間前");
+  });
+
+  it("24 時間から 42 時間未満は「1 日」、42 時間からは日にする", () => {
+    expect(ago(DAY)).toBe("1 日前");
+    expect(ago(41 * 60 * MINUTE + 59 * MINUTE)).toBe("1 日前");
+    expect(ago(42 * 60 * MINUTE)).toBe("2 日前");
+    expect(ago(5 * DAY)).toBe("5 日前");
+    expect(ago(29 * DAY)).toBe("29 日前");
+  });
+
+  it("30 日からは月にする。2 か月未満は「約」を付ける", () => {
+    expect(ago(30 * DAY - MINUTE)).toBe("30 日前");
+    expect(ago(30 * DAY)).toBe("約 1 か月前");
+    expect(ago(60 * DAY - MINUTE)).toBe("約 2 か月前");
+    expect(ago(60 * DAY)).toBe("2 か月前");
+    expect(ago(364 * DAY)).toBe("12 か月前");
+  });
+
+  it("1 年からは端数で「約 n 年」「n 年以上」「n 年近く」に分ける", () => {
+    expect(formatRelativeTime(at(2025, 10, 17, 12), now)).toBe("約 1 年前");
+    expect(formatRelativeTime(at(2025, 6, 17, 12), now)).toBe("1 年以上前");
+    expect(formatRelativeTime(at(2025, 1, 17, 12), now)).toBe("1 年以上前");
+    expect(formatRelativeTime(at(2024, 12, 1, 12), now)).toBe("2 年近く前");
+    expect(formatRelativeTime(at(2023, 10, 17, 12), now)).toBe("約 3 年前");
+  });
+
+  it("うるう日を含む 1 年も「約 1 年」にする", () => {
+    // 2024-03-01 から 2025-03-01 の間は 2025 年にうるう日が無く、2023-03-01 からは 2024-02-29 を含む
+    const base = at(2025, 3, 1, 12);
+    expect(formatRelativeTime(at(2024, 3, 1, 12), base)).toBe("約 1 年前");
+    expect(formatRelativeTime(at(2023, 3, 1, 12), base)).toBe("約 2 年前");
   });
 });
