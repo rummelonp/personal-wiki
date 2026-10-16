@@ -577,7 +577,7 @@ describe("保存の前の検査の表示", () => {
       "本文が長すぎて保存できません",
     );
     expect(alertNotice()?.textContent).toContain(
-      `${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")}\u00a0バイト以上減らすか`,
+      `本文が上限を ${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")}\u00a0バイト超えています。`,
     );
     // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わない
     expect(alertNotice()?.textContent).toContain("この端末にも退避します。");
@@ -619,7 +619,7 @@ describe("保存の前の検査の表示", () => {
     view().focus();
     act(() => typeAtEnd(view(), "\n二行目\u0000"));
     await flushAsync();
-    expect(alertNotice()?.textContent).toContain("本文の 2\u00a0行目に、目に見えない文字（NUL）");
+    expect(alertNotice()?.textContent).toContain("本文の 2\u00a0行目に見えない文字（NUL）");
     act(() => view().contentDOM.blur());
     act(() => button("その文字を選択する").click());
     await vi.waitFor(() => expect(view().hasFocus).toBe(true));

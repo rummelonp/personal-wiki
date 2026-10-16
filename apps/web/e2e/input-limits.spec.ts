@@ -60,7 +60,9 @@ test("本文が上限を超えると送らずに超えた量を出し、減ら�
   await typeAtBodyEnd(page, "bbbbbb");
   const over = notice(page, "本文が長すぎて保存できません");
   await expect(over).toBeVisible();
-  await expect(over).toContainText("2 バイト以上減らすか、ページを分けてください。");
+  await expect(over).toContainText(
+    "本文が上限を 2 バイト超えています。短くするか、ページを分けてください。",
+  );
   await expect(saveState(page)).toHaveText("保存できません");
   await expect(meter).toHaveClass(/input-meter-over/);
   await expect(meter).toContainText("65,538 / 65,536 バイト");
@@ -124,7 +126,7 @@ test("本文の NUL に印を付け、通知のボタンで選んで消すと保
   });
   await expect(bodyEditor(page).locator(".cm-nul")).toHaveCount(1);
   const found = notice(page, "見えない文字があって保存できません");
-  await expect(found).toContainText("本文の 1 行目に、目に見えない文字（NUL）");
+  await expect(found).toContainText("本文の 1 行目に見えない文字（NUL）");
   await expect(saveState(page)).toHaveText("保存できません");
 
   await found.getByRole("button", { name: "その文字を選択する" }).click();

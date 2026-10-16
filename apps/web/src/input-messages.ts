@@ -18,14 +18,14 @@ export function inputProblemMessage(problem: PageInputProblem): string {
       // title の比較は _ を空白とみなすので、_ だけの title も空として拒まれる
       return "タイトルが空か、空白と _ だけです。ほかの文字を入れてください。";
     case "title_too_long":
-      return `タイトルが ${withUnit(problem.bytes, "バイト")}あり、上限の ${withUnit(problem.max, "バイト")}を超えているため保存できません。${withUnit(problem.bytes - problem.max, "バイト")}以上短くしてください。`;
+      return `タイトルが上限を ${withUnit(problem.bytes - problem.max, "バイト")}超えています。短くしてください。`;
     case "body_too_large":
-      return `本文が ${withUnit(problem.bytes, "バイト")}あり、上限の ${withUnit(problem.max, "バイト")}を超えているため保存できません。${withUnit(problem.bytes - problem.max, "バイト")}以上減らすか、ページを分けてください。`;
+      return `本文が上限を ${withUnit(problem.bytes - problem.max, "バイト")}超えています。短くするか、ページを分けてください。`;
     case "control_char":
       // 本文で拒むのは NUL だけ。印はエディタが赤く付ける
       return problem.field === "title"
-        ? `タイトルの ${withUnit(problem.at.column, "文字目")}に、目に見えない制御文字（${problem.at.codePoint}）が入っていて保存できません。その文字を消してください。`
-        : `本文の ${withUnit(problem.at.line, "行目")}に、目に見えない文字（NUL）が入っていて保存できません。赤い印の文字を消してください。`;
+        ? `タイトルの ${withUnit(problem.at.column, "文字目")}に見えない文字（${problem.at.codePoint}）があります。消してください。`
+        : `本文の ${withUnit(problem.at.line, "行目")}に見えない文字（NUL）があります。赤い印の文字を消してください。`;
   }
 }
 

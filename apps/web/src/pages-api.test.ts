@@ -183,8 +183,7 @@ describe("失敗の分類", () => {
       ok: false,
       reason: "invalid_input",
       problem: { reason: "title_too_long", bytes: 1530, max: 1024 },
-      message:
-        "タイトルが 1,530\u00a0バイトあり、上限の 1,024\u00a0バイトを超えているため保存できません。506\u00a0バイト以上短くしてください。",
+      message: "タイトルが上限を 506\u00a0バイト超えています。短くしてください。",
     });
     const body = failing(413, {
       error: "body_too_large",
@@ -195,7 +194,7 @@ describe("失敗の分類", () => {
     expect(await createPage({ title: "a", body: "" }, body.fetchFn)).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "body_too_large", bytes: 65612, max: 65536 },
-      message: expect.stringContaining("76\u00a0バイト以上減らすか"),
+      message: expect.stringContaining("本文が上限を 76\u00a0バイト超えています。"),
     });
   });
 
