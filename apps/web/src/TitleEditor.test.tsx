@@ -297,6 +297,21 @@ describe("帯の読み上げ", () => {
     expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです");
   });
 
+  it("保存を止めているときは、同じ要素の中身が「のまま」の無い文に替わる", () => {
+    const { rerender } = render({ value: "", keptTitle: "前の題" });
+    const region = live();
+    rerender({ saveHeldBack: true });
+    expect(live()).toBe(region);
+    expect(live()?.textContent).toBe("空のタイトルは保存しません。");
+    rerender({ saveHeldBack: false });
+    expect(live()?.textContent).toBe("空のタイトルは保存しません。「前の題」のままです");
+  });
+
+  it("残る title が無い（作る前の）ときは、保存を止めていても文を出さない", () => {
+    render({ value: "", keptTitle: "", saveHeldBack: true });
+    expect(live()?.textContent).toBe("");
+  });
+
   it("長さの数は live region の外に置き、数が変わっても読み上げない", () => {
     render({ value: "a".repeat(MAX_TITLE_BYTES) });
     const meter = container?.querySelector(".title-hint .input-meter");

@@ -42,6 +42,11 @@ export interface TitleEditorProps {
    * 帯でそれを伝える。作る前のページは残る title が無い（作成が title を待つだけ）ので、空にする
    */
   keptTitle?: string;
+  /**
+   * 保存を止めている（title の重複や上限の超過など）。keptTitle はサーバーに入っていない draft の
+   * title なので、「そのまま」とは言えない。欄を空にしたときの文は、保存しないことだけを伝える
+   */
+  saveHeldBack?: boolean;
   ref?: Ref<TitleEditorHandle>;
 }
 
@@ -70,6 +75,7 @@ export function TitleEditor({
   bodyView,
   autoFocus = false,
   keptTitle = "",
+  saveHeldBack = false,
   ref,
 }: TitleEditorProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -176,7 +182,9 @@ export function TitleEditor({
   // title が空なら unsafe も空なので、文は同時に 2 つ出ない
   const hintText =
     title === "" && keptTitle !== ""
-      ? `空のタイトルは保存しません。「${keptTitle}」のままです`
+      ? saveHeldBack
+        ? "空のタイトルは保存しません。"
+        : `空のタイトルは保存しません。「${keptTitle}」のままです`
       : unsafe.length > 0
         ? `${unsafe.map((ch) => `「${ch}」`).join("")}はリンクに書けない文字です`
         : "";

@@ -18,6 +18,7 @@ import {
   type EditorApi,
   EditorSession,
   type FailedOp,
+  holdsBack,
   inputCheckOf,
   inputProblemsOf,
   isDirty,
@@ -826,6 +827,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           readOnly={readOnly}
           autoFocus={focusTarget === "title"}
           keptTitle={uncreated ? "" : state.draft.title}
+          saveHeldBack={holdsBack(state)}
           bodyView={() => editor.current?.view() ?? null}
           onChange={(title) => session.editTitle(title)}
           onCommit={() => void session.commitTitle()}

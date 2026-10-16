@@ -713,6 +713,46 @@ describe("保存の前の検査の表示", () => {
     typeTitle("新しい題");
     expect(container?.querySelector(".title-hint")?.textContent).toBe("");
   });
+
+  it("title の重複で保存を止めている間に欄を空にすると、「のまま」を付けずに保存しないことだけを伝える", async () => {
+    vi.mocked(updatePage).mockResolvedValueOnce({
+      ok: false,
+      reason: "title_conflict",
+      message: "同じタイトルのページがすでにあります。",
+      existing: { id: "B", title: "別の題", visibility: "public" },
+    });
+    renderPage();
+    const hint = () => container?.querySelector(".title-hint")?.textContent;
+    act(() => titleView().focus());
+    typeTitle("別の題");
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    typeTitle("");
+    expect(hint()).toBe("空のタイトルは保存しません。");
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    expect(hint()).toBe("空のタイトルは保存しません。");
+    // 止めた原因の title を変えると、止めていない状態に戻り、文も元に戻る
+    act(() => titleView().focus());
+    typeTitle("新しい題");
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    typeTitle("");
+    expect(hint()).toBe("空のタイトルは保存しません。「新しい題」のままです");
+  });
+
+  it("title の上限の超過で保存を止めている間に欄を空にしても、「のまま」を付けない", async () => {
+    renderPage();
+    act(() => titleView().focus());
+    typeTitle("a".repeat(MAX_TITLE_BYTES + 1));
+    act(() => titleView().contentDOM.blur());
+    await flushAsync();
+    typeTitle("");
+    expect(container?.querySelector(".title-hint")?.textContent).toBe(
+      "空のタイトルは保存しません。",
+    );
+    expect(updatePage).not.toHaveBeenCalled();
+  });
 });
 
 describe("PageEditor の tag", () => {

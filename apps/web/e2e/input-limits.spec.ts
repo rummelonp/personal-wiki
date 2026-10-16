@@ -186,6 +186,11 @@ test("保存で title の重複と言われたら、再試行を出さずに既�
   await expect(taken).toContainText(`「${existing.title}」というページがすでにあります。`);
   await expect(taken).toContainText("大文字と小文字、全角と半角、_ と空白の違いは");
   await expect(taken.getByRole("button", { name: "もう一度保存する" })).toHaveCount(0);
+  // 保存を止めている間は、前の title のまま保存するとは言わない
+  await titleEditor(page).click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Backspace");
+  await expect(page.locator(".title-hint")).toHaveText("空のタイトルは保存しません。");
   const link = taken.getByRole("link", { name: "そのページを開く" });
   await expect(link).toHaveAttribute("href", new RegExp(`/p/${existing.id}`));
   await link.click();
