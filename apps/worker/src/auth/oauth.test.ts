@@ -1116,6 +1116,7 @@ describe("同意画面の登録の行", () => {
     });
     expect(withRow).toContain("<dt>登録</dt>");
     expect(withRow).toContain("35 日前");
-    expect(withRow).toContain("切れた接続をつなぎ直したなら");
+    expect(withRow).toContain("つなぎ直した接続では、以前に登録した日時が出ることがあります。");
+    expect(withRow).toContain("日時だけでは、自分が始めた接続かは判断できません。");
   });
 });

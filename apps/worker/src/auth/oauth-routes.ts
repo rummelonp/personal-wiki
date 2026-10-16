@@ -455,7 +455,7 @@ export function consentPage(
     registeredAt === null
       ? ""
       : `<dt>登録</dt>
-<dd>${escapeHtml(describeRegistration(registeredAt, now))}<br><small>新しく接続を追加したなら、登録は直近のはずです。切れた接続をつなぎ直したなら、以前の登録が使われて古い日時になります。どちらの場合も、日時だけでは自分が始めた接続かどうかは分かりません。</small></dd>
+<dd>${escapeHtml(describeRegistration(registeredAt, now))}<br><small>つなぎ直した接続では、以前に登録した日時が出ることがあります。日時だけでは、自分が始めた接続かは判断できません。</small></dd>
 `;
   return pageHtml(
     "接続の許可",
