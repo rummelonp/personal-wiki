@@ -136,6 +136,8 @@ test("title の一覧を取れないときの quick switcher は、「作成」�
   await expect(switcher).toBeHidden();
   await page.getByRole("button", { name: "ページを検索" }).click();
   await input.fill(SEED.database);
+  // 下の候補が出ずに落ちたとき、語が欄に入らなかったのか、候補の応答が遅れたのかを分ける
+  await expect(input).toHaveValue(SEED.database);
   await expect(switcher.getByRole("option", { name: SEED.database, exact: true })).toBeVisible();
   await expect(switcher.getByText("候補を取得できません。")).toHaveCount(0);
 });
