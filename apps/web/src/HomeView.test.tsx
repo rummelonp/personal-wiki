@@ -298,20 +298,20 @@ describe("HomeView の空の状態", () => {
   const title = () => empty()?.querySelector(".empty-title")?.textContent;
   const backLink = () => empty()?.querySelector<HTMLAnchorElement>("a.button");
 
-  it("検索 0 件は見出し、補足、一覧へ戻る導線を出す", async () => {
+  it("検索 0 件は見出しと一覧へ戻る導線を出し、補足は出さない", async () => {
     vi.mocked(searchPages).mockResolvedValue(ok([]));
     await mountHome("無い語", false);
     await vi.waitFor(() => expect(empty()).not.toBeNull());
     expect(title()).toBe("一致するページがありません");
-    expect(empty()?.querySelector(".empty-text")?.textContent).not.toBe("");
+    expect(empty()?.querySelector(".empty-text")).toBeNull();
     expect(backLink()?.getAttribute("href")).toBe("/");
   });
 
-  it("匿名の短い検索語は、文字数の案内と一覧へ戻る導線を出す", async () => {
+  it("匿名の短い検索語は、文字数の案内と一覧へ戻る導線を出し、補足は出さない", async () => {
     await mountHome("ab", false);
     expect(empty()?.getAttribute("role")).toBe("status");
     expect(title()).toBe("3 文字以上で検索してください");
-    expect(empty()?.querySelector(".empty-text")?.textContent).not.toBe("");
+    expect(empty()?.querySelector(".empty-text")).toBeNull();
     expect(backLink()?.getAttribute("href")).toBe("/");
   });
 
@@ -326,6 +326,7 @@ describe("HomeView の空の状態", () => {
     await mountHome("", true, "x");
     await vi.waitFor(() => expect(empty()).not.toBeNull());
     expect(title()).toBe("このタグのページがありません");
+    expect(empty()?.querySelector(".empty-text")).toBeNull();
     expect(backLink()?.getAttribute("href")).toBe("/");
   });
 
@@ -419,6 +420,23 @@ describe("HomeView の 0 件の検索", () => {
     );
     await renderHome("無い語", true);
     expect(createButton()).toBeUndefined();
+  });
+});
+
+describe("HomeView の検索中のタグ", () => {
+  it("タグで絞り込めないことと、そのタグの一覧への入口を出す", async () => {
+    vi.mocked(searchPages).mockResolvedValue(
+      ok([{ ...summary("AAAAAAAAAAAAAAAAAAAAAA", "語"), excerpt: "語" }]),
+    );
+    await mountHome("語", true, "メモ");
+    await vi.waitFor(() => expect(container?.querySelector(".entries")).not.toBeNull());
+    const hint = container?.querySelector(".home > p.muted");
+    expect(hint?.textContent).toBe(
+      "検索はタグで絞り込めないので、全ページから探しています。 タグ「メモ」のページを見る",
+    );
+    const links = [...(hint?.querySelectorAll("a") ?? [])];
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute("href")).toBe(`/?tag=${encodeURIComponent("メモ")}`);
   });
 });
 

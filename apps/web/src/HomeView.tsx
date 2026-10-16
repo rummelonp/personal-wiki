@@ -88,10 +88,8 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
         <h1 className={listTitleClass(heading)}>{heading}</h1>
         {searching && tag !== "" && (
           <p className="muted">
-            検索ではタグ「{tag}」で絞り込めないので、全ページから探しています。{" "}
-            <Link href={tagHref(tag)}>タグだけで見る</Link>
-            {" / "}
-            <Link href={homeHref(trimmed)}>タグを外す</Link>
+            検索はタグで絞り込めないので、全ページから探しています。{" "}
+            <Link href={tagHref(tag)}>タグ「{tag}」のページを見る</Link>
           </p>
         )}
         {state.status === "loading" && state.previous === undefined && <SkeletonEntries />}
@@ -102,7 +100,6 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
           <EmptyState
             role="status"
             title={`${state.min} 文字以上で検索してください`}
-            text="ログインしていないときは、短い語で検索できません。上の欄で語を足してください。"
             actions={backToRecent}
           />
         )}
@@ -131,11 +128,6 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
         {state.status === "ready" && state.entries.length === 0 && searching && (
           <EmptyState
             title="一致するページがありません"
-            text={
-              owner
-                ? `「${trimmed}」はタイトルにも本文にも見つかりませんでした。語を変えるか、この語で作れます。`
-                : `「${trimmed}」は見つかりませんでした。上の欄で検索語を変えてください。`
-            }
             actions={
               <>
                 {/* 検索語の title で作る入口。匿名は作れないので出さない */}
@@ -154,11 +146,7 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
           />
         )}
         {state.status === "ready" && state.entries.length === 0 && !searching && tag !== "" && (
-          <EmptyState
-            title="このタグのページがありません"
-            text={`タグ「${tag}」が付いたページは見つかりませんでした。`}
-            actions={backToRecent}
-          />
+          <EmptyState title="このタグのページがありません" actions={backToRecent} />
         )}
         {state.status === "ready" && state.entries.length === 0 && !searching && tag === "" && (
           <EmptyState
