@@ -257,6 +257,39 @@ test("タグで絞り込める", async ({ page }) => {
   await expect(entries.getByRole("link", entryLink(SEED.database))).toBeVisible();
 });
 
+test("選択中のタグをもう一度押すと、絞り込みが外れてトップの先頭に戻り、戻るで絞り込みに戻れる", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const database = page.locator(".rail .chip-link").filter({ hasText: /^database\d+$/ });
+  await database.click();
+  await expect(page).toHaveURL(`/?tag=${encodeURIComponent("database")}`);
+  await expect(page.getByRole("heading", { name: "タグ「database」" })).toBeVisible();
+
+  // 選択中のチップだけが現在の印と外す案内を持ち、href はトップ（新しいタブやコピーでもトップになる）
+  const selected = page.locator(".rail .chip-link[aria-current='page']");
+  await expect(selected).toHaveCount(1);
+  await expect(selected).toHaveAttribute("href", "/");
+  await expect(selected).toHaveAttribute("title", "絞り込みを外す");
+  await expect(page.locator(".rail .chip-link:not([aria-current])").first()).not.toHaveAttribute(
+    "href",
+    "/",
+  );
+
+  // 狭い画面ではタグが一覧の下に在るので、押す位置まで動かしてから押す
+  await selected.scrollIntoViewIfNeeded();
+  await selected.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "タグ「database」" })).toHaveCount(0);
+  await expect(page.locator(".rail .chip-link[aria-current]")).toHaveCount(0);
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL(`/?tag=${encodeURIComponent("database")}`);
+  await expect(page.getByRole("heading", { name: "タグ「database」" })).toBeVisible();
+});
+
 test("backlink から参照元へ移れる", async ({ page, seedIds }) => {
   await page.goto(`/p/${seedIds[SEED.database]}`);
   const links = page.locator(".rail-section-links");

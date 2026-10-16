@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "./Link";
 import { listTags, type TagCount } from "./pages-api";
 import { RailSection } from "./Rail";
-import { tagHref } from "./route";
+import { homeHref, tagHref } from "./route";
 
 /**
  * タグの一覧。tags が null は「出さない」を表す（読み込み中、または API がまだタグを返せない）。
@@ -33,18 +33,26 @@ export function TagsPanel({ tags, active }: { tags: TagCount[]; active: string }
         <p className="muted">タグはまだありません。</p>
       ) : (
         <ul className="chips">
-          {tags.map(({ tag, count }) => (
-            <li key={tag}>
-              <Link
-                className="chip chip-link"
-                href={tagHref(tag)}
-                aria-current={tag === active ? "page" : undefined}
-              >
-                {tag}
-                <span className="chip-count">{count}</span>
-              </Link>
-            </li>
-          ))}
+          {tags.map(({ tag, count }) => {
+            const selected = tag === active;
+            return (
+              <li key={tag}>
+                {/*
+                  選択中のタグは、押すと絞り込みを外してトップへ戻るリンクにする。
+                  名前は変えず（タグ名と件数のまま）、外れることは title の説明で伝える。
+                */}
+                <Link
+                  className="chip chip-link"
+                  href={selected ? homeHref() : tagHref(tag)}
+                  aria-current={selected ? "page" : undefined}
+                  title={selected ? "絞り込みを外す" : undefined}
+                >
+                  {tag}
+                  <span className="chip-count">{count}</span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </RailSection>
