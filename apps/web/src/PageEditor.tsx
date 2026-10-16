@@ -391,11 +391,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
 
   async function handleDelete() {
     const unsaved = isDirty(state) ? "保存していない変更も捨てます。" : "";
-    if (
-      !window.confirm(
-        `「${state.base.title}」を削除します。${unsaved}元に戻せません。よろしいですか？`,
-      )
-    )
+    if (!window.confirm(`「${state.base.title}」を削除しますか？${unsaved}元に戻せません。`))
       return;
     if (await session.remove()) navigate(homeHref());
   }

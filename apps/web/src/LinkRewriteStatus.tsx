@@ -189,7 +189,7 @@ function LinkRewriteNotice({
       {failed.length > 0 && (
         <>
           <p>
-            次のページはリンクを書き換えられませんでした。旧タイトルのリンクを手で直してください。
+            次のページはリンクを書き換えられませんでした。旧タイトルへのリンクを手で直してください。
           </p>
           <ul className="link-rewrites-pages">
             {failed.map((id) => (

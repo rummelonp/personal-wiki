@@ -321,6 +321,14 @@ describe("HomeView の空の状態", () => {
     expect(title()).toBe("このタグのページがありません");
     expect(backLink()?.getAttribute("href")).toBe("/");
   });
+
+  it("匿名で公開ページが無いときは、見出しだけを出して補足の段落を描かない", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    await mountHome("", false);
+    await vi.waitFor(() => expect(empty()).not.toBeNull());
+    expect(title()).toBe("公開されているページはまだありません");
+    expect(empty()?.querySelector(".empty-text")).toBeNull();
+  });
 });
 
 describe("HomeView の更新日", () => {

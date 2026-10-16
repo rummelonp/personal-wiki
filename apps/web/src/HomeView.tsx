@@ -149,12 +149,8 @@ export function HomeView({ query, tag, owner }: HomeViewProps) {
         )}
         {state.status === "ready" && state.entries.length === 0 && !searching && tag === "" && (
           <EmptyState
-            title="ページがまだありません"
-            text={
-              owner
-                ? "ヘッダーの「新規作成」から、最初のページを作れます。"
-                : "公開されているページが、ここに並びます。"
-            }
+            title={owner ? "ページがまだありません" : "公開されているページはまだありません"}
+            text={owner ? "ヘッダーの「新規作成」から、最初のページを作れます。" : undefined}
           />
         )}
         {state.status === "ready" && state.entries.length > 0 && (

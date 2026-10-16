@@ -1800,7 +1800,7 @@ describe("公開の切り替えと削除の待ち", () => {
     return { promise, resolve };
   }
 
-  it("公開を押した直後に「公開」を選択中にして、遅れた後に「公開中…」を出す。押し直しは受けない", async () => {
+  it("公開を押した直後に「公開」を選択中にして、遅れた後に「公開にしています…」を出す。押し直しは受けない", async () => {
     restoreDelay = setLoadingDelay(40);
     const reply = deferred<ApiResult<Page>>();
     vi.mocked(setVisibility).mockReturnValue(reply.promise);
@@ -1818,7 +1818,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(publishNote()).toBe("");
 
     await act(() => new Promise((resolve) => setTimeout(resolve, 60)));
-    expect(publishNote()).toBe("公開中…");
+    expect(publishNote()).toBe("公開にしています…");
 
     await act(async () => reply.resolve(ok({ ...PAGE, visibility: "public", version: 2 })));
     await flushAsync();
@@ -1838,7 +1838,7 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => option("公開").click());
     act(() => button("公開する").click());
     await flushAsync();
-    expect(publishNote()).toBe("公開中…");
+    expect(publishNote()).toBe("公開にしています…");
 
     await act(async () => reply.resolve({ ok: false, reason: "error", message: "失敗" }));
     await flushAsync();
@@ -1848,7 +1848,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(container?.textContent).toContain("公開設定を変えられませんでした");
   });
 
-  it("下書きに戻す間は「下書き」を選択中にして「下書きに戻し中…」を出す", async () => {
+  it("下書きに戻す間は「下書き」を選択中にして「下書きに戻しています…」を出す", async () => {
     restoreDelay = setLoadingDelay(0);
     const reply = deferred<ApiResult<Page>>();
     vi.mocked(setVisibility).mockReturnValue(reply.promise);
@@ -1859,7 +1859,7 @@ describe("公開の切り替えと削除の待ち", () => {
     await flushAsync();
     expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
     expect(option("公開").getAttribute("aria-pressed")).toBe("false");
-    expect(publishNote()).toBe("下書きに戻し中…");
+    expect(publishNote()).toBe("下書きに戻しています…");
 
     await act(async () => reply.resolve(ok({ ...PUBLIC, visibility: "draft", version: 2 })));
     await flushAsync();
@@ -1907,14 +1907,12 @@ describe("公開の切り替えと削除の待ち", () => {
     const { view, button } = renderPage();
     await flushAsync();
     act(() => button("このページを削除").click());
-    expect(confirm).toHaveBeenLastCalledWith(
-      `「${PAGE.title}」を削除します。元に戻せません。よろしいですか？`,
-    );
+    expect(confirm).toHaveBeenLastCalledWith(`「${PAGE.title}」を削除しますか？元に戻せません。`);
 
     act(() => typeAtEnd(view(), "追記"));
     act(() => button("このページを削除").click());
     expect(confirm).toHaveBeenLastCalledWith(
-      `「${PAGE.title}」を削除します。保存していない変更も捨てます。元に戻せません。よろしいですか？`,
+      `「${PAGE.title}」を削除しますか？保存していない変更も捨てます。元に戻せません。`,
     );
     expect(deletePage).not.toHaveBeenCalled();
   });

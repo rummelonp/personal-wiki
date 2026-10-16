@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 interface EmptyStateProps {
   /** 見出し 1 行。何が無いか、何が起きたかを言い切る。 */
   title: string;
-  /** 補足 1 行。理由か、次に何ができるか。 */
-  text: ReactNode;
+  /** 補足 1 行。理由か、次に何ができるか。見出しだけで足りるなら省く。 */
+  text?: ReactNode;
   /** 次の動作（ボタンやリンク）。 */
   actions?: ReactNode;
   /** 画面の主見出しなら 1、一覧の見出しの下に出すなら 2。 */
@@ -21,7 +21,7 @@ export function EmptyState({ title, text, actions, level = 2, role }: EmptyState
   return (
     <section className="empty" role={role}>
       <Heading className="empty-title">{title}</Heading>
-      <p className="empty-text">{text}</p>
+      {text !== undefined && <p className="empty-text">{text}</p>}
       {actions !== undefined && <div className="actions">{actions}</div>}
     </section>
   );

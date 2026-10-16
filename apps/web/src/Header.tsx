@@ -78,7 +78,6 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
           </button>
         )}
         {session.status === "loading" && <ActionsPlaceholder />}
-        {session.status === "error" && <span className="muted">状態を取得できませんでした</span>}
         {isOwner && (
           <button
             type="button"

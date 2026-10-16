@@ -9,8 +9,8 @@ const OPTIONS: ReadonlyArray<{ value: Visibility; label: string }> = [
 ];
 
 const PENDING_NOTES: Record<Visibility, string> = {
-  public: "公開中…",
-  draft: "下書きに戻し中…",
+  public: "公開にしています…",
+  draft: "下書きに戻しています…",
 };
 
 /**

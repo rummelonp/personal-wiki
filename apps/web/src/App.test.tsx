@@ -979,6 +979,9 @@ describe("App の owner の画面", () => {
       await vi.waitFor(() =>
         expect(main()?.querySelector("h1")?.textContent).toBe("ログインが必要です"),
       );
+      expect(main()?.querySelector(".empty-text")?.textContent).toBe(
+        "ページの作成はログインした後に使えます。",
+      );
       expect(main()?.querySelector(".cm-editor")).toBeNull();
       expect(createPage).not.toHaveBeenCalled();
     });
