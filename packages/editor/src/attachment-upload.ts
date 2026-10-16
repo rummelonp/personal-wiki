@@ -44,6 +44,16 @@ function placeholderText(token: string): string {
   return `![[uploading.${token}.png]]`;
 }
 
+const PLACEHOLDER_TARGET = /^uploading\.\d+-\d+\.png$/;
+
+/**
+ * `placeholderText` が書く embed の target か。画像の widget が、この形のときだけ
+ * 添付中の表示に切り替えるために使う。名前を見るだけなので、アップロードの状態は持たない。
+ */
+export function isUploadPlaceholderTarget(target: string): boolean {
+  return PLACEHOLDER_TARGET.test(target);
+}
+
 function insertPlaceholder(view: EditorView, pos: number, token: string): number {
   const text = placeholderText(token);
   view.dispatch({

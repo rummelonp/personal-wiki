@@ -19,6 +19,7 @@ import {
   type WikiLinkParts,
   wikiLinkNodes,
 } from "@personal-wiki/markdown";
+import { isUploadPlaceholderTarget } from "./attachment-upload";
 import {
   type BuiltDecorations,
   decorationPlugin,
@@ -254,6 +255,34 @@ class ImageEmbedWidget extends WidgetType {
   }
 }
 
+/** アップロード中の仮の記法（attachment-upload.ts）を、仮のファイル名の代わりに描く表示 */
+class UploadingEmbedWidget extends WidgetType {
+  constructor(readonly target: string) {
+    super();
+  }
+
+  override eq(other: WidgetType): boolean {
+    return other instanceof UploadingEmbedWidget && other.target === this.target;
+  }
+
+  // 他の embed の widget と同じく、クリックを editor に渡さず source を出さない
+  override ignoreEvent(): boolean {
+    return true;
+  }
+
+  // 編集ボタンは付けない。仮の記法はアップロードの完了で置き換わるので、書き換える先にならない
+  toDOM(): HTMLElement {
+    const wrapper = document.createElement("span");
+    wrapper.className = "cm-embed cm-embed-image";
+    wrapper.setAttribute(TARGET_ATTR, this.target);
+    const label = document.createElement("span");
+    label.className = "cm-embed-uploading";
+    label.textContent = "画像を添付中…";
+    wrapper.append(label);
+    return wrapper;
+  }
+}
+
 class VideoEmbedWidget extends WidgetType {
   constructor(
     readonly target: string,
@@ -456,12 +485,14 @@ type MediaWidgetFactory = (
  */
 const mediaWidgetFactories: { readonly [K in MediaEmbedKind]: MediaWidgetFactory } = {
   image: (parts, resolveUrl, block) =>
-    new ImageEmbedWidget(
-      parts.target,
-      resolveUrl ? resolveUrl(parts.target) : null,
-      parseImageEmbedLabel(parts.label),
-      block,
-    ),
+    isUploadPlaceholderTarget(parts.target)
+      ? new UploadingEmbedWidget(parts.target)
+      : new ImageEmbedWidget(
+          parts.target,
+          resolveUrl ? resolveUrl(parts.target) : null,
+          parseImageEmbedLabel(parts.label),
+          block,
+        ),
   // `|` より後ろは読まない。Obsidian の help は動画のサイズ指定を定めていない
   video: (parts, resolveUrl, block) =>
     new VideoEmbedWidget(parts.target, resolveUrl ? resolveUrl(parts.target) : null, block),
@@ -851,6 +882,7 @@ const embedTheme = EditorView.baseTheme({
     textDecoration: "underline dashed",
     textDecorationColor: "var(--ui-color-accent)",
   },
+  ".cm-embed-uploading": { color: "var(--ui-color-muted)" },
   // 展開した本文は行の中で 1 行分の幅を取る。block の decoration は ViewPlugin から出せないので
   // inline の widget を行幅いっぱいの inline-block にする。
   '.cm-embed-page[data-embed-state="resolved"]': {
@@ -899,7 +931,7 @@ const embedTheme = EditorView.baseTheme({
   // 重ねても高さを保つ役に立たず、記法より幅が狭いので、`]]` の直後に打つ文字が重ねた記法の下に
   // 隠れる。記法を流れに戻す（高さは 1 行のまま）。未解決かどうかは widget の DOM にしか出ないので
   // CSS で見る。widget は記法の mark の直後の兄弟に置かれる（side が負なので mark の終端より後）。
-  '.cm-embed-source-overlay:has(+ .cm-embed > .cm-embed-unresolved), .cm-embed-source-overlay:has(+ .cm-embed-page:not([data-embed-state="resolved"])), .cm-embed-source-overlay:has(+ .cm-embed[data-embed-compact])':
+  '.cm-embed-source-overlay:has(+ .cm-embed > .cm-embed-unresolved), .cm-embed-source-overlay:has(+ .cm-embed > .cm-embed-uploading), .cm-embed-source-overlay:has(+ .cm-embed-page:not([data-embed-state="resolved"])), .cm-embed-source-overlay:has(+ .cm-embed[data-embed-compact])':
     { position: "static", backgroundColor: "transparent", boxShadow: "none" },
   // 文字だけの widget は記法と同じ target を並べるだけなので隠す。小さい画像は中身があるので残す。
   '.cm-embed-source + .cm-embed:has(> .cm-embed-unresolved), .cm-embed-source + .cm-embed-page:not([data-embed-state="resolved"])':

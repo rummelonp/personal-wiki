@@ -174,18 +174,53 @@ describe("attachmentUpload", () => {
     expect(attachments.filter((name) => SERVER_ATTACHMENT_NAME.test(name))).toEqual([]);
   });
 
-  it("renders the placeholder as an unresolved image when the resolver returns null", () => {
+  it("renders the placeholder as a progress label without the file name or the edit button", () => {
     const upload: UploadAttachment = () => new Promise(() => {});
-    const v = mountWithOptions({
-      onUploadAttachment: upload,
-      resolveAttachmentUrl: () => null,
-    });
+    const resolveAttachmentUrl = vi.fn(() => "data:image/png;base64,AAAA");
+    const v = mountWithOptions({ onUploadAttachment: upload, resolveAttachmentUrl });
 
     dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
     v.dispatch({ selection: { anchor: 0 } });
 
-    const unresolved = v.contentDOM.querySelector(".cm-embed-image .cm-embed-unresolved");
-    expect(unresolved?.textContent).toMatch(/^uploading\..+\.png$/);
+    const embed = v.contentDOM.querySelector<HTMLElement>(".cm-embed-image");
+    expect(embed?.textContent).toBe("画像を添付中…");
+    expect(embed?.querySelector("img, .cm-embed-unresolved, .cm-embed-edit")).toBeNull();
+    expect(resolveAttachmentUrl).not.toHaveBeenCalled();
+  });
+
+  it("keeps the placeholder text in the document while the label is shown", () => {
+    const upload: UploadAttachment = () => new Promise(() => {});
+    const v = mountWithOptions({ onUploadAttachment: upload, resolveAttachmentUrl: () => null });
+
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+
+    expect(v.state.doc.toString()).toMatch(/^!\[\[uploading\.\d+-\d+\.png\]\]$/);
+  });
+
+  it("shows the placeholder as source again when the cursor returns to it", () => {
+    const upload: UploadAttachment = () => new Promise(() => {});
+    const v = mountWithOptions({ onUploadAttachment: upload, resolveAttachmentUrl: () => null });
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+
+    v.focus();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+
+    expect(v.contentDOM.querySelector(".cm-embed-source")?.textContent).toBe(
+      v.state.doc.toString(),
+    );
+  });
+
+  it("draws an embed whose name only resembles the placeholder as a normal image", () => {
+    const v = mountWithOptions({
+      doc: "![[uploading.draft.png]]",
+      resolveAttachmentUrl: () => null,
+    });
+
+    const embed = v.contentDOM.querySelector<HTMLElement>(".cm-embed-image");
+    expect(embed?.querySelector(".cm-embed-unresolved")?.textContent).toBe("uploading.draft.png");
+    expect(embed?.textContent).not.toContain("画像を添付中…");
   });
 
   // 保留した action の中で placeholder を探す（IME 不変条件 1 の保留の間に位置が動く）
