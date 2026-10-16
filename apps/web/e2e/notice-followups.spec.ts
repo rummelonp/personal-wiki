@@ -97,7 +97,8 @@ for (const viewport of VIEWPORTS) {
     await page.route(pagePath, async (route) => {
       if (route.request().method() !== "PUT") return route.fallback();
       external ??= api.updatePage(created, {
-        title: `${created.title}を別の場所で長く書き換えた title`,
+        // 2 行で切る欄に収まる長さにする。uniqueTitle の乱数で 1 行の幅が変わるので、境界の近くに置くと折り返しが揺れる
+        title: `${created.title}を別で直した`,
         body: LINES.map((line, index) =>
           index % 7 === 3 ? `${line}を別の場所で直した` : line,
         ).join("\n"),
