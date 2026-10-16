@@ -85,9 +85,6 @@ export function failureMessage(failure: ApiFailure, fallback: string): string {
     : fallback;
 }
 
-/** failureMessage の fallback に渡す、取得の失敗の文。message を持たない失敗は待てば通ることが多い。 */
-export const LOAD_FAILED = "取得できませんでした。時間をおいて、もう一度試してください。";
-
 export type ApiResult<T> = { ok: true; value: T } | ApiFailure;
 
 export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -106,6 +103,12 @@ const RETRY_LATER = "時間をおいて、もう一度試してください。";
 const RELOAD = "ページを再読み込みしてから、もう一度試してください。";
 
 /**
+ * failureMessage の fallback に渡す、取得の失敗の文。message を持たない失敗は待てば通ることが多い。
+ * 「取得できませんでした」は通知の見出しが伝える。
+ */
+export const LOAD_FAILED = RETRY_LATER;
+
+/**
  * web が正しく組んでいれば起きない誤り。利用者に直せる点は無く、web の版がサーバーと食い違っている
  * ことが多いので、読み込み直しを勧める。
  */
@@ -121,12 +124,13 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 /**
- * サーバーが message も既知の code も返さなかったときの文。5xx と 429 は待てば通ることがあり、
- * それ以外の 4xx は待っても変わらない。429 は障害ではなく混雑による制限なので、文を分ける。
+ * 既知の code が無いときの文。5xx と 429 は待てば通ることがあり、それ以外の 4xx は待っても変わらない。
+ * 429 は障害ではなく混雑による制限なので、文を分ける。番号は 429 では言葉で足りるので出さず、
+ * ほかは原因を調べる手がかりとして残す。
  */
 function statusMessage(status: number): string {
   if (status === 429) {
-    return "アクセスが集中したため、一時的に制限されています（HTTP 429）。少し待ってから、もう一度試してください。";
+    return "一時的にアクセスが制限されています。少し待ってから、もう一度試してください。";
   }
   return status >= 500
     ? `サーバーで問題が起きました（HTTP ${status}）。${RETRY_LATER}`
@@ -192,8 +196,8 @@ function inputFailureOf(
       return invalidInput(
         at === null ? null : { reason: "control_char", field, at },
         field === "title"
-          ? "タイトルに目に見えない制御文字が入っていて保存できません。その文字を消してください。"
-          : "本文に目に見えない文字（NUL）が入っていて保存できません。その文字を消してください。",
+          ? "タイトルに見えない文字が入っていて保存できません。その文字を消してください。"
+          : "本文に見えない文字（NUL）が入っていて保存できません。その文字を消してください。",
       );
     }
     default:
@@ -249,11 +253,10 @@ async function failureOf(res: Response, sent?: SentPage): Promise<ApiFailure> {
   const input =
     (sent === undefined ? null : inputFailureOf(code, body, sent)) ?? tagFailureOf(code, body);
   if (input !== null) return input;
-  // サーバーの message は API を使う側（エージェント）向けの常体なので、画面の文体にそろえた固定の文を
-  // 優先する。検索語の誤りは searchPages が先に固定の文へ置き換える
-  const serverMessage = typeof body.message === "string" ? body.message : undefined;
-  const message = ERROR_MESSAGES[code] ?? serverMessage;
-  return { ok: false, reason: "error", message: message ?? statusMessage(res.status) };
+  // サーバーの message は API を使う側（エージェント）向けの常体なので、画面には出さない。Worker と
+  // SPA は同じデプロイで出るので、SPA が知らない code は SPA の書き漏れで、status の汎用の文で足りる。
+  // 検索語の誤りは searchPages が先に固定の文へ置き換える
+  return { ok: false, reason: "error", message: ERROR_MESSAGES[code] ?? statusMessage(res.status) };
 }
 
 function isPage(value: unknown): value is Page {
@@ -621,7 +624,7 @@ export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string
 
 const QUERY_MESSAGES: Record<string, string> = {
   empty: "検索語が空か、空白だけになっています。語を入力してください。",
-  too_long: `検索語が長すぎます。${SEARCH_MAX_QUERY_CHARS} 文字以内にしてください。`,
+  too_long: `検索語が長すぎます。${SEARCH_MAX_QUERY_CHARS}\u00a0文字以内にしてください。`,
   control_char: "検索語にタブや改行など、目に見えない文字が入っています。取り除いてください。",
 };
 
@@ -629,11 +632,13 @@ const QUERY_MESSAGES: Record<string, string> = {
 function invalidQueryOf(body: Record<string, unknown>): InvalidQuery | null {
   if (body.field !== "q") return null;
   if (body.error === "query_too_short") {
-    const min = typeof body.min === "number" ? `${body.min} 文字以上で、` : "";
     return {
       ok: false,
       reason: "invalid_query",
-      message: `検索語が短すぎます。${min}語を足してください。`,
+      message:
+        typeof body.min === "number"
+          ? `検索語が短すぎます。${body.min}\u00a0文字以上にしてください。`
+          : "検索語が短すぎます。語を足してください。",
     };
   }
   if (body.error !== "invalid_field") return null;
@@ -641,7 +646,8 @@ function invalidQueryOf(body: Record<string, unknown>): InvalidQuery | null {
   return {
     ok: false,
     reason: "invalid_query",
-    message: QUERY_MESSAGES[reason] ?? "この検索語では検索できません。語を変えてください。",
+    // 「この検索語では検索できません」は画面の見出しが伝える
+    message: QUERY_MESSAGES[reason] ?? "別の検索語を試してください。",
   };
 }
 

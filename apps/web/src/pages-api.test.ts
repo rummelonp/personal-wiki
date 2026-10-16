@@ -240,6 +240,23 @@ describe("失敗の分類", () => {
     for (const res of [title, body]) expect(JSON.stringify(res)).not.toContain("再読み込み");
   });
 
+  it("送った内容に制御文字の位置を求められなければ、位置の無い文で消すよう伝える", async () => {
+    const titled = failing(400, { error: "invalid_field", field: "title", reason: "control_char" });
+    expect(await updatePage(ID, 1, { title: "ab", body: "" }, {}, titled.fetchFn)).toEqual({
+      ok: false,
+      reason: "invalid_input",
+      problem: null,
+      message: "タイトルに見えない文字が入っていて保存できません。その文字を消してください。",
+    });
+    const nul = failing(400, { error: "invalid_field", field: "body", reason: "control_char" });
+    expect(await createPage({ title: "a", body: "本文" }, nul.fetchFn)).toEqual({
+      ok: false,
+      reason: "invalid_input",
+      problem: null,
+      message: "本文に見えない文字（NUL）が入っていて保存できません。その文字を消してください。",
+    });
+  });
+
   it("入力の誤りは書き込みの応答でだけ読む", async () => {
     const { fetchFn } = failing(400, { error: "title_too_long", message: "常体" });
     expect(await getPage(ID, fetchFn)).toMatchObject({ reason: "error" });
@@ -267,8 +284,15 @@ describe("失敗の分類", () => {
     const { fetchFn } = failing(429, {});
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
-      message:
-        "アクセスが集中したため、一時的に制限されています（HTTP 429）。少し待ってから、もう一度試してください。",
+      message: "一時的にアクセスが制限されています。少し待ってから、もう一度試してください。",
+    });
+  });
+
+  it("5xx は番号を添えて、時間をおくよう伝える", async () => {
+    const { fetchFn } = failing(503, {});
+    expect(await getPage(ID, fetchFn)).toMatchObject({
+      ok: false,
+      message: "サーバーで問題が起きました（HTTP 503）。時間をおいて、もう一度試してください。",
     });
   });
 
@@ -294,9 +318,13 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("未知の code は、サーバーの message をそのまま使う", async () => {
+  it("未知の code は、サーバーの message を出さず status の文にする", async () => {
     const { fetchFn } = failing(400, { error: "something_new", message: "新しい誤り" });
-    expect(await getPage(ID, fetchFn)).toMatchObject({ ok: false, message: "新しい誤り" });
+    expect(await getPage(ID, fetchFn)).toMatchObject({
+      ok: false,
+      message:
+        "サーバーに受け付けられませんでした（HTTP 400）。ページを再読み込みしてから、もう一度試してください。",
+    });
   });
 
   it("検索語の誤りは、サーバーの常体の message ではなく、直す点を示す固定の文にする", async () => {
@@ -309,17 +337,22 @@ describe("失敗の分類", () => {
     expect(await searchPages("a", tooLong.fetchFn)).toEqual({
       ok: false,
       reason: "invalid_query",
-      message: "検索語が長すぎます。200 文字以内にしてください。",
+      message: "検索語が長すぎます。200\u00a0文字以内にしてください。",
     });
     const unknown = failing(400, { error: "invalid_field", field: "q" });
     expect(await searchPages("a", unknown.fetchFn)).toMatchObject({
       reason: "invalid_query",
-      message: "この検索語では検索できません。語を変えてください。",
+      message: "別の検索語を試してください。",
     });
     const short = failing(400, { error: "query_too_short", field: "q", min: 3 });
     expect(await searchPages("a", short.fetchFn)).toMatchObject({
       reason: "invalid_query",
-      message: "検索語が短すぎます。3 文字以上で、語を足してください。",
+      message: "検索語が短すぎます。3\u00a0文字以上にしてください。",
+    });
+    const noMin = failing(400, { error: "query_too_short", field: "q" });
+    expect(await searchPages("a", noMin.fetchFn)).toMatchObject({
+      reason: "invalid_query",
+      message: "検索語が短すぎます。語を足してください。",
     });
   });
 
