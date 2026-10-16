@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, type ProxyOptions } from "vite";
+import { siteNameTitle } from "./src/site-name-title";
 
 // 開発中は Worker（wrangler dev の既定のポート）へ API とログインを中継する。
 // 本番は同じホストで Worker が配信するので、中継は要らない。
@@ -26,7 +27,7 @@ const toWorker: ProxyOptions = {
 };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), siteNameTitle(process.env.VITE_SITE_NAME)],
   server: {
     proxy: {
       "/api": toWorker,

@@ -7,6 +7,7 @@ import { useSkeletonPainted } from "./Loading";
 import { openNewPage } from "./new-page";
 import { homeHref } from "./route";
 import { switcherShortcutKeys, switcherShortcutLabel } from "./shortcut";
+import { SITE_NAME } from "./site-name";
 
 export type SessionState =
   | { status: "loading" }
@@ -48,7 +49,7 @@ export function Header({ session, loggingOut, onLogout, onOpenSearch }: HeaderPr
   return (
     <header className="header" ref={ref}>
       <Link className="brand" href={homeHref()}>
-        personal-wiki
+        {SITE_NAME}
       </Link>
       {session.status !== "error" && (
         <button

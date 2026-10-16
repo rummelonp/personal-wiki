@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { deployArgs, extraArgs, migrateArgs } from "./deploy.mjs";
+import { deployArgs, extraArgs, generatedSiteName, migrateArgs, webBuildEnv } from "./deploy.mjs";
 import {
   BASE_CONFIG_PATH,
   composeConfig,
@@ -18,6 +18,7 @@ const KV_ID = "0123456789abcdef0123456789abcdef";
 
 const VALUES = {
   hostname: "wiki.test.example",
+  siteName: undefined,
   d1DatabaseName: "my-wiki",
   d1DatabaseId: UUID,
   r2BucketName: "my-wiki-files",
@@ -94,6 +95,22 @@ describe("readDeployValues", () => {
       },
       warnings: [NO_OAUTH_WARNING, NO_OWNER_AUTH_WARNING],
     });
+  });
+
+  it("SITE_NAME は前後の空白を除いて読み、空なら使わない。制御文字と 40 文字を超える名前は弾く", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(readDeployValues(`${base}SITE_NAME= rummelonp wiki \n`)).toMatchObject({
+      values: { siteName: "rummelonp wiki" },
+    });
+    expect(readDeployValues(`${base}SITE_NAME=\n`)).toMatchObject({
+      values: { siteName: undefined },
+    });
+    expect(readDeployValues(`${base}SITE_NAME=${"あ".repeat(40)}\n`)).toMatchObject({
+      values: { siteName: "あ".repeat(40) },
+    });
+    for (const raw of ['"a\nb"', "a\tb", "あ".repeat(41)]) {
+      expect(readDeployValues(`${base}SITE_NAME=${raw}\n`), raw).toHaveProperty("problems");
+    }
   });
 
   it("owner のログインの値を読み、メールの前後の空白を除く", () => {
@@ -307,6 +324,13 @@ describe("composeConfig", () => {
     expect(composeConfig(BASE, VALUES).triggers).toEqual({ crons: [] });
   });
 
+  it("siteName は指定されたときだけ vars の SITE_NAME に入れる", () => {
+    expect(composeConfig(BASE, VALUES).vars).toBeUndefined();
+    expect(composeConfig(BASE, { ...VALUES, siteName: "rummelonp wiki" }).vars).toEqual({
+      SITE_NAME: "rummelonp wiki",
+    });
+  });
+
   it("account_id は指定されたときだけ入れる", () => {
     expect(composeConfig(BASE, { ...VALUES, accountId: "acct" }).account_id).toBe("acct");
   });
@@ -364,6 +388,28 @@ describe("writeGeneratedConfig", () => {
 
   it("生成物は wrangler.jsonc と同じディレクトリにある（main と migrations_dir の相対パスのため）", () => {
     expect(dirname(GENERATED_CONFIG_PATH)).toBe(dirname(BASE_CONFIG_PATH));
+  });
+});
+
+describe("web のビルドに渡すサイト名", () => {
+  it("生成した設定の vars から読み、無ければ undefined", () => {
+    const dir = mkdtempSync(join(tmpdir(), "deploy-config-"));
+    const withName = join(dir, "a.json");
+    const without = join(dir, "b.json");
+    writeFileSync(withName, JSON.stringify({ vars: { SITE_NAME: "rummelonp wiki" } }));
+    writeFileSync(without, JSON.stringify({ name: "x" }));
+    expect(generatedSiteName(withName)).toBe("rummelonp wiki");
+    expect(generatedSiteName(without)).toBeUndefined();
+  });
+
+  it("VITE_SITE_NAME は siteName で上書きし、無ければシェルに残っていても取り除く", () => {
+    expect(webBuildEnv({ PATH: "/bin", VITE_SITE_NAME: "old" }, "new")).toEqual({
+      PATH: "/bin",
+      VITE_SITE_NAME: "new",
+    });
+    expect(webBuildEnv({ PATH: "/bin", VITE_SITE_NAME: "old" }, undefined)).toEqual({
+      PATH: "/bin",
+    });
   });
 });
 

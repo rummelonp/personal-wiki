@@ -8,6 +8,7 @@ import {
 import type { Context, Hono } from "hono";
 import themeCss from "../../../web/src/theme.css";
 import type { AppEnv } from "../env";
+import { siteNameOf } from "../site-name";
 import { allowAnonymous, requireOwner } from "./middleware";
 import pageCss from "./oauth-page.css";
 import { boundRegistrationRequest } from "./oauth-registration";
@@ -56,7 +57,7 @@ export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => num
         authorization_servers: [origin],
         bearer_methods_supported: ["header"],
         scopes_supported: [...OAUTH_SCOPES],
-        resource_name: "personal-wiki",
+        resource_name: siteNameOf(c.env),
       });
     })
     .post(OAUTH_TOKEN_PATH, allowAnonymous(), (c) => serveProtocol(c))

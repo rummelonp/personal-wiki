@@ -8,6 +8,11 @@ export interface Bindings {
    * 配信は 404 になる（attachments/routes.ts）。
    */
   BUCKET?: R2Bucket;
+  /**
+   * サイト名。deploy.env の SITE_NAME から vars に入る。無ければ既定の名前（site-name.ts）。
+   * web には同じ値をビルド時に渡す（scripts/deploy.mjs）。
+   */
+  SITE_NAME?: string;
   /** apps/web のビルド出力 */
   ASSETS: Fetcher;
   /**

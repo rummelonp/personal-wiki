@@ -7,11 +7,12 @@ import {
   originValidationResponse,
   PARSE_ERROR,
 } from "@modelcontextprotocol/server";
-import { MAX_BODY_BYTES } from "@personal-wiki/domain";
+import { DEFAULT_SITE_NAME, MAX_BODY_BYTES } from "@personal-wiki/domain";
 import type { Hono } from "hono";
 import { requireToken } from "../auth/middleware";
 import type { AppEnv } from "../env";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
+import { siteNameOf } from "../site-name";
 import { PAGE_TOOLS } from "./page-tools";
 import { SEARCH_TOOLS } from "./search-tools";
 import type { WikiTool, WikiToolContext } from "./tool";
@@ -36,9 +37,13 @@ const INSTRUCTIONS = [
  * 1 件しか使わないので、calledTool が TOOLS にあれば、その 1 件だけを登録する。
  * 名前が TOOLS に無いときは全件登録し、「tool が無い」という応答は SDK に任せて変えない。
  */
-export function createWikiMcpServer(ctx: WikiToolContext, calledTool?: string): McpServer {
+export function createWikiMcpServer(
+  ctx: WikiToolContext,
+  calledTool?: string,
+  siteName: string = DEFAULT_SITE_NAME,
+): McpServer {
   const server = new McpServer(
-    { name: "personal-wiki", version: "0.0.0" },
+    { name: siteName, version: "0.0.0" },
     { instructions: INSTRUCTIONS },
   );
   const called = TOOLS.filter((tool) => tool.name === calledTool);
@@ -51,6 +56,7 @@ interface McpRequestScope {
   context: WikiToolContext;
   /** tools/call の対象の tool 名。tools/call でなければ undefined */
   calledTool: string | undefined;
+  siteName: string;
 }
 
 // handler は factory に env を渡さないので、リクエストごとの値は authInfo.extra に載せて factory へ届ける
@@ -98,8 +104,8 @@ const ALLOWED_ORIGIN_HOSTNAMES: string[] = [];
 export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRoutesOptions) {
   const handler = createMcpHandler(
     ({ authInfo }) => {
-      const { context, calledTool } = scopeOf(authInfo);
-      return createWikiMcpServer(context, calledTool);
+      const { context, calledTool, siteName } = scopeOf(authInfo);
+      return createWikiMcpServer(context, calledTool, siteName);
     },
     {
       onerror: (error) => {
@@ -140,7 +146,13 @@ export function registerMcpRoutes(app: Hono<AppEnv>, { now, recordWrite }: McpRo
         token: "",
         clientId: principal.kind === "token" ? principal.name : principal.kind,
         scopes: principal.kind === "token" ? [...principal.scopes] : [],
-        extra: { [SCOPE_KEY]: { context, calledTool: calledToolName(parsedBody) } },
+        extra: {
+          [SCOPE_KEY]: {
+            context,
+            calledTool: calledToolName(parsedBody),
+            siteName: siteNameOf(c.env),
+          },
+        },
       },
       ...(parsedBody === undefined ? {} : { parsedBody }),
     });

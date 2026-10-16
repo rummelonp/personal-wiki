@@ -4,6 +4,7 @@
 // 追跡対象の wrangler.jsonc にはデプロイ先の値が無く、wrangler の自動プロビジョニングが書き戻す先も
 // 生成した設定になるので、追跡ファイルは変わらない。
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,7 @@ export const HELP = `usage:
        R2 を作ったときだけ R2_BUCKET_NAME を書く。空のままなら R2 の binding を付けずにデプロイする
        KV を作ったときだけ OAUTH_KV_NAMESPACE_ID に表示された id を書く。空のままなら OAuth は閉じる
        ホスト名の DNS ゾーンが、ログインしたアカウントにあること（custom_domain の前提）
+       サイト名を変えるときだけ SITE_NAME に書く。空のままなら personal-wiki
        MCP 経由の rename で積んだリンクの書き換えを自動で進めるときだけ、LINK_REWRITE_CRON に cron 式を書く
          空のままなら Cron は付けない。アカウント全体で Cron Trigger は 5 本までなので、既定は空にしてある
          推奨は * * * * * か */5 * * * *。1 回の発火で 1 リンク元を進め、積んだ分が無ければ D1 の読み取りは数行で済む
@@ -92,12 +94,39 @@ export function migrateArgs(configPath, extra) {
   return ["d1", "migrations", "apply", "DB", "--remote", "--config", configPath, ...extra];
 }
 
-/** wrangler.jsonc の assets.directory（apps/web/dist）を作る。古いビルドのままデプロイしないため毎回作る。 */
-function buildWeb() {
+/**
+ * 合成した設定の vars からサイト名を読む。web のビルドに渡す値を deploy.env の読み直しでなく
+ * 生成した設定から取るのは、Worker に入る値と同じものにするため。
+ * @param {string} configPath
+ * @returns {string | undefined}
+ */
+export function generatedSiteName(configPath) {
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  return config.vars?.SITE_NAME;
+}
+
+/**
+ * web のビルドに渡す環境変数。シェルに残っている VITE_SITE_NAME を拾って、Worker に入れる値と
+ * 食い違わないよう、siteName が無いときは取り除く。
+ * @param {NodeJS.ProcessEnv} base
+ * @param {string | undefined} siteName
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function webBuildEnv(base, siteName) {
+  const { VITE_SITE_NAME: _, ...rest } = base;
+  return siteName === undefined ? rest : { ...rest, VITE_SITE_NAME: siteName };
+}
+
+/**
+ * wrangler.jsonc の assets.directory（apps/web/dist）を作る。古いビルドのままデプロイしないため毎回作る。
+ * @param {string | undefined} siteName
+ */
+function buildWeb(siteName) {
   const cwd = fileURLToPath(new URL("..", import.meta.url));
   const result = spawnSync("pnpm", ["--filter", "@personal-wiki/web", "build"], {
     cwd,
     stdio: "inherit",
+    env: webBuildEnv(process.env, siteName),
   });
   return result.status ?? 1;
 }
@@ -137,7 +166,7 @@ function main(argv) {
     return 0;
   }
   if (command === "migrate") return runWrangler(migrateArgs(configPath, extra));
-  const built = buildWeb();
+  const built = buildWeb(generatedSiteName(configPath));
   if (built !== 0) return built;
   return runWrangler(deployArgs(configPath, extra));
 }

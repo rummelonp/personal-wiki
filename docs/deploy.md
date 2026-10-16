@@ -64,7 +64,7 @@ cp deploy.env.example deploy.env
 - `WIKI_HOSTNAME`: 公開するホスト名（スキームとパスは含めない）
 - `D1_DATABASE_ID`: 手順 2 の `database_id`
 
-そのほかの項目（R2、OAuth、Cron、owner のログイン、複数アカウントのときの `CLOUDFLARE_ACCOUNT_ID`）は `deploy.env.example` のコメントに書いてあり、後の「任意の機能」で使います。
+そのほかの項目（サイト名、R2、OAuth、Cron、owner のログイン、複数アカウントのときの `CLOUDFLARE_ACCOUNT_ID`）は `deploy.env.example` のコメントに書いてあり、後の「任意の機能」で使います。
 `R2_BUCKET_NAME` と `OAUTH_KV_NAMESPACE_ID` が空なら、その binding を付けずにデプロイします。
 
 ### 4. migration とデプロイ
@@ -183,6 +183,24 @@ Cron Trigger はアカウント全体で 5 本までなので、既定は空で�
 積んだ分が無い発火の D1 の読み取りは数行で、毎分でも 1 日 1,500 行ほどに収まります。
 
 Cron を使わないときの進め方と、Cron が飛ばしたページの扱いは [operations.md](./operations.md) の「リンクの書き換え」にあります。
+
+### サイト名
+
+`deploy.env` の `SITE_NAME` に書いた名前が、サイト名として次の所に出ます。
+空のままなら `personal-wiki` です。
+
+- 画面の左上のブランド
+- ブラウザのタブの title（`ページの title - サイト名`）と、リンクプレビューが読む title
+- MCP の server 名（`initialize` の応答の `serverInfo.name`）
+- OAuth の保護されたリソースのメタデータの `resource_name`
+
+名前は前後の空白を除き、改行などの制御文字を含まない 40 文字以内にします。
+`&` や `<` を含めても、HTML の title には文字参照にして入れます。
+
+web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名前を渡して埋め込みます。
+名前を変えたら、`pnpm deploy:remote` を実行し直します。
+実行時に API で取る方式ではないので、初回の描画から名前が出て、後から入れ替わることはありません。
+`pnpm dev` と E2E は `deploy.env` を読まず、`personal-wiki` のままです。
 
 ## ゾーンの WAF、レート制限、Bot の設定
 

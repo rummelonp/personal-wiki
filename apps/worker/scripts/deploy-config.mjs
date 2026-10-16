@@ -20,6 +20,7 @@ const OAUTH_KV_BINDING = "OAUTH_KV";
 /**
  * @typedef {{
  *   hostname: string;
+ *   siteName: string | undefined;
  *   d1DatabaseName: string;
  *   d1DatabaseId: string;
  *   r2BucketName: string | undefined;
@@ -94,6 +95,7 @@ export function stripJsonc(text) {
 
 const KNOWN_KEYS = new Set([
   "WIKI_HOSTNAME",
+  "SITE_NAME",
   "D1_DATABASE_ID",
   "D1_DATABASE_NAME",
   "R2_BUCKET_NAME",
@@ -106,6 +108,8 @@ const KNOWN_KEYS = new Set([
   "OWNER_EMAILS",
 ]);
 const OWNER_AUTH_KEYS = ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "OWNER_EMAILS"];
+const SITE_NAME_MAX_CHARS = 40;
+const CONTROL_CHAR_PATTERN = /\p{Cc}/u;
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
@@ -113,6 +117,7 @@ const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 /**
  * deploy.env の内容から、デプロイ先ごとの値を取り出す。
  * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
+ * SITE_NAME が空なら siteName は undefined になり、web と Worker は既定の名前を使う。
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
  * OAUTH_KV_NAMESPACE_ID が空なら oauthKvNamespaceId は undefined になり、OAuth を閉じた構成にして警告する。
  * OAUTH_REDIRECT_URIS は、Worker が client の登録で完全一致で比べるので、正規化した形でなければ弾く。
@@ -135,7 +140,16 @@ export function readDeployValues(envText) {
     .map((key) => `未知のキー ${key} は使われません`);
   const hostname = get("WIKI_HOSTNAME");
   const d1DatabaseId = get("D1_DATABASE_ID");
+  const siteName = get("SITE_NAME");
   const problems = [];
+  if (siteName !== undefined) {
+    // 改行や制御文字は、HTML の title、MCP の server 名、OAuth の画面に混ざると壊れやすい
+    if (CONTROL_CHAR_PATTERN.test(siteName) || [...siteName].length > SITE_NAME_MAX_CHARS) {
+      problems.push(
+        `SITE_NAME は制御文字（改行を含む）を含まない ${SITE_NAME_MAX_CHARS} 文字以内にしてください`,
+      );
+    }
+  }
   if (hostname === undefined) problems.push("WIKI_HOSTNAME がありません");
   else if (!HOSTNAME_PATTERN.test(hostname)) {
     problems.push("WIKI_HOSTNAME はスキームやパスを含まないホスト名だけにしてください");
@@ -170,6 +184,7 @@ export function readDeployValues(envText) {
   return {
     values: {
       hostname,
+      siteName,
       d1DatabaseId,
       d1DatabaseName: get("D1_DATABASE_NAME") ?? "personal-wiki",
       r2BucketName: get("R2_BUCKET_NAME"),
@@ -289,6 +304,8 @@ function readOwnerAuth(get, problems, warnings) {
  * routes は元の内容を捨てて、ホスト名 1 件の custom_domain に置き換える。
  * r2BucketName が無いときは、R2 の binding を設定から外す。
  * oauthKvNamespaceId が無いときは、OAuth の KV の binding を設定から外す（Worker は OAuth を閉じる）。
+ * siteName があれば vars の SITE_NAME に入れる。web には Worker の vars では届かないので、
+ * deploy.mjs が生成した設定から読んでビルドに渡す。
  * ownerAuth があれば vars に入れる。無ければ vars に入れず、Worker はログインを拒む。
  * oauthRedirectUris があれば vars の OAUTH_REDIRECT_URIS に入れる。
  * linkRewriteCron は triggers.crons に入れる。無いときも空の配列を入れる。wrangler は crons が
@@ -335,6 +352,9 @@ export function composeConfig(base, values) {
     kv.id = values.oauthKvNamespaceId;
   }
   if (values.accountId !== undefined) config.account_id = values.accountId;
+  if (values.siteName !== undefined) {
+    config.vars = { ...config.vars, SITE_NAME: values.siteName };
+  }
   if (values.ownerAuth !== undefined) {
     config.vars = {
       ...config.vars,
