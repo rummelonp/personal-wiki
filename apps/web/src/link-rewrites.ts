@@ -1,5 +1,5 @@
 import type { ProcessedLinkRewrite } from "./editor-session";
-import { type StepResult, stepLinkRewrites } from "./link-rewrites-api";
+import { type FailedLinkRewrite, type StepResult, stepLinkRewrites } from "./link-rewrites-api";
 import type { Visibility } from "./pages-api";
 
 /*
@@ -22,8 +22,8 @@ export interface LinkRewriteState {
   /** done と、Worker が最後に知らせた残りの数の和 */
   total: number;
   rewritten: RewrittenPage[];
-  /** 書き換えられなかったリンク元の id（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
-  failed: string[];
+  /** 書き換えられなかったリンク元（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
+  failed: FailedLinkRewrite[];
   /** auth はログインが切れたか書き込めない、error は通信や衝突が続いて諦めた */
   stopReason: "auth" | "error" | null;
 }
@@ -43,6 +43,22 @@ export const CONFLICT_WAIT_MS = 1_000;
 export const MAX_CONFLICTS = 20;
 /** 通信の失敗は間を広げて呼び直す。この回数を超えたら止め、手動の再試行に任せる */
 export const ERROR_WAITS_MS = [1_000, 2_000, 4_000];
+
+/**
+ * 同じリンク元が積み直されてまた失敗しても、一覧には 1 回だけ出す。試行の上限で諦めたときは title が
+ * 無いので、前に分かった title を残す。
+ */
+function mergeFailed(
+  current: FailedLinkRewrite[],
+  added: FailedLinkRewrite[],
+): FailedLinkRewrite[] {
+  const byId = new Map(current.map((page) => [page.id, page]));
+  for (const page of added) {
+    const known = byId.get(page.id)?.title;
+    byId.set(page.id, { id: page.id, title: page.title ?? known ?? page.title });
+  }
+  return [...byId.values()];
+}
 
 const IDLE: LinkRewriteState = {
   status: "idle",
@@ -264,8 +280,7 @@ export class LinkRewriteRunner {
         done,
         total: done + remaining,
         rewritten,
-        // 同じリンク元が積み直されてまた失敗しても、一覧には 1 回だけ出す
-        failed: [...new Set([...this.state.failed, ...failed])],
+        failed: mergeFailed(this.state.failed, failed),
       };
       if (remaining > 0) {
         this.set({ ...next, status: "running" });

@@ -533,10 +533,15 @@ describe("App の owner の画面", () => {
     serve("owner", [PUBLIC]);
     vi.mocked(stepLinkRewrites).mockResolvedValueOnce({
       ok: true,
-      value: { processed: null, conflict: false, failed: ["failed-page"], remaining: 0 },
+      value: {
+        processed: null,
+        conflict: false,
+        failed: [{ id: "failed-page", title: "直せなかったページ" }],
+        remaining: 0,
+      },
     });
     await renderAt("/");
-    await vi.waitFor(() => expect(noticeDock()?.textContent).toContain("failed-page"));
+    await vi.waitFor(() => expect(noticeDock()?.textContent).toContain("直せなかったページ"));
     vi.mocked(logout).mockRejectedValueOnce(new Error("POST /_auth/logout が 500 を返した"));
 
     const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
@@ -545,17 +550,22 @@ describe("App の owner の画面", () => {
     act(() => logoutButton?.click());
     await vi.waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(logoutButton?.disabled).toBe(false));
-    expect(noticeDock()?.textContent).toContain("failed-page");
+    expect(noticeDock()?.textContent).toContain("直せなかったページ");
   });
 
   it("ログアウトに失敗して状態も取得できなかったあと、ログイン中と分かっても、書き換えられなかったページの通知を残す", async () => {
     serve("owner", [PUBLIC]);
     vi.mocked(stepLinkRewrites).mockResolvedValueOnce({
       ok: true,
-      value: { processed: null, conflict: false, failed: ["failed-page"], remaining: 0 },
+      value: {
+        processed: null,
+        conflict: false,
+        failed: [{ id: "failed-page", title: "直せなかったページ" }],
+        remaining: 0,
+      },
     });
     await renderAt("/");
-    await vi.waitFor(() => expect(noticeDock()?.textContent).toContain("failed-page"));
+    await vi.waitFor(() => expect(noticeDock()?.textContent).toContain("直せなかったページ"));
     vi.mocked(logout).mockRejectedValueOnce(new Error("落ちた"));
     vi.mocked(fetchMe).mockRejectedValueOnce(new Error("落ちた"));
     const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
@@ -569,7 +579,7 @@ describe("App の owner の画面", () => {
     });
     await vi.waitFor(() => expect(main()?.querySelector("[role='alert']")).toBeNull());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(noticeDock()?.textContent).toContain("failed-page");
+    expect(noticeDock()?.textContent).toContain("直せなかったページ");
     expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
   });
 
@@ -1168,10 +1178,9 @@ describe("App のリンクの書き換えの再開", () => {
     serve("owner", [PUBLIC, DRAFT]);
     await renderAt("/");
     await vi.waitFor(() =>
-      expect(screenText()).toContain("1 ページのリンクを新しいタイトルに書き換えました"),
+      expect(screenText()).toContain("書き換えたページ（1\u00a0件、うち公開 1\u00a0件）"),
     );
     expect(stepLinkRewrites).toHaveBeenCalledTimes(2);
-    expect(screenText()).toContain("うち公開 1 ページ");
   });
 
   it("残りが無ければ 1 回だけ呼び、何も出さない", async () => {

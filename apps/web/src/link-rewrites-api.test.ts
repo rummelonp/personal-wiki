@@ -39,10 +39,39 @@ describe("stepLinkRewrites", () => {
     expect(result).toMatchObject({ ok: true, value: { processed: null, remaining: 0 } });
   });
 
+  it("書き換えられなかったリンク元は failedPages の id と title で返す", async () => {
+    const result = await stepLinkRewrites(async () =>
+      Response.json({
+        ...STEP,
+        failed: ["x", "y"],
+        failedPages: [
+          { id: "x", title: "前の題" },
+          { id: "y", title: null },
+        ],
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        failed: [
+          { id: "x", title: "前の題" },
+          { id: "y", title: null },
+        ],
+      },
+    });
+  });
+
+  it("failedPages の無い前の版の Worker の応答では、failed の id だけで返す", async () => {
+    const result = await stepLinkRewrites(async () => Response.json({ ...STEP, failed: ["x"] }));
+    expect(result).toMatchObject({ ok: true, value: { failed: [{ id: "x", title: undefined }] } });
+  });
+
   it("形の合わない応答は error にする", async () => {
     for (const body of [
       { ...STEP, remaining: "1" },
       { ...STEP, failed: [1] },
+      { ...STEP, failed: ["x"], failedPages: [{ id: "x" }] },
+      { ...STEP, failed: ["x"], failedPages: "x" },
       { ...STEP, processed: { sourcePageId: "p1" } },
       null,
     ]) {

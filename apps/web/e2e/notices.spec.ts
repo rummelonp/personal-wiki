@@ -701,7 +701,7 @@ test("リンクの書き換えが通信の失敗で止まったら、alert の�
   await page.goto(`/p/${created.id}`);
   const stopped = page
     .getByRole("alert")
-    .filter({ hasText: "他のページのリンクの書き換えを止めました" });
+    .filter({ hasText: "他のページのリンクの書き換えが止まりました" });
   await expect(stopped).toBeVisible();
   await expect(stopped.getByRole("button", { name: "再試行" })).toBeVisible();
   await expectDockOnScreen(page);

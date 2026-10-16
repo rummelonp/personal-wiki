@@ -101,7 +101,7 @@ describe("リンクの書き換えの通知", () => {
       });
       expect(runner.getState()).toMatchObject({ status: "stopped", stopReason: "error" });
       expect(alerts()).toHaveLength(1);
-      expect(alerts()[0]?.textContent).toContain("他のページのリンクの書き換えを止めました");
+      expect(alerts()[0]?.textContent).toContain("他のページのリンクの書き換えが止まりました");
       expect(alerts()[0]?.textContent).toContain("再試行");
       expect(statusText()).toBe("");
     });
@@ -113,6 +113,9 @@ describe("リンクの書き換えの通知", () => {
         await settled();
       });
       expect(alerts()).toHaveLength(1);
+      expect(alerts()[0]?.textContent).toContain(
+        "書き込みが拒否されました。ログインし直すと、残りを続きから書き換えます。",
+      );
       expect(alerts()[0]?.textContent).toContain("ログインし直す");
       expect(statusText()).toBe("");
     });
@@ -145,7 +148,9 @@ describe("リンクの書き換えの通知", () => {
     });
 
     it("書き換えられなかったリンクがあっても、完了の報告は status で、alert にしない", async () => {
-      const { runner, settled } = setup([stepOk({ failed: ["x"], remaining: 0 })]);
+      const { runner, settled } = setup([
+        stepOk({ failed: [{ id: "x", title: "X" }], remaining: 0 }),
+      ]);
       act(() => runner.start(1));
       await act(async () => {
         await settled();
@@ -279,7 +284,9 @@ describe("リンクの書き換えの通知", () => {
 
   it("書き換えられなかったリンクがある報告は、閉じるまで残す", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { runner, settled } = setup([stepOk({ failed: ["x"], remaining: 0 })]);
+    const { runner, settled } = setup([
+      stepOk({ failed: [{ id: "x", title: "X" }], remaining: 0 }),
+    ]);
     act(() => runner.start(1));
     await act(async () => {
       await settled();
@@ -325,5 +332,55 @@ describe("通信の失敗で止まった書き換え", () => {
       window.dispatchEvent(new Event("online"));
     });
     expect(step.mock.calls.length).toBe(calls);
+  });
+});
+
+describe("終わったあとの一覧", () => {
+  async function report(results: StepResult[]) {
+    const { runner, settled } = setup(results);
+    act(() => runner.start(results.length));
+    await act(async () => {
+      await settled();
+    });
+  }
+
+  it("書き換えたページの数を件で数え、公開ページがあればその数も添える", async () => {
+    await report([
+      stepOk({ processed: processed("a"), remaining: 1 }),
+      stepOk({ processed: { ...processed("b"), visibility: "public" }, remaining: 0 }),
+    ]);
+    expect(container?.querySelector("summary")?.textContent).toBe(
+      "書き換えたページ（2\u00a0件、うち公開 1\u00a0件）",
+    );
+  });
+
+  it("公開ページが無ければ、件数だけを出す", async () => {
+    await report([stepOk({ processed: processed("a"), remaining: 0 })]);
+    expect(container?.querySelector("summary")?.textContent).toBe("書き換えたページ（1\u00a0件）");
+  });
+
+  it("書き換えられなかったページは title で出し、title が無ければその旨、前の版の Worker なら id を出す", async () => {
+    await report([
+      stepOk({
+        failed: [
+          { id: "x", title: "前の題" },
+          { id: "y", title: null },
+          { id: "z", title: undefined },
+        ],
+        remaining: 0,
+      }),
+    ]);
+    expect(text()).toContain(
+      "次のページには、前のタイトルへのリンクが残っています。開いて直してください。",
+    );
+    const rows = [...(container?.querySelectorAll(".link-rewrites-pages a") ?? [])].map((a) => [
+      a.textContent,
+      a.getAttribute("href"),
+    ]);
+    expect(rows).toEqual([
+      ["前の題", "/p/x"],
+      ["タイトルを取得できなかったページ", "/p/y"],
+      ["z", "/p/z"],
+    ]);
   });
 });

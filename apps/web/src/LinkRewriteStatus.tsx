@@ -3,6 +3,7 @@ import { loginHref } from "./api";
 import { Link } from "./Link";
 import { useAfterFrames } from "./Loading";
 import { type LinkRewriteRunner, type LinkRewriteState, linkRewrites } from "./link-rewrites";
+import type { FailedLinkRewrite } from "./link-rewrites-api";
 import { Notice, type NoticeInteraction } from "./Notice";
 import { pageHref, pageHrefFor } from "./route";
 
@@ -18,10 +19,16 @@ function subscribeVisibility(onChange: () => void): () => void {
 
 const isDocumentHidden = () => document.visibilityState === "hidden";
 
+/** title を返さない前の版の Worker からは id しか分からないので、id を出す。 */
+function failedPageLabel({ id, title }: FailedLinkRewrite): string {
+  if (title === undefined) return id;
+  return title ?? "タイトルを取得できなかったページ";
+}
+
 /** 終わりか停止の見出し。画面の通知と、完了の読み上げで同じ文を使う。 */
 function resultTitle({ failed, stopReason }: LinkRewriteState): string {
   if (stopReason === "auth" || stopReason === "error") {
-    return "他のページのリンクの書き換えを止めました";
+    return "他のページのリンクの書き換えが止まりました";
   }
   return failed.length > 0
     ? "書き換えられなかったリンクがあります"
@@ -165,16 +172,15 @@ function LinkRewriteNotice({
       }
     >
       {stoppedForAuth && (
-        <p>
-          書き込みを認められませんでした。ログインが切れていれば、ログインし直してから続けてください。
-        </p>
+        <p>書き込みが拒否されました。ログインし直すと、残りを続きから書き換えます。</p>
       )}
       {stoppedForError && <p>通信を確かめて、再試行してください。</p>}
       {rewritten.length > 0 && (
         <details onToggle={(event) => onListToggle(event.currentTarget.open)}>
           <summary>
-            {rewritten.length} ページのリンクを新しいタイトルに書き換えました
-            {publicCount > 0 && `（うち公開 ${publicCount} ページ）`}
+            {publicCount > 0
+              ? `書き換えたページ（${rewritten.length}\u00a0件、うち公開 ${publicCount}\u00a0件）`
+              : `書き換えたページ（${rewritten.length}\u00a0件）`}
           </summary>
           <ul className="link-rewrites-pages">
             {rewritten.map((page) => (
@@ -188,13 +194,11 @@ function LinkRewriteNotice({
       )}
       {failed.length > 0 && (
         <>
-          <p>
-            次のページはリンクを書き換えられませんでした。旧タイトルへのリンクを手で直してください。
-          </p>
+          <p>次のページには、前のタイトルへのリンクが残っています。開いて直してください。</p>
           <ul className="link-rewrites-pages">
-            {failed.map((id) => (
-              <li key={id}>
-                <Link href={pageHref(id)}>{id}</Link>
+            {failed.map((page) => (
+              <li key={page.id}>
+                <Link href={pageHref(page.id)}>{failedPageLabel(page)}</Link>
               </li>
             ))}
           </ul>

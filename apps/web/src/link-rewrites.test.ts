@@ -12,6 +12,8 @@ const ok = (value: Partial<LinkRewriteStepResult>): StepResult => ({
   value: { processed: null, conflict: false, failed: [], remaining: 0, ...value },
 });
 
+const failure = (id: string) => ({ id, title: `前 ${id}` });
+
 const processed = (id: string, visibility: "public" | "draft" = "draft") => ({
   sourcePageId: id,
   title: `題 ${id}`,
@@ -124,12 +126,12 @@ describe("LinkRewriteRunner", () => {
 
   it("書き換えなかったリンク元を failed に集める", async () => {
     const { runner, settled } = setup([
-      ok({ failed: ["x"], remaining: 1 }),
+      ok({ failed: [failure("x")], remaining: 1 }),
       ok({ processed: processed("a"), remaining: 0 }),
     ]);
     runner.start(2);
     await settled();
-    expect(runner.getState()).toMatchObject({ status: "done", done: 2, failed: ["x"] });
+    expect(runner.getState()).toMatchObject({ status: "done", done: 2, failed: [failure("x")] });
   });
 
   it("何も積まれていなければ 1 回呼ぶだけで何も見せない（起動時の再開）", async () => {
@@ -213,7 +215,7 @@ describe("LinkRewriteRunner", () => {
 
   it("止まったあとの再試行は、それまでの一覧を残して続ける", async () => {
     const { runner, step, settled } = setup([
-      ok({ processed: processed("a"), failed: ["x"], remaining: 1 }),
+      ok({ processed: processed("a"), failed: [failure("x")], remaining: 1 }),
       ...Array.from(
         { length: ERROR_WAITS_MS.length + 1 },
         () => ({ ok: false, kind: "error" }) as const,
@@ -229,18 +231,28 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({
       status: "done",
       rewritten: [{ id: "a" }, { id: "b" }],
-      failed: ["x"],
+      failed: [failure("x")],
     });
   });
 
   it("同じリンク元が何度失敗として返っても、failed には 1 回だけ入れる", async () => {
     const { runner, settled } = setup([
-      ok({ failed: ["x"], remaining: 1 }),
-      ok({ failed: ["x", "y"], remaining: 0 }),
+      ok({ failed: [failure("x")], remaining: 1 }),
+      ok({ failed: [failure("x"), failure("y")], remaining: 0 }),
     ]);
     runner.start(2);
     await settled();
-    expect(runner.getState().failed).toEqual(["x", "y"]);
+    expect(runner.getState().failed).toEqual([failure("x"), failure("y")]);
+  });
+
+  it("試行の上限で title が無いまま失敗が返っても、前に分かった title を残す", async () => {
+    const { runner, settled } = setup([
+      ok({ failed: [failure("x")], remaining: 1 }),
+      ok({ failed: [{ id: "x", title: null }], remaining: 0 }),
+    ]);
+    runner.start(2);
+    await settled();
+    expect(runner.getState().failed).toEqual([failure("x")]);
   });
 
   it("stop のあとは古いループの結果を書かない", async () => {
@@ -262,7 +274,7 @@ describe("LinkRewriteRunner", () => {
 
   it("suspend と resume は、失敗したページの一覧と止まった理由を残し、step を送らない", async () => {
     const { runner, step } = setup([
-      ok({ processed: processed("a"), failed: ["x"], remaining: 1 }),
+      ok({ processed: processed("a"), failed: [failure("x")], remaining: 1 }),
       { ok: false, kind: "unauthorized" },
     ]);
     runner.start(2);
@@ -272,7 +284,7 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({
       status: "stopped",
       stopReason: "auth",
-      failed: ["x"],
+      failed: [failure("x")],
       rewritten: [{ id: "a" }],
     });
     expect(step).toHaveBeenCalledTimes(2);
@@ -301,7 +313,9 @@ describe("LinkRewriteRunner", () => {
       () =>
         new Promise((resolve) => {
           release = () =>
-            resolve(ok({ processed: processed("late", "public"), failed: ["f"], remaining: 1 }));
+            resolve(
+              ok({ processed: processed("late", "public"), failed: [failure("f")], remaining: 1 }),
+            );
         }),
     );
     runner.start(3);
@@ -314,7 +328,7 @@ describe("LinkRewriteRunner", () => {
       status: "running",
       done: 2,
       total: 3,
-      failed: ["f"],
+      failed: [failure("f")],
       rewritten: [{ id: "a" }, { id: "late", visibility: "public" }],
     });
     runner.resume();
@@ -323,7 +337,7 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({
       status: "done",
       done: 3,
-      failed: ["f"],
+      failed: [failure("f")],
       rewritten: [{ id: "a" }, { id: "late" }, { id: "b" }],
     });
   });
@@ -354,14 +368,14 @@ describe("LinkRewriteRunner", () => {
     step.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          release = () => resolve(ok({ failed: ["f"], remaining: 0 }));
+          release = () => resolve(ok({ failed: [failure("f")], remaining: 0 }));
         }),
     );
     runner.start(1);
     runner.suspend();
     release();
     await vi.waitFor(() => expect(runner.getState().status).toBe("done"));
-    expect(runner.getState().failed).toEqual(["f"]);
+    expect(runner.getState().failed).toEqual([failure("f")]);
     runner.resume();
     expect(step).toHaveBeenCalledTimes(1);
   });

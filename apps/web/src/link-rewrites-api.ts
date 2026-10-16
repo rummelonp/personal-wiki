@@ -1,6 +1,18 @@
 import type { Fetch, Visibility } from "./pages-api";
 
-/** `POST /api/link-rewrites/step` の応答（apps/worker/src/pages/link-rewrites.ts の LinkRewriteStepResult）。 */
+/**
+ * 書き換えられなかったリンク元。title は、Worker がリンク元を読む前に諦めたとき null、
+ * failedPages を返さない前の版の Worker では undefined（画面は id を出す）。
+ */
+export interface FailedLinkRewrite {
+  id: string;
+  title: string | null | undefined;
+}
+
+/**
+ * `POST /api/link-rewrites/step` の応答（apps/worker/src/pages/link-rewrites.ts の LinkRewriteStepResult）。
+ * failed は応答の failedPages を読み、無ければ failed の id から作る。
+ */
 export interface LinkRewriteStepResult {
   /** 本文を書き換えたリンク元。書き換えるリンクが無く、積んだ分を捨てただけのときは null */
   processed: {
@@ -13,8 +25,8 @@ export interface LinkRewriteStepResult {
   } | null;
   /** 読んだあとにリンク元か対象ページが変わった。積んだ分は残るので、呼び直せば進む */
   conflict: boolean;
-  /** 書き換えられずに捨てたリンク元の id（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
-  failed: string[];
+  /** 書き換えられずに捨てたリンク元（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
+  failed: FailedLinkRewrite[];
   remaining: number;
 }
 
@@ -53,19 +65,38 @@ function parseProcessed(value: unknown): LinkRewriteStepResult["processed"] | un
   return undefined;
 }
 
+function parseFailedPages(value: unknown): FailedLinkRewrite[] | null {
+  if (!Array.isArray(value)) return null;
+  const pages: FailedLinkRewrite[] = [];
+  for (const item of value) {
+    const v = recordOf(item);
+    if (typeof v.id !== "string" || !(typeof v.title === "string" || v.title === null)) {
+      return null;
+    }
+    pages.push({ id: v.id, title: v.title });
+  }
+  return pages;
+}
+
+function parseFailed(v: Record<string, unknown>): FailedLinkRewrite[] | null {
+  if (!Array.isArray(v.failed) || !v.failed.every((id) => typeof id === "string")) return null;
+  if (v.failedPages !== undefined) return parseFailedPages(v.failedPages);
+  return v.failed.map((id: string) => ({ id, title: undefined }));
+}
+
 function parseStep(value: unknown): LinkRewriteStepResult | null {
   const v = recordOf(value);
   const processed = parseProcessed(v.processed);
+  const failed = parseFailed(v);
   if (
     processed === undefined ||
     typeof v.conflict !== "boolean" ||
-    !Array.isArray(v.failed) ||
-    !v.failed.every((id) => typeof id === "string") ||
+    failed === null ||
     typeof v.remaining !== "number"
   ) {
     return null;
   }
-  return { processed, conflict: v.conflict, failed: v.failed, remaining: v.remaining };
+  return { processed, conflict: v.conflict, failed, remaining: v.remaining };
 }
 
 /** title の変更で積んだリンクの書き換えを、リンク元 1 ページ分進める。 */
