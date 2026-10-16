@@ -372,8 +372,8 @@ function errorPage(
   heading = "接続できません",
 ): Response {
   const body = pageHtml(
-    heading,
-    `<h1>${heading}</h1>
+    escapeHtml(heading),
+    `<h1>${escapeHtml(heading)}</h1>
 <p>${escapeHtml(message)}</p>
 <p>${escapeHtml(hint)}</p>`,
   );
