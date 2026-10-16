@@ -506,8 +506,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       {!uncreated && (
         <RailSection title="情報">
           <dl className="facts">
-            <dt>版</dt>
-            <dd>{state.base.version}</dd>
             <dt>更新</dt>
             <dd>{formatTime(state.base.updatedAt)}</dd>
             <dt>作成</dt>

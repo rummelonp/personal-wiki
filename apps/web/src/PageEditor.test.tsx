@@ -687,6 +687,12 @@ describe("保存の前の検査の表示", () => {
     expect(document.getElementById(describedBy ?? "")?.textContent).toContain("1,025");
   });
 
+  it("補助欄の情報は更新と作成だけを出し、内部の版の番号は出さない", () => {
+    renderPage();
+    const terms = [...(container?.querySelectorAll(".facts dt") ?? [])].map((dt) => dt.textContent);
+    expect(terms).toEqual(["更新", "作成"]);
+  });
+
   it("リンクに書けない文字を title に打つと、欄の下でその文字を知らせる", () => {
     renderPage();
     act(() => titleView().focus());
