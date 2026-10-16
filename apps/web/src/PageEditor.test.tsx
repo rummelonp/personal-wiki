@@ -327,7 +327,7 @@ describe("PageEditor と本文のエディタ", () => {
     {
       name: "ページの消失",
       end: { ok: false, reason: "version_conflict", currentVersion: 2 } as const,
-      remaining: ["このページはサーバーにありません"],
+      remaining: ["このページは削除されました"],
       // 衝突を知らされて最新を取りにいくと 404 で決まる
       latest: { ok: false, reason: "not_found" } as const,
     },

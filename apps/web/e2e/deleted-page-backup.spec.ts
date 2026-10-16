@@ -105,7 +105,7 @@ test("開いていたタブは、別のタブの削除を知ると、未保存�
   // 削除したタブが退避を移したことを storage イベントで知るので、保存を試み直さなくても通知が変わる
   await deleteFromRail(page);
   const gone = other.getByRole("alert").filter({
-    has: other.getByRole("heading", { name: "このページはサーバーにありません" }),
+    has: other.getByRole("heading", { name: "このページは削除されました" }),
   });
   await expect(gone).toContainText("新しいページとして作り直せます。");
   await expect(saveState(other)).toHaveText("削除済み");

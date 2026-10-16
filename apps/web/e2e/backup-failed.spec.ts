@@ -124,11 +124,8 @@ test("ページが消えていて退避も書けないと、新しいページ�
   const created = await openFreshPage(page, api, uniqueTitle(testInfo, "退避できない削除"));
   const typed = "、退避できない削除";
   await typeWithSaveFailing(page, created, 404, "not_found", typed);
-  const alert = alertWithHeading(
-    page,
-    "このページはサーバーになく、内容を端末に退避できませんでした",
-  );
-  await expect(alert).toContainText("画面を離れる前に、内容をコピーして残してください。");
+  const alert = alertWithHeading(page, "このページは削除され、内容をこの端末に残せませんでした");
+  await expect(alert).toContainText("画面を離れる前に、内容をコピーしてください。");
   await expect(alert.getByRole("button", { name: "新しいページとして作る" })).toHaveCount(0);
   await expect(saveState(page)).toHaveText("削除済み");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
