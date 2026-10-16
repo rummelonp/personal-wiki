@@ -132,6 +132,13 @@ describe("QuickSwitcher の候補", () => {
     expect(container?.querySelector("[data-row-kind='content-search']")).toBeNull();
   });
 
+  it("dialog はページを検索する場所、入力欄は検索語の欄として名付け、title で絞ることを欄の中で示す", async () => {
+    await renderSwitcher(true);
+    expect(dialog().getAttribute("aria-label")).toBe("ページを検索");
+    expect(input().getAttribute("aria-label")).toBe("検索語");
+    expect(input().placeholder).toBe("タイトルで検索");
+  });
+
   it("打つと title で絞って一致した箇所を強調し、完全一致が無ければ「本文から検索」を先頭に出す", async () => {
     await renderSwitcher(true);
     typeText("買");
@@ -174,22 +181,26 @@ describe("QuickSwitcher の候補", () => {
     expect(options()).not.toContain("「ＨＯＮＯ　のメモ」を作成");
   });
 
-  it("匿名には「作成」を出さず、候補が無いことを案内する", async () => {
+  it("匿名には「作成」を出さず、候補が無くても「本文から検索」の行があれば案内の文は出さない", async () => {
     await renderSwitcher(false);
     typeText("ほげふ");
     expect(options()).toEqual(["「ほげふ」を本文から検索"]);
-    expect(container?.querySelector("[role='status']")?.textContent).toContain("ありません");
+    expect(container?.querySelector("[role='status']")?.textContent).toBe("");
   });
 
-  it("匿名が本文を検索できない 3 文字未満では「本文から検索」を出さず、理由を案内する", async () => {
+  it("匿名が本文を検索できない 3 文字未満では「本文から検索」を出さず、何文字から検索できるかを案内する", async () => {
     await renderSwitcher(false);
     typeText("ほげ");
     expect(options()).toEqual([]);
-    expect(container?.querySelector("[role='status']")?.textContent).toContain("3 文字以上");
+    expect(container?.querySelector("[role='status']")?.textContent).toBe(
+      "一致するタイトルはありません。3\u00a0文字以上で、本文からも検索できます。",
+    );
     // 候補があっても本文検索の行は出さない
     typeText("買");
     expect(options()).toEqual(["買い物"]);
-    expect(container?.querySelector("[role='status']")?.textContent).toContain("3 文字以上");
+    expect(container?.querySelector("[role='status']")?.textContent).toBe(
+      "3\u00a0文字以上で、本文からも検索できます。",
+    );
     press("Enter");
     expect(location.pathname).toBe(`/p/${RECENT[3]?.id}`);
   });
@@ -444,19 +455,19 @@ describe("QuickSwitcher の候補の取得中", () => {
     expect(pending()).toBeNull();
   });
 
-  it("匿名には、取得が済むまで「一致するページはありません」を出さず、済んだら出す", async () => {
+  it("匿名には、取得が済むまで「一致するタイトルはありません」を出さず、済んだら出す", async () => {
     await openPending(false);
-    typeText("新しい語");
-    expect(container?.textContent).not.toContain("タイトルが一致するページはありません。");
+    typeText("ほげ");
+    expect(container?.textContent).not.toContain("一致するタイトルはありません。");
 
     await act(async () => deliver(ok({ pages: RECENT, nextCursor: null })));
-    expect(container?.textContent).toContain("タイトルが一致するページはありません。");
+    expect(container?.textContent).toContain("一致するタイトルはありません。");
   });
 
   it("匿名が取得中に 3 文字未満を打っても、案内の status は 1 つにまとまる", async () => {
     await openPending(false);
     typeText("ほげ");
-    expect(status()).toEqual([expect.stringMatching(/候補を読み込み中…[\s\S]*3 文字以上/)]);
+    expect(status()).toEqual([expect.stringMatching(/候補を読み込み中…[\s\S]*3\u00a0文字以上/)]);
   });
 
   const failure = { ok: false, reason: "error", message: "失敗" } as unknown as ApiResult<never>;
@@ -474,11 +485,11 @@ describe("QuickSwitcher の候補の取得中", () => {
     expect(selected()).toBe("「新しい語」を本文から検索");
   });
 
-  it("匿名には、取得に失敗して候補が無いとき、「一致するページはありません」を出さず失敗を案内する", async () => {
+  it("匿名には、取得に失敗して候補が無いとき、「一致するタイトルはありません」を出さず失敗を案内する", async () => {
     await openPending(false);
-    typeText("新しい語");
+    typeText("ほげ");
     await act(async () => deliver(failure));
-    expect(container?.textContent).not.toContain("タイトルが一致するページはありません。");
+    expect(container?.textContent).not.toContain("一致するタイトルはありません。");
     expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
   });
 

@@ -49,7 +49,7 @@ test("quick switcher から作り、すぐ書いた本文が再読み込みで�
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  await switcher.getByRole("combobox", { name: "ページを検索" }).fill(title);
+  await switcher.getByRole("combobox", { name: "検索語" }).fill(title);
   await switcher.getByRole("option", { name: `「${title}」を作成` }).click();
   await expect(switcher).toBeHidden();
   await typeRightAwayAndSave(page, text);

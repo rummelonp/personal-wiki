@@ -180,7 +180,6 @@ function SwitcherBody({
     candidates[0] !== undefined && foldTitle(candidates[0].title) === foldTitle(trimmed);
   const contentSearchTooShort =
     trimmed !== "" && !owner && searchQueryLength(trimmed) < ANONYMOUS_SEARCH_MIN_CHARS;
-  const noMatch = trimmed !== "" && !owner && settled && !failed && candidates.length === 0;
   const pageRows = candidates.map((candidate): Row => ({ kind: "page", candidate }));
   const contentSearchRows: Row[] =
     trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
@@ -189,6 +188,9 @@ function SwitcherBody({
   const rows: Row[] = hasExactTitle
     ? [...pageRows, ...contentSearchRows]
     : [...contentSearchRows, ...pageRows, ...createRows];
+  // 行が 1 つでもあれば、一致が無いことは並びから分かる。行が無いのは、匿名が本文を検索できない短い語で
+  // 候補も無いときだけ
+  const noMatch = trimmed !== "" && settled && !failed && rows.length === 0;
 
   // 選んでいた行が並びから消えたら先頭に戻す
   const keyedIndex = rows.findIndex((row) => rowKey(row) === selectedKey);
@@ -253,13 +255,14 @@ function SwitcherBody({
         className="switcher-input"
         type="text"
         role="combobox"
-        aria-label="ページを検索"
+        // dialog の名前（ページを検索）と分け、欄に入れるものを名前にする
+        aria-label="検索語"
         aria-expanded={rows.length > 0}
         aria-controls={listboxId}
         aria-activedescendant={activeOptionId}
         aria-autocomplete="list"
         autoComplete="off"
-        placeholder="ページのタイトルで検索"
+        placeholder="タイトルで検索"
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -281,9 +284,9 @@ function SwitcherBody({
         {(showFailed || noMatch || contentSearchTooShort) && (
           <p className={showFailed ? "switcher-heading switcher-alert" : "switcher-heading"}>
             {showFailed && CANDIDATES_FAILED}
-            {noMatch && "タイトルが一致するページはありません。"}
+            {noMatch && "一致するタイトルはありません。"}
             {contentSearchTooShort &&
-              `本文から検索するには ${ANONYMOUS_SEARCH_MIN_CHARS} 文字以上で入力してください。`}
+              `${ANONYMOUS_SEARCH_MIN_CHARS}\u00a0文字以上で、本文からも検索できます。`}
           </p>
         )}
       </div>

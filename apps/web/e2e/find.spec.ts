@@ -30,7 +30,7 @@ test("quick switcher で title の一部から開ける", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  await switcher.getByRole("combobox", { name: "ページを検索" }).fill("データベース");
+  await switcher.getByRole("combobox", { name: "検索語" }).fill("データベース");
   await switcher.getByRole("option", { name: SEED.database }).click();
   await expect(switcher).toBeHidden();
   await expect(page.locator(".title-input")).toHaveText(SEED.database);
@@ -40,7 +40,7 @@ test("quick switcher から本文を検索し、結果から開ける", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  await switcher.getByRole("combobox", { name: "ページを検索" }).fill("無料枠");
+  await switcher.getByRole("combobox", { name: "検索語" }).fill("無料枠");
   await switcher.getByRole("option", { name: "「無料枠」を本文から検索" }).click();
   await expect(page).toHaveURL(/\/\?q=/);
   await expect(page.getByRole("heading", { name: "「無料枠」の検索結果" })).toBeVisible();
@@ -58,7 +58,7 @@ async function openSwitcherAndType(page: Page, text: string) {
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  const input = switcher.getByRole("combobox", { name: "ページを検索" });
+  const input = switcher.getByRole("combobox", { name: "検索語" });
   await input.fill(text);
   return { switcher, input };
 }

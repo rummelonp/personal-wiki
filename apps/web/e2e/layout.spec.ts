@@ -49,7 +49,7 @@ test.describe("owner @widths", () => {
     await page.getByRole("button", { name: "ページを検索" }).click();
     await page
       .getByRole("dialog", { name: "ページを検索" })
-      .getByRole("combobox", { name: "ページを検索" })
+      .getByRole("combobox", { name: "検索語" })
       .fill("メモ");
     await expect(page.getByRole("option").first()).toBeVisible();
     await sweepWidths(page);

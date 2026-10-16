@@ -99,8 +99,16 @@ test("検索と quick switcher に draft が出ない", async ({ page }) => {
 
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  await switcher.getByRole("combobox", { name: "ページを検索" }).fill(DRAFT_MARKER);
-  await expect(switcher.getByText("タイトルが一致するページはありません。")).toBeVisible();
+  // 未入力の行は取得した候補だけなので、行が出れば候補は届いている。匿名の title の取得は 1 回で
+  // 終わる（ANONYMOUS_TITLE_INDEX_MAX_REQUESTS が 1）ことを前提にしている。続きを取るようになると、
+  // 行が出た後に届く候補に draft が混ざっても、下の検査がその前に通ってしまう
+  await expect(switcher.getByRole("option").first()).toBeVisible();
+  await switcher.getByRole("combobox", { name: "検索語" }).fill(DRAFT_MARKER);
+  // 一致する title が無いので、行は本文から検索するものだけになる
+  await expect(
+    switcher.getByRole("option", { name: `「${DRAFT_MARKER}」を本文から検索` }),
+  ).toBeVisible();
+  await expect(switcher.getByRole("option")).toHaveCount(1);
   await expect(switcher.getByRole("option", { name: SEED.draftSecret })).toHaveCount(0);
 });
 
@@ -147,7 +155,7 @@ test("匿名の 2 文字では本文の検索を出さず、3 文字以上と案
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  const input = switcher.getByRole("combobox", { name: "ページを検索" });
+  const input = switcher.getByRole("combobox", { name: "検索語" });
   await input.fill("ほげ");
   await expect(switcher.getByRole("status")).toContainText("3 文字以上");
   await expect(switcher.getByRole("option", { name: /本文から検索/ })).toHaveCount(0);
