@@ -43,7 +43,10 @@ const NOTE_MS = 6_000;
 
 interface PublishBarProps {
   visibility: Visibility;
-  /** まだ作っていないページ。作る前のページは公開できないので、操作を無効にして理由を添える */
+  /**
+   * まだ作っていないページ。作る前のページは公開できないので、操作を無効にする。
+   * 作る前であることは編集画面の上端が伝えるので、理由の文は添えない
+   */
   uncreated: boolean;
   /** 保存中や失敗の直後など、今は切り替えられない */
   disabled: boolean;
@@ -205,7 +208,6 @@ export function PublishBar({
           URL をコピー
         </button>
       )}
-      {uncreated && <span className="publish-hint">ページを作ると、公開を選べます。</span>}
       <p
         className={manualShown ? "publish-note publish-note-wrap" : "publish-note"}
         role="status"

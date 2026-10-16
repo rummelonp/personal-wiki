@@ -295,7 +295,8 @@ test("作る前のページでは、公開の操作を選べない", async ({ pa
   await expect(page.locator(".title-input .cm-content")).toBeFocused();
   await expect(option(page, "下書き")).toBeDisabled();
   await expect(option(page, "公開")).toBeDisabled();
-  await expect(page.locator(".publish-bar")).toContainText("ページを作ると、公開を選べます。");
+  // 作る前であることは上端の保存の状態が伝えるので、公開の行では繰り返さない
+  await expect(page.locator(".publish-bar")).toHaveText("下書き公開");
   await expect(page.getByRole("button", { name: "URL をコピー" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "このページを削除" })).toHaveCount(0);
 });

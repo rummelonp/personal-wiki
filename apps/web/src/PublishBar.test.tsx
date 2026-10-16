@@ -20,7 +20,7 @@ afterEach(() => {
   else Object.defineProperty(navigator, "clipboard", clipboard);
 });
 
-function render(visibility: "draft" | "public") {
+function render(visibility: "draft" | "public", uncreated = false) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -28,7 +28,7 @@ function render(visibility: "draft" | "public") {
     root?.render(
       <PublishBar
         visibility={visibility}
-        uncreated={false}
+        uncreated={uncreated}
         disabled={false}
         externalBases={0}
         titlePending={false}
@@ -53,6 +53,15 @@ const note = () => container?.querySelector(".publish-note")?.textContent;
 function stubClipboard(writeText: () => Promise<void>) {
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
 }
+
+describe("作る前のページ", () => {
+  it("公開の操作を押せなくするだけで、案内の文は出さない", () => {
+    render("draft", true);
+    expect(button("下書き").disabled).toBe(true);
+    expect(button("公開").disabled).toBe(true);
+    expect(container?.textContent).toBe("下書き公開");
+  });
+});
 
 describe("公開の確認", () => {
   it("取り消せない範囲まで伝え、確定とやめるの両方にその文を結び付ける", () => {

@@ -426,7 +426,6 @@ a {
   font-size: var(--font-size-sm);
 }
 
-.publish-hint,
 .publish-note {
   margin: 0;
   color: var(--color-fg-muted);
