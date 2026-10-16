@@ -99,8 +99,10 @@ async function showConsent(c: Context<AppEnv>, now: () => number): Promise<Respo
   if (!isOAuthEnabled(c.env)) return c.notFound();
   if (c.get("principal").kind !== "owner") return redirectToLogin(c);
   const oauth = helpersOf(c);
+  let failureMessage = FAILURE_MESSAGES.request;
   try {
     const request = await oauth.parseAuthRequest(c.req.raw);
+    failureMessage = FAILURE_MESSAGES.other;
     // ライブラリは公開 client にだけ PKCE を求める。client_secret を持つ client でも、code が漏れたときに
     // 交換させないよう PKCE を必須にする
     if (!request.codeChallenge) {
@@ -117,7 +119,7 @@ async function showConsent(c: Context<AppEnv>, now: () => number): Promise<Respo
     headers.set("X-Robots-Tag", "noindex");
     return new Response(consentPage(consent, handle, { registeredAt, now: now() }), { headers });
   } catch (error) {
-    return authorizationFailure(error);
+    return authorizationFailure(error, failureMessage);
   }
 }
 
@@ -161,6 +163,7 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
   const handle = form.get("handle");
   const decision = form.get("decision");
   const oauth = helpersOf(c);
+  let failureMessage = FAILURE_MESSAGES.consent;
   try {
     if (typeof handle !== "string") {
       return errorPage(400, "送信の内容を読み取れませんでした。");
@@ -172,9 +175,10 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
     const access = form.get("access");
     const scope = typeof access === "string" ? ACCESS_CHOICES.get(access) : undefined;
     if (decision !== "approve" || scope === undefined) {
-      return errorPage(400, "許可する権限を選んでから送信してください。");
+      return errorPage(400, "送信の内容を読み取れませんでした。");
     }
     const approved = await oauth.approveConsent(c.req.raw, handle, { scope: [...scope] });
+    failureMessage = FAILURE_MESSAGES.other;
     let redirectTo: string;
     try {
       // 同じ client の以前の grant とトークンは、ライブラリが失効させる（revokeExistingGrants の既定）
@@ -199,7 +203,7 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
     approved.headers.set("Location", redirectTo);
     return new Response(null, { status: 302, headers: approved.headers });
   } catch (error) {
-    return authorizationFailure(error);
+    return authorizationFailure(error, failureMessage);
   }
 }
 
@@ -211,14 +215,34 @@ function redirectToClient(location: string): Response {
 }
 
 /**
+ * この画面で出す誤りの文。ライブラリの誤りはほぼ invalid_request で code では見分けられず、英語の
+ * description を照合すると版上げで黙って外れるので、失敗した呼び出しで文を選ぶ。
+ * - request: 認可の要求の解析（client_id や redirect URI を確かめられない）
+ * - consent: 同意の送信（handle が使用済み、期限切れ、別のブラウザのもの）
+ */
+const FAILURE_MESSAGES = {
+  request: "接続を求めたアプリか、トークンの送り先を確かめられませんでした。",
+  consent:
+    "この同意画面はもう使えません。開いてから時間がたったか、すでに送信したか、別のブラウザで開いた画面です。",
+  other: "接続を完了できませんでした。",
+};
+
+/**
  * client と redirect URI を検証できた誤りだけ、client へ error を付けて戻す。それ以外（検証前の
  * 誤り、使用済みや期限切れの handle、別のブラウザで開いた同意画面）は、送り先を信用できないので
  * この画面で表示する。KV の障害などは 500 にする。
  */
-function authorizationFailure(error: unknown): Response {
+function authorizationFailure(error: unknown, message: string): Response {
   if (error instanceof AuthorizationError) {
     if (error.redirectTo !== undefined) return redirectToClient(error.redirectTo);
-    return errorPage(400, error.description);
+    console.error(
+      JSON.stringify({
+        event: "oauth.authorization_failed",
+        code: error.code,
+        description: error.description,
+      }),
+    );
+    return errorPage(400, message);
   }
   if (error instanceof CimdFetchError) {
     return errorPage(400, "接続するアプリの情報を取得できませんでした。");
@@ -375,7 +399,7 @@ function safeHost(uri: string): string {
 function errorPage(
   status: number,
   message: string,
-  hint = "接続するアプリから、もう一度接続をやり直してください。",
+  hint = "接続するアプリから、接続をやり直してください。",
   heading = "接続できません",
 ): Response {
   const body = pageHtml(

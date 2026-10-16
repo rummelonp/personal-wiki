@@ -20,6 +20,8 @@ const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 const RESOURCE_METADATA_URL = `${ORIGIN}/.well-known/oauth-protected-resource/mcp`;
 const SAME_ORIGIN = { Origin: ORIGIN, "Sec-Fetch-Site": "same-origin" };
 const FORM = "application/x-www-form-urlencoded";
+const STALE_CONSENT =
+  "この同意画面はもう使えません。開いてから時間がたったか、すでに送信したか、別のブラウザで開いた画面です。";
 
 function setup({
   oauthKv = true,
@@ -512,11 +514,37 @@ describe("認可と同意画面", () => {
     const unbound = await submitConsent(request, path, withoutBinding);
     expect(unbound.status).toBe(400);
     expect(unbound.headers.get("Location")).toBeNull();
+    expectErrorPage(await unbound.text(), "接続できません", STALE_CONSENT);
 
     expect((await submitConsent(request, path, consent)).status).toBe(302);
     const replayed = await submitConsent(request, path, consent);
     expect(replayed.status).toBe(400);
     expect(replayed.headers.get("Location")).toBeNull();
+    expectErrorPage(await replayed.text(), "接続できません", STALE_CONSENT);
+  });
+
+  it("使用済みの handle で拒否を送っても、同じ誤りにする", async () => {
+    const { request } = setup();
+    const client = await register(request);
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const consent = await openConsent(request, path);
+    expect((await submitConsent(request, path, consent)).status).toBe(302);
+    const denied = await submitConsent(request, path, consent, { decision: "deny" });
+    expect(denied.status).toBe(400);
+    expectErrorPage(await denied.text(), "接続できません", STALE_CONSENT);
+  });
+
+  it("権限の値が無い承認は、handle を消費せずに送信の誤りにする", async () => {
+    const { request } = setup();
+    const client = await register(request);
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const consent = await openConsent(request, path);
+    for (const fields of [{ access: "" }, { access: "admin" }, { decision: "maybe" }]) {
+      const res = await submitConsent(request, path, consent, fields);
+      expect(res.status, JSON.stringify(fields)).toBe(400);
+      expectErrorPage(await res.text(), "接続できません", "送信の内容を読み取れませんでした。");
+    }
+    expect((await submitConsent(request, path, consent)).status).toBe(302);
   });
 
   it("owner でなければ同意を送れない", async () => {
@@ -584,16 +612,53 @@ describe("認可と同意画面", () => {
     expectErrorPage(await res.text(), "接続できません", "送信の内容を読み取れませんでした。");
   });
 
-  it("登録されていない redirect URI には戻さず、この画面で誤りを出す", async () => {
+  it("登録されていない redirect URI には戻さず、この画面で誤りを出し、ライブラリの説明はログにだけ書く", async () => {
     const { request } = setup();
     const client = await register(request);
     const path = authorizePath(client.client_id, (await pkcePair()).challenge, {
       redirect_uri: "https://evil.example/cb",
     });
-    const res = await request(path, { headers: { Cookie: await ownerCookie(T0) } });
-    expect(res.status).toBe(400);
-    expect(res.headers.get("Location")).toBeNull();
-    expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await request(path, { headers: { Cookie: await ownerCookie(T0) } });
+      expect(res.status).toBe(400);
+      expect(res.headers.get("Location")).toBeNull();
+      expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+      const html = await res.text();
+      expectErrorPage(
+        html,
+        "接続できません",
+        "接続を求めたアプリか、トークンの送り先を確かめられませんでした。",
+      );
+      expect(html).toContain("<p>接続するアプリから、接続をやり直してください。</p>");
+      const logged = log.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as { event?: string; description?: string })
+        .find((entry) => entry.event === "oauth.authorization_failed");
+      expect(logged?.description).toBeTruthy();
+      expect(html).not.toContain(logged?.description);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("client_id の無い要求も、送り先を確かめられない誤りにする", async () => {
+    const { request } = setup();
+    const url = new URL(authorizePath("", (await pkcePair()).challenge), ORIGIN);
+    url.searchParams.delete("client_id");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await request(url.pathname + url.search, {
+        headers: { Cookie: await ownerCookie(T0) },
+      });
+      expect(res.status).toBe(400);
+      expectErrorPage(
+        await res.text(),
+        "接続できません",
+        "接続を求めたアプリか、トークンの送り先を確かめられませんでした。",
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 
