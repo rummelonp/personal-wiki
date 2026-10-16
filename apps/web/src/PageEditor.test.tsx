@@ -237,6 +237,46 @@ describe("PageEditor と本文のエディタ", () => {
     });
   });
 
+  describe("内容を端末に残せなかったときの段落の順", () => {
+    const paragraphsOfAlert = () =>
+      [...(container?.querySelectorAll(".notice p") ?? [])].map((p) => p.textContent ?? "");
+    let setItem: ReturnType<typeof vi.spyOn> | undefined;
+    beforeEach(() => {
+      setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("full", "QuotaExceededError");
+      });
+    });
+    afterEach(() => setItem?.mockRestore());
+
+    it("保存の失敗は、コピーを勧める段落を失敗の理由より先に出す", async () => {
+      vi.mocked(updatePage).mockResolvedValueOnce({
+        ok: false,
+        reason: "error",
+        message: "ページを再読み込みしてから、もう一度保存してください。",
+      });
+      const { view } = renderPage();
+      view().focus();
+      typeAtEnd(view(), "を書き足す");
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+      const paragraphs = paragraphsOfAlert();
+      expect(paragraphs[0]).toContain("この画面にしか残っていません");
+      expect(paragraphs[1]).toBe("ページを再読み込みしてから、もう一度保存してください。");
+    });
+
+    it("入力の規則の通知も、コピーを勧める段落を先に出す", async () => {
+      const { view } = renderPage();
+      view().focus();
+      act(() => typeAtEnd(view(), "あ".repeat(Math.ceil(MAX_BODY_BYTES / 3) + 1)));
+      act(() => view().contentDOM.blur());
+      // 送らずに止めた入力の退避は、打つのが止まってから書く。書けなかったと分かってから順が変わる
+      await vi.waitFor(() =>
+        expect(paragraphsOfAlert()[0]).toContain("この画面にしか残っていません"),
+      );
+      expect(paragraphsOfAlert()[1]).toContain("本文が上限を");
+    });
+  });
+
   describe("ログインの期限が切れた通知の再試行ボタン", () => {
     const authNotice = () =>
       [...(container?.querySelectorAll(".notice") ?? [])].find((notice) =>
@@ -1525,6 +1565,12 @@ describe("まだ作っていないページ（page が null）", () => {
       );
       expect(container?.textContent).toContain("この画面にしか残っていません");
       expect(container?.textContent).not.toContain("この端末に残してあります");
+      // 理由が再読み込みを促しても内容を失わないよう、コピーを勧める段落を理由より先に出す
+      const paragraphs = [...(container?.querySelectorAll("[role='alert'] p") ?? [])].map(
+        (p) => p.textContent ?? "",
+      );
+      expect(paragraphs[0]).toContain("この画面にしか残っていません");
+      expect(paragraphs[1]).toBe("通信できない");
     } finally {
       setItem.mockRestore();
     }

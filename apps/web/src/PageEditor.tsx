@@ -1,7 +1,15 @@
 import { MAX_BODY_BYTES } from "@personal-wiki/domain/page-input";
 import { wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { loginHref } from "./api";
 import {
   acceptAttachment,
@@ -127,6 +135,31 @@ const keptContent = (backupFailed: boolean, held = false) =>
     : held
       ? "入力した内容は、この端末に残します。"
       : "入力した内容は、この端末に残してあります。";
+
+/**
+ * 失敗の理由の段落に、内容の扱いの段落を添える。内容が画面にしか無いときは先に出す。
+ * 理由が「再読み込みしてから…」のように読み込み直しを促すことがあり、先に読むと内容を失うため。
+ */
+function WithKeptContent({
+  show,
+  backupFailed,
+  held = false,
+  children,
+}: {
+  show: boolean;
+  backupFailed: boolean;
+  held?: boolean;
+  children: ReactNode;
+}) {
+  const kept = show && <p>{keptContent(backupFailed, held)}</p>;
+  return (
+    <>
+      {backupFailed && kept}
+      {children}
+      {!backupFailed && kept}
+    </>
+  );
+}
 
 /**
  * 退避が書けなかったときは、見出しに内容を失う恐れを入れる。通知を畳むと本文の段落は隠れ、
@@ -735,14 +768,16 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 ) : undefined
               }
             >
-              {failure.kind === "save" && failure.titleTaken ? (
-                <TakenGuide taken={failure.titleTaken} kind="save" />
-              ) : (
-                <p>{state.error}</p>
-              )}
-              {failure.kind === "save" && isDirty(state) && (
-                <p>{keptContent(state.backupFailed)}</p>
-              )}
+              <WithKeptContent
+                show={failure.kind === "save" && isDirty(state)}
+                backupFailed={state.backupFailed}
+              >
+                {failure.kind === "save" && failure.titleTaken ? (
+                  <TakenGuide taken={failure.titleTaken} kind="save" />
+                ) : (
+                  <p>{state.error}</p>
+                )}
+              </WithKeptContent>
             </Notice>
           )
         )}
@@ -883,12 +918,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 ) : undefined
               }
             >
-              {state.failedOp.titleTaken ? (
-                <TakenGuide taken={state.failedOp.titleTaken} kind="create" />
-              ) : (
-                <p>{state.error}</p>
-              )}
-              <p>{keptContent(state.backupFailed)}</p>
+              <WithKeptContent show backupFailed={state.backupFailed}>
+                {state.failedOp.titleTaken ? (
+                  <TakenGuide taken={state.failedOp.titleTaken} kind="create" />
+                ) : (
+                  <p>{state.error}</p>
+                )}
+              </WithKeptContent>
             </Notice>
           )}
         {inputProblem !== undefined && (
@@ -912,12 +948,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
               ) : undefined
             }
           >
-            {inputProblems.map((problem) => (
-              <p key={problem.reason + (problem.reason === "control_char" ? problem.field : "")}>
-                {inputProblemMessage(problem)}
-              </p>
-            ))}
-            <p>{keptContent(state.backupFailed, true)}</p>
+            <WithKeptContent show backupFailed={state.backupFailed} held>
+              {inputProblems.map((problem) => (
+                <p key={problem.reason + (problem.reason === "control_char" ? problem.field : "")}>
+                  {inputProblemMessage(problem)}
+                </p>
+              ))}
+            </WithKeptContent>
           </Notice>
         )}
         <span className="visually-hidden" role="status">
