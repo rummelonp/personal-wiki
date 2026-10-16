@@ -111,6 +111,38 @@ test("backlink に draft の参照元が出ない", async ({ page }) => {
   await expectNoDraftTrace(page);
 });
 
+test("ページの埋め込みは public を展開し、draft を存在しないページと同じに出す", async ({
+  page,
+  api,
+}, testInfo) => {
+  // 「draft の title の URL」のテストは、seed の draft と「本当に存在しないページ」にリンク元が無く
+  // 右の列が隠れることを見る。それらを埋め込むとリンク元ができ、実行の順番しだいでそのテストが
+  // 落ちるので、埋め込む draft と存在しないページはここで作る
+  const title = uniqueTitle(testInfo, "匿名の埋め込み");
+  const draft = uniqueTitle(testInfo, "埋め込まれる下書き");
+  const draftBody = `埋め込みから漏れてはいけない ${DRAFT_MARKER}`;
+  const missing = uniqueTitle(testInfo, "埋め込み先の無いページ");
+  await api.createPage({ title: draft, body: draftBody });
+  await api.createPage({
+    title,
+    body: `![[${SEED.database}]]\n\n![[${draft}]]\n\n![[${missing}]]`,
+    visibility: "public",
+  });
+  await page.goto(titlePath(title));
+  const embed = (target: string) =>
+    bodyEditor(page).locator(`.cm-embed-page[data-embed-target="${target}"]`);
+
+  await expect(embed(SEED.database)).toHaveAttribute("data-embed-state", "resolved");
+  await expect(embed(SEED.database).locator(".cm-embed-page-body")).toContainText("読み取り行数");
+  // 取得中は loading なので、unresolved になれば取得は 404 で終わっている
+  for (const target of [draft, missing]) {
+    await expect(embed(target)).toHaveAttribute("data-embed-state", "unresolved");
+    await expect(embed(target).locator(".cm-embed-unresolved")).toHaveText(target);
+  }
+  await expect(bodyEditor(page)).not.toContainText(DRAFT_MARKER);
+  await expectNoDraftTrace(page);
+});
+
 test("匿名の 2 文字では本文の検索を出さず、3 文字以上と案内する", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
