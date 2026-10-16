@@ -164,7 +164,7 @@ export function PublishBar({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setManualUrl(null);
-      setNote("コピーしました。");
+      setNote("URL をコピーしました。");
     } catch {
       // 権限が無い、secure context でない、フォーカスが外れているなど。書き込めない理由は区別しない
       setManualUrl(shareUrl);
@@ -214,7 +214,7 @@ export function PublishBar({
         {pendingShown
           ? PENDING_NOTES[pending as Visibility]
           : manualShown
-            ? "コピーできませんでした。下の URL を選んでコピーしてください。"
+            ? "コピーできませんでした。下の URL は選択済みなので、そのままコピーしてください。"
             : note}
       </p>
       {manualShown && (

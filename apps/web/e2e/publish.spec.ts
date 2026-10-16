@@ -170,7 +170,7 @@ test.describe("共有の URL", () => {
     await expect(page.locator(".title-input")).toHaveText(title);
 
     await page.getByRole("button", { name: "URL をコピー" }).click();
-    await expect(notice(page)).toHaveText("コピーしました。");
+    await expect(notice(page)).toHaveText("URL をコピーしました。");
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       `${E2E_ORIGIN}${titlePath(title)}`,
     );
@@ -195,7 +195,7 @@ test.describe("共有の URL", () => {
     await page.goto(`/p/${created.id}`);
     await expect(page.locator(".title-input")).toContainText("予約語");
     await page.getByRole("button", { name: "URL をコピー" }).click();
-    await expect(notice(page)).toHaveText("コピーしました。");
+    await expect(notice(page)).toHaveText("URL をコピーしました。");
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       `${E2E_ORIGIN}/p/${created.id}`,
     );
@@ -281,7 +281,7 @@ test.describe("共有の URL", () => {
       });
     const before = await boxes();
     await page.getByRole("button", { name: "URL をコピー" }).click();
-    await expect(notice(page)).toHaveText("コピーしました。");
+    await expect(notice(page)).toHaveText("URL をコピーしました。");
     const after = await boxes();
     expect(after.body.top, "知らせが出ても本文は動かない").toBe(before.body.top);
     expect(after.note.top, "知らせは操作と同じ行").toBeGreaterThanOrEqual(after.button.top);
