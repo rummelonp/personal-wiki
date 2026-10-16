@@ -206,7 +206,7 @@ describe("GET /api/pages/recent?tag=", () => {
       field: "tag",
       reason: "too_long",
       max: 200,
-      message: "tag が長すぎる（上限 200 文字）",
+      message: "tag が長すぎる（表記をそろえた後の UTF-16 の単位で上限 200）",
     });
   });
 });

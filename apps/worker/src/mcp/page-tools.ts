@@ -17,7 +17,7 @@ import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool"
 const LIMITS = [
   `上限は UTF-8 で title が ${MAX_TITLE_BYTES} バイト、body が ${MAX_BODY_BYTES} バイト。`,
   "title の改行とタブは空白に置き換わる。title に NUL などの C0 の制御文字か DEL、body と text に NUL を含めると invalid_field になる。",
-  "上限を超えたときの応答には今のバイト数（actual）が、制御文字の応答には位置（line、column、codePoint）が入る。",
+  "上限を超えたときの応答には送った値のバイト数（actual。追記では追記後の本文のバイト数で、今の本文のバイト数は currentBytes）が、制御文字の応答には位置（line、column、codePoint）が入る。",
 ].join("");
 /** instructions を AI に渡さないクライアントもあるので、書き込みの tool ごとに description にも書く */
 const NO_SECRETS =

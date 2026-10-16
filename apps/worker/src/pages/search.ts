@@ -172,7 +172,7 @@ export function prepareTagFilter(raw: string): TagFilter {
 
 const TAG_FILTER_MESSAGES: Record<Extract<TagFilter, { ok: false }>["reason"], string> = {
   empty: "tag が空か、`#` だけになっている",
-  too_long: `tag が長すぎる（上限 ${TAG_MAX_LENGTH} 文字）`,
+  too_long: `tag が長すぎる（表記をそろえた後の UTF-16 の単位で上限 ${TAG_MAX_LENGTH}）`,
 };
 
 /** タグの絞り込みの誤りに添える項目。上限は too_long のときだけ返す。 */

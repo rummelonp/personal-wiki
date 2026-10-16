@@ -1,5 +1,5 @@
 // 理由は page-tools.ts の同じ import を参照
-import { prepareSearchQuery } from "@personal-wiki/domain";
+import { prepareSearchQuery, SEARCH_MAX_QUERY_CHARS } from "@personal-wiki/domain";
 import * as z from "zod/v4";
 import { readableVisibilityOf } from "../auth/principal";
 import { isPageId } from "../pages/id";
@@ -60,6 +60,7 @@ export const searchTool = defineTool({
     "excerpt は一致した位置の周辺の本文で、tags はページに付いたタグの表記。",
     "title に語を含むページが先。その中と残りは、3 文字以上は全文検索で関連度の順、2 文字以下は部分一致で更新が新しい順。短い語で見つからなければ語を足す。",
     "全角半角と、英字の大文字小文字は区別しない。",
+    `query は ${SEARCH_MAX_QUERY_CHARS} 文字まで。改行やタブなどの制御文字を含めると invalid_field になる。`,
   ].join("\n"),
   inputSchema: z.strictObject({
     query: z.string().describe("探す語。全体を 1 つの語句として照合する"),
