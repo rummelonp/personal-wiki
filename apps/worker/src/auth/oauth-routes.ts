@@ -156,14 +156,14 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
   try {
     form = await c.req.formData();
   } catch {
-    return errorPage(400, "同意画面のフォームとして読めない送信です。");
+    return errorPage(400, "送信の内容を読み取れませんでした。");
   }
   const handle = form.get("handle");
   const decision = form.get("decision");
   const oauth = helpersOf(c);
   try {
     if (typeof handle !== "string") {
-      return errorPage(400, "同意画面のフォームとして読めない送信です。");
+      return errorPage(400, "送信の内容を読み取れませんでした。");
     }
     if (decision === "deny") {
       const denied = await oauth.denyConsent(c.req.raw, handle);
@@ -262,7 +262,12 @@ async function showGrants(c: Context<AppEnv>): Promise<Response> {
   if (c.get("principal").kind !== "owner") return redirectToLogin(c);
   const cursor = c.req.query("cursor");
   if (cursor !== undefined && !KV_CURSOR_PATTERN.test(cursor)) {
-    return errorPage(400, "一覧の続きの位置が読めません。", "最初のページから開き直してください。");
+    return errorPage(
+      400,
+      "一覧の続きを開けませんでした。",
+      "最初のページから開き直してください。",
+      "許可した接続の一覧を開けません",
+    );
   }
   const oauth = helpersOf(c);
   const page = await oauth.listUserGrants(OAUTH_USER_ID, {
@@ -293,7 +298,12 @@ async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
     .then((form) => form.get("grant"))
     .catch(() => null);
   if (typeof grantId !== "string" || !GRANT_ID_PATTERN.test(grantId)) {
-    return errorPage(400, "取り消す接続を読めない送信です。", "接続の一覧から開き直してください。");
+    return errorPage(
+      400,
+      "どの接続を取り消すかを読み取れませんでした。",
+      "接続の一覧から開き直してください。",
+      "取り消せません",
+    );
   }
   await helpersOf(c).revokeGrant(grantId, OAUTH_USER_ID);
   return new Response(null, {
@@ -359,10 +369,11 @@ function errorPage(
   status: number,
   message: string,
   hint = "接続するアプリから、もう一度接続をやり直してください。",
+  heading = "接続できません",
 ): Response {
   const body = pageHtml(
-    "接続できません",
-    `<h1>接続できません</h1>
+    heading,
+    `<h1>${heading}</h1>
 <p>${escapeHtml(message)}</p>
 <p>${escapeHtml(hint)}</p>`,
   );

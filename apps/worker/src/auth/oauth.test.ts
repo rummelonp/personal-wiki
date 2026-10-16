@@ -102,6 +102,13 @@ async function openConsent(request: Request, path: string) {
 
 type Consent = Awaited<ReturnType<typeof openConsent>>;
 
+/** `<title>` と `<h1>` が同じ見出しで、本文が message であること */
+function expectErrorPage(html: string, heading: string, message: string) {
+  expect(html).toContain(`<title>${heading}</title>`);
+  expect(html).toContain(`<h1>${heading}</h1>`);
+  expect(html).toContain(`<p>${message}</p>`);
+}
+
 function submitConsent(
   request: Request,
   path: string,
@@ -552,6 +559,20 @@ describe("認可と同意画面", () => {
     expect(await res.text()).toContain("登録が見つかりません");
   });
 
+  it("handle を含まない送信は、既定の見出しの誤りにする", async () => {
+    const { request } = setup();
+    const client = await register(request);
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const consent = await openConsent(request, path);
+    const res = await request(path, {
+      method: "POST",
+      headers: { Cookie: consent.cookie, "Content-Type": FORM, ...SAME_ORIGIN },
+      body: new URLSearchParams({ decision: "approve", access: "write" }).toString(),
+    });
+    expect(res.status).toBe(400);
+    expectErrorPage(await res.text(), "接続できません", "送信の内容を読み取れませんでした。");
+  });
+
   it("登録されていない redirect URI には戻さず、この画面で誤りを出す", async () => {
     const { request } = setup();
     const client = await register(request);
@@ -833,6 +854,19 @@ describe("許可した接続の一覧と取り消し", () => {
     });
   }
 
+  it("一覧の続きの位置が読めなければ、一覧を開けない見出しの誤りにする", async () => {
+    const { request } = setup();
+    const res = await request("/_auth/oauth/grants?cursor=%00%00", {
+      headers: { Cookie: await ownerCookie(T0) },
+    });
+    expect(res.status).toBe(400);
+    expectErrorPage(
+      await res.text(),
+      "許可した接続の一覧を開けません",
+      "一覧の続きを開けませんでした。",
+    );
+  });
+
   it("owner でなければ、一覧を return に入れて /_auth/login へ送る", async () => {
     const { request } = setup();
     const res = await request("/_auth/oauth/grants");
@@ -900,7 +934,13 @@ describe("許可した接続の一覧と取り消し", () => {
     });
     expect(anonymous.status).toBe(401);
     for (const bad of ["", "a:b", "x".repeat(65)]) {
-      expect((await revoke(request, bad)).status, bad).toBe(400);
+      const res = await revoke(request, bad);
+      expect(res.status, bad).toBe(400);
+      expectErrorPage(
+        await res.text(),
+        "取り消せません",
+        "どの接続を取り消すかを読み取れませんでした。",
+      );
     }
     expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(200);
   });
