@@ -55,9 +55,19 @@ export interface LinkRewriteStepResult {
    * 同じ本文と title なら何度試しても同じ結果になるので、積んだ分は捨てる（本文には旧 title のリンクが残る）
    */
   failed: string[];
+  /**
+   * failed と同じリンク元を、画面に出す title と組にしたもの。failed は形を変えない（スクリプトが
+   * 文字列の配列として読む）ので、別の項目にする。title は、ページを読む前に捨てた（試行の上限）ときは null
+   */
+  failedPages: FailedLinkRewrite[];
   /** 処理を待つリンク元の数（targetPageId を指定したときは、その対象の分だけ） */
   remaining: number;
   rowsWritten: number;
+}
+
+export interface FailedLinkRewrite {
+  id: string;
+  title: string | null;
 }
 
 export interface LinkRewriteStep {
@@ -228,7 +238,12 @@ export async function stepLinkRewrites(
     )
     .bind(targetPageId)
     .all<JobRow & { source_page_id: string }>();
-  const idle = { processed: null, conflict: false, failed: [] as string[] };
+  const idle = {
+    processed: null,
+    conflict: false,
+    failed: [] as string[],
+    failedPages: [] as FailedLinkRewrite[],
+  };
   const first = picked.results[0];
   if (first === undefined)
     return { result: { ...idle, remaining: 0, rowsWritten: 0 }, actor: null };
@@ -263,7 +278,7 @@ export async function stepLinkRewrites(
 
   /** 書き込まずに積んだ分を捨てる。guards が読んだ状態と違えば捨てずに conflict を返す */
   const discard = async (
-    failed: string[],
+    failedPages: FailedLinkRewrite[],
     guards: D1PreparedStatement[],
   ): Promise<LinkRewriteStep> => {
     let results: D1Result[];
@@ -276,21 +291,23 @@ export async function stepLinkRewrites(
     return {
       result: {
         ...idle,
-        failed,
+        failed: failedPages.map((page) => page.id),
+        failedPages,
         remaining: await countRemaining(db, targetPageId),
         rowsWritten: rowsWritten + sumRowsWritten(results),
       },
       actor: null,
     };
   };
-  const fail = (reason: string, guards: D1PreparedStatement[]) => {
+  const fail = (reason: string, title: string | null, guards: D1PreparedStatement[]) => {
     console.error(JSON.stringify({ event: "link_rewrites.failed", sourcePageId, reason }));
-    return discard([sourcePageId], guards);
+    return discard([{ id: sourcePageId, title }], guards);
   };
 
-  // 本文にも対象にもよらない判断なので、読んだ状態を確かめずに捨てる
+  // 本文にも対象にもよらない判断なので、読んだ状態を確かめずに捨てる。title を引くためだけに
+  // ページを読むと、CPU の上限で打ち切られ続けたリンク元にクエリを足すことになるので、title は持たない
   if (jobs.some((job) => job.attempts > LINK_REWRITE_MAX_ATTEMPTS)) {
-    return fail("attempts_exceeded", []);
+    return fail("attempts_exceeded", null, []);
   }
 
   const { results: pages } = await db
@@ -325,7 +342,7 @@ export async function stepLinkRewrites(
   if (rewrite.rewritten === 0) return discard([], guards);
 
   if (utf8ByteLength(rewrite.body) > MAX_BODY_BYTES) {
-    return fail("body_too_large", guards);
+    return fail("body_too_large", source.title, guards);
   }
   const values = deriveValues(source.title, rewrite.body);
   const after = keysOf(values);
@@ -335,7 +352,7 @@ export async function stepLinkRewrites(
     unexpectedChange(await readDerivedKeys(db, sourcePageId), after, renames) &&
     unexpectedChange(keysOf(deriveValues(source.title, source.body)), after, renames)
   ) {
-    return fail("unexpected_derived_change", guards);
+    return fail("unexpected_derived_change", source.title, guards);
   }
 
   const statements = [
@@ -378,6 +395,7 @@ export async function stepLinkRewrites(
       },
       conflict: false,
       failed: [],
+      failedPages: [],
       remaining: await countRemaining(db, targetPageId),
       rowsWritten: rowsWritten + sumRowsWritten(results),
     },

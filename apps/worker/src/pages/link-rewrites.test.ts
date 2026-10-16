@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { MAX_BODY_BYTES } from "@personal-wiki/domain";
 import { describe, expect, it, vi } from "vitest";
 import { buildClient, linksFrom, type PageJson, T0 } from "../test/pages";
 import {
@@ -167,6 +168,7 @@ describe("POST /api/link-rewrites/step", () => {
       processed: null,
       conflict: false,
       failed: [],
+      failedPages: [],
       remaining: 0,
       rowsWritten: 0,
     });
@@ -287,11 +289,34 @@ describe("POST /api/link-rewrites/step", () => {
     const s = await client.create("S", "a ` b [[Old]] c");
     await rename(client, target, "Ne`w");
     const [result] = await drain(client);
-    expect(result).toMatchObject({ processed: null, failed: [s.id], remaining: 0 });
+    expect(result).toMatchObject({
+      processed: null,
+      failed: [s.id],
+      failedPages: [{ id: s.id, title: "S" }],
+      remaining: 0,
+    });
     expect(await read(client, s)).toMatchObject({ body: "a ` b [[Old]] c", version: 1 });
     expect(await jobs()).toEqual([]);
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("link_rewrites.failed"));
     expect(client.metrics.at(-1)).toMatchObject({ op: "link_rewrite", failed: [s.id] });
+  });
+
+  it("書き換えると本文の上限を超えるなら書かずに failed にし、title も返す", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const body = `${"x".repeat(MAX_BODY_BYTES - "[[Old]]".length)}[[Old]]`;
+    const s = await client.create("S", body);
+    await rename(client, target, "Olde");
+    const [result] = await drain(client);
+    expect(result).toMatchObject({
+      processed: null,
+      failed: [s.id],
+      failedPages: [{ id: s.id, title: "S" }],
+      remaining: 0,
+    });
+    expect(await read(client, s)).toMatchObject({ body, version: 1 });
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('"reason":"body_too_large"'));
   });
 
   it("targetPageId を渡すと、その対象のリンク元だけを進める", async () => {
@@ -473,7 +498,13 @@ describe("POST /api/link-rewrites/step", () => {
     }
     expect(await attemptsOf(s.id)).toEqual([LINK_REWRITE_MAX_ATTEMPTS]);
     const [result] = await drain(client);
-    expect(result).toMatchObject({ processed: null, failed: [s.id], remaining: 0 });
+    // ページを読む前に捨てるので、title は返さない
+    expect(result).toMatchObject({
+      processed: null,
+      failed: [s.id],
+      failedPages: [{ id: s.id, title: null }],
+      remaining: 0,
+    });
     expect(await read(client, s)).toMatchObject({ body: "[[Old]]", version: 1 });
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("attempts_exceeded"));
   });
