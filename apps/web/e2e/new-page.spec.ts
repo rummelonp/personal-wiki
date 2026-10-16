@@ -112,7 +112,7 @@ test("title が空のままでは Enter でも作らず、本文を打っても 
   await page.waitForTimeout(3_000);
   expect(creates).toBe(0);
   await expect(page).toHaveURL(/\/\?new$/);
-  await expect(saveState(page)).toHaveText("タイトルを決めると保存します");
+  await expect(saveState(page)).toHaveText("タイトルを入れて欄を離れると作成します");
   await expect(bodyEditor(page)).toHaveText("title の無い本文");
 });
 
@@ -176,7 +176,7 @@ test("作成が 401 になるとログインし直す案内が出て、打った
   await typeTitleThenBody(page, title, body);
   const alert = page.getByRole("alert").filter({ hasText: "ログインの期限が切れました" });
   await expect(alert).toContainText("未保存の内容はこの端末に退避してあります。");
-  await expect(saveState(page)).toHaveText("ログインが切れました");
+  await expect(saveState(page)).toHaveText("ログインの期限切れ");
   await expect(bodyEditor(page)).toHaveText(body);
 
   await page.unroute(CREATE);

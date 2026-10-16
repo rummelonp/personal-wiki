@@ -52,7 +52,7 @@ test("保存が 401 になるとログインし直す案内が出て、再試行
   await typeAtBodyEnd(page, typed);
   const alert = page.getByRole("alert").filter({ hasText: "ログインの期限が切れました" });
   await expect(alert).toContainText("未保存の内容はこの端末に退避してあります。");
-  await expect(saveState(page)).toHaveText("ログインが切れました");
+  await expect(saveState(page)).toHaveText("ログインの期限切れ");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
   await page.unroute(pagePath);
@@ -76,7 +76,7 @@ test("保存が 500 になると失敗の案内が出て、もう一度保存で
   );
   const typed = "、サーバーが落ちても残る";
   await typeAtBodyEnd(page, typed);
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toContainText("サーバーで問題が起きました");
   await expect(alert).toContainText("時間をおいて、もう一度試してください。");
   await expect(alert).toContainText("入力した内容はこの画面に残り、この端末にも退避してあります。");
@@ -99,7 +99,7 @@ test("オフラインで保存できないと失敗の案内が出て、戻っ�
   await context.setOffline(true);
   const typed = "、オフラインでも残る";
   await typeAtBodyEnd(page, typed);
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toContainText("サーバーに接続できません");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
@@ -137,7 +137,7 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
     has: page.getByRole("heading", { name: "サーバーの内容と食い違っています" }),
   });
   await expect(conflict).toBeVisible();
-  await expect(saveState(page)).toHaveText("サーバーの内容と食い違っています");
+  await expect(saveState(page)).toHaveText("別の場所でも更新あり");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
 
   await page.unroute(pagePath);

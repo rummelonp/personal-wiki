@@ -112,7 +112,7 @@ test("ログインが切れて退避も書けないと、見出しで内容が�
   await typeWithSaveFailing(page, created, 401, "unauthorized", typed);
   const alert = alertWithHeading(page, "ログインの期限が切れ、内容を端末に退避できませんでした");
   await expect(alert).toContainText("ログインし直す前に、内容をコピーして残してください。");
-  await expect(saveState(page)).toHaveText("ログインが切れました");
+  await expect(saveState(page)).toHaveText("ログインの期限切れ");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
   await shoot(page, testInfo, "auth-lost");
 });
@@ -130,7 +130,7 @@ test("ページが消えていて退避も書けないと、新しいページ�
   );
   await expect(alert).toContainText("画面を離れる前に、内容をコピーして残してください。");
   await expect(alert.getByRole("button", { name: "新しいページとして作る" })).toHaveCount(0);
-  await expect(saveState(page)).toHaveText("ページがありません");
+  await expect(saveState(page)).toHaveText("削除済み");
   await expect(bodyEditor(page)).toHaveText(FIRST_LINE + typed);
   await shoot(page, testInfo, "gone");
 });

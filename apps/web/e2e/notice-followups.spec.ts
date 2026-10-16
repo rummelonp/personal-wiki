@@ -37,7 +37,7 @@ test("失敗の通知からマウスで再試行して衝突になっても、�
       : route.fallback(),
   );
   await typeAt(page, 0, "、手元の変更");
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await page.unroute(pagePath);
   await api.updatePage(created, { body: `${BODY}\n別の場所で足した行` });
@@ -64,7 +64,7 @@ test("失敗の通知からキーボードで再試行して衝突になった�
       : route.fallback(),
   );
   await typeAt(page, 0, "、手元の変更");
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await page.unroute(pagePath);
   await api.updatePage(created, { body: `${BODY}\n別の場所で足した行` });

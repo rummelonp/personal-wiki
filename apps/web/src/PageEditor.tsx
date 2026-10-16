@@ -83,7 +83,7 @@ const findWithSignal = (title: string, signal: AbortSignal) =>
   findPageByTitle(title, (input, init) => fetch(input, { ...init, signal }));
 
 const STATUS_LABELS: Record<SaveStatus, string> = {
-  new: "タイトルを決めると保存します",
+  new: "タイトルを入れて欄を離れると作成します",
   creating: "作成中…",
   "create-error": "作成に失敗",
   saved: "保存済み",
@@ -91,15 +91,15 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
   saving: "保存中…",
   invalid: "保存できません",
   error: "保存に失敗",
-  conflict: "サーバーの内容と食い違っています",
-  auth: "ログインが切れました",
-  gone: "ページがありません",
+  conflict: "別の場所でも更新あり",
+  auth: "ログインの期限切れ",
+  gone: "削除済み",
 };
 
 const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
   create: "作成できませんでした",
-  save: "保存に失敗しました",
-  visibility: "公開設定を変えられませんでした",
+  save: "保存できませんでした",
+  visibility: "公開範囲を変更できませんでした",
   delete: "削除できませんでした",
 };
 
@@ -135,9 +135,9 @@ const TAKEN_TITLES = {
 
 /** 失敗の後の操作が終わるまでの間、失敗の通知に代えて台に出す見出し。 */
 const PROGRESS_TITLES = {
-  saving: "保存しています…",
-  visibility: "公開設定を変えています…",
-  deleting: "削除しています…",
+  saving: "保存中…",
+  visibility: "公開範囲を変更中…",
+  deleting: "削除中…",
 } as const;
 
 function retryLabel(op: FailedOp): string {

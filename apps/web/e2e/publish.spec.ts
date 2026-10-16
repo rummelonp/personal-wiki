@@ -142,7 +142,7 @@ test("公開に失敗したら draft のまま理由と再試行が出て、再�
   await option(page, "公開").click();
   await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
   await expect(
-    page.getByRole("alert").filter({ hasText: "公開設定を変えられませんでした" }),
+    page.getByRole("alert").filter({ hasText: "公開範囲を変更できませんでした" }),
   ).toBeVisible();
   await expect(option(page, "下書き")).toHaveAttribute("aria-pressed", "true");
   await expect(notice(page)).toHaveText("");

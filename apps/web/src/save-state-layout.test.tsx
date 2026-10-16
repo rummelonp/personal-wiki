@@ -191,7 +191,7 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
 
     const state = query(".save-state");
     expect(state.className).toContain("save-state-conflict");
-    expect(state.textContent).toContain("サーバーの内容と食い違っています");
+    expect(state.textContent).toContain("別の場所でも更新あり");
     const note = query(".note").getBoundingClientRect();
     const rect = state.getBoundingClientRect();
     expect(rect.left).toBeGreaterThanOrEqual(note.left - 0.5);

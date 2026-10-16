@@ -167,7 +167,7 @@ describe("PageEditor と本文のエディタ", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     const titleOf = () => container?.querySelector(".notice-title")?.textContent;
-    expect(titleOf()).toBe("保存に失敗しました");
+    expect(titleOf()).toBe("保存できませんでした");
 
     let finish: (value: ApiResult<Page>) => void = () => {};
     vi.mocked(updatePage).mockReturnValueOnce(
@@ -177,7 +177,7 @@ describe("PageEditor と本文のエディタ", () => {
     );
     act(() => button("もう一度保存する").click());
     await flushAsync();
-    expect(titleOf()).toBe("保存しています…");
+    expect(titleOf()).toBe("保存中…");
     expect(container?.querySelectorAll(".notice")).toHaveLength(1);
     expect(container?.querySelector("[role='alert']")).toBeNull();
     // 進行は上端の保存の状態が読み上げるので、通知では重ねて読み上げない
@@ -214,7 +214,7 @@ describe("PageEditor と本文のエディタ", () => {
     act(() => {
       window.dispatchEvent(new Event("scroll"));
     });
-    expect(container?.querySelector(".notice-title")?.textContent).toBe("保存しています…");
+    expect(container?.querySelector(".notice-title")?.textContent).toBe("保存中…");
 
     // 上端に戻れば、また台からは消える
     vi.mocked(isInView).mockReturnValue(true);
@@ -250,7 +250,7 @@ describe("PageEditor と本文のエディタ", () => {
     await act(async () => fail({ ok: false, reason: "error", message: "また失敗" }));
     await flushAsync();
     expect(container?.querySelector(".notice [role='alert']")?.textContent).toContain(
-      "保存に失敗しました",
+      "保存できませんでした",
     );
   });
 
@@ -271,12 +271,12 @@ describe("PageEditor と本文のエディタ", () => {
     act(() => button("もう一度保存する").click());
     await flushAsync();
     const progress = container?.querySelector(".notice");
-    expect(progress?.querySelector(".notice-title")?.textContent).toBe("保存しています…");
+    expect(progress?.querySelector(".notice-title")?.textContent).toBe("保存中…");
 
     await act(async () => fail({ ok: false, reason: "error", message: "また失敗" }));
     await flushAsync();
     const alert = container?.querySelector(".notice [role='alert']");
-    expect(alert?.textContent).toContain("保存に失敗しました");
+    expect(alert?.textContent).toContain("保存できませんでした");
     expect(container?.querySelector(".notice")).not.toBe(progress);
   });
 
@@ -287,7 +287,7 @@ describe("PageEditor と本文のエディタ", () => {
     typeAtEnd(view(), "を書き足す");
     act(() => view().contentDOM.blur());
     await flushAsync();
-    expect(container?.querySelector(".notice-title")?.textContent).toBe("保存に失敗しました");
+    expect(container?.querySelector(".notice-title")?.textContent).toBe("保存できませんでした");
 
     vi.mocked(updatePage).mockResolvedValueOnce({
       ok: false,
@@ -305,7 +305,7 @@ describe("PageEditor と本文のエディタ", () => {
     // 409 を受けて最新を取りにいく間は、通知が空白にならず、まだ保存の途中として見える
     const notices = () => [...(container?.querySelectorAll(".notice") ?? [])];
     expect(notices().map((n) => n.querySelector(".notice-title")?.textContent)).toEqual([
-      "保存しています…",
+      "保存中…",
     ]);
     expect(container?.querySelector("[role='alert']")).toBeNull();
 
@@ -351,7 +351,7 @@ describe("PageEditor と本文のエディタ", () => {
         [...(container?.querySelectorAll(".notice-title") ?? [])].map((h) => h.textContent);
       act(() => button("もう一度保存する").click());
       await flushAsync();
-      expect(titles()).toEqual(["保存しています…"]);
+      expect(titles()).toEqual(["保存中…"]);
 
       // 描き直しのたびに、通知の並びを残す
       const seen: Array<Array<string | null>> = [];
@@ -363,7 +363,7 @@ describe("PageEditor と本文のエディタ", () => {
 
       expect(titles()).toEqual(remaining);
       for (const snapshot of seen) {
-        expect(snapshot.includes("保存しています…") && snapshot.length > 1).toBe(false);
+        expect(snapshot.includes("保存中…") && snapshot.length > 1).toBe(false);
       }
     });
   });
@@ -1184,7 +1184,7 @@ describe("まだ作っていないページ（page が null）", () => {
   it("title 欄にフォーカスし、本文を打っても title を決めるまで作らない", async () => {
     const { view } = renderNew();
     expect(document.activeElement).toBe(titleContent());
-    expect(container?.textContent).toContain("タイトルを決めると保存します");
+    expect(container?.textContent).toContain("タイトルを入れて欄を離れると作成します");
     act(() => typeAtEnd(view(), "本文だけ"));
     act(() => view().contentDOM.blur());
     await flushAsync();
@@ -2088,7 +2088,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
     expect(option("公開").getAttribute("aria-pressed")).toBe("false");
     expect(publishNote()).toBe("");
-    expect(container?.textContent).toContain("公開設定を変えられませんでした");
+    expect(container?.textContent).toContain("公開範囲を変更できませんでした");
   });
 
   it("下書きに戻す間は「下書き」を選択中にして「下書きに戻しています…」を出す", async () => {

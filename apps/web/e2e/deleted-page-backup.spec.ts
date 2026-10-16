@@ -36,7 +36,7 @@ async function typeUnsaved(page: Page, created: ApiPage, typed: string): Promise
       : route.fallback(),
   );
   await typeAtBodyEnd(page, typed);
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toContainText("この端末にも退避してあります。");
 }
 
@@ -108,7 +108,7 @@ test("開いていたタブは、別のタブの削除を知ると、未保存�
     has: other.getByRole("heading", { name: "このページはサーバーにありません" }),
   });
   await expect(gone).toContainText("新しいページとして作り直せます。");
-  await expect(saveState(other)).toHaveText("ページがありません");
+  await expect(saveState(other)).toHaveText("削除済み");
   await gone.getByRole("button", { name: "新しいページとして作る" }).click();
   await expect(other).toHaveURL(/\/\?new$/);
   await restoreAsNewPage(other, title, FIRST_LINE + typed, api);

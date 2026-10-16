@@ -152,7 +152,7 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
   await typeAt(page, index, "、打っている途中");
   const caretBefore = await caretRect(page);
 
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await expect(dock(page)).toContainText("時間をおいて、もう一度試してください。");
   // 追加の入力の前に測る。台が出る前の行は台に覆われる位置にあり、それでも台の上へ逃げている
@@ -197,7 +197,7 @@ test("保存の失敗の通知は、操作の前後で title の位置を動か�
   const before = await measureBefore(page);
   await failSaveWith500(page, created);
   await typeAt(page, 0, "、先頭の行");
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await expectBodyNotShifted(page, before);
   expect((await caretRect(page)).bottom).toBeLessThanOrEqual((await boxOf(alert)).y + 0.5);
@@ -211,7 +211,7 @@ test("もう一度保存している間は、下までスクロールしてい�
   const pagePath = `**/api/pages/${created.id}`;
   await failSaveWith500(page, created);
   await typeAt(page, 0, "、再試行する");
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 
@@ -226,7 +226,7 @@ test("もう一度保存している間は、下までスクロールしてい�
     await route.fallback();
   });
   await alert.getByRole("button", { name: "もう一度保存する" }).click();
-  const saving = dock(page).locator(".notice").filter({ hasText: "保存しています…" });
+  const saving = dock(page).locator(".notice").filter({ hasText: "保存中…" });
   await expect(saving).toBeVisible();
   await expect(alert).toBeHidden();
   await expectDockOnScreen(page);
@@ -246,7 +246,7 @@ test("もう一度保存している間、上端の保存の状態が見えて�
   const pagePath = `**/api/pages/${created.id}`;
   await failSaveWith500(page, created);
   await typeAt(page, 0, "、再試行する");
-  const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
 
@@ -263,7 +263,7 @@ test("もう一度保存している間、上端の保存の状態が見えて�
   // 上端の「保存中…」が同じ保存を伝えるので、台に同じ意味の通知を重ねない
   await expect(saveState(page)).toHaveText("保存中…");
   await expect(alert).toBeHidden();
-  const saving = dock(page).locator(".notice").filter({ hasText: "保存しています…" });
+  const saving = dock(page).locator(".notice").filter({ hasText: "保存中…" });
   await expect(saving).toHaveCount(0);
 
   // 保存の途中で上端が見えなくなったら、台が進行を伝える
@@ -286,7 +286,7 @@ test.describe("幅ごとの通知 @widths", () => {
       await page.evaluate(() => window.scrollTo(0, 0));
       const before = await measureBefore(page);
       await typeAt(page, 0, `、${width}`);
-      const alert = page.getByRole("alert").filter({ hasText: "保存に失敗しました" });
+      const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
       await expect(alert).toBeVisible();
       await expectBodyNotShifted(page, before);
       await expectDockOnScreen(page);
@@ -650,7 +650,7 @@ test("上限に達していない台には、手がかりを出さない", async
   const created = await openLongPage(page, api, uniqueTitle(testInfo, "手がかりなし"));
   await failSaveWith500(page, created);
   await typeAt(page, 0, "、足す");
-  await expect(page.getByRole("alert").filter({ hasText: "保存に失敗しました" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "保存できませんでした" })).toBeVisible();
   await expect(dock(page)).not.toHaveAttribute("data-more-above");
   await expect(dock(page)).not.toHaveAttribute("data-more-below");
 });
@@ -662,7 +662,7 @@ test("台の地は余白まで不透明で、余白を押しても後ろの本�
   const created = await openLongPage(page, api, uniqueTitle(testInfo, "台の地"));
   await failSaveWith500(page, created);
   await typeAt(page, 0, "、足す");
-  await expect(page.getByRole("alert").filter({ hasText: "保存に失敗しました" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "保存できませんでした" })).toBeVisible();
   const { background, bodyBackground, hit } = await page.evaluate(() => {
     const dockEl = document.querySelector(".notice-dock") as HTMLElement;
     const rect = dockEl.getBoundingClientRect();

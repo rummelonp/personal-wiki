@@ -743,7 +743,7 @@ describe("App の owner の画面", () => {
       expect(document.activeElement).toBe(titleContent());
       await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
       expect(createPage).not.toHaveBeenCalled();
-      expect(main()?.textContent).toContain("タイトルを決めると保存します");
+      expect(main()?.textContent).toContain("タイトルを入れて欄を離れると作成します");
     });
 
     it("title で Enter を押すと作って本文へ移り、/p/<id> に置き換えても編集の画面を作り直さない", async () => {
@@ -939,7 +939,7 @@ describe("App の owner の画面", () => {
       await act(() => new Promise((r) => setTimeout(r, 30)));
       expect(here()).toBe("/?new");
       expect(titleText()).toBe("");
-      expect(statusText()).toBe("タイトルを決めると保存します");
+      expect(statusText()).toBe("タイトルを入れて欄を離れると作成します");
       expect(screenText()).not.toContain("この端末に退避されています");
       expect(newBackupKeys()).toEqual([]);
     });
@@ -955,7 +955,7 @@ describe("App の owner の画面", () => {
       act(() => history.back());
       await vi.waitFor(() => expect(here()).toBe("/?new"));
       await vi.waitFor(() => expect(titleText()).toBe(""));
-      expect(statusText()).toBe("タイトルを決めると保存します");
+      expect(statusText()).toBe("タイトルを入れて欄を離れると作成します");
       expect(createPage).toHaveBeenCalledTimes(1);
     });
 
