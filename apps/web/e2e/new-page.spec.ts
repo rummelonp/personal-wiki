@@ -195,7 +195,7 @@ test("オフラインで作れないと失敗の案内が出て、打った内�
   await context.setOffline(true);
   await typeTitleThenBody(page, title, body);
   const alert = page.getByRole("alert").filter({ hasText: "作成できませんでした" });
-  await expect(alert).toContainText("サーバーに接続できません");
+  await expect(alert).toContainText("接続できません");
   await expect(saveState(page)).toHaveText("作成に失敗");
   await expect(bodyEditor(page)).toHaveText(body);
 

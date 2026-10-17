@@ -112,7 +112,7 @@ export const LOAD_FAILED = RETRY_LATER;
  * web が正しく組んでいれば起きないエラー。利用者に直せる点は無く、web の版がサーバーと食い違っている
  * ことが多いので、読み込み直しを勧める。
  */
-const NOT_ACCEPTED = `サーバーに受け付けられませんでした。${RELOAD}`;
+const NOT_ACCEPTED = `操作を受け付けられませんでした。${RELOAD}`;
 
 const ERROR_MESSAGES: Record<string, string> = {
   if_match_required: NOT_ACCEPTED,
@@ -133,8 +133,8 @@ function statusMessage(status: number): string {
     return "一時的にアクセスが制限されています。少し待ってから、もう一度試してください。";
   }
   return status >= 500
-    ? `サーバーで問題が起きました（HTTP ${status}）。${RETRY_LATER}`
-    : `サーバーに受け付けられませんでした（HTTP ${status}）。${RELOAD}`;
+    ? `問題が起きました（HTTP ${status}）。${RETRY_LATER}`
+    : `操作を受け付けられませんでした（HTTP ${status}）。${RELOAD}`;
 }
 
 async function readJson(res: Response): Promise<unknown> {
@@ -309,7 +309,7 @@ function isResolvedPage(value: unknown): value is ResolvedPage {
 const BAD_SHAPE: ApiFailure = {
   ok: false,
   reason: "error",
-  message: `サーバーの応答を読み取れませんでした。${RETRY_LATER}`,
+  message: `応答を読み取れませんでした。${RETRY_LATER}`,
 };
 
 /** 通信の失敗（オフラインなど）を ApiFailure にそろえる。 */
@@ -324,7 +324,7 @@ async function request(
     return {
       ok: false,
       reason: "error",
-      message: `サーバーに接続できません。通信を確かめて、もう一度試してください。`,
+      message: `接続できません。通信を確かめて、もう一度試してください。`,
     };
   }
 }

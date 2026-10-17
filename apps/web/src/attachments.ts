@@ -61,7 +61,7 @@ function noticeFor(kind: UploadFailureKind, file: File): UploadNotice {
     case "forbidden":
       return {
         kind,
-        message: `${subject}を添付できませんでした（サーバーに拒否されました）。ページを再読み込みするか、ログインし直してください。`,
+        message: `${subject}を添付できませんでした（拒否されました）。ページを再読み込みするか、ログインし直してください。`,
       };
     case "unavailable":
       return { kind, message: "この環境では添付を使えません。" };

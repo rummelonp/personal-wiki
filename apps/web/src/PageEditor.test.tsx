@@ -1812,7 +1812,7 @@ describe("添付の貼り付けと表示", () => {
 
   it.each([
     [401, "ログインの期限が切れた"],
-    [403, "サーバーに拒否されました"],
+    [403, "拒否されました"],
   ])("%i ではログインし直すリンクを出す", async (status, text) => {
     fetchMock.mockImplementation(async () => Response.json({}, { status }));
     const { view } = renderPage(PAGE, true);
