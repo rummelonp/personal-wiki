@@ -346,6 +346,8 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     }
   });
 
+  // ポインタの移動は 1 回ごとに Playwright を往復する。ほかのプロセスが CPU を使っていると長くかかり、
+  // 既定の 15 秒では足りない。途中で打ち切られるとポインタが欄の上に残り、次のテストが落ちる
   it("title 欄の下線は欄の内側の下端に文字の左端から引かれ、保存の状態の下にあり、欄の高さを動かさない", async () => {
     await browserPage.viewport(width, 800);
     const { query } = mountEditor();
@@ -385,17 +387,28 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
       resting.bottom - borderWidth + 0.5,
     );
 
+    // ポインタは前のテストが置いた位置に残る。その下に欄が載ると :hover が付いたまま始まるので、
+    // 最初に欄の外へ動かす。unhover は body の中心へ動かす実装で、中心が欄の外にある保証が無いので使わない。
+    // 欄の上端は 1px より下にあり、(1, 1) は欄の外になる。body は余白の分だけ内側から始まる場合があり、
+    // その隅への hover は hit target の確認で待ち続けるので force で確認を省く
+    expect(resting.top).toBeGreaterThan(1);
+    const pointerAway = () =>
+      userEvent.hover(document.body, { position: { x: 1, y: 1 }, force: true });
+    // :hover はポインタが動いた後のフレームで更新されるので、値になるまで待つ
+    const underlineColor = () => expect.poll(() => underline().borderBottomColor);
+
     // 何もしていない間は見えず、hover と focus で区切り線の色になる。どちらでも欄の高さは変わらない
-    expect(underline().borderBottomColor).toBe("rgba(0, 0, 0, 0)");
-    await userEvent.hover(input);
-    expect(underline().borderBottomColor).toBe(colorOf("--color-border"));
+    await pointerAway();
+    await underlineColor().toBe("rgba(0, 0, 0, 0)");
+    await userEvent.hover(input, { force: true });
+    await underlineColor().toBe(colorOf("--color-border"));
     expect(input.getBoundingClientRect().height).toBeCloseTo(resting.height, 1);
-    await userEvent.unhover(input);
-    expect(underline().borderBottomColor).toBe("rgba(0, 0, 0, 0)");
+    await pointerAway();
+    await underlineColor().toBe("rgba(0, 0, 0, 0)");
 
     act(() => EditorView.findFromDOM(query(".title-input .cm-editor"))?.focus());
     expect(underline().borderBottomColor).toBe(colorOf("--color-border"));
     expect(input.getBoundingClientRect().height).toBeCloseTo(resting.height, 1);
     expect(input.getBoundingClientRect().top).toBeCloseTo(resting.top, 1);
-  });
+  }, 60_000);
 });
