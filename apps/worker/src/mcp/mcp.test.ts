@@ -313,7 +313,7 @@ describe("tools/list", () => {
     });
     expect(init.result).toMatchObject({
       protocolVersion: "2025-06-18",
-      serverInfo: { name: "personal-wiki" },
+      serverInfo: { name: "personal-wiki", title: "personal-wiki" },
     });
     const instructions = init.result?.instructions as string;
     for (const rule of [

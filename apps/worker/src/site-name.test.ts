@@ -11,6 +11,13 @@ describe("siteNameOf", () => {
     expect(siteNameOf({})).toBe("personal-wiki");
     expect(siteNameOf({ SITE_NAME: "  " })).toBe("personal-wiki");
   });
+
+  it("deploy の検査を通らない名前は既定の名前にする", () => {
+    expect(siteNameOf({ SITE_NAME: "a\u202eb" })).toBe("personal-wiki");
+    expect(siteNameOf({ SITE_NAME: "a\u2028b" })).toBe("personal-wiki");
+    expect(siteNameOf({ SITE_NAME: "😀".repeat(41) })).toBe("personal-wiki");
+    expect(siteNameOf({ SITE_NAME: "😀".repeat(40) })).toBe("😀".repeat(40));
+  });
 });
 
 describe("サイト名の出どころ", () => {
@@ -43,9 +50,14 @@ describe("サイト名の出どころ", () => {
     return res.text();
   }
 
-  it("MCP の server 名は SITE_NAME で変わり、無ければ既定の名前", async () => {
-    expect(await initialize("rummelonp wiki")).toContain('"name":"rummelonp wiki"');
-    expect(await initialize(undefined)).toContain('"name":"personal-wiki"');
+  it("MCP の識別子は固定で、表示名の title は SITE_NAME で変わり、無ければ既定の名前", async () => {
+    const named = await initialize("rummelonp wiki");
+    expect(named).toContain('"name":"personal-wiki"');
+    expect(named).toContain('"title":"rummelonp wiki"');
+    expect(named).not.toContain('"name":"rummelonp wiki"');
+    const unnamed = await initialize(undefined);
+    expect(unnamed).toContain('"name":"personal-wiki"');
+    expect(unnamed).toContain('"title":"personal-wiki"');
   });
 
   it("OAuth の resource_name は SITE_NAME で変わる", async () => {

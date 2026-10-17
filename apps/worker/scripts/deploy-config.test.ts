@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isValidSiteName } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { deployArgs, extraArgs, generatedSiteName, migrateArgs, webBuildEnv } from "./deploy.mjs";
 import {
@@ -9,6 +10,7 @@ import {
   composeConfig,
   GENERATED_CONFIG_PATH,
   readDeployValues,
+  SITE_NAME_FORBIDDEN_PATTERN,
   stripJsonc,
   writeGeneratedConfig,
 } from "./deploy-config.mjs";
@@ -111,6 +113,77 @@ describe("readDeployValues", () => {
     for (const raw of ['"a\nb"', "a\tb", "あ".repeat(41)]) {
       expect(readDeployValues(`${base}SITE_NAME=${raw}\n`), raw).toHaveProperty("problems");
     }
+  });
+
+  it("SITE_NAME の 40 文字は code point で数え、サロゲートペアの境目で切れる", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(readDeployValues(`${base}SITE_NAME=${"😀".repeat(40)}\n`)).toHaveProperty("values");
+    expect(readDeployValues(`${base}SITE_NAME=${"😀".repeat(41)}\n`)).toHaveProperty("problems");
+  });
+
+  it("SITE_NAME の使える文字は Worker の検査（isValidSiteName）と一致する", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    const names = [
+      "rummelonp wiki",
+      "wiki\u2028x",
+      "wiki\u2029x",
+      "a\u202eb",
+      "a\u200bb",
+      "a\u2066b",
+      "a\u200eb",
+      "👨\u200d👩\u200d👧",
+      "می\u200cخواهم",
+      "a\u0085b",
+      "a\u007fb",
+      "😀".repeat(40),
+      "😀".repeat(41),
+      "あ".repeat(40),
+      "あ".repeat(41),
+    ];
+    for (const name of names) {
+      const result = readDeployValues(`${base}SITE_NAME="${name}"\n`);
+      expect("values" in result, JSON.stringify(name)).toBe(isValidSiteName(name));
+    }
+    expect(isValidSiteName("a\u202eb")).toBe(false);
+    expect(isValidSiteName("wiki\u2028x")).toBe(false);
+    expect(isValidSiteName("👨\u200d👩\u200d👧")).toBe(true);
+  });
+
+  it("SITE_NAME の禁じる文字の規則は、すべての code point で Worker の検査と一致する", () => {
+    const mismatches: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const char = String.fromCodePoint(cp);
+      if (SITE_NAME_FORBIDDEN_PATTERN.test(char) === isValidSiteName(char)) {
+        mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("SITE_NAME は、引用符で囲まない # があると黙って切れるので弾く", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    for (const line of [
+      "SITE_NAME=My #1 wiki",
+      "SITE_NAME=C#",
+      "SITE_NAME=a#b",
+      "SITE_NAME=wiki # コメント",
+      "export SITE_NAME=x #y",
+    ]) {
+      const result = readDeployValues(`${base}${line}\n`);
+      expect(result, line).toHaveProperty("problems");
+      expect(JSON.stringify(result), line).toContain("SITE_NAME に # を含めるとき");
+    }
+    for (const raw of ['"My #1 wiki"', "'My #1 wiki'", "`My #1 wiki`", "# 空のあとのコメント"]) {
+      expect(readDeployValues(`${base}SITE_NAME=${raw}\n`), raw).toHaveProperty("values");
+    }
+    expect(readDeployValues(`${base}SITE_NAME="My #1 wiki"\n`)).toMatchObject({
+      values: { siteName: "My #1 wiki" },
+    });
+    // 別の行のコメントは SITE_NAME に影響しない
+    expect(readDeployValues(`${base}# SITE_NAME=a#b\nSITE_NAME=ok\n`)).toMatchObject({
+      values: { siteName: "ok" },
+    });
   });
 
   it("owner のログインの値を読み、メールの前後の空白を除く", () => {

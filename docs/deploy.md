@@ -193,18 +193,29 @@ Cron を使わないときの進め方と、Cron が飛ばしたページの扱�
 空のままなら `personal-wiki` です。
 
 - 画面の左上のブランド
-- ブラウザのタブの title（`ページの title - サイト名`）と、リンクプレビューが読む title
-- MCP の server 名（`initialize` の応答の `serverInfo.name`）
+- ブラウザのタブの title（ページの URL では `ページの title - サイト名`、それ以外の URL ではサイト名だけ）
+- MCP の server の表示名（`initialize` の応答の `serverInfo.title`。`serverInfo.name` は識別子で、`personal-wiki` のまま変わりません）
 - OAuth の保護されたリソースのメタデータの `resource_name`
 - OAuth の同意画面、許可した接続の一覧、誤りの画面の上に出るブランド
 
-名前は前後の空白を除き、改行などの制御文字を含まない 40 文字以内にします。
+リンクプレビューが読む `og:title` はページの title だけで、サイト名は含みません（`og:site_name` も出しません）。
+
+名前は前後の空白を除き、40 文字以内（サロゲートペアは 1 文字）にします。
+改行などの制御文字、U+2028 と U+2029、書式文字（RTL override などの文字の向きを変える文字、ゼロ幅空白、ソフトハイフンなど）は使えません。
+絵文字の結合とペルシア語などの分かち書きに要る U+200C と U+200D だけは使えます（タグ文字を使う地域の旗は使えません）。
+`pnpm deploy:remote` はこれらを含む名前を止め、Worker も同じ規則を満たさない名前は既定の名前に戻します。
 `&` や `<` を含めても、HTML の title には文字参照にして入れます。
+
+`deploy.env` は値を引用符で囲まないと、`#` 以降を行末のコメントとして読み捨てます（`SITE_NAME=My #1 wiki` は `My`）。
+`#` を含む名前は `SITE_NAME="My #1 wiki"` のように全体を `"` で囲みます。
+囲まずに `#` を書くと、`pnpm deploy:remote` が止まります。
 
 web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名前を渡して埋め込みます。
 名前を変えたら、`pnpm deploy:remote` を実行し直します。
 実行時に API で取る方式ではないので、初回の描画から名前が出て、後から入れ替わることはありません。
 `pnpm dev` と E2E は `deploy.env` を読まず、`personal-wiki` のままです。
+シェルに `VITE_SITE_NAME` が残っていても、`pnpm dev`、E2E、web のテストはそれを使いません。
+`apps/web/.env*` に `VITE_SITE_NAME` を書いても、ビルドは使いません（`<title>` と画面と Worker の値が分かれないよう、環境変数だけで決めます）。
 
 ## ゾーンの WAF、レート制限、Bot の設定
 

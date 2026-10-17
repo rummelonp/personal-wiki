@@ -109,15 +109,34 @@ const KNOWN_KEYS = new Set([
 ]);
 const OWNER_AUTH_KEYS = ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "OWNER_EMAILS"];
 const SITE_NAME_MAX_CHARS = 40;
-const CONTROL_CHAR_PATTERN = /\p{Cc}/u;
+// packages/domain/src/site-name.ts の isValidSiteName と同じ規則。この script は node でそのまま動かす
+// ので TypeScript の domain を読めず、写している（食い違わないことは deploy-config.test.ts が確かめる）
+export const SITE_NAME_FORBIDDEN_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/u;
+const SITE_NAME_LINE_PATTERN = /^\s*(?:export\s+)?SITE_NAME\s*=(.*)$/;
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 
 /**
+ * 引用符で囲まない値の `#` は、node の parseEnv が行末のコメントとして切り捨てる（`My #1 wiki` は
+ * `My`、`C#` は `C`）。切れた値は parseEnv の結果から区別できないので、元の行で見つける。
+ * 値が `#` で始まるときは、値が空で後ろがコメントなので含めない。
+ * @param {string} envText
+ */
+function siteNameHasUnquotedHash(envText) {
+  for (const line of envText.split(/\r?\n/)) {
+    const raw = SITE_NAME_LINE_PATTERN.exec(line)?.[1]?.trim();
+    if (raw === undefined || /^["'`]/.test(raw)) continue;
+    if (raw.indexOf("#") > 0) return true;
+  }
+  return false;
+}
+
+/**
  * deploy.env の内容から、デプロイ先ごとの値を取り出す。
  * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
- * SITE_NAME が空なら siteName は undefined になり、web と Worker は既定の名前を使う。
+ * SITE_NAME が空なら siteName は undefined になり、web と Worker は既定の名前を使う。長さと使える文字の
+ * 規則に反する名前と、引用符で囲まずに # を含む名前（# 以降が黙って切れる）は problems にする。
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
  * OAUTH_KV_NAMESPACE_ID が空なら oauthKvNamespaceId は undefined になり、OAuth を閉じた構成にして警告する。
  * OAUTH_REDIRECT_URIS は、Worker が client の登録で完全一致で比べるので、正規化した形でなければ弾く。
@@ -143,12 +162,17 @@ export function readDeployValues(envText) {
   const siteName = get("SITE_NAME");
   const problems = [];
   if (siteName !== undefined) {
-    // 改行や制御文字は、HTML の title、MCP の server 名、OAuth の画面に混ざると壊れやすい
-    if (CONTROL_CHAR_PATTERN.test(siteName) || [...siteName].length > SITE_NAME_MAX_CHARS) {
+    // 改行や制御文字は、HTML の title、MCP の表示名、OAuth の画面に混ざると壊れやすい
+    if (SITE_NAME_FORBIDDEN_PATTERN.test(siteName) || [...siteName].length > SITE_NAME_MAX_CHARS) {
       problems.push(
-        `SITE_NAME は制御文字（改行を含む）を含まない ${SITE_NAME_MAX_CHARS} 文字以内にしてください`,
+        `SITE_NAME は制御文字（改行を含む）、U+2028 と U+2029、書式文字（文字の向きを変える文字やゼロ幅空白など。U+200C と U+200D は除く）を含まない ${SITE_NAME_MAX_CHARS} 文字以内にしてください`,
       );
     }
+  }
+  if (siteNameHasUnquotedHash(envText)) {
+    problems.push(
+      'SITE_NAME に # を含めるときは、値全体を "" で囲んでください（囲まないと、# 以降が行末のコメントとして読み捨てられます）',
+    );
   }
   if (hostname === undefined) problems.push("WIKI_HOSTNAME がありません");
   else if (!HOSTNAME_PATTERN.test(hostname)) {

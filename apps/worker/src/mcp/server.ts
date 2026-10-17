@@ -18,6 +18,12 @@ import { PAGE_TOOLS } from "./page-tools";
 import { SEARCH_TOOLS } from "./search-tools";
 import type { WikiTool, WikiToolContext } from "./tool";
 
+/**
+ * MCP の server の識別子。クライアントが接続を区別する名前で、サイト名（利用者が決める表示名）とは
+ * 別にして固定する。表示名は title に出す。
+ */
+const SERVER_NAME = "personal-wiki";
+
 /** tools/list に出る順。tool を足すときはここに並べる。 */
 const TOOLS: readonly WikiTool[] = [...SEARCH_TOOLS, ...PAGE_TOOLS];
 
@@ -44,7 +50,7 @@ export function createWikiMcpServer(
   siteName: string = DEFAULT_SITE_NAME,
 ): McpServer {
   const server = new McpServer(
-    { name: siteName, version: "0.0.0" },
+    { name: SERVER_NAME, title: siteName, version: "0.0.0" },
     { instructions: INSTRUCTIONS },
   );
   const called = TOOLS.filter((tool) => tool.name === calledTool);
