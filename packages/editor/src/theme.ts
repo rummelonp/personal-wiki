@@ -452,6 +452,11 @@ export const livePreviewTheme = EditorView.baseTheme({
     color: "var(--ui-color-accent)",
     textDecoration: "underline",
     cursor: "pointer",
+    // 日本語の title を「公｜開」のように字の間で折り返さず、link ごと次の行へ送る。
+    // `auto-phrase` は WebKit が解釈せず、Chromium でも link の中だけに指定すると効かない。
+    // `keep-all` は WebKit でも効き、inline のままなので、行の幅より長い link だけを
+    // 行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。
+    wordBreak: "keep-all",
   },
   // 未解決のリンクは補助の文字色にして、accent の破線でリンクであることだけを残す
   ".cm-wikilink-unresolved": {

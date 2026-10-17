@@ -516,6 +516,50 @@ describe("WikiLink and line wrapping", () => {
     expect(v.contentDOM.querySelector(".cm-lp-nobreak")).toBeNull();
   });
 
+  it.each([
+    ["日本語の target", "今日は図書館で調べた内容をまとめて、[[公開設定]]の記事に書き足した。"],
+    [
+      "日本語の label",
+      "今日は図書館で調べた内容をまとめて、[[Amazon Web Services|公開設定]]の記事に書き足した。",
+    ],
+    [
+      "解決できない target",
+      "今日は図書館で調べた内容をまとめて、[[存在しない記事]]の記事に書き足した。",
+    ],
+  ])(
+    "moves a link that fits on a line to the next line whole instead of wrapping inside it: %s",
+    (_, doc) => {
+      const v = mount(`${doc}\n\n後`);
+      placeCursor(v, v.state.doc.length);
+      const link = v.contentDOM.querySelector(".cm-wikilink");
+      if (!link || !host) throw new Error("wikilink is not rendered");
+
+      host.style.width = "3000px";
+      const natural = link.getBoundingClientRect().width;
+      const failures: string[] = [];
+      // 行の幅が link の幅に近い所から先は、link が 1 行に収まるので、その幅の間は折り返してはならない
+      for (let width = Math.ceil(natural) + 20; width <= 400; width++) {
+        host.style.width = `${width}px`;
+        if (link.getClientRects().length > 1) failures.push(`${width}px`);
+      }
+
+      expect(failures).toEqual([]);
+    },
+  );
+
+  it("still wraps a Japanese link longer than the line inside the link", () => {
+    const v = mount(`前の文 [[${"長い名前のページ".repeat(8)}]] 後の文\n\n後`);
+    placeCursor(v, v.state.doc.length);
+    const link = v.contentDOM.querySelector(".cm-wikilink");
+    if (!link || !host) throw new Error("wikilink is not rendered");
+
+    for (const width of [200, 280, 375]) {
+      host.style.width = `${width}px`;
+      expect(link.getClientRects().length).toBeGreaterThan(1);
+      expect(v.contentDOM.scrollWidth).toBeLessThanOrEqual(v.contentDOM.clientWidth);
+    }
+  });
+
   it("still wraps a label longer than the line inside the link", () => {
     const v = mount(`前 [[Note|${"a-".repeat(80)}]]）後\n\n後`);
     placeCursor(v, v.state.doc.length);
