@@ -178,13 +178,38 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     act(() => title().contentDOM.blur());
     await flushAsync();
     const hint = query(".title-hint");
-    expect(hint.textContent).toContain("空のタイトルは保存しません。");
+    expect(hint.textContent).toBe(
+      `空のタイトルは保存しません。「${"長い題".repeat(40)}」のままです。`,
+    );
     const rect = hint.getBoundingClientRect();
     expect(rect.right).toBeLessThanOrEqual(query(".note").getBoundingClientRect().right + 0.5);
+    // 省略するのは前の title だけで、末尾の「のままです。」は切らずに見せる
+    const kept = query(".title-hint [role='status'] > :nth-child(2)");
+    const tail = query(".title-hint [role='status'] > :last-child");
+    expect(kept.scrollWidth).toBeGreaterThan(kept.clientWidth + 1);
+    expect(tail.getBoundingClientRect().right).toBeLessThanOrEqual(
+      query(".title-hint [role='status']").getBoundingClientRect().right + 0.5,
+    );
     expect(rect.bottom).toBeLessThanOrEqual(
       query(".publish-bar").getBoundingClientRect().top + 0.5,
     );
     expect(gap()).toBeCloseTo(before, 0);
+    noHorizontalScroll();
+  });
+
+  it("リンクに書けない文字が多くても、案内の「リンクできません。」は切らずに見せる", async () => {
+    await browserPage.viewport(width, 800);
+    const { query, title, replace } = mountEditor();
+    await flushAsync();
+    replace(title(), "a[]|#^b\\");
+    const status = query(".title-hint [role='status']");
+    expect(status.textContent).toBe(
+      "「[」「]」「|」「#」「^」「\\」を含むタイトルには、[[ ]] でリンクできません。",
+    );
+    const tail = query(".title-hint [role='status'] > :last-child");
+    expect(tail.getBoundingClientRect().right).toBeLessThanOrEqual(
+      status.getBoundingClientRect().right + 0.5,
+    );
     noHorizontalScroll();
   });
 

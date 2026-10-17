@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type { ApiPage, OwnerApi } from "./support/api";
 import {
   bodyEditor,
@@ -22,6 +22,12 @@ const LINE = `${"a".repeat(99)}\n`;
 const titleEditor = (page: Page) => page.locator(".title-input .cm-content");
 const notice = (page: Page, title: string) =>
   page.locator(".notice").filter({ has: page.locator(".notice-title", { hasText: title }) });
+
+async function rightEdge(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error("要素の位置を取れない");
+  return box.x + box.width;
+}
 
 /** このページへの以後の PUT の数を返す関数を返す。 */
 async function countPuts(page: Page, id: string): Promise<() => number> {
@@ -221,4 +227,37 @@ test("作成済みのページで title を空にすると、欄の下で前の 
   await typeAtBodyEnd(page, "追記");
   await expect.poll(async () => (await api.getPage(created.id)).body).toBe("本文追記");
   expect((await api.getPage(created.id)).title).toBe(created.title);
+});
+
+test("長い title を空にしても、帯は前の title だけを省略して「のままです。」を見せる", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "とても長い題名".repeat(8)),
+    body: "本文",
+  });
+  await page.goto(`/p/${created.id}`);
+  await expect(saveState(page)).toHaveText("保存済み");
+  await titleEditor(page).click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Backspace");
+  const status = page.locator(".title-hint [role='status']");
+  // 読み上げる文は省略せず全文のまま
+  await expect(status).toHaveText(`空のタイトルは保存しません。「${created.title}」のままです。`);
+  const kept = status.locator(":scope > :nth-child(2)");
+  expect(await kept.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await rightEdge(status.locator(":scope > :last-child"))).toBeLessThanOrEqual(
+    (await rightEdge(status)) + 0.5,
+  );
+  await expectNoHorizontalScroll(page);
+
+  // リンクに書けない文字が多くても、「リンクできません。」は切らない
+  await page.keyboard.insertText("a[]|#^b\\");
+  await expect(status).toHaveText(
+    "「[」「]」「|」「#」「^」「\\」を含むタイトルには、[[ ]] でリンクできません。",
+  );
+  expect(await rightEdge(status.locator(":scope > :last-child"))).toBeLessThanOrEqual(
+    (await rightEdge(status)) + 0.5,
+  );
 });

@@ -1423,7 +1423,7 @@ a.segmented-option {
 }
 
 /*
- * 1 行に収め、狭い幅では左の文を省略する。長さは右に寄せて、省略されないようにする。
+ * 1 行に収め、狭い幅では左の文の可変の部分を省略する。長さは右に寄せて、省略されないようにする。
  * 高さは .title-input の下の margin と同じ token にして、その余白にちょうど収める。片方だけ変えると、
  * 案内の帯が下の公開の行に重なるか、余白から浮く
  */
@@ -1441,7 +1441,23 @@ a.segmented-option {
   white-space: nowrap;
 }
 
+/*
+ * 長さの決まらない部分（元の title、リンクに書けない文字の並び）だけを縮めて省略し、前後の文は
+ * 縮めない。文の末尾から省略すると、長い title で「のままです」まで消える。前後の文を縮み得る
+ * 状態にすると、はみ出す量が 1px でもそこに省略の記号が出るので、縮めない。
+ * 長さの数と並ぶ狭い幅で、可変の部分をなくしてもなお足りないときだけ、この要素の端で切れる。
+ */
 .title-hint-text {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.title-hint-fixed {
+  flex: none;
+}
+
+.title-hint-variable {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
