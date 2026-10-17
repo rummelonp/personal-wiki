@@ -45,6 +45,8 @@ export function EntryRow({
           title={formatTime(entry.updatedAt)}
         >
           {formatRelativeTime(entry.updatedAt, now)}
+          {/* タッチ端末と読み上げには hover の title が届かないので、絶対の日時を読み上げにだけ足す */}
+          <span className="visually-hidden">{`（${formatTime(entry.updatedAt)}）`}</span>
         </time>
       </div>
       {entry.excerpt !== undefined && entry.excerpt !== "" && (

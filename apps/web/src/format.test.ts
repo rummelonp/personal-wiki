@@ -53,6 +53,12 @@ describe("formatRelativeTime", () => {
     expect(ago(364 * DAY)).toBe("12 か月前");
   });
 
+  it("45 日（1.5 か月）で「約 1 か月」から「約 2 か月」に変わる", () => {
+    expect(ago(45 * DAY - MINUTE)).toBe("約 1 か月前");
+    expect(ago(45 * DAY)).toBe("約 2 か月前");
+    expect(ago(59 * DAY)).toBe("約 2 か月前");
+  });
+
   it("1 年からは端数で「約 n 年」「n 年以上」「n 年近く」に分ける", () => {
     expect(formatRelativeTime(at(2025, 10, 17, 12), now)).toBe("約 1 年前");
     expect(formatRelativeTime(at(2025, 6, 17, 12), now)).toBe("1 年以上前");

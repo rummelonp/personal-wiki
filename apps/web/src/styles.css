@@ -1218,7 +1218,7 @@ a.segmented-option {
 
 .skeleton-entry-time {
   flex: none;
-  width: 12%;
+  width: 7em; /* token-ok: 帯の幅は、相対の表記（「約 20 時間前」など）の字数に比例させる。画面の幅に比例させると狭い幅で表記より細くなる */
   margin-left: auto;
   font-size: var(--font-size-sm);
 }
