@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import type { LinkedDraft } from "./linked-drafts";
@@ -13,10 +13,50 @@ const OPTIONS: ReadonlyArray<{ value: Visibility; label: string }> = [
   { value: "public", label: "公開" },
 ];
 
-const PENDING_NOTES: Record<Visibility, string> = {
-  public: "公開に変更中…",
-  draft: "下書きに変更中…",
+/*
+ * 結果の知らせは、操作の右の狭い余白（375px で 90px 前後）に折り返して入る。<wbr> は、文節の切れ目に置く
+ * 折り返し位置。WebKit は文節を判定しないので、これが無いと語の途中で切れる。
+ */
+const PENDING_NOTES: Record<Visibility, ReactNode> = {
+  public: (
+    <>
+      公開に
+      <wbr />
+      変更中…
+    </>
+  ),
+  draft: (
+    <>
+      下書きに
+      <wbr />
+      変更中…
+    </>
+  ),
 };
+
+const PUBLISHED_NOTE = (
+  <>
+    公開
+    <wbr />
+    しました。
+  </>
+);
+
+const DRAFTED_NOTE = (
+  <>
+    下書きに
+    <wbr />
+    戻しました。
+  </>
+);
+
+const COPIED_NOTE = (
+  <>
+    URL をコピー
+    <wbr />
+    しました。
+  </>
+);
 
 /**
  * 手でコピーしてもらう URL。title の percent-encoding を日本語に戻して読めるようにする。
@@ -111,7 +151,7 @@ export function PublishBar({
   const [confirming, setConfirming] = useState(false);
   // null は調べている間と、調べなかったとき
   const [linkedDrafts, setLinkedDrafts] = useState<LinkedDraftsState | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<ReactNode>(null);
   const [manualUrl, setManualUrl] = useState<string | null>(null);
   const publicOption = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -146,7 +186,7 @@ export function PublishBar({
     if (previousVisibility.current === visibility) return;
     previousVisibility.current = visibility;
     if (uncreated) return;
-    setNote(visibility === "public" ? "公開しました。" : "下書きに戻しました。");
+    setNote(visibility === "public" ? PUBLISHED_NOTE : DRAFTED_NOTE);
   }, [visibility, uncreated]);
 
   // 待っている間は選択が disabled で focus できない。待ちが終わってから戻す
@@ -216,7 +256,7 @@ export function PublishBar({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setManualUrl(null);
-      setNote("URL をコピーしました。");
+      setNote(COPIED_NOTE);
     } catch {
       // 権限が無い、secure context でない、フォーカスが外れているなど。書き込めない理由は区別しない
       setManualUrl(shareUrl);

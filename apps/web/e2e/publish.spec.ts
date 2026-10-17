@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { OwnerApi } from "./support/api";
 import { expect, saveState, test, typeAtBodyEnd, uniqueTitle } from "./support/fixtures";
+import { midPhraseBreaks } from "./support/line-breaks";
 import { E2E_ORIGIN } from "./support/stack";
 
 /*
@@ -327,6 +328,42 @@ test.describe("共有の URL", () => {
     expect(after.note.bottom, "知らせは操作と同じ行").toBeLessThanOrEqual(after.button.bottom);
     expect(after.clipped, "知らせの文字は欠けない").toBe(false);
   });
+});
+
+test("公開の行の知らせは、375px でも語の途中で折り返さず、操作と同じ行に収まる", async ({
+  page,
+  api,
+}, testInfo) => {
+  // WebKit にも clipboard の権限は無いので、書き込みが成功する clipboard に差し替える
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async () => {} } });
+  });
+  await page.setViewportSize({ width: 375, height: 812 });
+  const title = uniqueTitle(testInfo, "知らせの折り返し");
+  const created = await api.createPage({ title, body: "本文" });
+  await page.goto(`/p/${created.id}`);
+  await expect(page.locator(".title-input")).toHaveText(title);
+
+  const expectPhrased = async (text: string) => {
+    await expect(notice(page)).toHaveText(text);
+    expect(await midPhraseBreaks(notice(page)), `「${text}」が語の途中で折り返している`).toEqual(
+      [],
+    );
+    const note = await notice(page).boundingBox();
+    const bar = await page.locator(".publish-bar").boundingBox();
+    expect(note?.y ?? 0, `「${text}」が公開の行の外にある`).toBeGreaterThanOrEqual(bar?.y ?? 0);
+    expect((note?.y ?? 0) + (note?.height ?? 0)).toBeLessThanOrEqual(
+      (bar?.y ?? 0) + (bar?.height ?? 0) + 1,
+    );
+  };
+
+  await option(page, "公開").click();
+  await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+  await expectPhrased("公開しました。");
+  await page.getByRole("button", { name: "URL をコピー" }).click();
+  await expectPhrased("URL をコピーしました。");
+  await option(page, "下書き").click();
+  await expectPhrased("下書きに戻しました。");
 });
 
 test("作る前のページでは、公開の操作を選べない", async ({ page }) => {

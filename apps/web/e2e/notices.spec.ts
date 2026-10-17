@@ -8,6 +8,7 @@ import {
   test,
   uniqueTitle,
 } from "./support/fixtures";
+import { midPhraseBreaks } from "./support/line-breaks";
 
 /*
  * 通知（失敗、衝突、ログイン切れ）が出入りしても、title と本文の位置は動かず、打っている行は通知に隠れない。
@@ -336,6 +337,10 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   expect((await boxOf(legend)).y, "凡例が差分より下にある").toBeLessThan(
     (await boxOf(dock(page).locator(".diff"))).y,
   );
+  // WebKit は文節を判定しないので、句読点と空白でだけ折り返す。判定する描画は文節で切るので測らない
+  if (!(await page.evaluate(() => CSS.supports("word-break", "auto-phrase")))) {
+    expect(await midPhraseBreaks(legend), "凡例が語の途中で折り返している").toEqual([]);
+  }
   // 本文を打っている最中に通知が出ても、focus は奪わない（変換中なら IME が切れる）
   await expect(bodyEditor(page)).toBeFocused();
 

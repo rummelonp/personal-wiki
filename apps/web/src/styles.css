@@ -650,6 +650,25 @@ a.segmented-option {
   flex-basis: 100%;
 }
 
+/*
+ * 知らせと凡例は短い固定の文で、区切りは句読点と空白にある。語の途中を切らないよう keep-all にし、
+ * auto-phrase を解釈する描画だけ文節で切る。WebKit は解釈しないので keep-all が残り、line-break: strict で
+ * 小さい仮名や長音を行頭に置かない。keep-all は区切りのない長い文字列も切らなくなる（body の
+ * overflow-wrap: anywhere が最後に切る）ので、利用者の入力を含む通知（.notice-text）には使わない。
+ */
+.publish-note,
+.diff-legend {
+  line-break: strict;
+  word-break: keep-all;
+}
+
+@supports (word-break: auto-phrase) {
+  .publish-note,
+  .diff-legend {
+    word-break: auto-phrase;
+  }
+}
+
 .publish-url {
   flex: 1 1 100%;
   min-height: var(--control-height);
@@ -915,7 +934,8 @@ a.segmented-option {
 /*
  * 見出しと本文は line-break: strict で、小さい仮名、長音、句読点を行頭に置かない。
  * WebKit は既定（auto）だとこれらを行頭に置き、word-break: auto-phrase も解釈しない。
- * そのため WebKit では語の途中で折り返すことが残る。
+ * そのため WebKit では語の途中で折り返すことが残る。keep-all で句読点と空白だけに絞ると、
+ * 区切りのない長い語の途中を切る折り返しが line-break: strict を無視して小さい仮名を行頭に置く。
  */
 .notice-text {
   font-size: var(--font-size-sm);
