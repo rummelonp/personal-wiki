@@ -383,6 +383,8 @@ export const livePreviewTheme = EditorView.baseTheme({
       "color-mix(in srgb, #ffd000 40%, transparent)",
       "color-mix(in srgb, #ffd000 26%, transparent)",
     ),
+    // 字の間で折り返さない理由は `.cm-wikilink` と同じ。markdown link（`.cm-md-link`）にも同じ指定がある
+    wordBreak: "keep-all",
   },
   // 背景は code block の行と同じ surface 色。文字色は変えないので、code block と同じ組み合わせで読める。
   // 等幅は構文 highlight の `t.monospace` も当てるが、mark 自身にも持たせる。記号を隠した
@@ -471,6 +473,7 @@ export const livePreviewTheme = EditorView.baseTheme({
     color: "var(--ui-color-accent)",
     textDecoration: "underline",
     cursor: "pointer",
+    wordBreak: "keep-all",
   },
   // autolink は URL 自体が可視テキストなので、色は syntax highlight（`t.url`）に残し、
   // `<a>` にしたことで乗るブラウザ既定のリンク色だけを打ち消す
