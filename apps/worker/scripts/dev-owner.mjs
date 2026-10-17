@@ -285,7 +285,8 @@ async function run(argv) {
   };
   // 秘密を含む一時ディレクトリと wrangler dev を残さない範囲:
   // - SIGINT、SIGTERM、SIGHUP の 1 回目は wrangler dev を SIGTERM で止め、5 秒で終わらなければ
-  //   SIGKILL にする。終わったら後片付けをして 0 で終える
+  //   SIGKILL にする。終わったら後片付けをして 0 で終える。wrangler dev を起動する前なら、
+  //   後片付けをして 128 + シグナルの番号で終える
   // - 2 回目はその場で SIGKILL を送り、一時ディレクトリを消して終える
   // - 例外などで process が終わるときは exit で同じ後片付けをする
   // この process 自身が SIGKILL で止められたときは何も消せない。

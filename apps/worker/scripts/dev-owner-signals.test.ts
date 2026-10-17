@@ -15,6 +15,7 @@ import { INSPECTOR_OFFSET } from "./local-dev.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./dev-owner.mjs", import.meta.url));
 const FAKE_WRANGLER = fileURLToPath(new URL("./fixtures/fake-wrangler.mjs", import.meta.url));
+const HANG_PORT_CHECK = fileURLToPath(new URL("./fixtures/hang-port-check.mjs", import.meta.url));
 
 function portInUse(port: number): Promise<boolean> {
   return new Promise((done) => {
@@ -82,12 +83,15 @@ afterEach(() => {
   runs.length = 0;
 });
 
-async function startDevOwner(env: Record<string, string> = {}): Promise<Run> {
+async function startDevOwner(
+  env: Record<string, string> = {},
+  nodeArgs: string[] = [],
+): Promise<Run> {
   const port = await freeBasePort();
   const tmp = mkdtempSync(join(tmpdir(), "dev-owner-signals-"));
   const pidFile = join(tmp, "pids.json");
   let output = "";
-  const child = spawn(process.execPath, [SCRIPT, "--port", String(port)], {
+  const child = spawn(process.execPath, [...nodeArgs, SCRIPT, "--port", String(port)], {
     env: {
       ...process.env,
       TMPDIR: tmp,
@@ -167,6 +171,22 @@ describe("dev-owner の後片付け", { timeout: 20_000 }, () => {
     expect(Date.now() - start).toBeLessThan(4000);
     await expectNothingLeft(run);
   });
+
+  it.each([
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+    ["SIGHUP", 129],
+  ] as const)(
+    "wrangler dev を起動する前の %s は 128 + シグナルの番号で終え、何も残さない",
+    async (signal, code) => {
+      const run = await startDevOwner({}, ["--import", HANG_PORT_CHECK]);
+      await until(() => run.output().includes("port check pending"), "port check");
+      run.child.kill(signal);
+      expect(await run.exited).toBe(code);
+      expect(secretDirs(run)).toEqual([]);
+      expect(existsSync(join(run.tmp, "pids.json"))).toBe(false);
+    },
+  );
 
   it("proxy を通した /api/me が owner でなければ、起動を失敗にして残さない", async () => {
     const run = await startDevOwner({ FAKE_WRANGLER_SKIP_ENV_FILE: "1" });
