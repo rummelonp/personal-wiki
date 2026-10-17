@@ -38,16 +38,41 @@ const TAG_PRECEDER = /\s/u;
  */
 const OPENING_DELIMITERS = ["**", "__", "~~", "==", "%%", "*", "_", "(", "[", "（", "「", "『"];
 
-/** `pos` が tag の始まりになれる位置か。行頭、空白の直後、または境界に置かれた開きの区切り記号の直後。 */
-function isTagBoundary(cx: InlineContext, pos: number): boolean {
-  if (pos <= cx.offset) return true;
-  if (TAG_PRECEDER.test(cx.slice(pos - 1, pos))) return true;
-  return OPENING_DELIMITERS.some(
-    (delimiter) =>
-      pos - delimiter.length >= cx.offset &&
-      cx.slice(pos - delimiter.length, pos) === delimiter &&
-      isTagBoundary(cx, pos - delimiter.length),
-  );
+/** 開きの区切り記号を構成する文字。この文字が `#` の手前に続く範囲だけが、境界の判定で遡る対象になる。 */
+const DELIMITER_CHARS = new Set(
+  OPENING_DELIMITERS.flatMap((d) => [...d].map((c) => c.charCodeAt(0))),
+);
+
+/**
+ * `pos` が tag の始まりになれる位置か。行頭、空白の直後、または境界に置かれた開きの区切り記号の直後。
+ * `guard` は inline の解析で本文の前に足す文字列で、その直後を行頭として扱う。
+ *
+ * 区切り記号の連続の先頭は、行頭か空白の直後かだけで決まる。連続の中は先頭から順に表にして、
+ * 長さに対して線形で済ませる。`**` と `*` のように重なる記号ごとに手前へ再帰すると、
+ * 連続の長さに対して呼び出しが指数的に増える。
+ */
+function isTagBoundary(cx: InlineContext, pos: number, guard: string): boolean {
+  const isStart = (at: number) =>
+    at <= cx.offset || (guard !== "" && at === guard.length && cx.slice(0, at) === guard);
+  const followsSpace = (at: number) => TAG_PRECEDER.test(cx.slice(at - 1, at));
+  if (isStart(pos) || followsSpace(pos)) return true;
+
+  let low = pos;
+  while (low > cx.offset && DELIMITER_CHARS.has(cx.char(low - 1))) low -= 1;
+  // memo[i] は位置 low + i が境界か
+  const memo = new Uint8Array(pos - low + 1);
+  memo[0] = isStart(low) || followsSpace(low) ? 1 : 0;
+  for (let at = low + 1; at <= pos; at += 1) {
+    memo[at - low] = OPENING_DELIMITERS.some(
+      (delimiter) =>
+        at - delimiter.length >= low &&
+        memo[at - delimiter.length - low] === 1 &&
+        cx.slice(at - delimiter.length, at) === delimiter,
+    )
+      ? 1
+      : 0;
+  }
+  return memo[pos - low] === 1;
 }
 
 function isTagBody(body: string): boolean {
@@ -61,41 +86,48 @@ export const tagNodes = {
 } as const;
 
 /**
- * `#tag` を inline node として解析する MarkdownConfig。
+ * `#tag` を inline node として解析する MarkdownConfig を作る。
  *
  * `WikiLink` と同じ parser インスタンスで使うことを前提にしている（`extractTags` 参照）。
  * 別々の parser にすると、`[[Title#Heading]]` の `#Heading` を WikiLink が消費する前に
  * この Tag ルールが単独の tag として拾ってしまう。
+ *
+ * `guard` は、解析する文字列の先頭に block の記法を無効にするために足した文字列。
+ * その直後を行頭として扱い、足していない本文と同じ位置で tag になるようにする。
  */
-export const Tag: MarkdownConfig = {
-  defineNodes: [
-    { name: tagNodes.tag, style: highlightTags.labelName },
-    { name: tagNodes.mark, style: highlightTags.processingInstruction },
-    { name: tagNodes.name, style: highlightTags.labelName },
-  ],
-  parseInline: [
-    {
-      name: tagNodes.tag,
-      parse(cx, next, pos) {
-        if (next !== HASH) return -1;
-        // 裸の URL の `#section` や `foo#bar` を拾わない。
-        if (!isTagBoundary(cx, pos)) return -1;
-        TAG_BODY.lastIndex = 0;
-        const match = TAG_BODY.exec(cx.slice(pos + 1, cx.end));
-        if (!match || !HAS_LETTER.test(match[0])) return -1;
-        // `#tag/` のように `/` が残る形は、Obsidian の挙動を確かめられないので tag にしない。
-        if (cx.char(pos + 1 + match[0].length) === SLASH) return -1;
+export function createTag(guard = ""): MarkdownConfig {
+  return {
+    defineNodes: [
+      { name: tagNodes.tag, style: highlightTags.labelName },
+      { name: tagNodes.mark, style: highlightTags.processingInstruction },
+      { name: tagNodes.name, style: highlightTags.labelName },
+    ],
+    parseInline: [
+      {
+        name: tagNodes.tag,
+        parse(cx, next, pos) {
+          if (next !== HASH) return -1;
+          // 裸の URL の `#section` や `foo#bar` を拾わない。
+          if (!isTagBoundary(cx, pos, guard)) return -1;
+          TAG_BODY.lastIndex = 0;
+          const match = TAG_BODY.exec(cx.slice(pos + 1, cx.end));
+          if (!match || !HAS_LETTER.test(match[0])) return -1;
+          // `#tag/` のように `/` が残る形は、Obsidian の挙動を確かめられないので tag にしない。
+          if (cx.char(pos + 1 + match[0].length) === SLASH) return -1;
 
-        const nameEnd = pos + 1 + match[0].length;
-        const children = [
-          cx.elt(tagNodes.mark, pos, pos + 1),
-          cx.elt(tagNodes.name, pos + 1, nameEnd),
-        ];
-        return cx.addElement(cx.elt(tagNodes.tag, pos, nameEnd, children));
+          const nameEnd = pos + 1 + match[0].length;
+          const children = [
+            cx.elt(tagNodes.mark, pos, pos + 1),
+            cx.elt(tagNodes.name, pos + 1, nameEnd),
+          ];
+          return cx.addElement(cx.elt(tagNodes.tag, pos, nameEnd, children));
+        },
       },
-    },
-  ],
-};
+    ],
+  };
+}
+
+export const Tag = createTag();
 
 const tagParser = parser.configure([Frontmatter, WikiLink, Tag]);
 

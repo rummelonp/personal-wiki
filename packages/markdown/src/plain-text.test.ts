@@ -388,4 +388,22 @@ describe("extractPlainText inline", () => {
     expect(inline("  **太字** と [[ページ|別名]] と %%メモ%%")).toBe("太字 と 別名 と");
     expect(inline("")).toBe("");
   });
+
+  it("本文に置いたときと同じ位置を tag にする", () => {
+    const withoutTags = (markdown: string) =>
+      extractPlainTextParts(markdown, { inline: true }).textWithoutTrailingTags;
+    expect(withoutTags("#a")).toBe("");
+    expect(withoutTags("x #a")).toBe("x");
+    expect(withoutTags("x#a")).toBe("x#a");
+    expect(withoutTags("(#a) b")).toBe("(#a) b");
+  });
+
+  it("区切り記号が長く続いた後の # も、線形の時間で判定する", () => {
+    const started = Date.now();
+    for (const delimiter of ["*", "_"]) {
+      const markdown = `${delimiter.repeat(100000)}#a`;
+      expect(inline(markdown)).toBe(markdown);
+    }
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
 });

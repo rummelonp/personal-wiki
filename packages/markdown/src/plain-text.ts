@@ -4,7 +4,7 @@ import { blockIdNodes } from "./block-id";
 import { commentNodes } from "./comment";
 import { BODY_EXTENSIONS } from "./display-parser";
 import { Frontmatter, frontmatterEnd, frontmatterNodes } from "./frontmatter";
-import { Tag, tagNodes } from "./tag";
+import { createTag, Tag, tagNodes } from "./tag";
 import { isEmbedWikiLink, wikiLinkNodes } from "./wikilink";
 
 /** 記号だけの node。中身を持たないので、node を落とせば記法が消えて前後の文字がつながる。 */
@@ -45,6 +45,11 @@ const DROPPED_NODES = new Set([
 // 入れる必要がある（`[[T#H]]` の `#H` を WikiLink より先に拾わないため）。
 const plainTextParser = parser.configure([Frontmatter, ...BODY_EXTENSIONS, Tag]);
 const plainTextFragmentParser = parser.configure([...BODY_EXTENSIONS, Tag]);
+
+// 先頭に置いて block の記法を無効にする。空白と見なされず、行頭の記号の判定に当たらない文字を選ぶ
+const INLINE_GUARD = "\u200b";
+// guard の直後を行頭として扱い、本文の中にあるときと同じ位置で tag にする（本文の解析とそろえる）
+const plainTextInlineParser = parser.configure([...BODY_EXTENSIONS, createTag(INLINE_GUARD)]);
 
 interface Edit {
   readonly from: number;
@@ -93,9 +98,6 @@ interface ExtractPlainTextOptions {
    */
   readonly inline?: boolean;
 }
-
-// 先頭に置いて block の記法を無効にする。空白と見なされず、行頭の記号の判定に当たらない文字を選ぶ
-const INLINE_GUARD = "\u200b";
 
 /**
  * Markdown の本文を、記法を除いた 1 行の plain text にする。検索結果の抜粋と全文検索の索引の元になる。
@@ -152,7 +154,12 @@ function plainTextParts(markdown: string, options: ExtractPlainTextOptions): Pla
     options.truncated === true ? withoutTruncationDebris(markdown, fragment) : markdown;
   if (source === null) return { text: "", textWithoutTrailingTags: "" };
 
-  const markdownParser = fragment ? plainTextFragmentParser : plainTextParser;
+  const markdownParser =
+    options.inline === true
+      ? plainTextInlineParser
+      : fragment
+        ? plainTextFragmentParser
+        : plainTextParser;
   let readable = source;
   let tree = markdownParser.parse(readable);
   if (fragment && !startsWithTable(tree)) {

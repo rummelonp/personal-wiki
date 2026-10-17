@@ -148,6 +148,40 @@ describe("extractTags の境界", () => {
   });
 });
 
+describe("extractTags の境界の判定量", () => {
+  // 手前へ再帰する素朴な定義。`#` の直前の文字列だけで決まる境界の判定の基準にする
+  const OPENERS = ["**", "__", "~~", "==", "%%", "*", "_", "(", "[", "（", "「", "『"];
+  const naiveBoundary = (before: string): boolean =>
+    before === "" ||
+    /\s$/u.test(before) ||
+    OPENERS.some((o) => before.endsWith(o) && naiveBoundary(before.slice(0, -o.length)));
+
+  it("区切り記号の組み合わせで、素朴な定義と同じ位置で tag にする", () => {
+    const alphabet = ["a", " ", "*", "_", "~", "=", "%", "(", "["];
+    const cases: string[] = [""];
+    for (let length = 1; length <= 4; length += 1) {
+      for (const prefix of cases.filter((c) => c.length === length - 1)) {
+        for (const c of alphabet) cases.push(prefix + c);
+      }
+    }
+    // 字下げの code block、水平線、code fence になる行頭は block の話なので除く
+    const isBlockStart = (c: string) => /^(?: {4}| {0,3}([*_~])\1\1)/.test(c);
+    for (const prefix of cases.filter((c) => !isBlockStart(c))) {
+      expect(extractTags(`${prefix}#t`), JSON.stringify(prefix)).toEqual(
+        naiveBoundary(prefix) ? ["t"] : [],
+      );
+    }
+  });
+
+  it.each([60, 5000, 200000])("区切り記号が %i 個続いても、線形の時間で判定する", (count) => {
+    const started = Date.now();
+    expect(extractTags(`x${"*".repeat(count)}#a`)).toEqual([]);
+    expect(extractTags(`x${"_".repeat(count)}#a`)).toEqual([]);
+    expect(extractTags(`x ${"*".repeat(count)}#a`)).toEqual(["a"]);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
 describe("frontmatterTagName", () => {
   it.each(["仕事", "foo/bar", "a-b_c", "y1984", "2026/q4"])(
     "tag として読める値を返す: %s",
