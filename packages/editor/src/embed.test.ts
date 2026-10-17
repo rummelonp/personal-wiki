@@ -1332,6 +1332,42 @@ describe("edit button", () => {
     expect(v.state.selection.main.head).toBe(doc.indexOf("]]"));
   });
 
+  // 名前が短い embed は widget が狭く、ボタンの幅がその幅までに切り詰められて「記…」になる
+  it.each([
+    ["page unresolved", "![[a]]", { resolvePageEmbed: () => ({ kind: "unresolved" as const }) }],
+    ["page loading", "![[a]]", { resolvePageEmbed: () => ({ kind: "loading" as const }) }],
+    ["page self", "![[a]]", { resolvePageEmbed: () => ({ kind: "self" as const }) }],
+    ["image unresolved", "![[a.png]]", { resolveAttachmentUrl: () => null }],
+    ["video unresolved", "![[a.webm]]", { resolveAttachmentUrl: () => null }],
+  ] satisfies [string, string, CreateEditorOptions][])(
+    "does not clip the button label of a short %s name",
+    (_label, doc, options) => {
+      const v = mount(doc, options);
+      const button = v.contentDOM.querySelector<HTMLElement>(".cm-embed-edit");
+      if (!button) throw new Error("edit button is not drawn");
+      expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
+    },
+  );
+
+  it("does not clip the button label of a long name either", () => {
+    const v = mount("![[とても長い名前の存在しないページ]]", {
+      resolvePageEmbed: () => ({ kind: "unresolved" }),
+    });
+    const button = editButtonOf(v, "とても長い名前の存在しないページ");
+    if (!button) throw new Error("edit button is not drawn");
+    expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
+  });
+
+  it("does not reserve the button width for a short name in a readOnly view", () => {
+    const v = mount("前 ![[a]] 後", {
+      resolvePageEmbed: () => ({ kind: "unresolved" }),
+      readOnly: true,
+    });
+    const embed = embedOf(v, "a");
+    if (!embed) throw new Error("embed is not drawn");
+    expect(getComputedStyle(embed).minWidth).toBe("0px");
+  });
+
   it("does not show the button in a readOnly view", () => {
     const v = mount("![[image.png]]", { readOnly: true });
     expect(editButtonOf(v, "image.png")).toBeNull();

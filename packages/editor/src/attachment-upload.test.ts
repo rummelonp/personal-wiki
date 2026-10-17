@@ -12,6 +12,10 @@ import {
 } from "./attachment-upload";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 
+// 1x1 の透明な PNG。読み込みに失敗して未解決の表示に替わらない
+const PIXEL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
 /** サーバーが振る添付の名前（packages/domain の規則と同じ形） */
 const SERVER_ATTACHMENT_NAME = /^[A-Za-z0-9_-]{22}\.(png|jpg|gif|webp|avif)$/;
 
@@ -217,6 +221,45 @@ describe("attachmentUpload", () => {
     expect(v.contentDOM.querySelector(".cm-embed-source")?.textContent).toBe(
       v.state.doc.toString(),
     );
+  });
+
+  // source を出している間は、描いていた widget を残す。仮の記法を描いていた「添付中」の widget を
+  // 完了後も残すと、本物の画像に変わらない
+  it("swaps the progress label for the attachment when the upload finishes under the caret", async () => {
+    let finish: (filename: string) => void = () => {};
+    const upload: UploadAttachment = () =>
+      new Promise((resolve) => {
+        finish = (filename) => resolve({ filename });
+      });
+    const v = mountWithOptions({
+      onUploadAttachment: upload,
+      resolveAttachmentUrl: () => PIXEL,
+    });
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+    v.focus();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    expect(v.contentDOM.querySelector(".cm-embed-source")).not.toBeNull();
+    expect(v.contentDOM.querySelector(".cm-embed-uploading")).not.toBeNull();
+
+    finish("DONE.png");
+
+    await vi.waitFor(() => expect(v.state.doc.toString()).toBe("![[DONE.png]]"));
+    expect(v.contentDOM.querySelector(".cm-embed-uploading")).toBeNull();
+    expect(v.contentDOM.querySelector('[data-embed-target="DONE.png"] img')).not.toBeNull();
+  });
+
+  it("keeps the progress label while the placeholder is edited and the upload is still running", () => {
+    const upload: UploadAttachment = () => new Promise(() => {});
+    const v = mountWithOptions({ onUploadAttachment: upload, resolveAttachmentUrl: () => null });
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+    v.focus();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+
+    v.dispatch({ changes: { from: v.state.doc.length - 2, insert: " " } });
+
+    expect(v.contentDOM.querySelector(".cm-embed-uploading")).not.toBeNull();
   });
 
   it("draws an embed whose name only resembles the placeholder as a normal image", () => {

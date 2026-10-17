@@ -710,7 +710,11 @@ function placeEmbed(
   // 記法を書き換えている間は、描いていた widget をそのまま使う。書きかけの記法で取得や読み込みを
   // 起こさず、embed の高さも変えない。記法が同じなら組み直し、取得の完了を映す
   // （内容が同じなら eq で DOM は変わらない）。
-  const widget = widgetSources.get(drawn) === source ? createWidget() : drawn;
+  // アップロードが済んだ「添付中」の widget は書きかけの記法ではなく古い表示なので、使い回さない。
+  // 使い回すと、caret が記法の上にあるまま完了したとき、添付の画像に替わらない。
+  const finishedUpload =
+    drawn instanceof UploadingEmbedWidget && !isUploadingTarget(state, drawn.target);
+  const widget = widgetSources.get(drawn) === source || finishedUpload ? createWidget() : drawn;
   // side を負にし、記法の直後に打った文字を widget の後ろに置く。正だと文字は widget の前、
   // つまり重ねた記法の真下に入り、変換中の文字が記法に隠れる（ページ embed なら行も増える）。
   decorations.push(Decoration.widget({ widget, side: -1 }).range(to));
@@ -858,6 +862,14 @@ const embedTheme = EditorView.baseTheme({
     opacity: "0",
     pointerEvents: "none",
   },
+  // 文字だけの widget（未解決、取得中、自分自身）は名前が短いと、絶対配置のボタンが widget の幅までに
+  // 切り詰められる。ボタンの幅（5 字、padding、border、margin）の分だけ widget の幅を確保する。
+  // inline のままだと min-width が効かない。ボタンの無い view（readOnly）では幅を取らない。
+  ".cm-embed:has(> .cm-embed-unresolved):has(> .cm-embed-edit), .cm-embed:has(> .cm-embed-page-pending):has(> .cm-embed-edit), .cm-embed:has(> .cm-embed-page-self):has(> .cm-embed-edit)":
+    {
+      display: "inline-block",
+      minWidth: "calc(4.5em + 6px)",
+    },
   // ページ embed のタイトル行に置くボタンだけは重ねない（下の `.cm-embed-page-header` 参照）。
   // position: static はタイトル行の flex の中で通常のアイテムとして並ぶことを意味する。
   ".cm-embed-page-header > .cm-embed-edit": { position: "static" },
