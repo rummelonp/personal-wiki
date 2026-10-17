@@ -122,6 +122,19 @@ describe("WikiLink decoration", () => {
   });
 });
 
+// `\r` は state が改行に直すので editor の解析には届かない。届くのは U+2028 と U+2029 だけ
+describe("WikiLink with a line terminator inside", () => {
+  it.each(["\u2028", "\u2029"])("leaves a link containing %j as plain text", (terminator) => {
+    const doc = `前 [[a#b${terminator}c]] [[a^b${terminator}c]] [[ok]]`;
+    const v = mount(doc);
+    expect(v.state.doc.toString()).toBe(doc);
+    const targets = [...v.contentDOM.querySelectorAll("[data-wikilink-target]")].map((el) =>
+      el.getAttribute("data-wikilink-target"),
+    );
+    expect(targets).toEqual(["ok"]);
+  });
+});
+
 describe("unresolved link styling", () => {
   function mountWithResolver(doc: string, resolve: (target: string) => boolean): EditorView {
     host = document.createElement("div");

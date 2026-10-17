@@ -19,6 +19,12 @@ const BRACKET_OPEN = 91;
 const BRACKET_CLOSE = 93;
 const NEWLINE = 10;
 
+// target は page の title で、title は 1 行に正規化される（domain の singleLineTitle）ので、
+// これらの文字を含む target は存在しない。`\n` と同じく、どの部分にあっても link にしない。
+// heading と block id にも使えなくなる。これらの文字を含む見出しへは link できない。
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+const MARKER = /[#^]/;
+
 type LabelSeparator = "|" | "\\|";
 
 /**
@@ -45,20 +51,19 @@ interface ParsedContent {
 }
 
 function parseContent(content: string): ParsedContent | null {
-  if (content.includes("[") || content.includes("]") || content.includes("\n")) return null;
+  if (content.includes("[") || content.includes("]") || LINE_TERMINATOR.test(content)) return null;
   const separator = findLabelSeparator(content);
   const rawTarget = separator === null ? content : content.slice(0, separator.from);
   const label = separator === null ? "" : content.slice(separator.to).trim();
 
-  // rawTarget は #/^ を含まない先頭部分に必ずマッチするので match は常に非 null。
-  const match = /^([^#^]*)(?:([#^])(.*))?$/.exec(rawTarget) as RegExpExecArray;
-  const rawName = match[1] ?? "";
+  const markerIndex = rawTarget.search(MARKER);
+  const rawName = markerIndex < 0 ? rawTarget : rawTarget.slice(0, markerIndex);
   const target = rawName.trim();
   const from = rawName.length - rawName.trimStart().length;
   const targetSpan = { from, to: from + target.length };
 
-  const marker = match[2];
-  const restTrimmed = (match[3] ?? "").trim();
+  const marker = markerIndex < 0 ? undefined : rawTarget[markerIndex];
+  const restTrimmed = (markerIndex < 0 ? "" : rawTarget.slice(markerIndex + 1)).trim();
   const heading = marker === "#" && restTrimmed.length > 0 ? restTrimmed : null;
   const blockId = marker === "^" && restTrimmed.length > 0 ? restTrimmed : null;
   // target を省けるのは、同じ page の見出しと block を指す `[[#見出し]]` と `[[#^id]]` だけ。

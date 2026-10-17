@@ -15,7 +15,18 @@ const refs = (text: string) =>
     slice: text.slice(ref.from, ref.to),
   }));
 
+const LINE_TERMINATORS = ["\n", "\r", "\u2028", "\u2029"] as const;
+
 describe("extractWikiLinks", () => {
+  it.each(LINE_TERMINATORS)("does not treat a link containing %j as a link", (terminator) => {
+    expect(refs(`[[a#b${terminator}c]]`)).toEqual([]);
+    expect(refs(`[[a^b${terminator}c]]`)).toEqual([]);
+    expect(refs(`[[a${terminator}b]]`)).toEqual([]);
+    expect(refs(`[[a|b${terminator}c]] [[ok]]`)).toEqual([
+      { target: "ok", label: null, slice: "[[ok]]" },
+    ]);
+  });
+
   it("parses [[Title]]", () => {
     expect(refs("see [[Title]] here")).toEqual([
       { target: "Title", label: null, slice: "[[Title]]" },
@@ -214,6 +225,20 @@ describe("extractWikiLinks", () => {
 });
 
 describe("splitWikiLinkContent", () => {
+  it.each(LINE_TERMINATORS)("returns null for content with %j in any part", (terminator) => {
+    for (const content of [
+      `a${terminator}b`,
+      `a#b${terminator}c`,
+      `a^b${terminator}c`,
+      `#h${terminator}`,
+      `a|b${terminator}c`,
+      `a${terminator}|b`,
+      `a\\|b${terminator}c`,
+    ]) {
+      expect(splitWikiLinkContent(content)).toBeNull();
+    }
+  });
+
   it("returns null for content that cannot form a link", () => {
     expect(splitWikiLinkContent("")).toBeNull();
     expect(splitWikiLinkContent("a[b")).toBeNull();
@@ -292,6 +317,11 @@ describe("wikiLinkTargetSpan", () => {
     expect(wikiLinkTargetSpan("a[b")).toBeNull();
     expect(wikiLinkTargetSpan("a]b")).toBeNull();
     expect(wikiLinkTargetSpan("a\nb")).toBeNull();
+  });
+
+  it.each(LINE_TERMINATORS)("returns null for content with %j", (terminator) => {
+    expect(wikiLinkTargetSpan(`a#b${terminator}c`)).toBeNull();
+    expect(wikiLinkTargetSpan(`a${terminator}b`)).toBeNull();
   });
 
   it("agrees with the target of splitWikiLinkContent", () => {
