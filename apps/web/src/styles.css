@@ -1370,7 +1370,7 @@ a.segmented-option {
 }
 
 /*
- * チップの帯。高さは本物の .chips の 1 段と同じにする（狭い幅では、タップの箱の高さ）。
+ * チップの帯。高さは本物の .chips の 1 段と同じにする（指で押す端末では、タップの箱の高さ）。
  * 本物の段は、チップの高さでなく、チップを入れる li の行の高さ（行の文字の大きさ × 行高）になる。
  */
 .skeleton-entry-chips {
@@ -2157,11 +2157,11 @@ a.segmented-option {
     margin-bottom: var(--space-2);
   }
 
-  /* チップの帯も、本物の .chips と同じ高さと詰め方にする（箱は 44px で、抜粋の下に食い込む） */
+  /*
+   * チップの帯も、本物の .chips と同じ高さと詰め方にする（箱は 44px で、抜粋の下に食い込む）。
+   * --pill-height と --pill-inset は .chips と共有する（下の規則）
+   */
   .skeleton-entry-chips {
-    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
-    --pill-inset: calc((var(--tap-size) - var(--pill-height)) / 2);
-
     height: var(--tap-size);
     margin-top: calc(-1 * var(--pill-inset));
   }
@@ -2199,14 +2199,18 @@ a.segmented-option {
     margin-bottom: var(--space-2);
   }
 
+  /* チップの見た目の高さと、44px にするための上下の足し分。スケルトンの帯も同じ式を使う */
+  .chips,
+  .skeleton-entry-chips {
+    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
+    --pill-inset: calc((var(--tap-size) - var(--pill-height)) / 2);
+  }
+
   /*
    * チップの見た目（背景）は文字の周りの padding までで止め、透明な border で高さを 44px にする。
    * 段が折り返しても、隣の段の当たり判定と重ならない。
    */
   .chips {
-    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
-    --pill-inset: calc((var(--tap-size) - var(--pill-height)) / 2);
-
     row-gap: 0;
   }
 

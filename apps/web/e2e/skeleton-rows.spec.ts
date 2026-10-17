@@ -94,10 +94,7 @@ for (const [name, shape, tagged] of [
 
       expect(actual.length, `${label}: 比べる行が足りない`).toBeGreaterThanOrEqual(skeleton.length);
       skeleton.forEach((top, i) => {
-        expect(
-          Math.abs((actual[i] ?? 0) - top),
-          `${label}: ${i + 1} 行目の上端（スケルトン ${top}、本物 ${actual[i]}）`,
-        ).toBeLessThanOrEqual(2);
+        expect(actual[i], `${label}: ${i + 1} 行目の上端（スケルトン ${top}）`).toBeCloseTo(top, 0);
       });
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
