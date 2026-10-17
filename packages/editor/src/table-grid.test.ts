@@ -295,7 +295,7 @@ describe("table grid", () => {
     });
 
     it("keeps the indent of a table inside a list item and still fits the column", async () => {
-      // 字下げの空白は flex の行の中で mark に包まないと描かれず、表が左端へ寄る
+      // インデントの空白は flex の行の中で mark に包まないと描かれず、表が左端へ寄る
       const nested = NARROW_TABLE.split("\n")
         .map((line) => `  ${line}`)
         .join("\n");

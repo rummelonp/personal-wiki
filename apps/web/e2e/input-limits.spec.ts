@@ -99,7 +99,7 @@ test("上限を超えたまま画面を離れると送らずに退避し、開�
   await typeAtBodyEnd(page, "cccc");
   await expect(saveState(page)).toHaveText("保存できません");
 
-  // アプリの中で離れる。文書ごと移ると、閉じる間の要求が数える前に取り消されることがある
+  // アプリの中で離れる。文書ごと移ると、閉じる間のリクエストが数える前に取り消されることがある
   await page.getByRole("link", { name: "personal-wiki" }).click();
   await expect(page.locator(".entries .entry").first()).toBeVisible();
   await page.waitForTimeout(500);

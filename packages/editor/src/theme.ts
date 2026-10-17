@@ -294,7 +294,7 @@ export const livePreviewTheme = EditorView.baseTheme({
     borderBottomRightRadius: CODE_BLOCK_RADIUS,
   },
   // 言語名のラベル（隠した開きフェンスの行）。流れの外に置いて行の右端に寄せる。流れの中で
-  // 右寄せにすると、同じ行の前にある字下げや箇条書きの「•」まで右へ寄る。
+  // 右寄せにすると、同じ行の前にあるインデントや箇条書きの「•」まで右へ寄る。
   ".cm-line.cm-lp-code-open-fence": { position: "relative" },
   ".cm-lp-code-language": {
     position: "absolute",
@@ -309,7 +309,7 @@ export const livePreviewTheme = EditorView.baseTheme({
     // 本文の色へ 2 割寄せ、補助の文字に見える濃さで足りさせる
     color: "color-mix(in srgb, var(--ui-color-muted) 80%, var(--ui-color-text))",
     userSelect: "none",
-    // 流れの外にあるので行の中身に押し返されず、長い言語名が行の左の字下げや「•」に重なるため、幅に上限を付ける
+    // 流れの外にあるので行の中身に押し返されず、長い言語名が行の左のインデントや「•」に重なるため、幅に上限を付ける
     maxWidth: "50%",
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -334,8 +334,8 @@ export const livePreviewTheme = EditorView.baseTheme({
       borderBottomRightRadius: `${CODE_BLOCK_RADIUS} calc(${CODE_BLOCK_RADIUS} + ${CODE_BLOCK_GAP})`,
     },
   },
-  // 折り返した行を行頭の字下げにそろえる（code-block.ts の indentLine）。list と同じ理由で hanging にする。
-  // 字下げが行の半分を越える行は半分で止める。そろえると、折り返した行が狭い幅で右へはみ出す。
+  // 折り返した行を行頭のインデントにそろえる（code-block.ts の indentLine）。list と同じ理由で hanging にする。
+  // インデントが行の半分を越える行は半分で止める。そろえると、折り返した行が狭い幅で右へはみ出す。
   ".cm-line.cm-lp-code-indent": { textIndent: "min(var(--cm-lp-code-indent), 50%) hanging" },
   ".cm-line.cm-lp-code-indent *": { textIndent: "0" },
   // forced-colors では地の色が Canvas に揃えられ、フェンスを隠したブロックの範囲が見えなくなるので線で示す
@@ -528,7 +528,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   // 列の幅は table.ts の fitExpression が組む上限（`--cm-lp-table-fit`）まで詰め、長いセルは列の中で
   // 折り返す。行を flex にするのは、折り返して高くなったセルに同じ行のセルの高さをそろえ、下の線を
   // 一直線にするため（inline-block のままだと短いセルの下の線が 1 行目の高さで止まる）。flex の行は
-  // セルを次の表示行へ送らない。`--cm-lp-table-available` は行頭の字下げ、セルの padding と線を除いた、
+  // セルを次の表示行へ送らない。`--cm-lp-table-available` は行頭のインデント、セルの padding と線を除いた、
   // 列に配れる幅で、`100%` は使う側（セル）の包含ブロック、つまり行の幅で解ける。
   ".cm-line.cm-lp-table-row": {
     display: "flex",

@@ -124,8 +124,8 @@ export function QuickSwitcher({
  * 取得が済む前の「一致なし」や「作成」を見せないので、待っていることはここで伝える。
  */
 function PendingCandidates() {
-  // 一覧や本文の帯とは別の待ちなので、帯を描いた記録を共有する useSkeletonPainted は使わない。
-  // 共有すると、一覧の帯が出ている最中に開いたときに遅れなしで文字が出る
+  // 一覧や本文のスケルトンとは別の待ちなので、スケルトンを描いた記録を共有する useSkeletonPainted は使わない。
+  // 共有すると、一覧のスケルトンが出ている最中に開いたときに遅れなしで文字が出る
   const painted = useDelayedWhile(true);
   // 開いた描画と同じ更新で中身を入れた status は読まれないので、文字は後の frame で入れる
   const announced = useAfterFrames();
@@ -168,7 +168,7 @@ function SwitcherBody({
   // status が案内なしで描画された後か。その後に出た案内は、空で置いた status への変化として伝わる
   const [statusEmptied, setStatusEmptied] = useState(false);
 
-  // 取り直しが始まったことを、最初の描画の前に反映する。前の失敗が残った索引で開き直すと、
+  // 取り直しが始まったことを、最初の描画の前に反映する。前の失敗が残ったインデックスで開き直すと、
   // 取り直しの間も失敗の案内が一瞬出てしまう
   useLayoutEffect(() => {
     let cancelled = false;

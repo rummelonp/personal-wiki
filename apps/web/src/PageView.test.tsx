@@ -122,7 +122,7 @@ describe("PageView の取得中の title", () => {
     expect(container?.querySelector(".note[aria-busy='true']")).not.toBeNull();
   });
 
-  it("id で開くとき、覚えていなければ title の帯を出す", async () => {
+  it("id で開くとき、覚えていなければ title のスケルトンを出す", async () => {
     await render({ by: "id", id: PAGE.id });
     expect(noteTitle()).toBe("");
     expect(container?.querySelector(".note-title .skeleton")).not.toBeNull();

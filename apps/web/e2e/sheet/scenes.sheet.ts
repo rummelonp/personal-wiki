@@ -209,7 +209,7 @@ const SCENES: Scene[] = [
     state: "存在しないページ",
     role: "anonymous",
     async show({ page }) {
-      // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことは応答で待つ
+      // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことはレスポンスで待つ
       const backlinks = page.waitForResponse((res) =>
         res.url().includes("/api/pages/by-title/backlinks"),
       );

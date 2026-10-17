@@ -249,7 +249,7 @@ describe("POST /api/admin/derived/rebuild", () => {
 
 describe("rows_written の記録", () => {
   // 20KB 程度の本文、links 20、tags 10。値は miniflare のもので、本番の課金値と一致する保証はない。
-  // miniflare は pages_fts への 1 文を 1 行と数え、FTS5 の影の表への書き込みを含めない
+  // miniflare は pages_fts への 1 文を 1 行と数え、FTS5 の影のテーブルへの書き込みを含めない
   function largeBody(seed: string, linkPrefix: string, tagPrefix: string) {
     const links = Array.from({ length: 20 }, (_, i) => `[[${linkPrefix}${i}]]`).join(" ");
     const tags = Array.from({ length: 10 }, (_, i) => `#${tagPrefix}${i}`).join(" ");

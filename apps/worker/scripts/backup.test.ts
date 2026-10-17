@@ -31,7 +31,7 @@ import {
 
 const MIGRATIONS_DIR = new URL("../migrations/", import.meta.url);
 const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR).sort();
-/** attachments の表を足す前の migration */
+/** attachments のテーブルを足す前の migration */
 const BEFORE_ATTACHMENTS = MIGRATION_FILES.filter((f) => f < "0006_attachments.sql");
 
 const tmpDirs: string[] = [];
@@ -176,7 +176,7 @@ describe("parseArgs", () => {
   });
 });
 
-describe("ダンプする表", () => {
+describe("ダンプするテーブル", () => {
   it("既定は pages、revisions、attachments で、api_tokens は --with-tokens でだけ足す", () => {
     expect(tablesToDump(false, MIGRATION_FILES)).toEqual(["pages", "revisions", "attachments"]);
     expect(tablesToDump(true, MIGRATION_FILES)).toEqual([
@@ -191,7 +191,7 @@ describe("ダンプする表", () => {
     expect(TOKEN_TABLES).toEqual(["api_tokens"]);
   });
 
-  it("表を作る migration が一覧に無ければ、その表をダンプしない", () => {
+  it("テーブルを作る migration が一覧に無ければ、そのテーブルをダンプしない", () => {
     expect(tablesToDump(false, BEFORE_ATTACHMENTS)).toEqual(["pages", "revisions"]);
     expect(tablesToDump(true, BEFORE_ATTACHMENTS)).toEqual(["pages", "revisions", "api_tokens"]);
     for (const [table, migration] of Object.entries(TABLE_MIGRATIONS)) {
@@ -204,7 +204,7 @@ describe("ダンプする表", () => {
     }
   });
 
-  it("migration を適用した DB の表は、ダンプするか除外するかのどちらかに分類されている", () => {
+  it("migration を適用した DB のテーブルは、ダンプするか除外するかのどちらかに分類されている", () => {
     const db = migratedDb();
     const tables = db
       .prepare(
@@ -278,7 +278,7 @@ describe("wrangler への引数", () => {
     expect(() => selectSql("revisions", ["x'; DROP", 3])).toThrow("not a hex string");
   });
 
-  it("行数の SQL は表ごとの SELECT を UNION ALL でつなぐ", () => {
+  it("行数の SQL はテーブルごとの SELECT を UNION ALL でつなぐ", () => {
     expect(countSql(["pages", "revisions"])).toBe(
       "SELECT 'pages' AS t, count(*) AS n FROM \"pages\" UNION ALL SELECT 'revisions' AS t, count(*) AS n FROM \"revisions\"",
     );
@@ -523,7 +523,7 @@ describe("backup と load の往復", () => {
   });
 });
 
-describe("attachments の表を足す前の D1", () => {
+describe("attachments のテーブルを足す前の D1", () => {
   const args = (dir: string) => ({ command: "load", remote: false, dir }) as const;
 
   function backedUpBeforeAttachments() {
@@ -554,7 +554,7 @@ describe("attachments の表を足す前の D1", () => {
     }
   });
 
-  it("復元先の attachments に行があれば、manifest に無い表でも拒否する", () => {
+  it("復元先の attachments に行があれば、manifest に無いテーブルでも拒否する", () => {
     const { result } = backedUpBeforeAttachments();
     const dest = migratedDb();
     dest.exec(
@@ -710,7 +710,7 @@ describe("load の検証", () => {
   }
   const args = (dir: string) => ({ command: "load", remote: false, dir }) as const;
 
-  it("対象の表に行があれば、何も流さずに拒否する", () => {
+  it("対象のテーブルに行があれば、何も流さずに拒否する", () => {
     const dir = backedUp();
     const dest = migratedDb();
     seedPage(dest, { id: "zzzzzzzzzzzzzzzzzzzzzz", title: "z", body: "z" });
@@ -847,8 +847,8 @@ describe("parseManifest", () => {
     tables: { ...valid.tables, attachments: { rows: 0, sha256: sha } },
   };
 
-  it("許可した表だけの manifest を通す", () => {
-    // attachments の表を足す前に取ったバックアップも load できる
+  it("許可したテーブルだけの manifest を通す", () => {
+    // attachments のテーブルを足す前に取ったバックアップも load できる
     expect(parseManifest(valid).tables.pages?.rows).toBe(1);
     expect(parseManifest(withAttachments)).toBeTruthy();
     expect(
@@ -859,7 +859,7 @@ describe("parseManifest", () => {
     ).toBeTruthy();
   });
 
-  it("SQL に埋め込めない表名、必須の表の欠落、不正な digest、別のファイル名を拒否する", () => {
+  it("SQL に埋め込めないテーブル名、必須のテーブルの欠落、不正な digest、別のファイル名を拒否する", () => {
     const bad = (patch: object) => () => parseManifest({ ...valid, ...patch });
     expect(bad({ tables: { ...valid.tables, "x; --": { rows: 1, sha256: sha } } })).toThrow(
       "unexpected tables",
@@ -871,7 +871,7 @@ describe("parseManifest", () => {
     expect(bad({ tables: { ...valid.tables, pages: { rows: 1, sha256: "zz" } } })).toThrow(
       "unexpected tables",
     );
-    // migration の一覧と表が食い違うもの
+    // migration の一覧とテーブルが食い違うもの
     expect(bad({ migrations: withAttachments.migrations })).toThrow("unexpected tables");
     expect(bad({ tables: withAttachments.tables })).toThrow("unexpected tables");
     expect(bad({ file: "../x.sql" })).toThrow("not a backup manifest");

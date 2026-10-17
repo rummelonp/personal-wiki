@@ -8,7 +8,7 @@
 CREATE TABLE attachments (
   -- 本文の ![[name]] に書く名前。乱数 22 文字と拡張子（@personal-wiki/domain の isAttachmentName）
   name TEXT NOT NULL PRIMARY KEY,
-  -- 配信の Content-Type はこの値を使う。形式を足すたびに表を作り直さないよう、CHECK にせずアプリで検査する
+  -- 配信の Content-Type はこの値を使う。形式を足すたびにテーブルを作り直さないよう、CHECK にせずアプリで検査する
   content_type TEXT NOT NULL,
   -- バイト数
   size INTEGER NOT NULL,

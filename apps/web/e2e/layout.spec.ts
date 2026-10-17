@@ -113,7 +113,7 @@ test.describe("匿名 @widths", () => {
   });
 
   test("存在しないページ", async ({ page }) => {
-    // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことは応答で待つ
+    // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことはレスポンスで待つ
     const backlinks = page.waitForResponse((res) =>
       res.url().includes("/api/pages/by-title/backlinks"),
     );

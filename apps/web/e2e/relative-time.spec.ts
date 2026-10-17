@@ -2,7 +2,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./support/fixtures";
 
 /*
- * 一覧の相対の日付。読み込み中の帯が実際の表記より細くならないことと、
+ * 一覧の相対の日付。読み込み中のスケルトンが実際の表記より細くならないことと、
  * タッチ端末にも届く形で絶対の日時を持つことを確かめる。
  */
 
@@ -22,7 +22,7 @@ const AGES = [
   1000 * DAY,
 ];
 
-/** 一覧の API を、更新日が AGES で散らばった応答に差し替え、release まで止める。 */
+/** 一覧の API を、更新日が AGES で散らばったレスポンスに差し替え、release まで止める。 */
 async function holdRecent(page: Page): Promise<() => void> {
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -44,7 +44,7 @@ async function holdRecent(page: Page): Promise<() => void> {
   return release;
 }
 
-test("読み込み中の更新日の帯は、実際の最も長い表記より細くならない", async ({ page }) => {
+test("読み込み中の更新日のスケルトンは、実際の最も長い表記より細くならない", async ({ page }) => {
   const release = await holdRecent(page);
   await page.goto("/");
   const band = page.locator(".skeleton-entries.skeleton-painted .skeleton-entry-time").first();

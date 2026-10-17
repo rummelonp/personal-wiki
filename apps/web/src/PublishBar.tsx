@@ -59,7 +59,7 @@ interface PublishBarProps {
   titlePending: boolean;
   /** 匿名が開ける URL のパス。public のときの正の URL（title の URL、予約語の title は id の URL） */
   sharePath: string;
-  /** 切り替えを依頼して応答を待っている先。待っている間は、この選択を選択中として見せ、押し直しを受けない */
+  /** 切り替えを依頼してレスポンスを待っている先。待っている間は、この選択を選択中として見せ、押し直しを受けない */
   pending: Visibility | null;
   /** 切り替えを依頼し、済むまで待つ。失敗は呼び出し側の通知が伝え、状態は元のまま */
   onChange: (to: Visibility) => Promise<void>;
@@ -93,7 +93,7 @@ export function PublishBar({
   const confirmTextId = useId();
   const previousVisibility = useRef(visibility);
   const refocusPublic = useRef(false);
-  // 選択は押した直後に動かす。文字は応答がすぐ届くときにちらつかないよう、遅らせて出す
+  // 選択は押した直後に動かす。文字はレスポンスがすぐ届くときにちらつかないよう、遅らせて出す
   const pendingShown = useDelayedWhile(pending !== null);
   const shownVisibility = pending ?? visibility;
   const shareUrl = `${window.location.origin}${sharePath}`;

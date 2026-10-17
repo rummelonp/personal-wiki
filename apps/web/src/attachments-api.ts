@@ -37,7 +37,7 @@ async function readJson(res: Response): Promise<unknown> {
  * 添付を上げる。本文は File の生のバイト列で、種類は `Content-Type` に File の type を書く。
  * 失敗は kind で分ける。415 は、Content-Type が受けない種類のとき（`unsupported_type`）と、
  * 中身が申告した種類として読めないとき（`content_mismatch`）で別の kind にする。直し方が違うため。
- * 通信の失敗と、想定外の status や応答の形（411 を含む）は `error` にまとめる。
+ * 通信の失敗と、想定外の status やレスポンスの形（411 を含む）は `error` にまとめる。
  */
 export async function uploadAttachment(file: File, fetchFn: Fetch = fetch): Promise<UploadResult> {
   let res: Response;

@@ -33,8 +33,8 @@ const painted = () => container?.querySelector(".skeleton-painted .skeleton") !=
 const busy = () => container?.querySelector("[aria-busy='true']") !== null;
 const status = () => container?.querySelector("[role='status']")?.textContent;
 
-describe("読み込み中の帯", () => {
-  it("遅れの間は帯を描かず、取得中であることは最初から、「読み込み中…」は frame を空けて伝える", () => {
+describe("読み込み中のスケルトン", () => {
+  it("遅れの間はスケルトンを描かず、取得中であることは最初から、「読み込み中…」は frame を空けて伝える", () => {
     vi.useFakeTimers();
     mount(<PageSkeleton />);
     expect(busy()).toBe(true);
@@ -58,7 +58,7 @@ describe("読み込み中の帯", () => {
     expect(container?.querySelector("[aria-busy='true'] [role='status']")).toBeNull();
   });
 
-  it("一覧の帯は一覧を、行き先の分からない帯は対象を言わずに読み込み中と伝える", () => {
+  it("一覧のスケルトンは一覧を、行き先の分からないスケルトンは対象を言わずに読み込み中と伝える", () => {
     vi.useFakeTimers();
     mount(<ListSkeleton />);
     act(() => vi.advanceTimersByTime(40));
@@ -75,13 +75,13 @@ describe("読み込み中の帯", () => {
     expect(container?.querySelector("[role='status']")).toBeNull();
   });
 
-  it("遅れを 0 にすると、最初の描画から帯を描く", () => {
+  it("遅れを 0 にすると、最初の描画からスケルトンを描く", () => {
     restoreDelay = setLoadingDelay(0);
     mount(<ListSkeleton />);
     expect(painted()).toBe(true);
   });
 
-  it("遅れの前に取り除けば、帯を描かない", () => {
+  it("遅れの前に取り除けば、スケルトンを描かない", () => {
     vi.useFakeTimers();
     mount(<ListSkeleton />);
     act(() => vi.advanceTimersByTime(100));
@@ -90,7 +90,7 @@ describe("読み込み中の帯", () => {
     expect(painted()).toBe(false);
   });
 
-  it("帯を描いた後に別の帯へ差し替わっても、遅れを数え直さない", () => {
+  it("スケルトンを描いた後に別のスケルトンへ差し替わっても、遅れを数え直さない", () => {
     vi.useFakeTimers();
     mount(<ListSkeleton />);
     act(() => vi.advanceTimersByTime(250));
@@ -109,14 +109,14 @@ describe("読み込み中の帯", () => {
     expect(painted()).toBe(false);
   });
 
-  it("title が分かっていれば、帯でなく文字で出す", () => {
+  it("title が分かっていれば、スケルトンでなく文字で出す", () => {
     restoreDelay = setLoadingDelay(0);
     mount(<PageSkeleton title="行き先の題" />);
     expect(container?.querySelector(".note-title")?.textContent).toBe("行き先の題");
     expect(container?.querySelector(".note-title .skeleton")).toBeNull();
   });
 
-  it("匿名の画面には公開の行が無いので、その帯も出さない", () => {
+  it("匿名の画面には公開の行が無いので、そのスケルトンも出さない", () => {
     restoreDelay = setLoadingDelay(0);
     mount(<PageSkeleton owner={false} />);
     expect(container?.querySelector(".skeleton-meta")).toBeNull();

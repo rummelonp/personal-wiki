@@ -3,8 +3,8 @@ import type { OwnerApi } from "./support/api";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
 
 /*
- * 本文の中の部品（callout の開閉、frontmatter の tag、embed の「記法を編集」、添付の完了）の
- * 操作と表示。部品の単体の挙動はエディタのテストが見る。ここでは実際のブラウザで、Tab で届くことと、
+ * 本文の中のウィジェット（callout の開閉、frontmatter の tag、embed の「記法を編集」、添付の完了）の
+ * 操作と表示。ウィジェットの単体の挙動はエディタのテストが見る。ここでは実際のブラウザで、Tab で届くことと、
  * 操作した後に focus が残ることを見る。
  */
 

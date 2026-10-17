@@ -132,7 +132,7 @@ class NestingEdit {
   private readonly shifts = new Map<number, number>();
   private readonly marks = new Map<number, { item: SyntaxNode; text: string }>();
   /**
-   * コードの中身の行（キーは `shifts` と同じ）の、項目の字下げとして読まれる列。
+   * コードの中身の行（キーは `shifts` と同じ）の、項目のインデントとして読まれる列。
    * この列より後ろの空白はコードの中身なので、増減はこの列の手前で行う
    */
   private readonly codeIndents = new Map<number, number>();
@@ -173,8 +173,8 @@ class NestingEdit {
    * item の行（子孫を含む）を `delta` 列だけずらす。記号のある 1 行目以外は `restDelta` 列。
    * 外側の引用の `>` より後ろ、最初の非空白文字の直前の空白で増減させる。行頭で足すとタブの
    * 後ろの列が変わらないことがあるので、空白の末尾で扱う。ただし fence やインデントされたコードの
-   * 中身の行では、項目の字下げより後ろの空白もコードの一部なので、字下げの中で増減させる
-   * （空白の末尾で足すと、元のタブが字下げとして読まれてスペースに化ける）。
+   * 中身の行では、項目のインデントより後ろの空白もコードの一部なので、インデントの中で増減させる
+   * （空白の末尾で足すと、元のタブがインデントとして読まれてスペースに化ける）。
    * item の本文の列より浅い行は怠惰な継続行（lazy continuation）なので触らない。動かしたことで
    * 構造が変わる場合（インデントされたコードの位置にあった行が項目になるなど）は事後の検査が弾く。
    */
@@ -206,7 +206,7 @@ class NestingEdit {
         n === first
           ? null
           : this.codeIndent(textStart === line.text.length ? line.from : line.from + textStart);
-      // 空白だけの行は字下げが要らない。コードの中では、字下げより後ろの空白が中身なので動かす
+      // 空白だけの行はインデントが要らない。コードの中では、インデントより後ろの空白が中身なので動かす
       if (textStart === line.text.length && (codeIndent === null || textColumn <= codeIndent))
         continue;
       if (n !== first && textColumn < content) continue;
@@ -217,9 +217,9 @@ class NestingEdit {
 
   /**
    * `pos`（行の最初の非空白文字、空白だけの行なら行頭）が fence やインデントされたコードの中
-   * （fence の行を含む）なら、その行でコードの中身より手前の字下げとして読まれる列。fence では
+   * （fence の行を含む）なら、その行でコードの中身より手前のインデントとして読まれる列。fence では
    * コードを含む一番内側の item の本文の列、インデントされたコードではそこから 4 列先（その 4 列も
-   * コードの字下げで、中身ではない）。そうでなければ null。引用を挟むコードは `>` の後ろが中身なので
+   * コードのインデントで、中身ではない）。そうでなければ null。引用を挟むコードは `>` の後ろが中身なので
    * 対象にしない
    */
   private codeIndent(pos: number): number | null {
@@ -255,8 +255,8 @@ class NestingEdit {
       const line = state.doc.lineAt(prefixEnd);
       const space = /^[ \t]*/.exec(line.text.slice(prefixEnd - line.from))?.[0] ?? "";
       const startColumn = countColumn(line.text, state.tabSize, prefixEnd - line.from);
-      // 書き換えるのは字下げとして読まれる部分。コードの中身の行では、parser と同じく目標の列に
-      // 届くまで（またぐタブを含めて）が字下げで、残りはコードの中身として触らない
+      // 書き換えるのはインデントとして読まれる部分。コードの中身の行では、parser と同じく目標の列に
+      // 届くまで（またぐタブを含めて）がインデントで、残りはコードの中身として触らない
       const codeIndent = this.codeIndents.get(prefixEnd);
       let indentLength = space.length;
       let oldColumn = countColumn(line.text, state.tabSize, prefixEnd - line.from + space.length);
@@ -268,8 +268,8 @@ class NestingEdit {
           indentLength += 1;
         }
       }
-      // コードの行は、新しい字下げの列でちょうど parser の読む字下げが終わるようにする。
-      // 字下げをまたぐタブは字下げに含めて読まれるので、元の列でなく目標の列から数える
+      // コードの行は、新しいインデントの列でちょうど parser の読むインデントが終わるようにする。
+      // インデントをまたぐタブはインデントに含めて読まれるので、元の列でなく目標の列から数える
       const newColumn = Math.max(startColumn, (codeIndent ?? oldColumn) + delta);
       let kept = "";
       let column = startColumn;
@@ -706,8 +706,8 @@ function lineKinds(state: EditorState, tree: Tree, first: number, last: number):
 
 /**
  * 範囲のコードの中身（fence とインデントされたコードの CodeText）を、空白を落とさずに並べたもの。
- * 項目の字下げとコードの中身の空白の境目は parser の読み方で決まり、本文の比較（空白を落とす）でも
- * 行の種類でも、タブが字下げとして読まれてスペースに化けたことは分からない。Go や Makefile では
+ * 項目のインデントとコードの中身の空白の境目は parser の読み方で決まり、本文の比較（空白を落とす）でも
+ * 行の種類でも、タブがインデントとして読まれてスペースに化けたことは分からない。Go や Makefile では
  * タブに意味があるので、中身の文字が 1 つでも変わる変更は捨てる。
  */
 function codeTexts(state: EditorState, tree: Tree, scope: Scope): string[] {
@@ -720,7 +720,7 @@ function codeTexts(state: EditorState, tree: Tree, scope: Scope): string[] {
       const block = ref.node.parent;
       const line = block ? state.doc.lineAt(block.from).number : 0;
       const text = state.sliceDoc(Math.max(ref.from, scope.from), Math.min(ref.to, scope.to));
-      // 字下げの位置が変わると、parser が改行を前後の CodeText のどちらに付けるかが変わるので、
+      // インデントの位置が変わると、parser が改行を前後の CodeText のどちらに付けるかが変わるので、
       // node の区切りでなくコードのブロックごとにつなげて比べる
       if (texts.at(-1)?.startsWith(`${line}|`)) texts[texts.length - 1] += text;
       else texts.push(`${line}|${text}`);

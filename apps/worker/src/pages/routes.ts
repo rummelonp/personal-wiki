@@ -72,7 +72,7 @@ type PagesContext = Context<AppEnv>;
 
 /**
  * `/api/pages/resolve` が 1 回に受け付ける title の数。D1 へのクエリは件数に関係なく 1 回で、
- * この上限は 1 回の正規化と応答の大きさを抑える。URL に収まることは保証しない（title は 1 件で
+ * この上限は 1 回の正規化とレスポンスの大きさを抑える。URL に収まることは保証しない（title は 1 件で
  * percent-encoding 後に数 KB になりうる）。クライアントは件数とエンコード後の URL の長さの両方で
  * 分けて呼ぶ。
  */
@@ -240,7 +240,7 @@ function readLimit(c: PagesContext, fallback: number, max: number): Parsed<numbe
   return { ok: true, value: limit };
 }
 
-/** `cursor` クエリを読む。無ければ null。応答の nextCursor 以外の値は 400。 */
+/** `cursor` クエリを読む。無ければ null。レスポンスの nextCursor 以外の値は 400。 */
 function readCursor(c: PagesContext): Parsed<Cursor | null> {
   const raw = c.req.query("cursor");
   if (raw === undefined) return { ok: true, value: null };
@@ -307,7 +307,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })
-      // まだ無いページの画面が、その title へのリンク元を出すのに使う。リンク先の有無で応答を変えず、
+      // まだ無いページの画面が、その title へのリンク元を出すのに使う。リンク先の有無でレスポンスを変えず、
       // 匿名には draft の title でも存在しない title でも同じ public のリンク元を返す。
       // `/api/pages/:id/backlinks` より前に登録する。後ろだと "by-title" を id として先に 404 にする
       .get("/api/pages/by-title/backlinks", allowAnonymousRead(), async (c) => {
@@ -322,7 +322,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (list === null) return errorResponse(c, 400, "invalid_field", { field: "title" });
         return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })
-      // wikilink の解決に使う。応答は入力と同じ順、同じ件数で、解決できない title は page が null。
+      // wikilink の解決に使う。レスポンスは入力と同じ順、同じ件数で、解決できない title は page が null。
       // 匿名には draft も null で返し、存在しない title と区別させない。`/api/pages/:id` より前に登録する
       .get("/api/pages/resolve", allowAnonymousRead(), async (c) => {
         const titles = c.req.queries("title");
@@ -352,7 +352,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
             ...tagFilterErrorFields(tag.reason),
           });
         }
-        // 匿名の draft の指定は 400 にせず、200 の空の一覧で返す。principal で応答の形を分けないので、
+        // 匿名の draft の指定は 400 にせず、200 の空の一覧で返す。principal でレスポンスの形を分けないので、
         // 匿名の draft の指定は存在しない tag の指定と同じに見える
         const visibility = c.req.query("visibility");
         if (visibility !== undefined && !isVisibility(visibility)) {
@@ -443,7 +443,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         return c.json({ pages: list.pages, nextCursor: list.nextCursor });
       })
       // 履歴は read の scope を持つ principal だけに出す。匿名は public のページでも 401 で、ページを引く前に
-      // 断るので、id の有無や draft かどうかで応答が変わらない
+      // 断るので、id の有無や draft かどうかでレスポンスが変わらない
       .get("/api/pages/:id/revisions", requireScope("read"), async (c) => {
         const id = c.req.param("id");
         if (!isPageId(id)) return c.notFound();
@@ -575,7 +575,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         recordWrite({ op: "delete", actor, pageId: id, rowsWritten: result.rowsWritten });
         return c.body(null, 204);
       })
-      // title の変更で積んだリンクの書き換えを 1 ページ分進める（pages/link-rewrites.ts）。応答は
+      // title の変更でキューに入れたリンクの書き換えを 1 ページ分進める（pages/link-rewrites.ts）。レスポンスは
       // draft のリンク元の id と title を含みうるので、書き込める principal だけが呼べる。
       // remaining が 0 になるまで繰り返す。conflict ならそのまま呼び直せばよい
       .post("/api/link-rewrites/step", requireScope("write"), async (c) => {
@@ -595,11 +595,11 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
  * （owner も通る）。owner 専用にしないのは、作り直しを呼ぶのがスクリプトで、write の token は
  * ページの保存で同じだけ書き込み枠を使えるため、owner に限っても守れるものが増えないから。
  *
- * 作り直しは CPU 10ms に収まるよう 1 ページずつ進む。全ページを作り直すには、応答の next を
+ * 作り直しは CPU 10ms に収まるよう 1 ページずつ進む。全ページを作り直すには、レスポンスの next を
  * 次のリクエストの after に渡し、next が null になるまで繰り返す:
  *   POST /api/admin/derived/rebuild  {"after": null}
  *   → {"rebuilt": 1, "skipped": 0, "failed": [], "next": "<id>", "rowsWritten": 9}
- * failed に入ったページは派生データが古いまま残る。応答が返らない場合は rebuildDerived を参照。
+ * failed に入ったページは派生データが古いまま残る。レスポンスが返らない場合は rebuildDerived を参照。
  */
 export function registerAdminRoutes(
   app: Hono<AppEnv>,

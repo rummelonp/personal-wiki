@@ -39,7 +39,7 @@ export interface ListedPage extends PageSummary {
   tags: string[];
 }
 
-/** 検索結果の 1 件。ListedPage に代入できる（一覧の行は同じ部品で描く）。 */
+/** 検索結果の 1 件。ListedPage に代入できる（一覧の行は同じコンポーネントで描く）。 */
 export interface SearchHit extends PageSummary {
   /** 一致した位置の周辺 64 文字の抜粋。ListedPage.excerpt（先頭 120 文字）と違い、検索語が当たった箇所を見せる。 */
   excerpt: string;
@@ -71,7 +71,7 @@ export type ApiFailure =
   | { ok: false; reason: "title_conflict"; message: string; existing?: ExistingPage }
   /**
    * 送った title か本文が保存の規則に合わない。直さない限り何度送っても通らないので、再試行を勧めない。
-   * problem は応答から組み立て直した問題で、位置を求められない応答では null。
+   * problem はレスポンスから組み立て直した問題で、位置を求められないレスポンスでは null。
    */
   | { ok: false; reason: "invalid_input"; problem: PageInputProblem | null; message: string }
   | { ok: false; reason: "error"; message: string };
@@ -97,7 +97,7 @@ const KEEPALIVE_MAX_BYTES = 60_000;
 
 /*
  * 画面に出す失敗の文は、何が起きたかと次の手を、です・ます調の完結した文で書く。
- * 通信やサーバーの不調は、時間をおけば通ることがあるので再試行を勧める。入力の誤りは、直す点を示す。
+ * 通信やサーバーの不調は、時間をおけば通ることがあるので再試行を勧める。入力のエラーは、直す点を示す。
  */
 const RETRY_LATER = "時間をおいて、もう一度試してください。";
 const RELOAD = "ページを再読み込みしてから、もう一度試してください。";
@@ -109,7 +109,7 @@ const RELOAD = "ページを再読み込みしてから、もう一度試して�
 export const LOAD_FAILED = RETRY_LATER;
 
 /**
- * web が正しく組んでいれば起きない誤り。利用者に直せる点は無く、web の版がサーバーと食い違っている
+ * web が正しく組んでいれば起きないエラー。利用者に直せる点は無く、web の版がサーバーと食い違っている
  * ことが多いので、読み込み直しを勧める。
  */
 const NOT_ACCEPTED = `サーバーに受け付けられませんでした。${RELOAD}`;
@@ -159,11 +159,11 @@ const invalidInput = (problem: PageInputProblem | null, message?: string): ApiFa
 });
 
 /**
- * 作成と保存の入力の誤りを、送る前の検査と同じ問題の形に組み立て直す。入力の誤りでなければ null。
+ * 作成と保存の入力のエラーを、送る前の検査と同じ問題の形に組み立て直す。入力のエラーでなければ null。
  *
- * 位置は送った内容から求め直す。応答の line と column は人に伝える値で、エディタの位置（UTF-16 の
+ * 位置は送った内容から求め直す。レスポンスの line と column は人に伝える値で、エディタの位置（UTF-16 の
  * index）を持たない。数え方もエディタの行と違いうる（対の無い `\r` を改行と数えない）。
- * 応答に actual や max が無い（前の版の Worker）ときは、送った内容と domain の上限で補う。
+ * レスポンスに actual や max が無い（前の版の Worker）ときは、送った内容と domain の上限で補う。
  */
 function inputFailureOf(
   code: string,
@@ -205,7 +205,7 @@ function inputFailureOf(
   }
 }
 
-/** 一覧をタグで絞る指定の誤り。URL を手で書き換えたときに起きるので、読み込み直しを勧めない。 */
+/** 一覧をタグで絞る指定のエラー。URL を手で書き換えたときに起きるので、読み込み直しを勧めない。 */
 function tagFailureOf(code: string, body: Record<string, unknown>): ApiFailure | null {
   if (code !== "invalid_field" || body.field !== "tag") return null;
   const max = numberOf(body.max);
@@ -221,7 +221,7 @@ function existingOf(value: unknown): ExistingPage | undefined {
   return { id: value.id, title: value.title, visibility: value.visibility };
 }
 
-/** 作成と保存で送った内容。入力の誤りの位置を求め直すのに使う。 */
+/** 作成と保存で送った内容。入力のエラーの位置を求め直すのに使う。 */
 interface SentPage {
   title: string;
   body: string;
@@ -249,13 +249,13 @@ async function failureOf(res: Response, sent?: SentPage): Promise<ApiFailure> {
       ...(existing === undefined ? {} : { existing }),
     };
   }
-  // 入力の誤りは書き込みの応答でだけ読む。送った内容が無いと位置を求め直せない
+  // 入力のエラーは書き込みのレスポンスでだけ読む。送った内容が無いと位置を求め直せない
   const input =
     (sent === undefined ? null : inputFailureOf(code, body, sent)) ?? tagFailureOf(code, body);
   if (input !== null) return input;
   // サーバーの message は API を使う側（エージェント）向けの常体なので、画面には出さない。Worker と
   // SPA は同じデプロイで出るので、SPA が知らない code は SPA の書き漏れで、status の汎用の文で足りる。
-  // 検索語の誤りは searchPages が先に固定の文へ置き換える
+  // 検索語のエラーは searchPages が先に固定の文へ置き換える
   return { ok: false, reason: "error", message: ERROR_MESSAGES[code] ?? statusMessage(res.status) };
 }
 
@@ -425,7 +425,7 @@ export function splitResolveBatches(titles: readonly string[]): number[][] {
 }
 
 /**
- * title の page を 1 回の要求で引く。件数と URL の長さは呼び出し側が `splitResolveBatches` で
+ * title の page を 1 回のリクエストで引く。件数と URL の長さは呼び出し側が `splitResolveBatches` で
  * 収める。返す配列は `titles` と同じ順、同じ件数で、解決できない title は null。
  * 失敗（404、5xx、通信の失敗、形の違い）は ApiFailure で返す。「全部存在しない」とは区別する。
  * Worker を前の版に戻すと resolve が `/api/pages/:id` に落ちて 404 になる。
@@ -463,8 +463,8 @@ export interface UpdateOptions {
 }
 
 /**
- * title を変えた保存で、Worker が他のページのリンクの書き換えを積んだ数。
- * skipped は、新しい title がリンクに書けないので積まなかったこと。
+ * title を変えた保存で、Worker が他のページのリンクの書き換えをキューに入れた数。
+ * skipped は、新しい title がリンクに書けないのでキューに入れなかったこと。
  */
 export interface LinkRewritesQueued {
   queued: number;
@@ -730,7 +730,7 @@ export async function getRevision(
 
 /**
  * revision の版の本文に戻し、保存後のページを返す（title は今のまま）。version は今のページの版で、If-Match に
- * 使う。本文が今と同じなら書かずに今のページを返すので、版が進んだかで見分ける。サーバーは要求の本文を
+ * 使う。本文が今と同じなら書かずに今のページを返すので、版が進んだかで見分ける。サーバーはリクエストの本文を
  * 読まないが、cookie 付きの変更系なので JSON の Content-Type と本文を付ける（CSRF 対策）。
  */
 export async function restoreRevision(
@@ -749,7 +749,7 @@ export async function restoreRevision(
   return pageResult(res);
 }
 
-/** 検索語を直せば通る誤り。一覧の取得の失敗とは別に、入力を直す案内として見せる。 */
+/** 検索語を直せば通るエラー。一覧の取得の失敗とは別に、入力を直す案内として見せる。 */
 export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string };
 
 const QUERY_MESSAGES: Record<string, string> = {
@@ -758,7 +758,7 @@ const QUERY_MESSAGES: Record<string, string> = {
   control_char: "検索語にタブや改行など、目に見えない文字が入っています。取り除いてください。",
 };
 
-/** 検索語の誤りの 400 を固定の文にする。それ以外の失敗は null。 */
+/** 検索語のエラーの 400 を固定の文にする。それ以外の失敗は null。 */
 function invalidQueryOf(body: Record<string, unknown>): InvalidQuery | null {
   if (body.field !== "q") return null;
   if (body.error === "query_too_short") {

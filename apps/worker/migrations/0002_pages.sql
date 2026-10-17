@@ -43,7 +43,7 @@ CREATE TABLE revisions (
   PRIMARY KEY (page_id, version)
 );
 
--- 小さい行を主キーだけで引くので WITHOUT ROWID にし、主キーの自動索引の分の書き込みを省く
+-- 小さい行を主キーだけで引くので WITHOUT ROWID にし、主キーの自動インデックスの分の書き込みを省く
 CREATE TABLE links (
   source_page_id TEXT NOT NULL REFERENCES pages (id),
   target_title_key TEXT NOT NULL,
@@ -74,7 +74,7 @@ CREATE INDEX tags_tag_key ON tags (tag_key);
 -- body には Markdown ではなく extractDerived の plainText を入れる
 CREATE VIRTUAL TABLE pages_fts USING fts5 (title, body, tokenize = 'trigram');
 
--- 保存の batch の先頭文が、版が合わないときだけこの表に行を入れようとし、trigger が batch 全体を
+-- 保存の batch の先頭文が、版が合わないときだけこのテーブルに行を入れようとし、trigger が batch 全体を
 -- rollback させる。版が合うときは INSERT ... SELECT が 0 行なので発火せず、行も残らない。
 -- D1 の batch では直前の UPDATE の結果で後続の文を条件付けられない（changes() は直後の 1 文にしか効かない）。
 CREATE TABLE save_guard (page_id TEXT NOT NULL);

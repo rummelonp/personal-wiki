@@ -159,7 +159,7 @@ export function isComposing(view: EditorView): boolean {
  * `compositionend` の直後は `isComposing` が false に戻るが、確定文字列の DOM 変更はまだ
  * 読まれていないことがある（CodeMirror が microtask で読む。iOS Safari では次の frame まで遅れる）。
  * その前に dispatch すると、`EditorView.update` が未読の DOM 変更を読まずに片付けて描き直すので、
- * 確定文字列や確定後の選択が消える。読むまでの間には fetch の応答やタイマーのような別の task も
+ * 確定文字列や確定後の選択が消える。読むまでの間には fetch のレスポンスやタイマーのような別の task も
  * 入り込むので、`compositionend` の handler など同じ task からの呼び出しに限らず控える。
  */
 export function isCompositionUnsettled(view: EditorView): boolean {

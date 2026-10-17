@@ -174,7 +174,7 @@ describe("saveAllEditors", () => {
     unregister();
   });
 
-  it("応答が遅くても、タイムアウトで先へ進む", async () => {
+  it("レスポンスが遅くても、タイムアウトで先へ進む", async () => {
     const stuck = setup(() => new Promise(() => {}));
     const unregister = registerEditor(stuck.session);
     stuck.session.edit({ title: "題", body: "手元" });

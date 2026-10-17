@@ -195,7 +195,7 @@ describe("wrapped code lines", () => {
   });
 
   it("keeps the wrapped part of a deeply indented line inside the line", () => {
-    // 字下げが行の幅を越えると、そろえた折り返しの行が右へはみ出して読めなくなる
+    // インデントが行の幅を越えると、そろえた折り返しの行が右へはみ出して読めなくなる
     const v = mountNarrow(`\`\`\`ts\n${" ".repeat(60)}${LONG}\n\`\`\``);
     const line = codeLines(v)[1];
     if (!line) throw new Error("code line is not rendered");

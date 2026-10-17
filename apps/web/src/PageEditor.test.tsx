@@ -402,7 +402,7 @@ describe("PageEditor と本文のエディタ", () => {
     expect(container?.querySelector(".notice")).toBeNull();
   });
 
-  it("もう一度保存する間、上端の保存の状態が見えていれば、台には保存中の通知を出さない", async () => {
+  it("もう一度保存する間、上端の保存の状態が見えていれば、ドックには保存中の通知を出さない", async () => {
     vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
     const { view, button } = renderPage();
     view().focus();
@@ -423,14 +423,14 @@ describe("PageEditor と本文のエディタ", () => {
     expect(container?.querySelector(".save-state")?.textContent).toBe("保存中…");
     expect(container?.querySelector(".notice")).toBeNull();
 
-    // 保存の間に下までスクロールして上端が見えなくなったら、台に出す
+    // 保存の間に下までスクロールして上端が見えなくなったら、ドックに出す
     vi.mocked(isInView).mockReturnValue(false);
     act(() => {
       window.dispatchEvent(new Event("scroll"));
     });
     expect(container?.querySelector(".notice-title")?.textContent).toBe("保存中…");
 
-    // 上端に戻れば、また台からは消える
+    // 上端に戻れば、またドックからは消える
     vi.mocked(isInView).mockReturnValue(true);
     act(() => {
       window.dispatchEvent(new Event("scroll"));
@@ -1195,7 +1195,7 @@ describe("PageEditor の wikilink", () => {
     typeAtEnd(view(), "\n追記");
     act(() => view().contentDOM.blur());
     await vi.waitFor(() => expect(updatePage).toHaveBeenCalledTimes(1));
-    // 取り直すなら debounce の後に要求が出る
+    // 取り直すなら debounce の後にリクエストが出る
     await act(() => new Promise((resolve) => setTimeout(resolve, 600)));
     expect(resolvePages).toHaveBeenCalledTimes(1);
     expect(findPageByTitle).toHaveBeenCalledTimes(1);
@@ -1439,7 +1439,7 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(createPage).toHaveBeenCalledWith({ title: "渡した題", body: "" });
   });
 
-  it("作る応答を待つ間に打った本文は消えず、作れた後に保存する", async () => {
+  it("作るレスポンスを待つ間に打った本文は消えず、作れた後に保存する", async () => {
     const create = pending();
     vi.mocked(createPage).mockReturnValue(create.promise);
     const { view } = renderNew("待つ題");
@@ -1481,7 +1481,7 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(alert).toContain("同じタイトルのページがあるため、作成できません");
     expect(alert).toContain("タイトルを変えて欄を離れると、作成します。");
     expect(alert).not.toContain("大文字と小文字");
-    // 送り直しても同じ応答になるので、再試行は出さない
+    // 送り直しても同じレスポンスになるので、再試行は出さない
     expect(alert).not.toContain("もう一度作成する");
     expect(view().state.doc.toString()).toBe("残る本文");
     expect(titleText()).toBe("重なる題");
@@ -1840,7 +1840,7 @@ describe("添付の貼り付けと表示", () => {
     expect(srcs).toEqual([srcOf(NAME)]);
   });
 
-  it("features が false なら画像の要求を出さない", async () => {
+  it("features が false なら画像のリクエストを出さない", async () => {
     const srcs = recordSrcs();
     renderPage({ ...PAGE, body: `![[${NAME}]]\n\n末尾` }, false);
     await flushAsync();
@@ -1848,7 +1848,7 @@ describe("添付の貼り付けと表示", () => {
     expect(container?.querySelector(".cm-embed-unresolved")?.textContent).toBe(NAME);
   });
 
-  it("アップロード中の placeholder と形の合わない名前は画像の要求を出さない", async () => {
+  it("アップロード中の placeholder と形の合わない名前は画像のリクエストを出さない", async () => {
     const srcs = recordSrcs();
     renderPage(
       { ...PAGE, body: "![[uploading.1700000000000-0.png]]\n\n![[photo.png]]\n\n末尾" },
@@ -1872,7 +1872,7 @@ describe("添付の貼り付けと表示", () => {
     expect(srcs).not.toContain(srcOf(OTHER));
   });
 
-  it("埋め込み先を読めなければ展開されず、その添付の要求も出さない", async () => {
+  it("埋め込み先を読めなければ展開されず、その添付のリクエストも出さない", async () => {
     const srcs = recordSrcs();
     vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });
     renderPage({ ...PAGE, body: "![[別]]\n\n末尾" }, true);
@@ -2127,7 +2127,7 @@ describe("リンクの書き換えの取り込み", () => {
     });
   }
 
-  it("title を変えた保存が積んだ書き換えを進め、開いているページの書き換えを取り込んで次の保存の版にする", async () => {
+  it("title を変えた保存がキューに入れた書き換えを進め、開いているページの書き換えを取り込んで次の保存の版にする", async () => {
     vi.mocked(updatePage).mockImplementationOnce(async (_id, version, input) =>
       ok({ ...linked, ...input, version: version + 1, linkRewrites: { queued: 1 } }),
     );
@@ -2229,7 +2229,7 @@ describe("リンクの書き換えの取り込み", () => {
     expect(updatePage).toHaveBeenCalledTimes(2);
     expect(container?.textContent).toContain("「#」を含むタイトルには [[ ]] でリンクできないため");
 
-    // リンク元が無い title への変更は、応答に linkRewrites が付かない
+    // リンク元が無い title への変更は、レスポンスに linkRewrites が付かない
     act(() => titleView().focus());
     typeTitle("新");
     act(() => titleView().contentDOM.blur());
@@ -2332,7 +2332,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(publishNote()).toBe("下書きに戻しました。");
   });
 
-  it("応答がすぐ届けば、状態の文字を出さない", async () => {
+  it("レスポンスがすぐ届けば、状態の文字を出さない", async () => {
     restoreDelay = setLoadingDelay(1000);
     vi.mocked(setVisibility).mockResolvedValue(ok({ ...PUBLIC, version: 2 }));
     const { button } = renderPage();
@@ -2344,7 +2344,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(publishNote()).toBe("公開しました。");
   });
 
-  it("削除の応答を待つ間は、削除ボタンを「削除中…」にして、読み上げ用の status にも出す", async () => {
+  it("削除のレスポンスを待つ間は、削除ボタンを「削除中…」にして、読み上げ用の status にも出す", async () => {
     const reply = deferred<ApiResult<null>>();
     vi.mocked(deletePage).mockReturnValue(reply.promise);
     const { button } = renderPage();

@@ -136,7 +136,7 @@ export function toolResult(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
-/** tool が返すエラーの本文は REST の応答本文と同じ形（`{ error, ... }`）にする。 */
+/** tool が返すエラーの本文は REST のレスポンス本文と同じ形（`{ error, ... }`）にする。 */
 export function toolError(body: { error: string; [key: string]: unknown }): CallToolResult {
   return { isError: true, content: [{ type: "text", text: JSON.stringify(body) }] };
 }

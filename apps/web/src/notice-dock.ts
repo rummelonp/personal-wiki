@@ -1,21 +1,21 @@
 /**
- * 通知を画面の下端に重ねて出す台（`.notice-dock`）と、本文のスクロールをつなぐ。
+ * 通知を画面の下端に重ねて出すドック（`.notice-dock`）と、本文のスクロールをつなぐ。
  *
- * 通知を本文の流れの中に入れると、出入りのたびに title と本文が動く。台は fixed で流れから外し、
- * 本文は動かさずに、台の高さだけ本文のスクロールの下の余白（scrollMargins）と文書の末尾の余白を取る。
+ * 通知を本文の流れの中に入れると、出入りのたびに title と本文が動く。ドックは fixed で流れから外し、
+ * 本文は動かさずに、ドックの高さだけ本文のスクロールの下の余白（scrollMargins）と文書の末尾の余白を取る。
  */
 
-/** 台が本文を覆う範囲が変わったとき（通知の出入り、折り返しの変化、キーボードでの持ち上がり）に document へ送るイベント。 */
+/** ドックが本文を覆う範囲が変わったとき（通知の出入り、折り返しの変化、キーボードでの持ち上がり）に document へ送るイベント。 */
 export const NOTICE_DOCK_RESIZE = "notice-dock-resize";
 
-/** 台が覆っている範囲。通知が無ければ null。 */
+/** ドックが覆っている範囲。通知が無ければ null。 */
 export function noticeDockRect(): DOMRect | null {
   const dock = document.querySelector(".notice-dock");
   if (dock === null || dock.childElementCount === 0) return null;
   return dock.getBoundingClientRect();
 }
 
-/** 台が画面の下端から覆っている高さ。通知が無ければ 0。 */
+/** ドックが画面の下端から覆っている高さ。通知が無ければ 0。 */
 export function noticeDockHeight(): number {
   return noticeDockRect()?.height ?? 0;
 }
@@ -37,12 +37,12 @@ export function keyboardShown(viewport: VisualViewport): boolean {
 }
 
 /**
- * キーボードが出ている間は、台をキーボードの上へ上げる。iOS の Safari はキーボードが出ても layout viewport
- * を縮めないので、fixed の下端はキーボードの裏に隠れる。visual viewport の下端との差を台の下端に足す。
+ * キーボードが出ている間は、ドックをキーボードの上へ上げる。iOS の Safari はキーボードが出ても layout viewport
+ * を縮めないので、fixed の下端はキーボードの裏に隠れる。visual viewport の下端との差をドックの下端に足す。
  * layout viewport が縮む環境では差が 0 になり、何も足さない。
  *
  * 通知が覆える高さの上限は、見えている高さ（visual viewport）の割合で決める。
- * キーボードが出ている間は見える高さが半分ほどなので、台に data-keyboard を付け、通知を見出しと操作だけに畳む
+ * キーボードが出ている間は見える高さが半分ほどなので、ドックに data-keyboard を付け、通知を見出しと操作だけに畳む
  * （CSS）。ピンチで拡大している間は visual viewport が縮むが、画面が狭くなったわけではないので、
  * 上限は layout viewport から決める。
  */
@@ -60,7 +60,7 @@ function followVisualViewport(dock: HTMLElement): () => void {
     dock.style.setProperty("--notice-inset", `${Math.round(inset)}px`);
     dock.style.setProperty("--notice-room", `${Math.round(room)}px`);
     dock.toggleAttribute("data-keyboard", keyboardShown(viewport));
-    // 台が持ち上がると、高さが同じでも本文を覆う範囲が変わる。最初の設定は台が出る前なので知らせない
+    // ドックが持ち上がると、高さが同じでも本文を覆う範囲が変わる。最初の設定はドックが出る前なので知らせない
     const rounded = Math.round(inset);
     if (last !== null && rounded !== last) document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
     last = rounded;
@@ -77,7 +77,7 @@ function followVisualViewport(dock: HTMLElement): () => void {
   };
 }
 
-/** 重大度の高い順。台の中の並びと、畳まずに残す通知の選び方で同じ順を使う。 */
+/** 重大度の高い順。ドックの中の並びと、畳まずに残す通知の選び方で同じ順を使う。 */
 const TONE_RANK = ["notice-error", "notice-warn", "notice-info"];
 
 function rankOf(notice: Element): number {
@@ -85,7 +85,7 @@ function rankOf(notice: Element): number {
   return rank === -1 ? TONE_RANK.length : rank;
 }
 
-/** 通知を台で初めて見た順。同じ重大度の中の順に使い、重大度が往復しても出た順に戻す。 */
+/** 通知をドックで初めて見た順。同じ重大度の中の順に使い、重大度が往復しても出た順に戻す。 */
 const arrival = new WeakMap<Element, number>();
 let arrivals = 0;
 
@@ -94,10 +94,10 @@ function compareNotices(a: Element, b: Element): number {
 }
 
 /**
- * 台の中の DOM の順を重大度の高い順に直す（同じ重大度の中は台で初めて見た順）。CSS の order で見た目だけを
+ * ドックの中の DOM の順を重大度の高い順に直す（同じ重大度の中はドックで初めて見た順）。CSS の order で見た目だけを
  * 並べ替えると、Tab と読み上げの順が見た目とずれるため、DOM の順そのものを揃える。
  *
- * DOM で動かしてよいのは、通知ごとに別の createPortal で台に足しているため。React は台の兄弟を基準に
+ * DOM で動かしてよいのは、通知ごとに別の createPortal でドックに足しているため。React はドックの兄弟を基準に
  * insertBefore せず、追加は appendChild、削除は対象の removeChild だけなので、順を入れ替えても食い違わない。
  * 1 つの portal に map で並べる形に変えると、React の想定する順と衝突する。
  *
@@ -150,7 +150,7 @@ function markFolded(notices: Element[]): void {
 }
 
 /**
- * 台の上限に達して中でスクロールするとき、続きのある側を data-more-above / data-more-below で示す
+ * ドックの上限に達して中でスクロールするとき、続きのある側を data-more-above / data-more-below で示す
  * （CSS が端を淡くぼかす）。iOS ではスクロールバーが隠れるので、これが続きの手がかりになる。
  * 小数のずれで端に着いても点き続けないよう、1px の余裕を見る。
  */
@@ -162,7 +162,7 @@ function markScrollEdges(dock: HTMLElement): void {
   );
 }
 
-/** 台の位置を visual viewport に合わせ、高さの変化を文書の余白とイベントで知らせる。戻り値で解除する。 */
+/** ドックの位置を visual viewport に合わせ、高さの変化を文書の余白とイベントで知らせる。戻り値で解除する。 */
 export function bindNoticeDock(dock: HTMLElement): () => void {
   const root = document.documentElement;
   const stopFollowing = followVisualViewport(dock);
@@ -186,7 +186,7 @@ export function bindNoticeDock(dock: HTMLElement): () => void {
   // 通知の重大度は class で表す。同じ通知の tone が変わると並びと畳む対象が変わるので、class の変化も見る。
   // 畳む印は data 属性で付けるため、畳んだ結果がこの監視を呼び直すことはない
   const toneChanges = new MutationObserver(() => announce());
-  // 台の高さが上限で頭打ちの間は、通知の中身が増減しても台の大きさは変わらない。通知も見る
+  // ドックの高さが上限で頭打ちの間は、通知の中身が増減してもドックの大きさは変わらない。通知も見る
   const observeNotices = () => {
     if (observer === null) return;
     const current = new Set(dock.querySelectorAll(":scope > .notice"));

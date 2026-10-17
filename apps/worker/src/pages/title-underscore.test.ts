@@ -85,7 +85,7 @@ describe("title_key は `_` と空白を同じ文字として扱う", () => {
     expect(await linksFrom(source.id)).toEqual([{ key: "a b", target: target.id }]);
   });
 
-  it("空白を `_` にするだけの rename は title_key が変わらず、リンクの書き換えを積まない", async () => {
+  it("空白を `_` にするだけの rename は title_key が変わらず、リンクの書き換えをキューに入れない", async () => {
     const client = await buildClient();
     const target = await client.create("a b");
     await client.create("source", "[[a b]]");

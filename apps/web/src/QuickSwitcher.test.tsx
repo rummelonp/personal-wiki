@@ -318,7 +318,7 @@ describe("QuickSwitcher の候補", () => {
 
   it("title の一覧は、匿名には続きがあっても 1 回だけ読み、owner には上限の回数まで読む", async () => {
     vi.mocked(listPageTitles).mockResolvedValue(ok({ pages: RECENT, nextCursor: "next" }));
-    // 候補は refresh が終わってから描き直すので、renderSwitcher が候補を待った時点で要求の回数は確定している
+    // 候補は refresh が終わってから描き直すので、renderSwitcher が候補を待った時点でリクエストの回数は確定している
     await renderSwitcher(false);
     expect(listPageTitles).toHaveBeenCalledTimes(ANONYMOUS_TITLE_INDEX_MAX_REQUESTS);
     act(() => root?.unmount());
@@ -569,7 +569,7 @@ describe("QuickSwitcher の候補の取得中", () => {
     expect(container?.querySelector("[data-row-kind='create']")).toBeNull();
     expect(pending()).toBeNull();
     expect(status()).toEqual([expect.stringContaining(CANDIDATES_FAILED)]);
-    // 索引に依らない「本文から検索」は残り、既定の行になる
+    // インデックスに依らない「本文から検索」は残り、既定の行になる
     expect(options()).toEqual(["「新しい語」を本文から検索"]);
     expect(selected()).toBe("「新しい語」を本文から検索");
   });
@@ -594,7 +594,7 @@ describe("QuickSwitcher の候補の取得中", () => {
     vi.mocked(listPageTitles).mockResolvedValue(failure);
     act(() => container?.querySelector("button")?.click());
     await vi.waitFor(() => expect(vi.mocked(listPageTitles)).toHaveBeenCalledTimes(2));
-    // 失敗の応答を描き終えてから確かめる。「作成」は前の取得の結果で最初から出ているので、
+    // 失敗のレスポンスを描き終えてから確かめる。「作成」は前の取得の結果で最初から出ているので、
     // 出たことを待つだけでは失敗が反映される前に通ってしまう
     await act(async () => {});
     typeText("新しい語");
@@ -701,14 +701,14 @@ describe("QuickSwitcher の候補の取得中", () => {
     expect(announced()).toBe("候補を読み込み中…");
   });
 
-  it("一覧の帯を描いている最中に開いても、「候補を読み込み中…」の文字は遅れの後に見せる", async () => {
+  it("一覧のスケルトンを描いている最中に開いても、「候補を読み込み中…」の文字は遅れの後に見せる", async () => {
     const restore = setLoadingDelay(1_000);
     vi.useFakeTimers();
     const board = document.createElement("div");
     document.body.append(board);
     const boardRoot = createRoot(board);
     try {
-      // 帯を描いた記録は、描く側が遅れの後に立てる。立ったままの画面で開いた状況を作る
+      // スケルトンを描いた記録は、描く側が遅れの後に立てる。立ったままの画面で開いた状況を作る
       await act(async () => boardRoot.render(<ListSkeleton />));
       await act(async () => vi.advanceTimersByTime(1_000));
       expect(board.querySelector(".skeleton-painted")).not.toBeNull();

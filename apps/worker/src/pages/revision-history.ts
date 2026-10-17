@@ -79,7 +79,7 @@ async function authorsOf(
         try {
           return [id, await lookup(id)] as const;
         } catch (error) {
-          // JSON.parse の誤りの文は壊れた登録の断片を含むので、種類だけを残す
+          // JSON.parse のエラーの文は壊れた登録の断片を含むので、種類だけを残す
           const kind = error instanceof Error ? error.name : "unknown";
           console.error(JSON.stringify({ event: "revisions.client_lookup_failed", error: kind }));
           return [id, null] as const;

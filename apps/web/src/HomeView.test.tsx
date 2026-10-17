@@ -212,7 +212,7 @@ describe("条件を変えて取り直している間の一覧", () => {
     }
   });
 
-  it("前の一覧が空なら previous は持たず、帯を出す", async () => {
+  it("前の一覧が空なら previous は持たず、スケルトンを出す", async () => {
     vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: [], nextCursor: null }));
     vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
     const seen = await mountProbe();
@@ -256,7 +256,7 @@ describe("条件を変えて取り直している間の一覧", () => {
     }
   });
 
-  it("「さらに表示」は読み込み中も同じ文字で disabled のまま、末尾に帯の行を足す", async () => {
+  it("「さらに表示」は読み込み中も同じ文字で disabled のまま、末尾にスケルトンの行を足す", async () => {
     const restore = setLoadingDelay(0);
     try {
       vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: prev, nextCursor: "c1" }));

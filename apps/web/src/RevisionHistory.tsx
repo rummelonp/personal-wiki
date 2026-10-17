@@ -64,7 +64,7 @@ type Viewing = { summary: RevisionSummary; stamp: Stamp } & (
   | { status: "error"; message: string }
 );
 
-/** 読み込み中の 2 行の帯。リンク元の節（Backlinks）と同じ形にそろえる */
+/** 読み込み中の 2 行のスケルトン。リンク元の節（Backlinks）と同じ形にそろえる */
 function PendingRevisions() {
   const painted = useSkeletonPainted();
   return (

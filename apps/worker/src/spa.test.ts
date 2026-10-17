@@ -90,7 +90,7 @@ describe("SPA の配信", () => {
     expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("same-origin");
-    // ASSETS の応答を複製して返すので、後段のミドルウェアがヘッダーを足せる
+    // ASSETS のレスポンスを複製して返すので、後段のミドルウェアがヘッダーを足せる
     expect(res.headers.get("Vary")).toContain("Cookie");
   });
 

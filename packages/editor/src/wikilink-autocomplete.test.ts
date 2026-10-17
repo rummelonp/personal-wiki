@@ -225,7 +225,7 @@ describe("the failure notice", () => {
 });
 
 describe("the index retry", () => {
-  /** 取得に失敗して空の索引。retry の呼び出しと、取り直しの結果を差し込める */
+  /** 取得に失敗して空のインデックス。retry の呼び出しと、取り直しの結果を差し込める */
   function retryingIndex() {
     const loaded = createMemoryPageIndex([{ id: "p1", title: "Code" }], {
       normalize: (text) => text.toLowerCase(),
@@ -607,7 +607,7 @@ describe("heading and block completion and the IME invariants", () => {
       selection: { anchor: 7 },
       userEvent: "input.type",
     });
-    // source が composition 前に走り、load の応答を待っている状態にする。pending になっただけでは
+    // source が composition 前に走り、load のレスポンスを待っている状態にする。pending になっただけでは
     // source が未実行のことがあり、その場合は先頭の判定で null になって await 後の判定に届かない
     await vi.waitFor(() => expect(slow.load).toHaveBeenCalled());
 

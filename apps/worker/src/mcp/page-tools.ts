@@ -96,7 +96,7 @@ export const readPageTool = defineTool({
       });
     }
     const found = await findRevision(ctx.db, page.id, revision, ctx.clientName);
-    // ページを読んだ直後に消されたときも、ページが無いときと同じ応答にする
+    // ページを読んだ直後に消されたときも、ページが無いときと同じレスポンスにする
     if (!found.ok) {
       return toolError({ error: found.reason === "page_not_found" ? "not_found" : found.reason });
     }

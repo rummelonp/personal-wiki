@@ -10,11 +10,11 @@ export interface FailedLinkRewrite {
 }
 
 /**
- * `POST /api/link-rewrites/step` の応答（apps/worker/src/pages/link-rewrites.ts の LinkRewriteStepResult）。
- * failed は応答の failedPages を読み、無ければ failed の id から作る。
+ * `POST /api/link-rewrites/step` のレスポンス（apps/worker/src/pages/link-rewrites.ts の LinkRewriteStepResult）。
+ * failed はレスポンスの failedPages を読み、無ければ failed の id から作る。
  */
 export interface LinkRewriteStepResult {
-  /** 本文を書き換えたリンク元。書き換えるリンクが無く、積んだ分を捨てただけのときは null */
+  /** 本文を書き換えたリンク元。書き換えるリンクが無く、キューのジョブを捨てただけのときは null */
   processed: {
     sourcePageId: string;
     title: string;
@@ -23,7 +23,7 @@ export interface LinkRewriteStepResult {
     version: number;
     rewritten: number;
   } | null;
-  /** 読んだあとにリンク元か対象ページが変わった。積んだ分は残るので、呼び直せば進む */
+  /** 読んだあとにリンク元か対象ページが変わった。キューのジョブは残るので、呼び直せば進む */
   conflict: boolean;
   /** 書き換えられずに捨てたリンク元（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
   failed: FailedLinkRewrite[];
@@ -32,7 +32,7 @@ export interface LinkRewriteStepResult {
 
 /**
  * 失敗の種類。not_found は step の無い（古い）Worker、forbidden は read の token など書けない principal。
- * 通信の失敗と想定外の status や応答の形は error にまとめる。
+ * 通信の失敗と想定外の status やレスポンスの形は error にまとめる。
  */
 export type StepFailureKind = "unauthorized" | "forbidden" | "not_found" | "error";
 
@@ -99,7 +99,7 @@ function parseStep(value: unknown): LinkRewriteStepResult | null {
   return { processed, conflict: v.conflict, failed, remaining: v.remaining };
 }
 
-/** title の変更で積んだリンクの書き換えを、リンク元 1 ページ分進める。 */
+/** title の変更でキューに入れたリンクの書き換えを、リンク元 1 ページ分進める。 */
 export async function stepLinkRewrites(fetchFn: Fetch = fetch): Promise<StepResult> {
   let res: Response;
   try {

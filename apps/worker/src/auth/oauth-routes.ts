@@ -30,7 +30,7 @@ import type { Scope } from "./principal";
 
 /**
  * OAuth の認可サーバーのルートを登録する。OAuth を閉じた環境（isOAuthEnabled）ではどれも 404 にする。
- * - メタデータ 2 つ、トークン、client の登録は匿名に開き、応答はライブラリが作る（クライアントは wiki の
+ * - メタデータ 2 つ、トークン、client の登録は匿名に開き、レスポンスはライブラリが作る（クライアントは wiki の
  *   資格情報を持たない）。トークンと登録の Authorization は resolvePrincipal が読まずにライブラリへ渡す。
  *   登録は、ライブラリに渡す前に本文の大きさを断り、KV に書く前に oauth-registration.ts の検査を通す
  * - 認可（同意画面）と接続の一覧は owner のセッションを要る。無ければ /_auth/login を経由して戻す。
@@ -191,7 +191,7 @@ async function decideConsent(c: Context<AppEnv>): Promise<Response> {
     try {
       // 同じ client の以前の grant とトークンは、ライブラリが失効させる（revokeExistingGrants の既定）
       ({ redirectTo } = await oauth.completeAuthorization({
-        // 認可の要求はフォームからではなく、同意画面を開いたときに保存したものを使う
+        // 認可のリクエストはフォームからではなく、同意画面を開いたときに保存したものを使う
         request: approved.request,
         userId: OAUTH_USER_ID,
         metadata: {},
@@ -225,9 +225,9 @@ function redirectToClient(location: string): Response {
 const UNREADABLE_SUBMISSION = "送信の内容を読み取れませんでした。";
 
 /**
- * この画面で出す誤りの文。ライブラリの誤りはほぼ invalid_request で code では見分けられず、英語の
+ * この画面で出すエラーの文。ライブラリのエラーはほぼ invalid_request で code では見分けられず、英語の
  * description を照合すると版上げで黙って外れるので、失敗した呼び出しで文を選ぶ。
- * - request: 認可の要求の解析（client_id や redirect URI を確かめられない）
+ * - request: 認可のリクエストの解析（client_id や redirect URI を確かめられない）
  * - consent: 同意の送信（handle が使用済み、期限切れ、別のブラウザのもの）
  * - other: 上のどちらでもない失敗（同意を受け付けた後の処理、承認する scope の検証など）
  */
@@ -239,8 +239,8 @@ const FAILURE_MESSAGES = {
 };
 
 /**
- * client と redirect URI を検証できた誤りだけ、client へ error を付けて戻す。それ以外（検証前の
- * 誤り、使用済みや期限切れの handle、別のブラウザで開いた同意画面）は、送り先を信用できないので
+ * client と redirect URI を検証できたエラーだけ、client へ error を付けて戻す。それ以外（検証前の
+ * エラー、使用済みや期限切れの handle、別のブラウザで開いた同意画面）は、送り先を信用できないので
  * この画面で表示する。KV の障害などは 500 にする。
  */
 export function authorizationFailure(siteName: string, error: unknown, message: string): Response {
@@ -369,7 +369,7 @@ function formatEpochSeconds(seconds: number | undefined): string {
 }
 
 /**
- * 誤りの画面と一覧は行き止まりになりやすいので、wiki のトップへの出口を 1 つ置く。同意の画面には置かない。
+ * エラーの画面と一覧は行き止まりになりやすいので、wiki のトップへの出口を 1 つ置く。同意の画面には置かない。
  * 許可か拒否を選ばせる画面で、別の出口があると選ばずに離れる操作が増える。
  */
 const BACK_LINK = `<p class="back"><a href="/">wiki に戻る</a></p>`;

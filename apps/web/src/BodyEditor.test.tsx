@@ -384,7 +384,7 @@ describe("jumpTo", () => {
   });
 });
 
-describe("通知の台", () => {
+describe("通知のドック", () => {
   const DOCK_HEIGHT = 200;
   const body = Array.from({ length: 120 }, (_, i) => `行 ${i}`).join("\n\n");
   let dock: HTMLElement | null = null;
@@ -408,7 +408,7 @@ describe("通知の台", () => {
     document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));
   }
 
-  /** 画面の下端の近く（台が出れば覆う位置）に見えている行の先頭 */
+  /** 画面の下端の近く（ドックが出れば覆う位置）に見えている行の先頭 */
   function offsetNearBottom(v: EditorView): number {
     const target = window.innerHeight - DOCK_HEIGHT / 2;
     let found = -1;
@@ -424,7 +424,7 @@ describe("通知の台", () => {
     return found;
   }
 
-  it("見えているカーソルの行が台に覆われたら、台の上へ逃がす", async () => {
+  it("見えているカーソルの行がドックに覆われたら、ドックの上へ逃がす", async () => {
     const { view } = controlled(body);
     const v = view();
     act(() => v.focus());
@@ -448,7 +448,7 @@ describe("通知の台", () => {
     expect(window.scrollY).toBe(0);
   });
 
-  it("台に覆われない行のカーソルは動かさない", async () => {
+  it("ドックに覆われない行のカーソルは動かさない", async () => {
     const { view } = controlled(body);
     const v = view();
     act(() => v.focus());
@@ -674,11 +674,11 @@ describe("jumpToFragment", () => {
         });
       });
 
-      describe("通知の台があるとき", () => {
+      describe("通知のドックがあるとき", () => {
         let dock: HTMLElement | null = null;
 
         beforeEach(() => {
-          // 台の高さ分の文書末尾の余白（styles.css が --notice-height で取る）
+          // ドックの高さ分の文書末尾の余白（styles.css が --notice-height で取る）
           document.documentElement.style.paddingBottom = `${DOCK_HEIGHT}px`;
           dock = document.createElement("div");
           dock.className = "notice-dock";
@@ -693,7 +693,7 @@ describe("jumpToFragment", () => {
           document.documentElement.style.removeProperty("padding-bottom");
         });
 
-        it("最後の行で打っても、窓は台と重ならずに見える", async () => {
+        it("最後の行で打っても、窓はドックと重ならずに見える", async () => {
           const { view } = controlled(long, { pageIndex });
           const v = view();
           act(() => v.focus());
@@ -711,7 +711,7 @@ describe("jumpToFragment", () => {
           });
         });
 
-        it("窓を開いた後に台が出たら、窓は台の上へ置き直される", async () => {
+        it("窓を開いた後にドックが出たら、窓はドックの上へ置き直される", async () => {
           dock?.replaceChildren();
           const { view } = controlled(long, { pageIndex });
           const v = view();
@@ -722,7 +722,7 @@ describe("jumpToFragment", () => {
             selection: { anchor: at + 4 },
             userEvent: "input.type",
           });
-          // 台が出れば覆う位置（台の上端より下）に窓が開くよう、カーソルの行を画面の下寄りに置く
+          // ドックが出れば覆う位置（ドックの上端より下）に窓が開くよう、カーソルの行を画面の下寄りに置く
           const caretTop = v.coordsAtPos(at + 4)?.top ?? Number.NaN;
           window.scrollBy(0, caretTop - (window.innerHeight - DOCK_HEIGHT - 60));
           await vi.waitFor(() => {
@@ -731,7 +731,7 @@ describe("jumpToFragment", () => {
             expect(rect.bottom).toBeGreaterThan(window.innerHeight - DOCK_HEIGHT);
           });
 
-          // スクロールの後の再測定が済むまで待つ。台の出入りだけを契機にして置き直されることを確かめる
+          // スクロールの後の再測定が済むまで待つ。ドックの出入りだけを契機にして置き直されることを確かめる
           await untilRectStill(tooltipRect);
           dock?.append(document.createElement("div"));
           document.dispatchEvent(new Event(NOTICE_DOCK_RESIZE));

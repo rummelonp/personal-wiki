@@ -93,7 +93,7 @@ export function EntryList({
   showVisibility?: boolean;
   visibility?: VisibilityFilter;
   className?: string | undefined;
-  /** 行の後ろに足す要素（読み込み中の帯の行など） */
+  /** 行の後ろに足す要素（読み込み中のスケルトンの行など） */
   children?: ReactNode;
 }) {
   return (

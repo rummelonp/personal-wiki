@@ -130,7 +130,7 @@ describe("createProxyHandler", () => {
     return (server.address() as AddressInfo).port;
   }
 
-  /** 受けたヘッダーを返し、ログアウトのようにセッション cookie を消す応答を真似る上流。 */
+  /** 受けたヘッダーを返し、ログアウトのようにセッション cookie を消すレスポンスを真似る上流。 */
   async function startProxy(
     setCookie = [`${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/`, "other=1"],
   ): Promise<{ port: number; upstreamHits: () => number }> {
@@ -259,7 +259,7 @@ describe("createProxyHandler", () => {
       upstreamClosed = done;
     });
     const upstreamPort = await listen((req, res) => {
-      // 終わらない応答の途中で切られる
+      // 終わらないレスポンスの途中で切られる
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.write("data: 1\n\n");
       req.socket.once("close", upstreamClosed);

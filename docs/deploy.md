@@ -75,7 +75,7 @@ pnpm deploy:remote
 ```
 
 `deploy:remote` は先に `apps/web` をビルドする。
-migration を先にするのは、デプロイが先だと新しい版が使う表がまだ無く、保存と一覧がエラーで止まるためである。
+migration を先にするのは、デプロイが先だと新しい版が使うテーブルがまだ無く、保存と一覧がエラーで止まるためである。
 owner のログインや OAuth を設定していない間は `warning:` が標準エラーに出るが、デプロイは続く。
 
 ### 5. API token を発行する
@@ -162,7 +162,7 @@ claude.ai や Claude Desktop のカスタムコネクタから OAuth で MCP に
 
 接続の扱いは次のとおりである。
 
-- claude.ai の戻り先は既定で許可している。
+- claude.ai のリダイレクト先は既定で許可している。
   ほかのクライアントから接続するときだけ、redirect URI を `OAUTH_REDIRECT_URIS`（カンマ区切り、完全一致）に足す
 - client の登録は、redirect URI が許可したものだけを受け付け、1 日（UTC）に 20 件までである。
   上限に達した日は、新しい接続だけが止まる
@@ -176,14 +176,14 @@ claude.ai や Claude Desktop のカスタムコネクタから OAuth で MCP に
 
 ### リンクの書き換えの自動実行（Cron）
 
-title を変えると、他のページの `[[旧 title]]` を書き換える仕事が積まれる。
-owner がブラウザで開いていれば画面が進めるが、MCP 経由の rename では積まれたまま残る。
+title を変えると、他のページの `[[旧 title]]` を書き換えるジョブがキューに入る。
+owner がブラウザで開いていれば画面が進めるが、MCP 経由の rename ではキューに入ったまま残る。
 `deploy.env` の `LINK_REWRITE_CRON` に cron 式（5 フィールド。例 `*/5 * * * *`）を書いてデプロイすると、1 回の発火で 1 リンク元ずつ進める。
 
 Cron Trigger はアカウント全体で 5 本までなので、既定は空である。
 空のままデプロイすると、Cron を付けず、デプロイ済みの Cron も外す。
 推奨は `* * * * *` か `*/5 * * * *` である。
-積んだ分が無い発火の D1 の読み取りは数行で、毎分でも 1 日 1,500 行ほどに収まる。
+キューにジョブが無い発火の D1 の読み取りは数行で、毎分でも 1 日 1,500 行ほどに収まる。
 
 Cron を使わないときの進め方と、Cron が飛ばしたページの扱いは [operations.md](./operations.md) の「リンクの書き換え」にある。
 
@@ -194,9 +194,9 @@ Cron を使わないときの進め方と、Cron が飛ばしたページの扱�
 
 - 画面の左上のブランド
 - ブラウザのタブの title（ページの URL では `ページの title - サイト名`、それ以外の URL ではサイト名だけ）
-- MCP の server の表示名（`initialize` の応答の `serverInfo.title`。`serverInfo.name` は識別子で、`personal-wiki` のまま変わらない）
+- MCP の server の表示名（`initialize` のレスポンスの `serverInfo.title`。`serverInfo.name` は識別子で、`personal-wiki` のまま変わらない）
 - OAuth の保護されたリソースのメタデータの `resource_name`
-- OAuth の同意画面、許可した接続の一覧、誤りの画面の上に出るブランド
+- OAuth の同意画面、許可した接続の一覧、エラーの画面の上に出るブランド
 
 リンクプレビューが読む `og:title` はページの title だけで、サイト名は含まない（`og:site_name` も出さない）。
 
@@ -227,7 +227,7 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
   `/_auth/oauth/authorize` の同意画面はブラウザで開くので、challenge を受けても進める
 - Bot Fight Mode は、パスを除いて外すことができず、MCP と API への接続も challenge する。
   MCP や REST をエージェントから使うなら無効にする
-- `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続した要求も当たる。
+- `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続したリクエストも当たる。
   当たると `server returned 429` で止まるので、少し待ってから [operations.md](./operations.md) の手順で続きから再開する
 
 ## 更新
@@ -246,9 +246,9 @@ pnpm derived:rebuild --remote
 
 `0009_api_token_names.sql` は、上の 3 つのコマンドのほかに操作が要らない。
 
-migration は派生データの表を足すことがある。
-デプロイが先だと、新しい版が使う表がまだ無く、保存と一覧がエラーで止まる。
-新しい版が派生データの表や作り方を変えても、既存のページの分は作り直すまで古いまま（または空のまま）残る。
+migration は派生データのテーブルを足すことがある。
+デプロイが先だと、新しい版が使うテーブルがまだ無く、保存と一覧がエラーで止まる。
+新しい版が派生データのテーブルや作り方を変えても、既存のページの分は作り直すまで古いまま（または空のまま）残る。
 `derived:rebuild` はこれを本文から作り直す。
 migration の前からあるページは、これを回すまで一覧に抜粋が出ない。
 作り直しの内容は [operations.md](./operations.md) の「派生データの作り直し」にある。
@@ -273,7 +273,7 @@ links と待っているリンクの書き換えの key もこの migration が�
 
 migration からデプロイまでの間は前の版の Worker が動いていて、この間のページの保存は title_key を古い規則で計算し直す。
 本文だけの保存でも、`_` を含む title の key が `a_b` に戻る。
-戻った key は title の変更とみなされ、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれる。
+戻った key は title の変更とみなされ、他のページの `[[a_b]]` を書き換えるリンクの書き換えがキューに入る。
 この migration を当てる更新では、`pnpm db:migrate:remote`、`pnpm deploy:remote` の順に実行したあと、次の SQL を 1 回実行して key をそろえ直す。
 そのあとに `pnpm derived:rebuild --remote` を実行する。
 `UNIQUE constraint failed` で止まったら、上と同じくどちらかのページの title を変えてから再実行する。
@@ -291,7 +291,7 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
 - `derived:rebuild` を実行する。
   前の版は新しい派生データ（抜粋など）を書かないので、戻している間に保存したページの分が古いまま残る。
   添付の参照も同じで、戻している間に本文から外した添付は、`derived:rebuild` を回すまで匿名に読めるまま残る
-- リンクの書き換えの step（`POST /api/link-rewrites/step`）が無い版では、step が 404 になり、rename しても書き換えは積まれない。
+- リンクの書き換えの step（`POST /api/link-rewrites/step`）が無い版では、step が 404 になり、rename しても書き換えはキューに入らない。
   戻している間に変えた title へのリンクは、手で直す
 - Cron の予約は script の設定なので、`scheduled` の無い版に戻しても残り、発火ごとにエラーになる。
   前の版の deploy は予約に触れないので、外すならダッシュボードで外す
@@ -300,8 +300,8 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
 - `0008_title_key_underscore.sql` を当てたまま、`_` を空白と同じに扱わない版に戻すと、`_` を含む title のページを title で引けず、`[[a_b]]` も解決しない。
   重複の検査も `a b` があるのに `a_b` を作れるようになる。
   title_key は title を正規化した値で SQL では元の形に作り直せないので、戻さずに前へ進めて直す。
-  戻している間は、`_` を含む title のページを保存するたびに（本文だけの保存でも）title_key が `a_b` に戻り、他のページの `[[a_b]]` を書き換えるリンクの書き換えが積まれる。
-  今の版に戻したら、戻している間に保存したページと、その間に積まれたリンクの書き換えの key を、「title の `_` と空白をそろえる migration」の項のそろえ直しの SQL でもう一度そろえ、`derived:rebuild` を実行する
+  戻している間は、`_` を含む title のページを保存するたびに（本文だけの保存でも）title_key が `a_b` に戻り、他のページの `[[a_b]]` を書き換えるリンクの書き換えがキューに入る。
+  今の版に戻したら、戻している間に保存したページと、その間にキューに入ったリンクの書き換えの key を、「title の `_` と空白をそろえる migration」の項のそろえ直しの SQL でもう一度そろえ、`derived:rebuild` を実行する
 - `0009_api_token_names.sql` を当てたまま、API token を id で識別しない版に戻すと、同じ名前の token の書き込みはどれも actor が `token:<name>` になり、どの token が書いたか区別できない。
   前の版の `pnpm api-token revoke <name>` は、同じ名前の有効な token をすべて失効させる。
   戻している間は同じ名前の token を発行せず、失効は今の版のスクリプトの `revoke --id` で行う

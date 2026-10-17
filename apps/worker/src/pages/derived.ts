@@ -52,7 +52,7 @@ export function deriveValues(title: string, body: string): DerivedValues {
  * - links、tags、attachment_refs は差分で書く。消して入れ直すより書き込み行数が大幅に少ない。upsert は値が変わった
  *   行だけを書き換え、tag の表記や target_page_id の食い違いも作り直しで直る。
  * - このページを target とする他のページの links を、新しい title_key で付け直す。title が変わらない
- *   保存でも毎回流す。変わったかを知るには pages を読む文が別に要り、変わらなければ索引を引くだけで
+ *   保存でも毎回流す。変わったかを知るには pages を読む文が別に要り、変わらなければインデックスを引くだけで
  *   行を書かないため。
  */
 export function derivedStatements(

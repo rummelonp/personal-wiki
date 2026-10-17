@@ -22,12 +22,12 @@ const codeFirstLine = Decoration.line({ class: "cm-lp-code-first" });
 const codeLastLine = Decoration.line({ class: "cm-lp-code-last" });
 const openFenceLine = Decoration.line({ class: "cm-lp-code-open-fence" });
 
-/** 行頭の字下げの桁数ごとの、折り返した行をそろえる line decoration */
+/** 行頭のインデントの桁数ごとの、折り返した行をそろえる line decoration */
 const indentLines = new Map<number, Decoration>();
 
 /**
- * 折り返した行を、その行の先頭の字下げにそろえる（ぶら下げインデント）。コードの行は等幅で描くので、
- * 字下げの幅は桁数を `ch` にすれば決まり、list-indent.ts のように書体から幅を見積もる必要が無い。
+ * 折り返した行を、その行の先頭のインデントにそろえる（ぶら下げインデント）。コードの行は等幅で描くので、
+ * インデントの幅は桁数を `ch` にすれば決まり、list-indent.ts のように書体から幅を見積もる必要が無い。
  * タブも CSS の tab-size（CodeMirror が `state.tabSize` で当てる）と同じ規則で桁に数える。
  */
 function indentLine(state: EditorState, text: string): Decoration | null {
@@ -160,7 +160,7 @@ function languageOf(info: string): string {
 }
 
 /**
- * コードブロックの各行に、地と書体と、折り返した行を字下げにそろえる line decoration を付ける。
+ * コードブロックの各行に、地と書体と、折り返した行をインデントにそろえる line decoration を付ける。
  * `visible` の外の行には付けない
  */
 export function decorateCodeLines(
@@ -189,7 +189,7 @@ export function decorateCodeLines(
  * 行そのものは消さず、行の中の記法だけを置き換える。行の高さが残るので、カーソルが入って
  * フェンスが現れても本文の行は上下に動かない。開きフェンスは info string の言語名を、表示名にして
  * 行の右端のラベルに置き換え、閉じフェンスは見た目を空にする。どちらにも読み上げ用の境目を置く。
- * 範囲は記法の先頭から行末までで、前にある字下げや引用の `>`（他の記法の持ち物）は含めない。
+ * 範囲は記法の先頭から行末までで、前にあるインデントや引用の `>`（他の記法の持ち物）は含めない。
  */
 export function concealFences(
   state: EditorState,

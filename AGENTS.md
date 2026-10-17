@@ -37,7 +37,7 @@ pnpm typecheck     # tsc --noEmit
 pnpm test          # vitest run
 ```
 
-`packages/editor` と `apps/web` の部品のテストは Playwright の Chromium の中で動く。
+`packages/editor` と `apps/web` のコンポーネントのテストは Playwright の Chromium の中で動く。
 初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れる。
 
 ### E2E
@@ -100,7 +100,7 @@ cookie の値は `scripts/session-cookie.mjs` が作り、E2E も同じものを
 本番の hostname と D1 の ID は `apps/worker/deploy.env`（コミットしない。`deploy.env.example` を写して作る）に置く。
 
 本番を更新するときは、次の順に実行する。
-デプロイが migration より先だと、新しい版が使う表がまだ無く、保存と一覧がエラーで止まる。
+デプロイが migration より先だと、新しい版が使うテーブルがまだ無く、保存と一覧がエラーで止まる。
 Worker を前の版に戻したときも `derived:rebuild` が要る。
 ほかの手順と詳細は [docs/deploy.md](./docs/deploy.md) と [docs/operations.md](./docs/operations.md) にある。
 
@@ -125,7 +125,7 @@ token を識別するのは id で、name は重複してよい。
   利用者向けの説明は README.md、開発の規約とコマンドは AGENTS.md に置く。
   運用の手順や設計の規範のように長いものは `docs/` に置き、README.md と AGENTS.md からリンクする。
 - 秘密情報（`.dev.vars`、`.env*`、`apps/worker/deploy.env`）はコミットしない。
-- 見た目の値（色、長さ、font-family、影、z-index）は `apps/web/src/theme.css` の token に置き、部品の CSS は token だけを参照する。
+- 見た目の値（色、長さ、font-family、影、z-index）は `apps/web/src/theme.css` の token に置き、コンポーネントの CSS は token だけを参照する。
   直書きが要る宣言は、同じ行の末尾に `/* token-ok: 理由 */` を書く。
   `pnpm lint` が検査する。
 

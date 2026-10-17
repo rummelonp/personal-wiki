@@ -1,9 +1,9 @@
-// 全ページの派生データ（links、tags、抜粋、検索の索引）を、POST /api/admin/derived/rebuild で作り直す。
+// 全ページの派生データ（links、tags、抜粋、検索インデックス）を、POST /api/admin/derived/rebuild で作り直す。
 //   node scripts/derived-rebuild.mjs [--remote] [--url <base>] [--after <id>]
-// API は CPU の上限に収まるよう 1 回に 1 ページしか進まないので、応答の next が null になるまで繰り返す。
+// API は CPU の上限に収まるよう 1 回に 1 ページしか進まないので、レスポンスの next が null になるまで繰り返す。
 // 既定はローカルの wrangler dev（http://localhost:8787）。--remote は deploy.env の WIKI_HOSTNAME に送る。
 // write の scope を持つ API トークンを環境変数 WIKI_TOKEN から読む。値は標準出力にもログにも出さない。
-// 派生データの形が変わる更新（migration で表を足したときなど）のあとと、Worker を前の版に戻して
+// 派生データの形が変わる更新（migration でテーブルを足したときなど）のあとと、Worker を前の版に戻して
 // 再デプロイしたあとに実行する。
 //   pnpm derived:rebuild --remote
 // 途中で止まったら、表示される `--after <id>` を付けて続きから再開する。
@@ -64,7 +64,7 @@ export function parseArgs(argv) {
  */
 
 /**
- * 応答の形が想定どおりか。想定外の応答を黙って進めると、止まらずに空回りしうる。
+ * レスポンスの形が想定どおりか。想定外のレスポンスを黙って進めると、止まらずに空回りしうる。
  * @param {unknown} value
  * @returns {value is { rebuilt: number; skipped: number; failed: string[]; next: string | null }}
  */
@@ -81,7 +81,7 @@ function isRebuildResponse(value) {
 }
 
 /**
- * next が null になるまで rebuild を呼ぶ。通信や応答の失敗では例外を投げず、そこまでの結果と
+ * next が null になるまで rebuild を呼ぶ。通信やレスポンスの失敗では例外を投げず、そこまでの結果と
  * 再開位置（stoppedAfter）を返す。token はヘッダにだけ使い、メッセージには含めない。
  * @param {{
  *   baseUrl: string;

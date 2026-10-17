@@ -64,7 +64,7 @@ describe("titlePath", () => {
     }
   });
 
-  it("Static Assets が先に応答する index.html、index、robots.txt は null", () => {
+  it("Static Assets が先にレスポンスを返す index.html、index、robots.txt は null", () => {
     for (const title of ["index", "Index", "index.html", "INDEX.HTML", "index/x", "robots.txt"]) {
       expect(titlePath(title)).toBeNull();
     }
@@ -94,7 +94,7 @@ describe("titlePath", () => {
     expect(titlePath("auth_")).toBe("/auth_");
   });
 
-  it("Worker が応答する segment はすべて予約語に入っている", () => {
+  it("Worker がレスポンスを返す segment はすべて予約語に入っている", () => {
     for (const segment of WORKER_PATH_SEGMENTS) {
       expect(RESERVED_TITLE_SEGMENTS).toContain(segment);
     }

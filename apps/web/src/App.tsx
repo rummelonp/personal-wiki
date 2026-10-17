@@ -87,7 +87,7 @@ export function App() {
       try {
         await logout();
       } catch {
-        // 失敗の応答でも、サーバーでは済んでいることがある。ログイン状態を確かめ、続いていれば
+        // 失敗のレスポンスでも、サーバーでは済んでいることがある。ログイン状態を確かめ、続いていれば
         // 止めた書き換えを再開する（匿名ならそのまま匿名の画面に移る）。確かめられなければ
         // エラーの画面にし、ログイン状態が分かるまで書き換えは止めたままにする
         const me = await fetchMe();
@@ -116,7 +116,7 @@ export function App() {
     }
   }
 
-  // 画面は /api/me の応答を待ってから出す。/api/me は検証できない cookie を消すので、その後の
+  // 画面は /api/me のレスポンスを待ってから出す。/api/me は検証できない cookie を消すので、その後の
   // 匿名の読み取りが期限切れの cookie で 401 にならない
   const ready = session.status === "ready";
   const isOwner = ready && session.me.kind === "owner";

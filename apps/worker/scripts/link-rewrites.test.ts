@@ -74,7 +74,7 @@ describe("run", () => {
     expect(out.stderr).not.toContain(TOKEN);
   });
 
-  it("積まれた分が無ければ 1 回で終える", async () => {
+  it("キューに入ったジョブが無ければ 1 回で終える", async () => {
     const empty = Response.json({
       processed: null,
       conflict: false,
@@ -106,7 +106,7 @@ describe("run", () => {
     expect(out.stderr).toContain("version conflicts");
   });
 
-  it("サーバーのエラーと想定外の応答で止め、残りの数を出す", async () => {
+  it("サーバーのエラーと想定外のレスポンスで止め、残りの数を出す", async () => {
     const failing = fakeIo([step(3), Response.json({ error: "forbidden" }, { status: 403 })], {
       WIKI_TOKEN: TOKEN,
     });

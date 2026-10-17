@@ -164,7 +164,7 @@ describe("extractTags の境界の判定量", () => {
         for (const c of alphabet) cases.push(prefix + c);
       }
     }
-    // 字下げの code block、水平線、code fence になる行頭は block の話なので除く
+    // インデントされた code block、水平線、code fence になる行頭は block の話なので除く
     const isBlockStart = (c: string) => /^(?: {4}| {0,3}([*_~])\1\1)/.test(c);
     for (const prefix of cases.filter((c) => !isBlockStart(c))) {
       expect(extractTags(`${prefix}#t`), JSON.stringify(prefix)).toEqual(

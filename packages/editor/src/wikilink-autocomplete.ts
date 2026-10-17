@@ -36,7 +36,7 @@ import type { PageCandidate, PageIndex } from "./page-index";
  *
  * `PageIndex.search` と違って非同期にする。見出しと block id は page の本文から取り出すので、
  * 本文を持っていなければ round trip が要る。`#` は意図して打つ区切りで、`[[` の 1 文字目のように
- * 打鍵の度に待たされることがない。取得済みの内容を覚えておくのは呼び出し側の役目
+ * 打鍵の度に待たされることがない。取得済みの内容をキャッシュしておくのは呼び出し側の役目
  * （`createPageEmbedCache` と同じ分担）。`validFor` で、同じ `[[Title#` の中の打鍵は取り直さない。
  */
 export interface LinkTargetSource {
@@ -59,7 +59,7 @@ export interface WikiLinkAutocompleteOptions {
   readonly linkTargets?: LinkTargetSource;
   /**
    * 候補解決（`PageIndex.search` から `CompletionResult` を返すまで）の所要時間を ms で受け取る。
-   * 計測用。同期に解決したときだけ呼ぶ。索引の取り直しを待った場合は、待ちが利用者の打鍵の
+   * 計測用。同期に解決したときだけ呼ぶ。インデックスの取り直しを待った場合は、待ちが利用者の打鍵の
    * 応答ではないので呼ばない。
    */
   readonly onLatency?: (ms: number) => void;

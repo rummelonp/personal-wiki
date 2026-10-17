@@ -8,7 +8,7 @@ import { insertToken } from "./test/tokens";
 
 /*
  * ページの URL の HTML に差し込むメタ情報と、公開範囲で変わるヘッダー。匿名が draft の title を開いた
- * 応答は、存在しない title の応答と区別できてはならない。
+ * レスポンスは、存在しない title のレスポンスと区別できてはならない。
  */
 
 const ORIGIN = "http://localhost";
@@ -200,7 +200,7 @@ describe("public のページの HTML", () => {
     expect((await navigate("/API")).status).toBe(404);
   });
 
-  it("Static Assets が先に応答する index と index.html の title は /p/<id> を正規の URL にする", async () => {
+  it("Static Assets が先にレスポンスを返す index と index.html の title は /p/<id> を正規の URL にする", async () => {
     const { navigate, create } = await seed();
     for (const title of ["index", "Index.html"]) {
       const page = await create(title, "", "public");
@@ -364,7 +364,7 @@ describe("見つからないパス", () => {
 });
 
 describe("Accept による分岐", () => {
-  // Accept の無い要求、*/* だけの要求（空白は無視）
+  // Accept の無いリクエスト、*/* だけのリクエスト（空白は無視）
   const anyAccepts = [undefined, "*/*", " */* "];
   const withAccept = (accept: string | undefined): RequestInit =>
     accept === undefined ? {} : { headers: { Accept: accept } };
@@ -412,7 +412,7 @@ describe("Accept による分岐", () => {
     }
   });
 
-  it("JSON や画像など他の型を明示した要求は、ページがあっても JSON の 404", async () => {
+  it("JSON や画像など他の型を明示したリクエストは、ページがあっても JSON の 404", async () => {
     const { call, open } = await seed();
     for (const path of ["/Open%20Note", `/p/${open.id}`]) {
       for (const accept of [

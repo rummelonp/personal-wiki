@@ -165,7 +165,7 @@ describe("自動保存の間引き", () => {
     expect(api.calls).toEqual(["put@1"]);
   });
 
-  it("保存中の入力は次の保存にまわし、版は応答のものを使う", async () => {
+  it("保存中の入力は次の保存にまわし、版はレスポンスのものを使う", async () => {
     const { session, api, server } = setup();
     session.edit({ title: "題", body: "a" });
     const real = api.updatePage;
@@ -797,7 +797,7 @@ describe("ログイン切れ", () => {
 });
 
 describe("visibility", () => {
-  it("未保存の変更を先に保存し、応答の版を以後の保存に使う", async () => {
+  it("未保存の変更を先に保存し、レスポンスの版を以後の保存に使う", async () => {
     const { session, api, server } = setup();
     session.edit({ title: "題", body: "手元" });
     await session.changeVisibility("public");
@@ -826,7 +826,7 @@ describe("visibility", () => {
     expect(saveStatusOf(session.getState())).toBe("conflict");
   });
 
-  it("If-Match を照合しない Worker でも、他の保存が混ざった応答は衝突にする", async () => {
+  it("If-Match を照合しない Worker でも、他の保存が混ざったレスポンスは衝突にする", async () => {
     const { session, api } = setup();
     api.setVisibility = async () => ok(page({ body: "他", version: 2, visibility: "public" }));
     await session.changeVisibility("public");
@@ -871,7 +871,7 @@ describe("版を戻す", () => {
     expect(backup.load(ID)?.body).toBe("打った内容");
   });
 
-  it("送れない内容（入力の誤り）が残っていれば戻さない", async () => {
+  it("送れない内容（入力のエラー）が残っていれば戻さない", async () => {
     const { session, api, server } = setup();
     server.revisions = { 1: "本文" };
     session.edit({ title: "題", body: "a\u0000b" });
@@ -1847,7 +1847,7 @@ describe("リンクの書き換えの取り込み", () => {
     const { session, server, api } = setup({ server: page({ body: "[[旧]]" }) });
     session.edit({ title: "題", body: "[[旧]] 追記" });
     const saving = session.flush();
-    // 保存の要求が届く前に、step が同じページを書き換える
+    // 保存のリクエストが届く前に、step が同じページを書き換える
     const processed = rewriteOnServer(server, "[[新]]");
     const adopting = session.linkRewritten(processed);
     await Promise.all([saving, adopting]);
@@ -1944,7 +1944,7 @@ describe("自分のタブの外で走ったリンクの書き換え", () => {
     server.page = { ...server.page, body, version: server.page.version + 1 };
   };
 
-  it("保存が 409 でも、差分がリンクの書き換えだけなら手元に重ね、同じ形の要求ですぐに送り直す", async () => {
+  it("保存が 409 でも、差分がリンクの書き換えだけなら手元に重ね、同じ形のリクエストですぐに送り直す", async () => {
     const { session, server, api, backup } = setup({ server: base() });
     const put = vi.spyOn(api, "updatePage");
     session.edit({ title: "題", body: "[[旧]] 本文 追記" });
@@ -2207,7 +2207,7 @@ describe("まだ作っていないページ", () => {
     expect(api.calls).toEqual(["create"]);
   });
 
-  it("作成の応答を待つ間の入力は、作れた後に自動保存で送る", async () => {
+  it("作成のレスポンスを待つ間の入力は、作れた後に自動保存で送る", async () => {
     const { session, api, server } = setupNew();
     const release = deferredCreate(api);
     session.editTitle("題");
@@ -2232,7 +2232,7 @@ describe("まだ作っていないページ", () => {
     expect(api.calls).toEqual(["create"]);
   });
 
-  it("空の title の確定は作成の応答待ちにせず、内容があれば作る前の内容を持つと答える", async () => {
+  it("空の title の確定は作成のレスポンス待ちにせず、内容があれば作る前の内容を持つと答える", async () => {
     const { session, api } = setupNew();
     expect(session.holdsUncreatedContent()).toBe(false);
     session.edit({ title: "", body: "本文" });
@@ -2279,7 +2279,7 @@ describe("まだ作っていないページ", () => {
     expect(saveStatusOf(session.getState())).toBe("create-error");
     session.edit({ title: "題", body: "続き" });
     expect(session.getState().error).not.toBeNull();
-    // 同じ title の確定し直しは、同じ応答になるので送らない
+    // 同じ title の確定し直しは、同じレスポンスになるので送らない
     await session.commitTitle();
     expect(attempts).toBe(1);
     api.createPage = create;
@@ -2341,7 +2341,7 @@ describe("まだ作っていないページ", () => {
     expect(newBackups(backup)).toEqual([]);
   });
 
-  it("作成の応答を待つ間に開いた次の画面の退避は、作れても消さない", async () => {
+  it("作成のレスポンスを待つ間に開いた次の画面の退避は、作れても消さない", async () => {
     const { session, api, backup } = setupNew();
     const release = deferredCreate(api);
     session.editTitle("題");
@@ -2357,7 +2357,7 @@ describe("まだ作っていないページ", () => {
     expect(newBackups(backup)).toEqual([expect.objectContaining({ body: "次の画面" })]);
   });
 
-  it("作成の応答を待つ間に離れたら、作れた後も保存せず、続きの入力は作ったページの退避に残す", async () => {
+  it("作成のレスポンスを待つ間に離れたら、作れた後も保存せず、続きの入力は作ったページの退避に残す", async () => {
     const { session, api, backup } = setupNew();
     const release = deferredCreate(api);
     session.editTitle("題");
@@ -2486,7 +2486,7 @@ describe("まだ作っていないページ", () => {
       });
     });
 
-    it("作成の応答を待つ画面を閉じて次の画面を開いても、作成中の内容は出さない", async () => {
+    it("作成のレスポンスを待つ画面を閉じて次の画面を開いても、作成中の内容は出さない", async () => {
       const { session, api, backup } = setupNew();
       const release = deferredCreate(api);
       session.editTitle("作成中の題");
@@ -2605,7 +2605,7 @@ describe("保存の前の検査", () => {
     expect(saveStatusOf(session.getState())).toBe("saved");
   });
 
-  it("作る前の空の title は誤りとしない", () => {
+  it("作る前の空の title はエラーとしない", () => {
     const session = newSession(fakeApi({ page: page() }), memoryBackup());
     session.edit({ title: "", body: "本文" });
     expect(saveStatusOf(session.getState())).toBe("new");
@@ -2780,7 +2780,7 @@ describe("保存の前の検査", () => {
     });
   });
 
-  it("サーバーが入力の誤りで拒んだら、送り直しても通らないと印を付ける", async () => {
+  it("サーバーが入力のエラーで拒んだら、送り直しても通らないと印を付ける", async () => {
     const { session, api } = setup();
     api.updatePage = async () => ({
       ok: false,

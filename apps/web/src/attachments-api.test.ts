@@ -35,7 +35,7 @@ describe("uploadAttachment", () => {
     }
   });
 
-  it("201 でも形の合わない応答は error にする", async () => {
+  it("201 でも形の合わないレスポンスは error にする", async () => {
     const result = await uploadAttachment(png(), async () =>
       Response.json({ name: 1 }, { status: 201 }),
     );

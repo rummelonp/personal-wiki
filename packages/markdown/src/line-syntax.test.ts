@@ -65,7 +65,7 @@ describe("syntaxByLine", () => {
     expect(codeLines("```\na\nb")).toEqual([true, true, true]);
   });
 
-  it("字下げの code block も code の行とする", () => {
+  it("インデントされた code block も code の行とする", () => {
     expect(codeLines("段落\n\n    code\n\n後")).toEqual([false, false, true, false, false]);
   });
 

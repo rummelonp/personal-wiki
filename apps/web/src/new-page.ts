@@ -49,7 +49,7 @@ export function useNewPageRequest(): NewPageRequest {
   return useSyncExternalStore(subscribe, () => current);
 }
 
-/** 新規作成の画面の title を受け取った。描画の中では呼ばない（別の部品の更新になる）。 */
+/** 新規作成の画面の title を受け取った。描画の中では呼ばない（別のコンポーネントの更新になる）。 */
 export function consumeNewPageTitle(serial: number): void {
   if (current.serial === serial && current.title !== "") publish({ serial, title: "" });
 }

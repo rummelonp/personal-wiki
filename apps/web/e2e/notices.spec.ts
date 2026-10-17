@@ -11,7 +11,7 @@ import {
 
 /*
  * 通知（失敗、衝突、ログイン切れ）が出入りしても、title と本文の位置は動かず、打っている行は通知に隠れない。
- * 通知は画面の下端に重ねて出る台（.notice-dock）に入り、本文の流れに高さを取らない。
+ * 通知は画面の下端に重ねて出るドック（.notice-dock）に入り、本文の流れに高さを取らない。
  * 測るのは座標で、幅は 375、768、1280（@widths）と、iPhone の WebKit（主の環境）。
  */
 
@@ -106,7 +106,7 @@ async function typeAt(page: Page, lineIndex: number, text: string): Promise<void
 }
 
 async function expectDockOnScreen(page: Page): Promise<void> {
-  // 高い通知（衝突の差分）は台の中でスクロールするので、台の枠が画面に収まることを測る
+  // 高い通知（衝突の差分）はドックの中でスクロールするので、ドックの枠が画面に収まることを測る
   const box = await boxOf(dock(page));
   const viewport = page.viewportSize();
   if (viewport === null) throw new Error("viewport が無い");
@@ -140,7 +140,7 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
   const before = await measureBefore(page);
   await failSaveWith500(page, created);
 
-  // 画面の下端に近い行を打つ。通知は台に重なって出るので、この行は通知で確実に覆われる
+  // 画面の下端に近い行を打つ。通知はドックに重なって出るので、この行は通知で確実に覆われる
   const viewport = page.viewportSize();
   if (viewport === null) throw new Error("viewport が無い");
   let index = 0;
@@ -155,8 +155,8 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
   const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
   await expect(alert).toBeVisible();
   await expect(dock(page)).toContainText("時間をおいて、もう一度試してください。");
-  // 追加の入力の前に測る。台が出る前の行は台に覆われる位置にあり、それでも台の上へ逃げている
-  expect(caretBefore.bottom, "行が台に覆われる位置になく、検査にならない").toBeGreaterThan(
+  // 追加の入力の前に測る。ドックが出る前の行はドックに覆われる位置にあり、それでもドックの上へ逃げている
+  expect(caretBefore.bottom, "行がドックに覆われる位置になく、検査にならない").toBeGreaterThan(
     (await boxOf(alert)).y,
   );
   await expect
@@ -178,7 +178,7 @@ test("保存の失敗の通知が出入りしても、title と本文の位置�
     .toBeLessThanOrEqual((await boxOf(alert)).y + 0.5);
 
   // 通知が消えても、title と本文は動かない（スクロールは戻さないので、先頭までスクロールして比べる）
-  // 横取りを外すのは、打った分の自動保存が失敗で返ってから。横取り中の要求を残したまま外すと、
+  // 横取りを外すのは、打った分の自動保存が失敗で返ってから。横取り中のリクエストを残したまま外すと、
   // 送り直しが通信の失敗で終わることがある（原因は特定していない）
   await failedAgain;
   await page.unroute(`**/api/pages/${created.id}`);
@@ -203,7 +203,7 @@ test("保存の失敗の通知は、操作の前後で title の位置を動か�
   expect((await caretRect(page)).bottom).toBeLessThanOrEqual((await boxOf(alert)).y + 0.5);
 });
 
-test("もう一度保存している間は、下までスクロールしていても、台に保存中の通知が残る", async ({
+test("もう一度保存している間は、下までスクロールしていても、ドックに保存中の通知が残る", async ({
   page,
   api,
 }, testInfo) => {
@@ -215,7 +215,7 @@ test("もう一度保存している間は、下までスクロールしてい�
   await expect(alert).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 
-  // 保存の状態の表示はページの上端にあり、ここからは見えない。台の通知が進行を伝える
+  // 保存の状態の表示はページの上端にあり、ここからは見えない。ドックの通知が進行を伝える
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -238,7 +238,7 @@ test("もう一度保存している間は、下までスクロールしてい�
   await expect(saveState(page)).toHaveText("保存済み");
 });
 
-test("もう一度保存している間、上端の保存の状態が見えていれば台には出さず、下へスクロールすると台に出る", async ({
+test("もう一度保存している間、上端の保存の状態が見えていればドックには出さず、下へスクロールするとドックに出る", async ({
   page,
   api,
 }, testInfo) => {
@@ -260,13 +260,13 @@ test("もう一度保存している間、上端の保存の状態が見えて�
     await route.fallback();
   });
   await alert.getByRole("button", { name: "もう一度保存する" }).click();
-  // 上端の「保存中…」が同じ保存を伝えるので、台に同じ意味の通知を重ねない
+  // 上端の「保存中…」が同じ保存を伝えるので、ドックに同じ意味の通知を重ねない
   await expect(saveState(page)).toHaveText("保存中…");
   await expect(alert).toBeHidden();
   const saving = dock(page).locator(".notice").filter({ hasText: "保存中…" });
   await expect(saving).toHaveCount(0);
 
-  // 保存の途中で上端が見えなくなったら、台が進行を伝える
+  // 保存の途中で上端が見えなくなったら、ドックが進行を伝える
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect(saving).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -483,8 +483,8 @@ async function provokeLongConflict(page: Page, api: OwnerApi, title: string): Pr
   return conflict;
 }
 
-test.describe("差分の長い衝突の通知は、台の中と差分の欄が二重にスクロールしない", () => {
-  // iPhone 15 の layout viewport は 393x659。キーボードが無くても、台の上限（0.6）は 395 ほどになる
+test.describe("差分の長い衝突の通知は、ドックの中と差分の欄が二重にスクロールしない", () => {
+  // iPhone 15 の layout viewport は 393x659。キーボードが無くても、ドックの上限（0.6）は 395 ほどになる
   const SIZES = [
     { width: 375, height: 667 },
     { width: 393, height: 659 },
@@ -507,7 +507,7 @@ test.describe("差分の長い衝突の通知は、台の中と差分の欄が�
         };
       });
       expect(detailsScrolls, "差分が長いので、差分の欄の中でスクロールする").toBe(true);
-      expect(dockScrolls, "台の中がスクロールしている（二重のスクロール）").toBe(false);
+      expect(dockScrolls, "ドックの中がスクロールしている（二重のスクロール）").toBe(false);
       await expect(dock(page)).not.toHaveAttribute("data-more-below");
       await expectDockOnScreen(page);
       for (const name of ["別の場所の内容を使う", "この画面の内容で上書きする"]) {
@@ -566,12 +566,12 @@ test("最初の変更の前に共通の行が続いても、最初の表示で�
   );
 });
 
-test("台の上限に達して中でスクロールするとき、続きのある端に手がかりが出る", async ({
+test("ドックの上限に達して中でスクロールするとき、続きのある端に手がかりが出る", async ({
   page,
   api,
 }, testInfo) => {
   const conflict = await provokeLongConflict(page, api, uniqueTitle(testInfo, "続きの手がかり"));
-  // 台の上限が、通知の下限の高さを収められる限りも下回る低い画面にする。通知は下限の高さのまま、台の中をスクロールする
+  // ドックの上限が、通知の下限の高さを収められる限りも下回る低い画面にする。通知は下限の高さのまま、ドックの中をスクロールする
   await page.setViewportSize({ width: 393, height: 360 });
   const edge = (name: "before" | "after") =>
     dock(page).evaluate(
@@ -580,7 +580,7 @@ test("台の上限に達して中でスクロールするとき、続きのあ�
     );
   await expect(dock(page)).toHaveAttribute("data-more-below", "");
   await expect(dock(page)).not.toHaveAttribute("data-more-above");
-  // 通知が台より高くても、details の欄は通知の枠の中に収まる
+  // 通知がドックより高くても、details の欄は通知の枠の中に収まる
   const notice = await boxOf(page.locator(".notice"));
   const details = await boxOf(page.locator(".notice-details"));
   expect(details.y + details.height, "details が通知の枠の下にはみ出している").toBeLessThanOrEqual(
@@ -607,7 +607,7 @@ test("台の上限に達して中でスクロールするとき、続きのあ�
     },
   );
 
-  // 確認の段でも、実行とやめるの両方が台の中に見えて押せる
+  // 確認の段でも、実行とやめるの両方がドックの中に見えて押せる
   await conflict.getByRole("button", { name: "この画面の内容で上書きする" }).click();
   const dockBox = await boxOf(dock(page));
   for (const name of ["上書きする", "やめる"]) {
@@ -615,16 +615,16 @@ test("台の上限に達して中でスクロールするとき、続きのあ�
     await expect(button).toBeInViewport({ ratio: 1 });
     await button.click({ trial: true });
     const box = await boxOf(button);
-    expect(box.y, `${name} が台の上にはみ出している`).toBeGreaterThanOrEqual(dockBox.y);
-    expect(box.y + box.height, `${name} が台の下にはみ出している`).toBeLessThanOrEqual(
+    expect(box.y, `${name} がドックの上にはみ出している`).toBeGreaterThanOrEqual(dockBox.y);
+    expect(box.y + box.height, `${name} がドックの下にはみ出している`).toBeLessThanOrEqual(
       dockBox.y + dockBox.height,
     );
   }
 });
 
-test.describe("台の上限の境の前後の高さと狭い幅", () => {
-  // theme.css の値から出る境。通知の下限の高さ 24rem と台の余白 2 * 0.75rem を足した 408px が、
-  // 台の既定の上限（0.6）に収まる最も低い高さが 680px、広げた上限（0.85）に収まる最も低い高さが 480px
+test.describe("ドックの上限の境の前後の高さと狭い幅", () => {
+  // theme.css の値から出る境。通知の下限の高さ 24rem とドックの余白 2 * 0.75rem を足した 408px が、
+  // ドックの既定の上限（0.6）に収まる最も低い高さが 680px、広げた上限（0.85）に収まる最も低い高さが 480px
   const HEIGHTS = [720, 700, 681, 679, 660, 560, 520, 500, 485];
   const REM = 16;
   const NOTICE_MIN = 24 * REM;
@@ -637,7 +637,7 @@ test.describe("台の上限の境の前後の高さと狭い幅", () => {
       for (const height of HEIGHTS) {
         await page.setViewportSize({ width, height });
         const label = `${width}x${height}`;
-        // 上の境（680）より高ければ通知は台の上限に合わせて伸び、低ければ下限の高さのまま、台が上限を広げて収める
+        // 上の境（680）より高ければ通知はドックの上限に合わせて伸び、低ければ下限の高さのまま、ドックが上限を広げて収める
         const noticeHeight = Math.max(NOTICE_MIN, height * DOCK_RATIO - DOCK_PADDING);
         await expect
           .poll(
@@ -670,7 +670,7 @@ test.describe("台の上限の境の前後の高さと狭い幅", () => {
   }
 });
 
-test("上限に達していない台には、手がかりを出さない", async ({ page, api }, testInfo) => {
+test("上限に達していないドックには、手がかりを出さない", async ({ page, api }, testInfo) => {
   const created = await openLongPage(page, api, uniqueTitle(testInfo, "手がかりなし"));
   await failSaveWith500(page, created);
   await typeAt(page, 0, "、足す");
@@ -679,7 +679,7 @@ test("上限に達していない台には、手がかりを出さない", async
   await expect(dock(page)).not.toHaveAttribute("data-more-below");
 });
 
-test("台の地は余白まで不透明で、余白を押しても後ろの本文に届かない", async ({
+test("ドックの地は余白まで不透明で、余白を押しても後ろの本文に届かない", async ({
   page,
   api,
 }, testInfo) => {
@@ -690,7 +690,7 @@ test("台の地は余白まで不透明で、余白を押しても後ろの本�
   const { background, bodyBackground, hit } = await page.evaluate(() => {
     const dockEl = document.querySelector(".notice-dock") as HTMLElement;
     const rect = dockEl.getBoundingClientRect();
-    // 通知の枠の外、台の余白の中の点（左上の隅の内側）
+    // 通知の枠の外、ドックの余白の中の点（左上の隅の内側）
     const target = document.elementFromPoint(rect.left + 3, rect.top + 3);
     return {
       background: getComputedStyle(dockEl).backgroundColor,
@@ -699,7 +699,7 @@ test("台の地は余白まで不透明で、余白を押しても後ろの本�
     };
   });
   expect(background).toBe(bodyBackground);
-  expect(hit, "台の余白が、後ろの本文の要素に操作を通している").toBe(true);
+  expect(hit, "ドックの余白が、後ろの本文の要素に操作を通している").toBe(true);
 });
 
 test("リンクの書き換えが通信の失敗で止まったら、alert の通知に再試行を出し、続きから進めると消える", async ({

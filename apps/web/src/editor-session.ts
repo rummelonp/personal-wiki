@@ -54,7 +54,7 @@ export interface EditorDeps {
    * title と本文のエディタの IME の変換が落ち着くまで待つ。サーバーの版を手元に入れる（重ねる、
    * そのまま取り込む）直前に呼ぶ。変換中に差し替えると、確定前の文字を含む入力が差し替えを
    * 上書きして、取り込んだ変化が戻るため。title では、他で行われた改名を打ちかけの title が上書きする。
-   * エディタが無くなったときも resolve すること（書き込みの列がそこで止まる）。
+   * エディタが無くなったときも resolve すること（書き込みのキューがそこで止まる）。
    */
   whenSettled?: () => Promise<void>;
 }
@@ -69,7 +69,7 @@ export interface ProcessedLinkRewrite {
 export interface WriteRejection {
   /** 送った title と同じタイトルのページがある。existing はサーバーが添えたときだけある */
   titleTaken?: { title: string; existing?: ExistingPage };
-  /** サーバーが入力の誤り（長さ、制御文字など）で拒んだ */
+  /** サーバーが入力のエラー（長さ、制御文字など）で拒んだ */
   input?: true;
 }
 
@@ -112,10 +112,10 @@ export type RestoreOutcome =
 
 /**
  * このタブのセッションが持つ、作る前の退避の key。次の新規作成の画面は、これを復元の案内に出さない。
- * 生きている画面や作成の応答を待つ画面の内容を、別の画面で復元してもう 1 つ作らないため。
+ * 生きている画面や作成のレスポンスを待つ画面の内容を、別の画面で復元してもう 1 つ作らないため。
  *
- * 画面を閉じたら外し、その内容は次の新規作成の画面で復元を選ばせる。ただし作成の応答を待つ間は
- * 持ち続け、応答が失敗だったときに外す。待つ間に外すと、作れる内容を次の画面でもう 1 つ作れてしまう。
+ * 画面を閉じたら外し、その内容は次の新規作成の画面で復元を選ばせる。ただし作成のレスポンスを待つ間は
+ * 持ち続け、レスポンスが失敗だったときに外す。待つ間に外すと、作れる内容を次の画面でもう 1 つ作れてしまう。
  * 別のタブの生きている画面の key はここに無いので、そちらの内容は案内に出る。
  */
 const heldNewKeys = new Set<string>();
@@ -199,7 +199,7 @@ export interface EditorState {
   /**
    * title 欄に打っている途中の、まだ確定していない title。null なら draft.title を表示する。
    * 確定（commitTitle、離脱）するまで draft に入れず、保存にも退避にも含めない。title の変更は
-   * 他のページのリンクの書き換えを積むので、打っている途中の title で改名を繰り返さない。
+   * 他のページのリンクの書き換えをキューに入れるので、打っている途中の title で改名を繰り返さない。
    */
   titleInput: string | null;
   /**
@@ -229,7 +229,7 @@ const inputChecks = new WeakMap<Draft, PageInputCheck>();
 
 /**
  * draft を保存の前の規則で調べる。draft は変わるたびに新しい object になるので、同じ draft の
- * 結果を覚えて、描画のたびに本文を数え直さない。
+ * 結果をキャッシュして、描画のたびに本文を数え直さない。
  */
 export function inputCheckOf(draft: Draft): PageInputCheck {
   let check = inputChecks.get(draft);
@@ -250,8 +250,8 @@ export function inputProblemsOf(draft: Draft): readonly PageInputProblem[] {
 }
 
 /**
- * 送っても拒まれると分かっている。入力の誤りのほか、作成や保存で重複と言われた title のまま
- * （title を変えるまで同じ応答になる）のときも送らない。
+ * 送っても拒まれると分かっている。入力のエラーのほか、作成や保存で重複と言われた title のまま
+ * （title を変えるまで同じレスポンスになる）のときも送らない。
  */
 export function holdsBack(state: Pick<EditorState, "draft" | "failedOp">): boolean {
   const { draft, failedOp } = state;
@@ -306,7 +306,7 @@ const DEFAULT_STASH_MS = 1000;
  * ページ 1 件の編集状態。React から切り離してあり、タイマーと API は注入できる。
  *
  * 書き込みを伴う操作（作成、保存、visibility、削除、フォーカス復帰の確認、リンクの書き換えの
- * 取り込み）は 1 本の列に並べて直列に実行する。保存中に版が進むと次の If-Match が古くなるので、
+ * 取り込み）は 1 本のキューに並べて直列に実行する。保存中に版が進むと次の If-Match が古くなるので、
  * 並行させると自分自身と衝突する。
  */
 export class EditorSession {
@@ -337,7 +337,7 @@ export class EditorSession {
   private left = false;
   /** 画面が unmount された（detach）。dev の StrictMode で mount し直したときは attach で戻る */
   private closed = false;
-  /** 応答を待っている作成。title の Enter に続く blur が、同じページをもう 1 つ作らないようにまとめる */
+  /** レスポンスを待っている作成。title の Enter に続く blur が、同じページをもう 1 つ作らないようにまとめる */
   private creating: Promise<void> | null = null;
   /** まだ作っていないページの退避の key。画面ごとに別にし、作れたら消す */
   private newKey = "";
@@ -627,7 +627,7 @@ export class EditorSession {
 
   /**
    * 前の失敗を消す。ただし title の重複の失敗は、draft の title がその title のままなら残す。
-   * 重複は title を変えるまで同じ応答になり、holdsBack はこの記録を見て送るのを止める。消すと、
+   * 重複は title を変えるまで同じレスポンスになり、holdsBack はこの記録を見て送るのを止める。消すと、
    * 版の取り込みや visibility の変更のあとに、重複と言われた title をもう一度送る。
    */
   private clearedError(): Pick<EditorState, "error" | "failedOp"> | Record<string, never> {
@@ -736,11 +736,11 @@ export class EditorSession {
 
   /**
    * まだ作っていないページを、手元の title と本文で作る。title が空なら作らない。
-   * 応答を待つ間の入力は、作れた後に自動保存で送る。
+   * レスポンスを待つ間の入力は、作れた後に自動保存で送る。
    */
   private create(): Promise<void> {
     if (this.creating !== null) return this.creating;
-    // 空の title の確定（本文へ移るときの blur など）を、作成の応答待ちにしない。待ちにすると、
+    // 空の title の確定（本文へ移るときの blur など）を、作成のレスポンス待ちにしない。待ちにすると、
     // その間の + が内容のある画面を閉じてしまう
     if (this.state.draft.title === "") return Promise.resolve();
     const run = this.enqueue(() => this.createNow()).finally(() => {
@@ -768,7 +768,7 @@ export class EditorSession {
       this.set({ base: res.value, uncreated: false, busy: null });
       this.backup.remove(this.newKey);
       heldNewKeys.delete(this.newKey);
-      // 応答を待つ間に離れていれば rearm は退避を作ったページの key へ写すだけで、保存はしない
+      // レスポンスを待つ間に離れていれば rearm は退避を作ったページの key へ写すだけで、保存はしない
       if (isDirty(this.state)) this.rearm();
       return;
     }
@@ -817,7 +817,7 @@ export class EditorSession {
 
   /**
    * 画面の unmount。離脱（leave）に加えて、作る前のページの退避を手放し、次の新規作成の画面で
-   * 復元を選ばせる。作成の応答を待つ間は手放さず、作れなかったら応答の後に手放す。
+   * 復元を選ばせる。作成のレスポンスを待つ間は手放さず、作れなかったらレスポンスの後に手放す。
    */
   detach(): Promise<void> {
     this.closed = true;
@@ -826,7 +826,7 @@ export class EditorSession {
     return left;
   }
 
-  /** 作る前の画面で、作成の応答を待っておらず、title か本文に内容がある。 */
+  /** 作る前の画面で、作成のレスポンスを待っておらず、title か本文に内容がある。 */
   holdsUncreatedContent(): boolean {
     const { uncreated, draft, titleInput } = this.state;
     if (!uncreated || this.creating !== null) return false;
@@ -838,7 +838,7 @@ export class EditorSession {
    * 確定か離脱で入る）。
    *
    * 本文の自分への `[[旧 title]]` は手元では書き換えない。改名を受け入れた保存で Worker が自分も
-   * リンク元として積むので、step の書き換えを取り込む。手元で先に書き換えると、title の保存が
+   * リンク元としてキューに入れるので、step の書き換えを取り込む。手元で先に書き換えると、title の保存が
    * 失敗したとき（title_conflict など）に受け入れられていない title が次の書き換えの基準になり、
    * 他のページへの本物のリンクまで書き換える。
    */
@@ -878,7 +878,7 @@ export class EditorSession {
     if (res.ok) {
       // サーバーは title を 1 行に整えて保存する。既存のページの title に改行やタブが残っていると、
       // 整えた title が手元の title と一致せず、未保存のまま保存を繰り返すので、送った title のままの
-      // 手元は、応答の title に合わせる
+      // 手元は、レスポンスの title に合わせる
       const { draft } = this.state;
       const adopted =
         draft.title === snapshot.title && res.value.title !== snapshot.title
@@ -901,7 +901,7 @@ export class EditorSession {
         { kind: "save", ...rejectionOf(res, snapshot) },
         {
           sent: snapshot,
-          // 離脱の保存（keepalive）も、同じ要求の形で送り直す
+          // 離脱の保存（keepalive）も、同じリクエストの形で送り直す
           ...(retried ? {} : { resend: () => this.saveIfDirty(options, true) }),
         },
       );
@@ -1081,7 +1081,7 @@ export class EditorSession {
       // だけで titleInput がまだ null のこともあるので、手元の状態によらず待つ
       await this.whenSettled();
       if (!this.canWrite()) return;
-      // 確認の応答と変換を待つ間の入力も含めて、待ち終えた時点の手元で判断する
+      // 確認のレスポンスと変換を待つ間の入力も含めて、待ち終えた時点の手元で判断する
       const same = server.title === this.state.draft.title && server.body === this.state.draft.body;
       if (!isDirty(this.state) || same) {
         this.adoptServer(server);
@@ -1092,9 +1092,9 @@ export class EditorSession {
   }
 
   /**
-   * step が開いているこのページを書き換えたら、その版を取り込む。取り込みは保存と同じ列に並べる。
+   * step が開いているこのページを書き換えたら、その版を取り込む。取り込みは保存と同じキューに並べる。
    *
-   * step の要求そのものは列に並べない。並べると、離脱の保存（keepalive）が step の応答を待ち、
+   * step のリクエストそのものはキューに並べない。並べると、離脱の保存（keepalive）が step のレスポンスを待ち、
    * ページが閉じるまでに送られないことがある。保存と step が行き違っても、step は版の照合で
    * conflict を返して呼び直され、保存の 409 は書き換えを重ねて送り直すので、手元の編集は失わない。
    */
@@ -1401,7 +1401,7 @@ export class EditorSession {
    * ページを離れるとき。打っていた title を確定し、未保存の内容を退避してから保存を試みる。
    * まだ作っていないページは作らず、退避だけを残す。
    *
-   * 作成の応答を待っている間に離れたら、作れた後も、待つ間に打った本文を送らない。アプリ内の移動でも
+   * 作成のレスポンスを待っている間に離れたら、作れた後も、待つ間に打った本文を送らない。アプリ内の移動でも
    * 同じにする。離れた後のセッションには画面が無く、その保存が衝突や失敗になっても見せられないため。
    * 本文は作れた時点で作ったページの id の退避に移す（rearm）ので、次にそのページを開くと復元を選べる。
    * タブを隠しただけ（画面は残る）なら、戻った後の自動保存で送る。

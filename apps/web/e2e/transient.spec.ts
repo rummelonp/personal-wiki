@@ -2,7 +2,7 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test, uniqueTitle } from "./support/fixtures";
 
 /*
- * 取得の途中の画面。応答を止めて、待っている間に何が見えるかを確かめる。
+ * 取得の途中の画面。レスポンスを止めて、待っている間に何が見えるかを確かめる。
  * 描き終わった画面だけを見ていると、待ちの間の崩れは見つからない。
  * スケルトンは 250ms 遅れて描くので、見えるまでは expect が待つ。
  */
@@ -38,7 +38,7 @@ test.describe("ページを開く途中", () => {
   ];
 
   for (const { name, visibility } of cases) {
-    test(`一覧から開く途中に、title の文字と本文の帯が出る: ${name}`, async ({
+    test(`一覧から開く途中に、title の文字と本文のスケルトンが出る: ${name}`, async ({
       page,
       api,
     }, testInfo) => {
@@ -53,10 +53,10 @@ test.describe("ページを開く途中", () => {
       );
       await page.locator(".entries .entry-title").filter({ hasText: title }).click();
 
-      // 左上の 1 語ではなく、title は文字で、本文と右の欄は帯で出る
+      // 左上の 1 語ではなく、title は文字で、本文と右の欄はスケルトンで出る
       await expect(page.locator(".note[aria-busy='true'] .note-title")).toHaveText(title);
       await expect(page.locator(".note .skeleton-body .skeleton").first()).toBeVisible();
-      // 狭い画面（40rem 以下）では右の欄が本文の下に回り、その場所には本文が入るので帯を出さない
+      // 狭い画面（40rem 以下）では右の欄が本文の下に回り、その場所には本文が入るのでスケルトンを出さない
       const railBand = page.locator(".skeleton-rail .skeleton").first();
       if ((page.viewportSize()?.width ?? 0) > 640) await expect(railBand).toBeVisible();
       else await expect(railBand).toBeHidden();

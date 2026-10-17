@@ -48,7 +48,7 @@ describe("存在の印", () => {
     expect(fetchTitles.mock.calls[0]?.[0]).toEqual(["有る", "無い"]);
     expect(resolver.isResolved("有る")).toBe(true);
     expect(resolver.isResolved("無い")).toBe(false);
-    // 1 回の要求の結果は、まとめて 1 回組み直させる
+    // 1 回のリクエストの結果は、まとめて 1 回組み直させる
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
@@ -79,7 +79,7 @@ describe("存在の印", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it("連続した問い合わせは debounce して 1 回の要求にまとめる", async () => {
+  it("連続した問い合わせは debounce して 1 回のリクエストにまとめる", async () => {
     const fetchTitles = server([]);
     const { resolver } = setup(fetchTitles);
     resolver.isResolved("a");
@@ -218,7 +218,7 @@ describe("失敗", () => {
         throw new TypeError("offline");
       },
     ],
-    ["件数の違う応答", async () => ({ ok: true, value: [] })],
+    ["件数の違うレスポンス", async () => ({ ok: true, value: [] })],
   ];
 
   it.each(failures)("%s では存在しない印を付けず、組み直させない", async (_, fetchTitles) => {
@@ -364,7 +364,7 @@ describe("dispose", () => {
     expect(resolver.isResolved("a")).toBe(true);
   });
 
-  it("待っている要求を捨てる。破棄の後も使える", async () => {
+  it("待っているリクエストを捨てる。破棄の後も使える", async () => {
     const fetchTitles = server([]);
     const { resolver } = setup(fetchTitles);
     resolver.isResolved("a");

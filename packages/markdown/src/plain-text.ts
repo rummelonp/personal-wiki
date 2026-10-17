@@ -100,7 +100,7 @@ interface ExtractPlainTextOptions {
 }
 
 /**
- * Markdown の本文を、記法を除いた 1 行の plain text にする。検索結果の抜粋と全文検索の索引の元になる。
+ * Markdown の本文を、記法を除いた 1 行の plain text にする。検索結果の抜粋と全文検索インデックスの元になる。
  * 一覧の抜粋は行末のタグを除くので、extractPlainTextParts の textWithoutTrailingTags を使う。
  *
  * 構文木から記号の node を落とす。見出しの `#`、リストの記号、引用の `>`、task の checkbox、
@@ -126,7 +126,7 @@ export interface PlainTextParts {
    * 一覧の抜粋はタグを別にチップで出すので、抜粋に同じ語を重ねない。
    * `今日は #メモ を書いた` や `今日は #メモ\nを書いた` のように文の途中にあるタグと、
    * `本文 #メモ。` のように後ろに文字が続くタグは、文の一部なので残す。
-   * 全文検索の索引は text から作る（タグの語でも引けるように）。
+   * 全文検索インデックスは text から作る（タグの語でも引けるように）。
    */
   readonly textWithoutTrailingTags: string;
 }
@@ -310,7 +310,7 @@ function startsWithTable(tree: Tree): boolean {
  * 見出し行と区切り行が無い `| a | b |` は表として読まれず、`|` が本文に残る。窓の先頭は行頭なので、
  * 先頭の行が表の行や区切り行なら、それは表の途中から始まっていると近似する（長い行の途中から始まる窓は
  * 行頭に届かず、この前提が崩れる）。補った行の cell は空で、空白に畳まれる。
- * 補った結果が表になるか（区切り行の書き方、字下げ、列数の一致）は、呼び出し側が lezer で読んだ木で判定する。
+ * 補った結果が表になるか（区切り行の書き方、インデント、列数の一致）は、呼び出し側が lezer で読んだ木で判定する。
  * ここの正規表現は補うかどうかの入口の絞り込みで、lezer の判定を写し切ったものではないため。
  */
 function withTableHeader(source: string): string {

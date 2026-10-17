@@ -507,7 +507,7 @@ describe("PageReader の添付の表示", () => {
     expect(srcs).toEqual([`/api/pages/${PAGE.id}/attachments/${NAME}`]);
   });
 
-  it("features が false なら画像の要求を出さない", async () => {
+  it("features が false なら画像のリクエストを出さない", async () => {
     const srcs = recordSrcs();
     renderReader({ ...PAGE, body: `![[${NAME}]]` });
     await flushAsync();
@@ -526,7 +526,7 @@ describe("PageReader の添付の表示", () => {
     await vi.waitFor(() => expect(srcs).toEqual([`/api/pages/${otherId}/attachments/${OTHER}`]));
   });
 
-  it("匿名に読めない（draft の）埋め込み先は展開されず、その id の要求も出さない", async () => {
+  it("匿名に読めない（draft の）埋め込み先は展開されず、その id のリクエストも出さない", async () => {
     const srcs = recordSrcs();
     // API は匿名の draft を not_found で返す
     vi.mocked(findPageByTitle).mockResolvedValue({ ok: false, reason: "not_found" });

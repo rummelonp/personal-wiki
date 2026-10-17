@@ -132,7 +132,7 @@ describe("GET /api/pages/:id/revisions", () => {
     });
   });
 
-  it("limit と cursor の誤りは 400", async () => {
+  it("limit と cursor のエラーは 400", async () => {
     const { asOwner } = await setup();
     const page = await create("owner", T0);
     for (const query of ["limit=0", "limit=101", "limit=x", "cursor=0", "cursor=abc", "cursor="]) {

@@ -130,7 +130,7 @@ const tagOf = (page: Page) => `${page.title}のタグ`;
 /**
  * Worker の API と同じ範囲を返す。title、一覧、タグでは、匿名に draft を無いものとして返す。
  * `GET /api/pages/:id` は id を知っていれば draft も読めるので、principal で絞らない。
- * ログアウトすると、その後の要求は匿名として扱う。
+ * ログアウトすると、その後のリクエストは匿名として扱う。
  */
 function serve(
   me: "owner" | "anonymous",
@@ -200,7 +200,7 @@ const cursorOf = () => {
 };
 
 const main = () => container?.querySelector("main");
-// 通知は main の外の台に出るので、通知の文言は画面全体から探す
+// 通知は main の外のドックに出るので、通知の文言は画面全体から探す
 const screenText = () => container?.textContent ?? "";
 const titleText = () => main()?.querySelector(".title-input .cm-content")?.textContent;
 const header = () => container?.querySelector("header");
@@ -429,7 +429,7 @@ describe("App の添付", () => {
     ["anonymous", true],
     ["anonymous", false],
   ] as const)(
-    "%s で /api/me の features.attachments が %s のとき、画像の要求は features に従う",
+    "%s で /api/me の features.attachments が %s のとき、画像のリクエストは features に従う",
     async (me, attachments) => {
       const recorder = recordImageSrcs();
       restore = recorder.restore;
@@ -446,7 +446,7 @@ describe("App の添付", () => {
     },
   );
 
-  it("owner が draft の画像を埋め込んだページを開いてログアウトすると、その後は draft の id の画像を要求しない", async () => {
+  it("owner が draft の画像を埋め込んだページを開いてログアウトすると、その後は draft の id の画像をリクエストしない", async () => {
     const recorder = recordImageSrcs();
     restore = recorder.restore;
     const draft = { ...DRAFT, body: `![[${NAME}]]` };
@@ -527,7 +527,7 @@ describe("App の owner の画面", () => {
     await vi.waitFor(() => expect(logoutAgain()?.disabled).toBe(false));
     expect(logout).toHaveBeenCalledTimes(1);
     expect(main()?.querySelector("[role='alert']")).toBeNull();
-    // 通信中の step の応答を待たずに 2 本目を送らない
+    // 通信中の step のレスポンスを待たずに 2 本目を送らない
     expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
     release();
     await vi.waitFor(() => expect(stepLinkRewrites).toHaveBeenCalledTimes(2));
@@ -587,7 +587,7 @@ describe("App の owner の画面", () => {
     expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
   });
 
-  it("ログアウトの後に届いた保存の応答では、書き換えの step を送らない", async () => {
+  it("ログアウトの後に届いた保存のレスポンスでは、書き換えの step を送らない", async () => {
     serve("owner", [PUBLIC]);
     await renderAt("/");
     await vi.waitFor(() => expect(stepLinkRewrites).toHaveBeenCalledTimes(1));
@@ -604,7 +604,7 @@ describe("App の owner の画面", () => {
     expect(stepLinkRewrites).toHaveBeenCalledTimes(1);
   });
 
-  it("ログアウトの応答が失敗しても匿名に移ったなら、覚えた draft の title を忘れる", async () => {
+  it("ログアウトのレスポンスが失敗しても匿名に移ったなら、覚えた draft の title を忘れる", async () => {
     serve("owner", [PUBLIC, DRAFT]);
     await renderAt("/");
     rememberTitle(DRAFT.id, DRAFT.title);
@@ -936,7 +936,7 @@ describe("App の owner の画面", () => {
       expect(createPage).not.toHaveBeenCalled();
     });
 
-    it("作る応答を待つ間に + を押すと、作れた後も新しい空の画面のまま", async () => {
+    it("作るレスポンスを待つ間に + を押すと、作れた後も新しい空の画面のまま", async () => {
       serve("owner", [PUBLIC, DRAFT]);
       let resolve: (value: Awaited<ReturnType<typeof createPage>>) => void = () => {};
       vi.mocked(createPage).mockReturnValue(
@@ -1062,7 +1062,7 @@ describe("App の owner の画面", () => {
     await vi.waitFor(() => expect(switcher()?.open).toBe(true));
   });
 
-  it("Mac 以外では Ctrl+K を編集部品の中からも受け、⌘K は受けない", async () => {
+  it("Mac 以外では Ctrl+K を編集コンポーネントの中からも受け、⌘K は受けない", async () => {
     stubUserAgent(LINUX_UA);
     // 本文が空なら、Mac で Ctrl+K を CodeMirror が処理しても本文は変わらない（保存が走らない）。
     // CodeMirror は UA でなく navigator.platform で Mac を見分けるので、Mac で走らせると UA を

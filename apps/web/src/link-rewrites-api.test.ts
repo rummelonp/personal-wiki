@@ -10,7 +10,7 @@ const STEP = {
 };
 
 describe("stepLinkRewrites", () => {
-  it("JSON の空の object を POST し、応答を返す", async () => {
+  it("JSON の空の object を POST し、レスポンスを返す", async () => {
     const fetchFn = vi.fn(async () => Response.json(STEP));
     const result = await stepLinkRewrites(fetchFn);
     expect(result).toEqual({
@@ -32,7 +32,7 @@ describe("stepLinkRewrites", () => {
     });
   });
 
-  it("processed が null の応答も受ける", async () => {
+  it("processed が null のレスポンスも受ける", async () => {
     const result = await stepLinkRewrites(async () =>
       Response.json({ ...STEP, processed: null, remaining: 0 }),
     );
@@ -61,12 +61,12 @@ describe("stepLinkRewrites", () => {
     });
   });
 
-  it("failedPages の無い前の版の Worker の応答では、failed の id だけで返す", async () => {
+  it("failedPages の無い前の版の Worker のレスポンスでは、failed の id だけで返す", async () => {
     const result = await stepLinkRewrites(async () => Response.json({ ...STEP, failed: ["x"] }));
     expect(result).toMatchObject({ ok: true, value: { failed: [{ id: "x", title: undefined }] } });
   });
 
-  it("形の合わない応答は error にする", async () => {
+  it("形の合わないレスポンスは error にする", async () => {
     for (const body of [
       { ...STEP, remaining: "1" },
       { ...STEP, failed: [1] },

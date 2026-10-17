@@ -29,13 +29,13 @@ const markScrolling = EditorView.scrollHandler.of((view) => {
 });
 
 /**
- * 見出しへの移動やカーソル行のスクロールで、対象がヘッダーの下と、画面の下端に重なる通知の台の
+ * 見出しへの移動やカーソル行のスクロールで、対象がヘッダーの下と、画面の下端に重なる通知のドックの
  * 上に隠れないようにする。通知は本文を動かさず重なるので、打っている行はスクロールで逃がす。
  * CodeMirror は CSS の scroll-padding を読まず、この facet だけを見る。
  *
  * scrollIntoView 以外の読み手には、本文の箱に実際に重なる分だけを返す。箱がヘッダーの下にあるのに
  * viewport からの絶対値を返すと、tooltip の見える範囲が二重に削られて補完の窓が隠れる。
- * 重なる分はヘッダーと台それぞれの高さで頭打ちにする。頭打ちしないと、スクロールで箱の上端が
+ * 重なる分はヘッダーとドックそれぞれの高さで頭打ちにする。頭打ちしないと、スクロールで箱の上端が
  * 画面の外へ出たとき、drag の自動スクロール（window 基準で読む）が常に上向きに働く。
  * drag にとって正しいのは絶対値なので、箱がヘッダーに一部隠れている間は drag の閾値が少し下がる。
  * 補完の窓が見えることを優先した。
@@ -60,8 +60,8 @@ function scrollMarginsBelow(extraTop: (view: EditorView) => number) {
 }
 
 /**
- * 補完の窓を置ける範囲から、ヘッダーと通知の台を除く。台の位置は高さからでなく rect で読む。
- * iOS のキーボードが出ると台が持ち上がり、画面の下端からの高さでは足りないため。
+ * 補完の窓を置ける範囲から、ヘッダーと通知のドックを除く。ドックの位置は高さからでなく rect で読む。
+ * iOS のキーボードが出るとドックが持ち上がり、画面の下端からの高さでは足りないため。
  */
 const tooltipSpaceBelowChrome = Prec.high(
   tooltips({
@@ -78,8 +78,8 @@ const tooltipSpaceBelowChrome = Prec.high(
 );
 
 /**
- * 台が出入りしたり高さが変わったりしても、visual viewport は動かないので、開いている窓は置き直されない。
- * 台の上端が変わったときに置き直し、窓が台の下に残らないようにする。
+ * ドックが出入りしたり高さが変わったりしても、visual viewport は動かないので、開いている窓は置き直されない。
+ * ドックの上端が変わったときに置き直し、窓がドックの下に残らないようにする。
  */
 const repositionOnDockChange = ViewPlugin.define((view) => {
   const doc = view.dom.ownerDocument;

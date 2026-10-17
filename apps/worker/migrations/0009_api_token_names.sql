@@ -1,5 +1,5 @@
 -- api_tokens の name の UNIQUE を外し、token を id で識別する。name は重複してよいラベルになり、
--- 失効させた token と同じ名前でも発行し直せる。SQLite は制約を ALTER できないので、表を作り直して
+-- 失効させた token と同じ名前でも発行し直せる。SQLite は制約を ALTER できないので、テーブルを作り直して
 -- 行を id ごと移す。api_tokens を参照する外部キーとトリガーは無い。列の並びは backup.mjs の TABLES と一致させる。
 --
 -- actor（revisions.actor など）に残る 'token:<name>' は書き換えない。そのころ name は一意だったので、

@@ -38,7 +38,7 @@ async function setup() {
   return { key, jwks, clock, app, request };
 }
 
-/** SPA の fetch と同じ形の、owner の cookie 付きの同一オリジンの要求。 */
+/** SPA の fetch と同じ形の、owner の cookie 付きの同一オリジンのリクエスト。 */
 function ownerInit(
   cookie: string,
   method: string,
@@ -295,7 +295,7 @@ describe("GET /api/me", () => {
 describe("CSRF", () => {
   const createBody = { title: "CSRF", body: "" };
 
-  it("同一オリジンの JSON の要求は通る（Origin か Sec-Fetch-Site のどちらかでよい）", async () => {
+  it("同一オリジンの JSON のリクエストは通る（Origin か Sec-Fetch-Site のどちらかでよい）", async () => {
     const { request } = await setup();
     const cookie = await ownerCookie(T0);
     const both = await request("/api/pages", ownerInit(cookie, "POST", createBody));
@@ -380,7 +380,7 @@ describe("CSRF", () => {
     }
   });
 
-  it("Bearer の要求は Origin や Content-Type を問わない", async () => {
+  it("Bearer のリクエストは Origin や Content-Type を問わない", async () => {
     const { request } = await setup();
     const token = await insertToken({ name: "agent", scopes: "read write" });
     const res = await request("/api/pages", {
@@ -637,7 +637,7 @@ describe("PUT /api/pages/:id/visibility", () => {
     expect(row).toEqual({ visibility: "draft", version: 1 });
   });
 
-  it("本文の誤りは 400、無いページは 404", async () => {
+  it("本文のエラーは 400、無いページは 404", async () => {
     const { request } = await setup();
     const { page } = await createPage(request);
     const cookie = await ownerCookie(T0);

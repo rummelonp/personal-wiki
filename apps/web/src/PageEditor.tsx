@@ -69,7 +69,7 @@ import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
 import { createWikiLinks } from "./wiki-links";
 
-/** 保存の応答のリンクの書き換えの数は、セッションに渡さず、保存した title と一緒に onLinkRewrites に渡す。 */
+/** 保存のレスポンスのリンクの書き換えの数は、セッションに渡さず、保存した title と一緒に onLinkRewrites に渡す。 */
 function editorApi(onLinkRewrites: (title: string, queued: LinkRewritesQueued) => void): EditorApi {
   return {
     createPage: (input) => createPage(input),
@@ -174,7 +174,7 @@ const UNKEPT_TITLES = {
 };
 
 /**
- * title の重複で拒まれたときの見出し。重複はもう一度送っても同じ応答になるので、通信の失敗と分けて
+ * title の重複で拒まれたときの見出し。重複はもう一度送っても同じレスポンスになるので、通信の失敗と分けて
  * 直し方の分かる見出しにする。
  */
 const TAKEN_TITLES = {
@@ -182,7 +182,7 @@ const TAKEN_TITLES = {
   save: "同じタイトルのページがあるため、保存できません",
 };
 
-/** 失敗の後の操作が終わるまでの間、失敗の通知に代えて台に出す見出し。 */
+/** 失敗の後の操作が終わるまでの間、失敗の通知に代えてドックに出す見出し。 */
 const PROGRESS_TITLES = {
   saving: "保存中…",
   visibility: "公開範囲を変更中…",
@@ -297,8 +297,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const editor = useRef<BodyEditorHandle>(null);
   const titleEditor = useRef<TitleEditorHandle>(null);
   const article = useRef<HTMLElement>(null);
-  // リンクに書けないと知らされた title。保存の応答は、積んだものも飛ばしたものも無ければ書き換えの
-  // 数を返さないので、応答ではなく保存済みの title と比べて、別の title に変えたら案内を消す
+  // リンクに書けないと知らされた title。保存のレスポンスは、キューに入れたものも飛ばしたものも無ければ書き換えの
+  // 数を返さないので、レスポンスではなく保存済みの title と比べて、別の title に変えたら案内を消す
   const [pendingVisibility, setPendingVisibility] = useState<"draft" | "public" | null>(null);
   const [unsafeTitle, setUnsafeTitle] = useState<string | null>(null);
   const session = useEditorSession(
@@ -448,7 +448,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       const hash = hashOfLink(link);
       if (found.page.id === pageId && hash !== "") goTo(hash);
       else {
-        // 行き先の読み込み中の画面で、title を帯ではなく文字で出せるようにする
+        // 行き先の読み込み中の画面で、title をスケルトンではなく文字で出せるようにする
         rememberTitle(found.page.id, found.page.title);
         navigate(`${pageHrefFor(found.page)}${hash}`);
       }
@@ -497,8 +497,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     !state.gone
       ? state.busy
       : null;
-  // 保存の進行は、ページの上端の保存の状態（.save-state）が見えている間はそちらが伝えるので、台には出さない。
-  // 台の通知は、下までスクロールして上端が見えないときの手応えのためにある。保存の間は測り直す
+  // 保存の進行は、ページの上端の保存の状態（.save-state）が見えている間はそちらが伝えるので、ドックには出さない。
+  // ドックの通知は、下までスクロールして上端が見えないときの手応えのためにある。保存の間は測り直す
   const saveStateEl = useRef<HTMLParagraphElement>(null);
   const [topVisible, setTopVisible] = useState(false);
   const watchTop = inProgress === "saving";
@@ -536,10 +536,10 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // 保存済みのままの内容は送らないので、問題があっても手を付けるまでは知らせない
   const inputProblems = uncreated || isDirty(state) ? inputProblemsOf(state.draft) : [];
   const inputProblem = inputProblems[0];
-  // サーバーが入力の誤りで拒んでも、手元の検査が同じ問題を見つけていれば、その通知に任せる
+  // サーバーが入力のエラーで拒んでも、手元の検査が同じ問題を見つけていれば、その通知に任せる
   const coveredByCheck = (op: FailedOp) =>
     (op.kind === "create" || op.kind === "save") && op.input === true && inputProblem !== undefined;
-  // 重複と入力の誤りは、同じ内容を送り直しても同じ応答になるので、再試行を出さない。手元の内容が
+  // 重複と入力のエラーは、同じ内容を送り直しても同じレスポンスになるので、再試行を出さない。手元の内容が
   // 規則に合わない間も、再試行は送らずに止まるので出さない
   const retryable = (op: FailedOp) =>
     !(
@@ -900,7 +900,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           onCommit={() => void session.commitTitle()}
           onBlur={() => void session.commitTitle()}
         />
-        {/* 通知は台へ重なるので、JSX の位置は表示位置を決めない。作成は title の確定で起きるので、title の後に置く */}
+        {/* 通知はドックへ重なるので、JSX の位置は表示位置を決めない。作成は title の確定で起きるので、title の後に置く */}
         {state.error !== null &&
           state.failedOp?.kind === "create" &&
           !coveredByCheck(state.failedOp) && (

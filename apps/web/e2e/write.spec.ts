@@ -5,7 +5,7 @@ import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixt
  * 書き留める流れ: 新規作成 → 本文に入力 → 自動保存 → 再読み込みで残っている。
  * 入力は keyboard.type で、日本語の変換（IME）は対象外。
  *
- * 作成の応答を待たずに打ち始める。新規作成の画面は、開く操作の中で入力欄にフォーカスし、作った後も
+ * 作成のレスポンスを待たずに打ち始める。新規作成の画面は、開く操作の中で入力欄にフォーカスし、作った後も
  * 同じエディタを使い続けるので、最初の文字から残るはず。
  */
 
@@ -35,7 +35,7 @@ test("+ から title を決めて作り、続けて書いた本文が再読み�
   await page.keyboard.type(title);
   await page.keyboard.press("Enter");
   // Android の Chrome では CodeMirror が Enter を次のフレームで処理する。同じフレームで打つと改行と
-  // 本文が 1 つの入力にまとまり Enter が消えるので、caret が本文へ移ったのを見てから打つ（作成の応答は待たない）。
+  // 本文が 1 つの入力にまとまり Enter が消えるので、caret が本文へ移ったのを見てから打つ（作成のレスポンスは待たない）。
   await expect(bodyEditor(page)).toBeFocused();
   await typeRightAwayAndSave(page, text);
   await expectKeptAfterReload(page, title, text);

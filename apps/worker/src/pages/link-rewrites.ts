@@ -5,18 +5,18 @@ import { revisionStatements } from "./revisions";
 import { guardStatement, isVersionConflict, sumRowsWritten, type Visibility } from "./store";
 
 /*
- * title の変更で積んだ書き換え（link_rewrites）を、1 回の呼び出しで 1 ページずつ本文に反映する。
+ * title の変更でキューに入れた書き換え（link_rewrites）を、1 回の呼び出しで 1 ページずつ本文に反映する。
  * rename の batch の中で書き換えないのは、リンク元の数だけ本文の解析と書き込みが要り、D1 の
  * 1 invocation 50 クエリと CPU 10ms に収まらないため。
  *
  * 書き換え先は処理する時点の対象ページの title で、links が今どこへ解決しているかは見ない。
  * A → B → C と続けて改名しても、旧 key a のリンクは C に 1 回で書き換わる。旧 title で別のページが
- * 作られていても、rename のあとに新しく書いた `[[旧 title]]` も、積んだ対象ページの title に書き換える。
+ * 作られていても、rename のあとに新しく書いた `[[旧 title]]` も、キューに入れた対象ページの title に書き換える。
  *
  * 読んだ状態で判断して書く（または捨てる）ので、その batch では読んだときの状態を guard で確かめる。
  * リンク元の版と、対象ページの title_key（と削除されていないこと）のどちらかが変わっていれば、
- * 積んだ分を残して conflict を返す。対象を読んだあとに改名されると、rename の batch は旧 key の
- * links から対象が外れているので積み直せず、ここで古い title を書くと誰も指さないリンクが残る。
+ * キューのジョブを残して conflict を返す。対象を読んだあとに改名されると、rename の batch は旧 key の
+ * links から対象が外れているのでキューに入れ直せず、ここで古い title を書くと誰も指さないリンクが残る。
  */
 
 /** このリンク元を処理しようとした回数の上限。超えたら解析せずに failed として捨てる */
@@ -34,7 +34,7 @@ export interface LinkRewriteStepInput {
 }
 
 export interface LinkRewriteStepResult {
-  /** 本文を書き換えたリンク元。書き換えずに積んだ分を捨てたときも null */
+  /** 本文を書き換えたリンク元。書き換えずにキューのジョブを捨てたときも null */
   processed: {
     sourcePageId: string;
     title: string;
@@ -45,14 +45,14 @@ export interface LinkRewriteStepResult {
     rewritten: number;
   } | null;
   /**
-   * 読んだあとにリンク元が保存されたか、対象ページが改名されたか削除された。積んだ分は残るので、
+   * 読んだあとにリンク元が保存されたか、対象ページが改名されたか削除された。キューのジョブは残るので、
    * もう一度呼べば読み直して進む
    */
   conflict: boolean;
   /**
    * 書き換えると本文のリンクやタグが意図せず変わる、本文の上限を超える、または処理が
    * LINK_REWRITE_MAX_ATTEMPTS 回続けて終わらなかったので書かなかったリンク元。
-   * 同じ本文と title なら何度試しても同じ結果になるので、積んだ分は捨てる（本文には旧 title のリンクが残る）
+   * 同じ本文と title なら何度試しても同じ結果になるので、キューのジョブは捨てる（本文には旧 title のリンクが残る）
    */
   failed: string[];
   /**
@@ -101,7 +101,7 @@ interface Rename {
 }
 
 /**
- * 読んだ分だけを消す。created_at も照らすので、読んだあとに積み直された行は消えずに残る。
+ * 読んだ分だけを消す。created_at も照らすので、読んだあとにキューに入れ直された行は消えずに残る。
  */
 function deleteJobsStatement(db: D1Database, sourcePageId: string, jobs: JobRow[]) {
   return db
@@ -151,7 +151,7 @@ async function countRemaining(db: D1Database, targetPageId: string | null): Prom
 /**
  * 書き換え先が決まる分を、旧 key から新しい title への対応にする。対象ページが削除済み、title を
  * 元に戻した、今の title がリンクに書けない分は対応に入れない（捨てる）。
- * 同じ旧 key に複数の対象があれば、先に積んだ方を採る。本文の旧 key のリンクはそれで消えるので、
+ * 同じ旧 key に複数の対象があれば、先にキューに入れた方を採る。本文の旧 key のリンクはそれで消えるので、
  * 後の分は書き換えるものが無くなる。
  */
 function renamesOf(
@@ -166,7 +166,7 @@ function renamesOf(
     if (target.title_key === job.old_title_key || renames.has(job.old_title_key)) continue;
     if (wikiLinkUnsafeChars(target.title).length > 0) continue;
     renames.set(job.old_title_key, { title: target.title, titleKey: target.title_key });
-    // jobs は積んだ順なので、最後に積んだ（積み直した）rename の actor になる
+    // jobs はキューに入れた順なので、最後にキューに入れた（キューに入れ直した）rename の actor になる
     actor = job.actor;
   }
   return { renames, actor };
@@ -218,7 +218,7 @@ async function readDerivedKeys(db: D1Database, pageId: string): Promise<DerivedK
 }
 
 /**
- * 積んだ書き換えを 1 ページ分進める。リンク元を 1 件選び、そのリンク元に積まれた分を（targetPageId に
+ * キューに入れた書き換えを 1 ページ分進める。リンク元を 1 件選び、そのリンク元のジョブを（targetPageId に
  * 関係なく）まとめて 1 つの revision で書き換える。呼び出し側は remaining が 0 になるまで繰り返す。
  */
 export async function stepLinkRewrites(
@@ -227,7 +227,7 @@ export async function stepLinkRewrites(
 ): Promise<LinkRewriteStep> {
   const { targetPageId } = input;
   // 選ぶのと試行回数を数えるのを 1 文で行い、解析より前に確定させる。CPU の上限で invocation ごと
-  // 打ち切られるリンク元が、待ち行列の先頭に居座り続けないようにする
+  // 打ち切られるリンク元が、キューの先頭に居座り続けないようにする
   const picked = await db
     .prepare(
       `UPDATE link_rewrites SET attempts = attempts + 1
@@ -276,7 +276,7 @@ export async function stepLinkRewrites(
     };
   };
 
-  /** 書き込まずに積んだ分を捨てる。guards が読んだ状態と違えば捨てずに conflict を返す */
+  /** 書き込まずにキューのジョブを捨てる。guards が読んだ状態と違えば捨てずに conflict を返す */
   const discard = async (
     failedPages: FailedLinkRewrite[],
     guards: D1PreparedStatement[],
@@ -346,8 +346,8 @@ export async function stepLinkRewrites(
   }
   const values = deriveValues(source.title, rewrite.body);
   const after = keysOf(values);
-  // 書き換え前の値は、まず派生データの表から読む（解析を 1 回減らして CPU を抑える）。表が古いと
-  // 食い違うので、そのときだけ本文を解析し直して比べ直し、古い表のせいで捨てないようにする
+  // 書き換え前の値は、まず派生データのテーブルから読む（解析を 1 回減らして CPU を抑える）。テーブルが古いと
+  // 食い違うので、そのときだけ本文を解析し直して比べ直し、古いテーブルのせいで捨てないようにする
   if (
     unexpectedChange(await readDerivedKeys(db, sourcePageId), after, renames) &&
     unexpectedChange(keysOf(deriveValues(source.title, source.body)), after, renames)
@@ -378,7 +378,7 @@ export async function stepLinkRewrites(
   try {
     results = await db.batch(statements);
   } catch (error) {
-    // それ以外の失敗は積んだ分を残して 500 にする。一時的な D1 の失敗で書き換えを失わないため
+    // それ以外の失敗はキューのジョブを残して 500 にする。一時的な D1 の失敗で書き換えを失わないため
     if (!isVersionConflict(error)) throw error;
     return conflicted();
   }

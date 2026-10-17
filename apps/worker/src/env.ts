@@ -31,7 +31,7 @@ export interface Bindings {
    */
   OAUTH_KV?: KVNamespace;
   /**
-   * client の登録で許す redirect URI に足す値（カンマ区切り、完全一致）。claude.ai の戻り先は
+   * client の登録で許す redirect URI に足す値（カンマ区切り、完全一致）。claude.ai のリダイレクト先は
    * 既定で許す（auth/oauth-registration.ts）。deploy.env から vars に入る。
    */
   OAUTH_REDIRECT_URIS?: string;

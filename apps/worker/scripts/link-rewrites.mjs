@@ -1,7 +1,7 @@
-// title の変更で積まれたリンクの書き換えを、POST /api/link-rewrites/step で最後まで進める。
+// title の変更でキューに入ったリンクの書き換えを、POST /api/link-rewrites/step で最後まで進める。
 //   node scripts/link-rewrites.mjs [--remote] [--url <base>] [--target <page id>]
-// API は CPU の上限に収まるよう 1 回に 1 ページしか書き換えないので、応答の remaining が 0 になるまで繰り返す。
-// --target を付けると、そのページの rename で積まれた分だけを進める。
+// API は CPU の上限に収まるよう 1 回に 1 ページしか書き換えないので、レスポンスの remaining が 0 になるまで繰り返す。
+// --target を付けると、そのページの rename でキューに入ったジョブだけを進める。
 // 既定はローカルの wrangler dev（http://localhost:8787）。--remote は deploy.env の WIKI_HOSTNAME に送る。
 // write の scope を持つ API トークンを環境変数 WIKI_TOKEN から読む。値は標準出力にもログにも出さない。
 import { readFileSync } from "node:fs";
@@ -66,7 +66,7 @@ export function parseArgs(argv) {
  */
 
 /**
- * 応答の形が想定どおりか。想定外の応答を黙って進めると、止まらずに空回りしうる。
+ * レスポンスの形が想定どおりか。想定外のレスポンスを黙って進めると、止まらずに空回りしうる。
  * @param {unknown} value
  * @returns {value is {
  *   processed: { rewritten: number } | null;
@@ -90,8 +90,8 @@ function isStepResponse(value) {
 }
 
 /**
- * remaining が 0 になるまで step を呼ぶ。通信や応答の失敗では例外を投げず、そこまでの結果を返す。
- * 積んだ分はサーバーに残るので、止まったら同じ引数で呼び直せば続きから進む。
+ * remaining が 0 になるまで step を呼ぶ。通信やレスポンスの失敗では例外を投げず、そこまでの結果を返す。
+ * キューのジョブはサーバーに残るので、止まったら同じ引数で呼び直せば続きから進む。
  * token はヘッダにだけ使い、メッセージには含めない。
  * @param {{
  *   baseUrl: string;

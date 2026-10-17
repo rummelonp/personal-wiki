@@ -267,7 +267,7 @@ describe("createTitleIndex の取り直し", () => {
     expect(index.search("note")).toEqual([{ id: "1", title: "Note" }]);
   });
 
-  it("失敗の直後は取り直さず、打鍵のたびに呼んでも要求を連打しない", async () => {
+  it("失敗の直後は取り直さず、打鍵のたびに呼んでもリクエストを連打しない", async () => {
     let clock = 0;
     const list = vi.fn(async () => failed());
     const index = createTitleIndex(list, { now: () => clock });
@@ -331,7 +331,7 @@ describe("createTitleIndex の取り直し", () => {
     expect(index.search("note")).toHaveLength(1);
   });
 
-  it("まだ取得を始めていない索引の retry は、取得を始める", async () => {
+  it("まだ取得を始めていないインデックスの retry は、取得を始める", async () => {
     const list = vi.fn(async () => listOk([summary("1", "Note")]));
     const index = createTitleIndex(list);
     await index.retry();
@@ -374,7 +374,7 @@ describe("createLinkTargetSource", () => {
     });
   });
 
-  it("取れた分は覚えておき、同じ title（表記ゆれを含む）では取りに行かない", async () => {
+  it("取れた分はキャッシュしておき、同じ title（表記ゆれを含む）では取りに行かない", async () => {
     const find = vi.fn<FindPageByTitle>(async () => ({ ok: true, value: page("# 概要") }));
     const source = createLinkTargetSource(find);
     await source.load("Note", signal());
@@ -397,7 +397,7 @@ describe("createLinkTargetSource", () => {
     await expect(source.load("Note", signal())).resolves.toBeNull();
     await expect(source.load("Note", signal())).resolves.toBeNull();
     await expect(source.load("Note", signal())).resolves.toBeNull();
-    // 失敗は覚えないので、次はまた取りに行く
+    // 失敗はキャッシュしないので、次はまた取りに行く
     expect(find).toHaveBeenCalledTimes(3);
   });
 

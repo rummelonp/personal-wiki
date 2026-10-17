@@ -2,13 +2,13 @@
 export interface Features {
   /** 添付（R2）を使える。R2 の bucket を束ねていない環境では false */
   attachments: boolean;
-  /** title の変更で積んだリンクの書き換えを進める step（`POST /api/link-rewrites/step`）がある */
+  /** title の変更でキューに入れたリンクの書き換えを進める step（`POST /api/link-rewrites/step`）がある */
   linkRewrites: boolean;
 }
 
 export const NO_FEATURES: Features = { attachments: false, linkRewrites: false };
 
-/** `GET /api/me` の応答。Worker はメールアドレスを返さない。 */
+/** `GET /api/me` のレスポンス。Worker はメールアドレスを返さない。 */
 export type Me = (
   | { kind: "owner" }
   | { kind: "token"; name: string; scopes: string[] }
@@ -30,7 +30,7 @@ function parseFeatures(value: unknown): Features {
   };
 }
 
-/** 形の合わない応答は anonymous として扱う（ログイン中と誤って表示しない）。 */
+/** 形の合わないレスポンスは anonymous として扱う（ログイン中と誤って表示しない）。 */
 export function parseMe(value: unknown): Me {
   if (typeof value !== "object" || value === null) {
     return { kind: "anonymous", features: NO_FEATURES };
@@ -65,7 +65,7 @@ export function loginHref(location: { pathname: string; search: string; hash: st
 }
 
 /**
- * Worker は cookie 付きの変更系の要求に、同一オリジンと JSON の Content-Type を求める（CSRF 対策）。
+ * Worker は cookie 付きの変更系のリクエストに、同一オリジンと JSON の Content-Type を求める（CSRF 対策）。
  * 本文は空でよいが、Content-Type を付けるために `{}` を送る。
  */
 export async function logout(fetchFn: Fetch = fetch): Promise<void> {

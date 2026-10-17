@@ -42,7 +42,7 @@ const INSTRUCTIONS = [
 /**
  * tool の登録は、登録のたびに SDK が inputSchema を処理するぶん CPU を使う。tools/call は呼ばれる
  * 1 件しか使わないので、calledTool が TOOLS にあれば、その 1 件だけを登録する。
- * 名前が TOOLS に無いときは全件登録し、「tool が無い」という応答は SDK に任せて変えない。
+ * 名前が TOOLS に無いときは全件登録し、「tool が無い」というレスポンスは SDK に任せて変えない。
  */
 export function createWikiMcpServer(
   ctx: WikiToolContext,
@@ -92,7 +92,7 @@ function jsonRpcError(status: 400, code: number, message: string): Response {
   return Response.json({ jsonrpc: "2.0", id: null, error: { code, message } }, { status });
 }
 
-/** 許可する Origin のホスト名。空なので、Origin を付けた要求はすべて 403 になる */
+/** 許可する Origin のホスト名。空なので、Origin を付けたリクエストはすべて 403 になる */
 const ALLOWED_ORIGIN_HOSTNAMES: string[] = [];
 
 /**
@@ -101,8 +101,8 @@ const ALLOWED_ORIGIN_HOSTNAMES: string[] = [];
  *
  * 宣言は 1 つの ALL の登録に requireToken("read") を付け、write の tool は tool の中で scope を見る
  * （tool.ts の defineTool）。SDK の handler は Origin も CORS も扱わないので、ここで決める。
- * - Origin の付いた要求は 403 にする。/mcp を使う正当なブラウザのクライアントは無く、ブラウザ経由の
- *   要求（DNS rebinding を含む）だけが Origin を付ける。
+ * - Origin の付いたリクエストは 403 にする。/mcp を使う正当なブラウザのクライアントは無く、ブラウザ経由の
+ *   リクエスト（DNS rebinding を含む）だけが Origin を付ける。
  * - CORS のヘッダーは付けない。preflight は Authorization を持たず requireToken を通らない。
  * - JSON-RPC の batch（本文が配列）は 400 にする。2025-06-18 以降のプロトコルは batch を廃止しており、
  *   1 回の呼び出しで D1 のクエリ数と CPU 時間の上限を超えやすい。

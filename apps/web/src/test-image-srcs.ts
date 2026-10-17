@@ -1,6 +1,6 @@
 /**
  * `<img>` の src の代入を記録する（テスト用）。代入は実際の読み込みにせず、開発サーバーへ
- * 要求を出さない。どの URL を画像として読もうとしたかを見るために使う。
+ * リクエストを出さない。どの URL を画像として読もうとしたかを見るために使う。
  */
 export function recordImageSrcs(): { srcs: string[]; restore: () => void } {
   const srcs: string[] = [];

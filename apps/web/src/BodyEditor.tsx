@@ -30,7 +30,7 @@ import type { WikiLinkSources } from "./wiki-links";
 
 export interface BodyEditorHandle {
   /**
-   * 本文の `offset` の行を画面の上の方に見えるまでスクロールする。編集部品に focus しない。
+   * 本文の `offset` の行を画面の上の方に見えるまでスクロールする。編集コンポーネントに focus しない。
    * focus 中なら外す（読むために移るので、キーボードと Live Preview の記号を出さない）。
    */
   jumpTo: (offset: number) => void;
@@ -86,7 +86,7 @@ export interface BodyEditorProps {
   onTagClick?: (tag: TagClick) => void;
   /**
    * 渡すと、貼り付けと drop の画像をアップロードする。作った時点のものを使い続ける。
-   * 失敗の通知は渡す関数の中で行う（reject すると編集部品は placeholder を黙って除く）。
+   * 失敗の通知は渡す関数の中で行う（reject すると編集コンポーネントは placeholder を黙って除く）。
    */
   onUploadAttachment?: UploadAttachment;
   /** アップロードで受け付ける File の判定。`onUploadAttachment` と一緒に渡す（省略すると `image/*`） */
@@ -123,7 +123,7 @@ function leaveEditing(editor: EditorView): void {
   if (editor.hasFocus) editor.contentDOM.blur();
 }
 
-/** カーソルの行が、画面に見えていて、通知の台に重なっているか。描画の外（coords が無い）なら false。 */
+/** カーソルの行が、画面に見えていて、通知のドックに重なっているか。描画の外（coords が無い）なら false。 */
 function caretUnderNoticeDock(editor: EditorView): boolean {
   const dock = noticeDockRect();
   const caret = editor.coordsAtPos(editor.state.selection.main.head);
@@ -148,7 +148,7 @@ function moveTo(editor: EditorView, offset: number): void {
 }
 
 /**
- * 本文の編集部品。packages/editor の Live Preview を React に載せる。
+ * 本文の編集コンポーネント。packages/editor の Live Preview を React に載せる。
  *
  * EditorView は mount で 1 回だけ作り、再描画では作り直さない（作り直すと変換中の未確定文字が
  * 消える）。props の変化は、本文なら replaceDoc、readOnly なら setReadOnly で届ける。
@@ -299,9 +299,9 @@ export function BodyEditor({
     };
   }, []);
 
-  // 通知の台が本文を覆う範囲が変わったとき、見えているカーソルが台に覆われたなら、台の上へスクロールで
+  // 通知のドックが本文を覆う範囲が変わったとき、見えているカーソルがドックに覆われたなら、ドックの上へスクロールで
   // 逃がす。上の方を読んでいる人を、画面の外のカーソルまで引き戻さないため、見えていない場合は動かさない。
-  // 台の高さは scrollMargins が見る。selection と doc は変えず、変換中は落ち着くまで保留する
+  // ドックの高さは scrollMargins が見る。selection と doc は変えず、変換中は落ち着くまで保留する
   useEffect(() => {
     const reveal = () => {
       const editor = view.current;

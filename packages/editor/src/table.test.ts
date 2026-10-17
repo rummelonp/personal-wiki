@@ -195,7 +195,7 @@ describe("table decoration", () => {
   });
 
   it("hides only ASCII spaces around a cell and keeps an ideographic-space indent", () => {
-    // GFM が除くのは ASCII の空白とタブだけで、全角空白の字下げは中身として描く
+    // GFM が除くのは ASCII の空白とタブだけで、全角空白のインデントは中身として描く
     const ideographicSpace = String.fromCodePoint(0x3000);
     const v = mount(`| ${ideographicSpace}小項目 | 値 |\n| --- | --- |\n| a | b |`);
     const cell = cells(v)[0] as HTMLElement;
@@ -231,7 +231,7 @@ describe("table decoration", () => {
   });
 
   it("reveals the table when the cursor sits before the indent of its first row", () => {
-    // 行頭の字下げは Table の外にある。rendered の行は flex で描くので、そこへ未確定の文字を入れさせない
+    // 行頭のインデントは Table の外にある。rendered の行は flex で描くので、そこへ未確定の文字を入れさせない
     const doc = "- 項目\n\n  | a | b |\n  | - | - |\n  | c | d |  \n\n後ろ";
     const v = mount(doc);
     expect(cells(v)).toHaveLength(4);

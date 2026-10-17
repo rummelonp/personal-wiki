@@ -1,5 +1,5 @@
 /*
- * Worker が返す OAuth の画面（同意、接続の一覧、誤り）。SPA の theme.css の token の後ろに埋めるので、
+ * Worker が返す OAuth の画面（同意、接続の一覧、エラー）。SPA の theme.css の token の後ろに埋めるので、
  * 値は token だけを使う。script を持たない画面なので、状態の見た目は :checked と :has() で作る。
  */
 

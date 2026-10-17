@@ -226,7 +226,7 @@ describe("POST /api/pages/:id/revisions/:version/restore", () => {
     const stale = await restore(page.id, 1, 1);
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ error: "version_conflict", currentVersion: 2 });
-    // 本文が今と同じで書かずに済む版でも、古い版からの要求は通さない
+    // 本文が今と同じで書かずに済む版でも、古い版からのリクエストは通さない
     const sameBody = await restore(page.id, 2, 1);
     expect(sameBody.status).toBe(409);
 

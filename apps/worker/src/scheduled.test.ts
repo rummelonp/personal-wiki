@@ -137,7 +137,7 @@ describe("scheduled", () => {
     expect(logged(error)).toEqual([
       { event: "link_rewrites.scheduled_error", sourcePageId: source.id, error: "injected" },
     ]);
-    // 積んだ分は残り、次の発火が試す
+    // キューのジョブは残り、次の発火が試す
     const left = await env.DB.prepare("SELECT attempts FROM link_rewrites").first<{
       attempts: number;
     }>();

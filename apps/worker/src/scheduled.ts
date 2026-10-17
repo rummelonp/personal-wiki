@@ -8,12 +8,12 @@ export interface ScheduledOptions {
 }
 
 /**
- * Cron で積んだリンクの書き換えを進める（deploy.env の LINK_REWRITE_CRON）。MCP 経由の rename は
- * web を開かないので、書き換えが積まれたまま残るのを防ぐ。
+ * Cron でキューに入れたリンクの書き換えを進める（deploy.env の LINK_REWRITE_CRON）。MCP 経由の rename は
+ * web を開かないので、書き換えがキューに入ったまま残るのを防ぐ。
  *
  * 1 回の発火で進めるのは 1 リンク元だけ。Workers Free の scheduled は CPU が 10ms で、1 リンク元の
  * 書き換えがその大半を使うため、2 回目は呼ばない。残りは次の発火が進める。
- * revision の actor は、積んだ rename の呼び出し元（link_rewrites.actor）になる。REST の step と同じ。
+ * revision の actor は、キューに入れた rename の呼び出し元（link_rewrites.actor）になる。REST の step と同じ。
  * 例外は発火を失敗として記録させるため、ログに出したあとで投げ直す。
  */
 export function createScheduledHandler({

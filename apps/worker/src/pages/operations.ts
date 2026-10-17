@@ -31,7 +31,7 @@ import {
 
 /*
  * REST と MCP が共有するページの操作。actor の決定、書き込みの計測、エラーの説明をここに置き、
- * 入口ごとの違いは入力の解析と応答の形だけにする。
+ * 入口ごとの違いは入力の解析とレスポンスの形だけにする。
  */
 
 /**
@@ -60,7 +60,7 @@ export interface WriteMetric {
     | "link_rewrite";
   /**
    * revisions.actor と同じ形式。リンクの書き換えで本文を書いたときは revision と同じく rename した
-   * actor、積んだ分を捨てただけのときは呼び出し元（Cron は "cron"）
+   * actor、キューのジョブを捨てただけのときは呼び出し元（Cron は "cron"）
    */
   actor: string;
   /** 書いたページ。作り直しは 1 回で複数ページを扱いうるので付けない */
@@ -128,8 +128,8 @@ async function withExisting<E extends WriteError>(
 }
 
 /**
- * 更新の応答に足す linkRewrites。書き換えを積んだか、リンクに書けない title で積まなかったときだけ
- * 返し、それ以外の保存では応答を GET と同じ形のままにする。
+ * 更新のレスポンスに足す linkRewrites。書き換えをキューに入れたか、リンクに書けない title でキューに入れなかったときだけ
+ * 返し、それ以外の保存ではレスポンスを GET と同じ形のままにする。
  */
 export function linkRewritesField({ linkRewrites }: UpdateSuccess): {
   linkRewrites?: LinkRewritesQueued;
@@ -178,7 +178,7 @@ export async function restoreRevisionAs(
     return { ok: false, reason: source.reason === "page_not_found" ? "not_found" : source.reason };
   }
   const { page, revisionBody } = source;
-  // 書かずに返す場合も、古い版を見て送った要求を成功にしないよう、先に照合する。書く場合の照合は guard が担う
+  // 書かずに返す場合も、古い版を見て送ったリクエストを成功にしないよう、先に照合する。書く場合の照合は guard が担う
   if (page.version !== input.expectedVersion) {
     return { ok: false, reason: "version_conflict", currentVersion: page.version };
   }
@@ -220,7 +220,7 @@ export async function appendToPageAs(
   return result;
 }
 
-/** 積んだリンクの書き換えを 1 ページ分進める。 */
+/** キューに入れたリンクの書き換えを 1 ページ分進める。 */
 export async function stepLinkRewritesAs(
   ctx: PageWriteContext,
   input: { targetPageId: string | null },
@@ -229,7 +229,7 @@ export async function stepLinkRewritesAs(
 }
 
 /**
- * principal を持たない呼び出し元（Cron）も使う。fallbackActor は、積んだ分を捨てただけで書き換えた
+ * principal を持たない呼び出し元（Cron）も使う。fallbackActor は、キューのジョブを捨てただけで書き換えた
  * revision が無いときの計測値の actor で、書き込みが起きたときだけ呼ぶ。
  */
 export async function stepLinkRewritesRecorded(
@@ -273,12 +273,12 @@ export const VISIBILITY_NOT_ALLOWED_MESSAGE =
   "visibility は API から変えられない。visibility を外して送り直す（ページは draft で作られ、公開はオーナーがブラウザで行う）";
 
 export interface WriteErrorDescription {
-  /** REST の応答に使う HTTP ステータス */
+  /** REST のレスポンスに使う HTTP ステータス */
   status: 400 | 404 | 409 | 413;
   body: { error: string; [key: string]: unknown };
 }
 
-/** 書き込みの失敗を、REST の応答本文と MCP の tool のエラーで共通の形にする。 */
+/** 書き込みの失敗を、REST のレスポンス本文と MCP の tool のエラーで共通の形にする。 */
 export function describeWriteError(error: WriteError | AppendError): WriteErrorDescription {
   switch (error.reason) {
     case "invalid_title":

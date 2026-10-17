@@ -44,7 +44,7 @@ async function mount(hideEmpty: boolean) {
 }
 
 describe("Backlinks の取得中", () => {
-  it("2 行の帯を出し、取得中であることと「読み込み中…」を支援技術に伝える。読み込みの知らせは live region にしない", async () => {
+  it("2 行のスケルトンを出し、取得中であることと「読み込み中…」を支援技術に伝える。読み込みの知らせは live region にしない", async () => {
     await mount(false);
     await act(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -62,7 +62,7 @@ describe("Backlinks の取得中", () => {
     expect(container?.querySelector(".rail-section")).toBeNull();
   });
 
-  it("届いたら帯を外してリンクを出す", async () => {
+  it("届いたらスケルトンを外してリンクを出す", async () => {
     vi.mocked(listBacklinks).mockResolvedValue(
       ok({
         pages: [{ id: "BBBBBBBBBBBBBBBBBBBBBB", title: "元", visibility: "public", updatedAt: 0 }],

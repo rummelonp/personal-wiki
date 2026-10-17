@@ -41,7 +41,7 @@ async function step(client: Client, json: Record<string, unknown> = {}) {
   return res.json<LinkRewriteStepResult>();
 }
 
-/** remaining が 0 になるまで step を呼び、各回の応答を返す。 */
+/** remaining が 0 になるまで step を呼び、各回のレスポンスを返す。 */
 async function drain(client: Client, json: Record<string, unknown> = {}) {
   const steps: LinkRewriteStepResult[] = [];
   for (let i = 0; i < 20; i++) {
@@ -61,8 +61,8 @@ async function actorsOf(pageId: string) {
   return results;
 }
 
-describe("rename で書き換えを積む", () => {
-  it("旧 title を指すリンク元ごとに 1 行積み、応答で件数を返す", async () => {
+describe("rename で書き換えをキューに入れる", () => {
+  it("旧 title を指すリンク元ごとに 1 行をキューに入れ、レスポンスで件数を返す", async () => {
     const client = await buildClient();
     const target = await client.create("Target");
     const a = await client.create("A", "[[Target]]");
@@ -83,7 +83,7 @@ describe("rename で書き換えを積む", () => {
     const target = await client.create("Target");
     const v2 = await rename(client, target, "Target", "本文");
     expect(v2).not.toHaveProperty("linkRewrites");
-    // 大文字小文字だけの変更は title_key が変わらないので積まない
+    // 大文字小文字だけの変更は title_key が変わらないのでキューに入れない
     await client.create("A", "[[Target]]");
     const v3 = await rename(client, v2, "TARGET");
     expect(v3).not.toHaveProperty("linkRewrites");
@@ -92,7 +92,7 @@ describe("rename で書き換えを積む", () => {
     expect(await jobs()).toEqual([]);
   });
 
-  it("新しい title が既にあると batch ごと戻り、積んだ分も残らない", async () => {
+  it("新しい title が既にあると batch ごと戻り、キューのジョブも残らない", async () => {
     const client = await buildClient();
     const target = await client.create("Target");
     await client.create("Taken");
@@ -103,7 +103,7 @@ describe("rename で書き換えを積む", () => {
     expect((await read(client, target)).version).toBe(1);
   });
 
-  it("リンクに書けない title への rename は積まずに skipped を返す", async () => {
+  it("リンクに書けない title への rename はキューに入れずに skipped を返す", async () => {
     const client = await buildClient();
     const target = await client.create("Target");
     const a = await client.create("A", "[[Target]]");
@@ -179,7 +179,7 @@ describe("POST /api/link-rewrites/step", () => {
     const target = await client.create("A");
     const s = await client.create("S", "[[A]]");
     const toB = await rename(client, target, "B");
-    // 改名の間に [[B]] と書いたページも、次の改名で積まれる
+    // 改名の間に [[B]] と書いたページも、次の改名でキューに入る
     const t = await client.create("T", "[[B]]");
     await rename(client, toB, "C");
     expect((await jobs()).map((j) => [j.source, j.oldKey]).sort()).toEqual(
@@ -194,7 +194,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect((await read(client, s)).version).toBe(2);
   });
 
-  it("元の title に戻したら、書き込まずに積んだ分を捨てる", async () => {
+  it("元の title に戻したら、書き込まずにキューのジョブを捨てる", async () => {
     const client = await buildClient();
     const target = await client.create("A");
     const s = await client.create("S", "[[A]]");
@@ -206,7 +206,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect(await jobs()).toEqual([]);
   });
 
-  it("旧 title で別のページを作っても、積んだ時点の対象ページの title に書き換える", async () => {
+  it("旧 title で別のページを作っても、キューに入れた時点の対象ページの title に書き換える", async () => {
     const client = await buildClient();
     const target = await client.create("Foo");
     const s = await client.create("S", "[[Foo]]");
@@ -238,7 +238,7 @@ describe("POST /api/link-rewrites/step", () => {
       method: "DELETE",
       headers: { "If-Match": `"${(await read(client, target)).version}"` },
     });
-    // S2 も書き換えで [[New]] になっているので、S2 と S3 の 2 件が積まれている
+    // S2 も書き換えで [[New]] になっているので、S2 と S3 の 2 件がキューに入っている
     const rest = await drain(client);
     expect(rest.map((r) => [r.processed, r.failed])).toEqual([
       [null, []],
@@ -282,7 +282,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect(await read(client, page)).toMatchObject({ body: "リンクなし", version: 2 });
   });
 
-  it("書き換えで他のリンクが崩れるなら書かずに failed にし、積んだ分を捨てる", async () => {
+  it("書き換えで他のリンクが崩れるなら書かずに failed にし、キューのジョブを捨てる", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const client = await buildClient();
     const target = await client.create("Old");
@@ -342,7 +342,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect(res.status).toBe(400);
   });
 
-  it("1 つのリンク元に複数の対象が積まれていれば、1 回の revision でまとめて書き換える", async () => {
+  it("1 つのリンク元に複数の対象がキューに入っていれば、1 回の revision でまとめて書き換える", async () => {
     const client = await buildClient();
     const x = await client.create("X");
     const y = await client.create("Y");
@@ -355,17 +355,17 @@ describe("POST /api/link-rewrites/step", () => {
     expect(steps).toHaveLength(1);
     expect(steps[0]?.processed).toMatchObject({ sourcePageId: s.id, rewritten: 2, version: 2 });
     expect((await read(client, s)).body).toBe("[[X2]] [[Y2]] [[Z]]");
-    // 後に積んだ rename の呼び出し元を actor にする
+    // 後にキューに入れた rename の呼び出し元を actor にする
     expect((await actorsOf(s.id)).at(-1)).toEqual({ version: 2, actor: other.actor });
   });
 
-  it("同じ旧 key に 2 つの対象が積まれていれば、先に積んだ方の title に書き換える", async () => {
+  it("同じ旧 key に 2 つの対象がキューに入っていれば、先にキューに入れた方の title に書き換える", async () => {
     const client = await buildClient();
     const first = await client.create("A");
     const s = await client.create("S", "[[A]]");
     await rename(client, first, "B");
     client.clock.now = T0 + 1000;
-    // 旧 title で作ったページを改名すると、S の [[A]] がもう一度積まれる
+    // 旧 title で作ったページを改名すると、S の [[A]] がもう一度キューに入る
     const second = await client.create("A");
     await rename(client, second, "C");
     expect((await jobs()).map((j) => [j.target, j.oldKey]).sort()).toEqual(
@@ -379,7 +379,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect(await jobs()).toEqual([]);
   });
 
-  it("元に戻してからもう一度改名すると、積み直して最後の title に書き換える", async () => {
+  it("元に戻してからもう一度改名すると、キューに入れ直して最後の title に書き換える", async () => {
     const client = await buildClient();
     const target = await client.create("A");
     const s = await client.create("S", "[[A]]");
@@ -389,14 +389,14 @@ describe("POST /api/link-rewrites/step", () => {
     expect(backToA).not.toHaveProperty("linkRewrites");
     client.clock.now = T0 + 2000;
     const toC = await rename(client, backToA, "C");
-    // 残っていた行を積み直すので、件数に数える
+    // 残っていた行をキューに入れ直すので、件数に数える
     expect(toC.linkRewrites).toEqual({ queued: 1 });
     expect(await createdAtOf(s.id)).toEqual([T0 + 2000]);
     await drain(client);
     expect(await read(client, s)).toMatchObject({ body: "[[C]]", version: 2 });
   });
 
-  it("読んだあとにリンク元が保存されたら、積んだ分を残して conflict を返す", async () => {
+  it("読んだあとにリンク元が保存されたら、キューのジョブを残して conflict を返す", async () => {
     const client = await buildClient();
     const target = await client.create("Old");
     const s = await client.create("S", "[[Old]]");
@@ -421,7 +421,7 @@ describe("POST /api/link-rewrites/step", () => {
     const s = await client.create("S", "[[A]]");
     await rename(client, target, "B");
     // step が B を読んだあと、書く前に C へ改名する。S の [[A]] はもう対象を指していないので、
-    // この rename では積み直されない
+    // この rename ではキューに入れ直されない
     const racing = beforeBatch(async () => {
       expect(await renameDirectly(target.id, "C", T0 + 1000)).toEqual({ queued: 0 });
     });
@@ -441,7 +441,7 @@ describe("POST /api/link-rewrites/step", () => {
     const toB = await rename(client, target, "B");
     await rename(client, toB, "A");
     const racing = beforeBatch(async () => {
-      // 元に戻したので S の [[A]] は対象を指しており、改名で同じ行が積み直される
+      // 元に戻したので S の [[A]] は対象を指しており、改名で同じ行がキューに入れ直される
       expect(await renameDirectly(target.id, "C", T0 + 1000)).toEqual({ queued: 1 });
     });
     const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 + 2000 });
@@ -470,7 +470,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect((await read(client, s)).body).toBe("[[New]] を書き戻した");
   });
 
-  it("派生データの表が古くても、本文を解析し直して書き換える", async () => {
+  it("派生データのテーブルが古くても、本文を解析し直して書き換える", async () => {
     const client = await buildClient();
     const target = await client.create("Old");
     const s = await client.create("S", "[[Old]] #tag");
@@ -487,7 +487,7 @@ describe("POST /api/link-rewrites/step", () => {
     const target = await client.create("Old");
     const s = await client.create("S", "[[Old]]");
     await rename(client, target, "New");
-    // batch の失敗は試行回数に数え、積んだ分は残る
+    // batch の失敗は試行回数に数え、キューのジョブは残る
     const failing = beforeBatch(async () => {
       throw new Error("injected");
     });
@@ -509,7 +509,7 @@ describe("POST /api/link-rewrites/step", () => {
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("attempts_exceeded"));
   });
 
-  it("上限を超えて捨てる間に積み直された分は残す", async () => {
+  it("上限を超えて捨てる間にキューに入れ直された分は残す", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const client = await buildClient();
     const target = await client.create("A");
@@ -519,7 +519,7 @@ describe("POST /api/link-rewrites/step", () => {
     await env.DB.prepare("UPDATE link_rewrites SET attempts = ?1")
       .bind(LINK_REWRITE_MAX_ATTEMPTS)
       .run();
-    // 上限を超えた分は読んだ状態を確かめずに捨てるので、積み直した行は created_at の違いで残る
+    // 上限を超えた分は読んだ状態を確かめずに捨てるので、キューに入れ直した行は created_at の違いで残る
     const racing = beforeBatch(async () => {
       expect(await renameDirectly(target.id, "C", T0 + 1000)).toEqual({ queued: 1 });
     });
@@ -546,7 +546,7 @@ describe("同じリンク元を同時に選ぶ呼び出し（web の step と Cr
     const { result } = await stepLinkRewrites(racing, { targetPageId: null, now: T0 });
     expect(other).toMatchObject({ processed: { sourcePageId: s.id }, failed: [] });
     expect(result).toMatchObject({ processed: null, conflict: true, failed: [], remaining: 0 });
-    // 書き換えは 1 回だけで、積んだ行は残らない
+    // 書き換えは 1 回だけで、キューに入れた行は残らない
     expect(await read(client, s)).toMatchObject({ body: "[[New]]", version: 2 });
     expect(await jobs()).toEqual([]);
   });
@@ -562,7 +562,7 @@ describe("同じリンク元を同時に選ぶ呼び出し（web の step と Cr
       .run();
     let other: LinkRewriteStepResult | undefined;
     // 外側は上限ちょうどで進み、内側は上限を超えて読まずに捨てる。外側の batch は読んだ状態の guard
-    // だけで通るので、内側が積んだ行を先に消しても書き換わる
+    // だけで通るので、内側がキューに入れた行を先に消しても書き換わる
     const racing = beforeBatch(async () => {
       other = (await stepLinkRewrites(env.DB, { targetPageId: null, now: T0 + 1000 })).result;
     });

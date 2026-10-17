@@ -196,7 +196,7 @@ test("title の一覧を取れないときの quick switcher は、「作成」�
   await expect(switcher).toBeHidden();
   await page.getByRole("button", { name: "ページを検索" }).click();
   await input.fill(SEED.database);
-  // 下の候補が出ずに落ちたとき、語が欄に入らなかったのか、候補の応答が遅れたのかを分ける
+  // 下の候補が出ずに落ちたとき、語が欄に入らなかったのか、候補のレスポンスが遅れたのかを分ける
   await expect(input).toHaveValue(SEED.database);
   await expect(switcher.getByRole("option", { name: SEED.database, exact: true })).toBeVisible();
   await expect(switcher.getByText("候補を取得できません。")).toHaveCount(0);
@@ -265,7 +265,7 @@ test("検索結果の見出しは、開き括弧の行頭の空きを詰める",
         const style = getComputedStyle(element);
         const contentLeft =
           element.getBoundingClientRect().left + Number.parseFloat(style.paddingLeft);
-        // 2 字目が始まる位置の、字の大きさに対する割合。text-spacing-trim で詰めても、字下げを戻しても、
+        // 2 字目が始まる位置の、字の大きさに対する割合。text-spacing-trim で詰めても、インデントを戻しても、
         // 半角分（0.5）になる。詰めないと全角の 1 字分（1）を取る
         return (
           (range.getBoundingClientRect().right - contentLeft) / Number.parseFloat(style.fontSize)

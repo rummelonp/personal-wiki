@@ -52,18 +52,18 @@ interface Options {
 
 /**
  * ページの版の一覧。取り直しは、ページの版か更新の時刻が進み、かつ見えているときに限る。
- * 取り直す間も前の一覧を出したままにする。帯に戻すと右の列が保存ごとに揺れる。
+ * 取り直す間も前の一覧を出したままにする。スケルトンに戻すと右の列が保存ごとに揺れる。
  */
 export function useRevisionList({ pageId, pageVersion, updatedAt, paused, visible }: Options) {
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
   const latest = useRef({ pageVersion, updatedAt, paused, list });
   latest.current = { pageVersion, updatedAt, paused, list };
-  /** 1 ページ目の要求の通し番号。後から始めた要求だけが結果を反映し、先に始めた遅い要求は捨てる */
+  /** 1 ページ目のリクエストの通し番号。後から始めたリクエストだけが結果を反映し、先に始めた遅いリクエストは捨てる */
   const ticketRef = useRef(0);
-  /** 最後に始めた 1 ページ目の要求の基準。失敗したら null に戻し、次の機会に取り直せるようにする */
+  /** 最後に始めた 1 ページ目のリクエストの基準。失敗したら null に戻し、次の機会に取り直せるようにする */
   const requested = useRef<Basis | null>(null);
-  /** 続きの要求の途中か。取り直しでは解除せず、この要求が戻るまで次を受け付けない */
+  /** 続きのリクエストの途中か。取り直しでは解除せず、このリクエストが戻るまで次を受け付けない */
   const loadingMoreRef = useRef(false);
 
   const refresh = useCallback(

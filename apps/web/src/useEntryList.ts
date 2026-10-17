@@ -19,7 +19,7 @@ export type ListState =
   | { status: "ready"; entries: ListedPage[]; next: string | null; loadingMore: boolean }
   | { status: "unauthorized" }
   | { status: "error"; message: string }
-  /** 匿名の検索語が API の受け付ける長さに満たない。要求は送っていない。 */
+  /** 匿名の検索語が API の受け付ける長さに満たない。リクエストは送っていない。 */
   | { status: "query_too_short"; min: number }
   /** API が検索語を受け付けなかった（長すぎる、制御文字を含む）。一覧の取得の失敗ではなく、語を直す案内にする。 */
   | { status: "invalid_query"; message: string };
@@ -66,7 +66,7 @@ export function useEntryList({ query, tag, visibility, owner }: EntryListSource)
   const state: ListState =
     held.key === key ? held.state : { status: "loading", previous: previousOf(held.state) };
   const setState = useCallback((next: ListState) => setHeld({ key, state: next }), [key]);
-  // 条件が変わった後に遅れて届いた応答で、表示を上書きしない
+  // 条件が変わった後に遅れて届いたレスポンスで、表示を上書きしない
   const generation = useRef(0);
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);

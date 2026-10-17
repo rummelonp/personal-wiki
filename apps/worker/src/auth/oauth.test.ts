@@ -401,7 +401,7 @@ describe("認可と同意画面", () => {
     const location = new URL(res.headers.get("Location") ?? "", ORIGIN);
     expect(location.pathname).toBe("/_auth/login");
     expect(location.searchParams.get("return")).toBe(path);
-    // ログイン後の戻り先の検証が、redirect_uri などの URL を含む認可の要求を落とさない
+    // ログイン後の戻り先の検証が、redirect_uri などの URL を含む認可のリクエストを落とさない
     expect(safeReturnUrl(location.searchParams.get("return") ?? undefined, ORIGIN)).toBe(
       `${ORIGIN}${path}`,
     );
@@ -532,7 +532,7 @@ describe("認可と同意画面", () => {
     expectErrorPage(await replayed.text(), "接続できません", STALE_CONSENT);
   });
 
-  it("使用済みの handle で拒否を送っても、同じ誤りにする", async () => {
+  it("使用済みの handle で拒否を送っても、同じエラーにする", async () => {
     const { request } = setup();
     const client = await register(request);
     const path = authorizePath(client.client_id, (await pkcePair()).challenge);
@@ -543,7 +543,7 @@ describe("認可と同意画面", () => {
     expectErrorPage(await denied.text(), "接続できません", STALE_CONSENT);
   });
 
-  it("権限の値が無い承認は、handle を消費せずに送信の誤りにする", async () => {
+  it("権限の値が無い承認は、handle を消費せずに送信のエラーにする", async () => {
     const { request } = setup();
     const client = await register(request);
     const path = authorizePath(client.client_id, (await pkcePair()).challenge);
@@ -566,7 +566,7 @@ describe("認可と同意画面", () => {
     expect(res.status).toBe(401);
   });
 
-  it("PKCE の無い要求と plain の PKCE は、client_secret を持つ client でも同意画面を出さずに戻す", async () => {
+  it("PKCE の無いリクエストと plain の PKCE は、client_secret を持つ client でも同意画面を出さずに戻す", async () => {
     const { request } = setup();
     const session = await ownerCookie(T0);
     for (const authMethod of ["none", "client_secret_basic"]) {
@@ -590,7 +590,7 @@ describe("認可と同意画面", () => {
     }
   });
 
-  it("同意画面を開いた後で client の登録が消えたら、送信にこの画面で誤りを出す", async () => {
+  it("同意画面を開いた後で client の登録が消えたら、送信にこの画面でエラーを出す", async () => {
     const { request } = setup();
     const client = await register(request);
     const path = authorizePath(client.client_id, (await pkcePair()).challenge);
@@ -607,7 +607,7 @@ describe("認可と同意画面", () => {
     );
   });
 
-  it("handle を含まない送信は、既定の見出しの誤りにする", async () => {
+  it("handle を含まない送信は、既定の見出しのエラーにする", async () => {
     const { request } = setup();
     const client = await register(request);
     const path = authorizePath(client.client_id, (await pkcePair()).challenge);
@@ -634,7 +634,7 @@ describe("認可と同意画面", () => {
     expect((await submitConsent(request, path, consent)).status).toBe(302);
   });
 
-  it("登録されていない redirect URI には戻さず、この画面で誤りを出し、ライブラリの説明はログにだけ書く", async () => {
+  it("登録されていない redirect URI には戻さず、この画面でエラーを出し、ライブラリの説明はログにだけ書く", async () => {
     const { request } = setup();
     const client = await register(request);
     const path = authorizePath(client.client_id, (await pkcePair()).challenge, {
@@ -663,7 +663,7 @@ describe("認可と同意画面", () => {
     }
   });
 
-  it("client_id の無い要求も、送り先を確かめられない誤りにする", async () => {
+  it("client_id の無いリクエストも、送り先を確かめられないエラーにする", async () => {
     const { request } = setup();
     const url = new URL(authorizePath("", (await pkcePair()).challenge), ORIGIN);
     url.searchParams.delete("client_id");
@@ -685,7 +685,7 @@ describe("認可と同意画面", () => {
 });
 
 describe("ログインを経由した認可", () => {
-  it("owner のセッションが無い認可の要求は、Access のログインを経て同意画面に戻る", async () => {
+  it("owner のセッションが無い認可のリクエストは、Access のログインを経て同意画面に戻る", async () => {
     const key = await generateSigningKey("key-1");
     const app = createApp({ now: () => T0, accessFetch: fakeJwks([key]).fetch });
     const bindings = ownerEnv();
@@ -953,7 +953,7 @@ describe("許可した接続の一覧と取り消し", () => {
     });
   }
 
-  it("一覧の続きの位置が読めなければ、一覧を開けない見出しの誤りにする", async () => {
+  it("一覧の続きの位置が読めなければ、一覧を開けない見出しのエラーにする", async () => {
     const { request } = setup();
     const res = await request("/_auth/oauth/grants?cursor=%00%00", {
       headers: { Cookie: await ownerCookie(T0) },
@@ -1241,7 +1241,7 @@ describe("authorizationFailure", () => {
     }
   });
 
-  it("ライブラリ以外の誤りは握りつぶさずに投げ直す", () => {
+  it("ライブラリ以外のエラーは握りつぶさずに投げ直す", () => {
     expect(() => authorizationFailure("wiki", new Error("kv"), "m")).toThrow("kv");
   });
 });
@@ -1249,7 +1249,7 @@ describe("authorizationFailure", () => {
 describe("画面のブランド", () => {
   const brandOf = (html: string) => /<p class="brand">([^<]*)<\/p>/.exec(html)?.[1];
 
-  it("既定ではサイト名を personal-wiki にし、設定があれば同意画面、一覧、誤りの画面に出す", async () => {
+  it("既定ではサイト名を personal-wiki にし、設定があれば同意画面、一覧、エラーの画面に出す", async () => {
     const plain = setup();
     const path = authorizePath(
       (await register(plain.request)).client_id,
@@ -1334,7 +1334,7 @@ describe("一覧の取り消しボタンと wiki へ戻る導線", () => {
     expect(await grantsHtml(request)).toContain(BACK_LINK);
   });
 
-  it("誤りの画面は wiki へ戻るリンクを持ち、同意の画面は持たない", async () => {
+  it("エラーの画面は wiki へ戻るリンクを持ち、同意の画面は持たない", async () => {
     const { request } = setup();
     const failed = await request("/_auth/oauth/grants?cursor=%00%00", {
       headers: { Cookie: await ownerCookie(T0) },

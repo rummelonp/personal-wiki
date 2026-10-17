@@ -62,7 +62,7 @@ function revealFirstChange(scroller: HTMLElement): boolean {
   }
   const before = first.previousElementSibling;
   const start = before instanceof HTMLElement && spanOf(before, group) <= room ? before : first;
-  // offsetTop の基準は position: relative の .notice-details。scrollIntoView は台そのものをスクロールしうる
+  // offsetTop の基準は position: relative の .notice-details。scrollIntoView はドックそのものをスクロールしうる
   scroller.scrollTop = start.offsetTop;
   return true;
 }
@@ -89,7 +89,7 @@ export function ConflictPanel({
   // 押す前に両方とも確かめる。確認は window.confirm ではなく通知の中で行う。ブラウザが
   // ダイアログを抑止していると confirm は何も出さずに false を返し、操作が理由なく止まるため
   const [choice, setChoice] = useState<Choice | null>(null);
-  // 通知は台の用意ができてから描かれるので、要素が現れたときに送れるよう state で持つ
+  // 通知はドックの用意ができてから描かれるので、要素が現れたときに送れるよう state で持つ
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const take = useRef<HTMLButtonElement>(null);

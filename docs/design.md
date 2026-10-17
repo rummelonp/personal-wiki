@@ -51,7 +51,7 @@
 ## 確かめ方
 
 - 描き終わった画面だけでなく、読み込み中、保存中、公開中などの途中の状態も見る。
-  Playwright の `page.route` で API の応答を遅らせると撮れる（`apps/web/e2e/sheet/scenes.sheet.ts` に例がある）。
+  Playwright の `page.route` で API のレスポンスを遅らせると撮れる（`apps/web/e2e/sheet/scenes.sheet.ts` に例がある）。
 - `pnpm e2e:sheet` で、明暗と幅 375、768、1280 の画面の一覧を見る。
 - 幅 320、375、768、1280、1440 で横スクロールが出ないことは、`apps/web/e2e/layout.spec.ts` が確かめる。
 - axe のコントラストの検査はライトでしか走らない。

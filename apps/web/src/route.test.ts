@@ -116,7 +116,7 @@ describe("href", () => {
     expect(parseRoute("/a%20b", "")).toEqual({ name: "title", title: "a b" });
   });
 
-  it("まだ無いページの `_` を含む title は、移った先の取得中の帯でも空白に読み替えない", () => {
+  it("まだ無いページの `_` を含む title は、移った先の取得中のスケルトンでも空白に読み替えない", () => {
     try {
       expect(missingPagePath("snake_case")).toBe("/snake_case");
       expect(loadingTitleFor("snake_case")).toBe("snake_case");

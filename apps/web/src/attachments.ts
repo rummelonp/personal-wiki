@@ -141,7 +141,7 @@ export function attachmentUrl(pageId: string, name: string): string {
 }
 
 export interface AttachmentUrlResolverOptions {
-  /** `/api/me` の features.attachments。false の間は要求を出さない */
+  /** `/api/me` の features.attachments。false の間はリクエストを出さない */
   enabled: boolean;
   /** この resolver を使うページの id。作る前のページは null（このページの添付は引かない） */
   pageId: () => string | null;
@@ -152,7 +152,7 @@ export interface AttachmentUrlResolverOptions {
 /**
  * `![[name]]` の画像の URL を返す。ページ本体の添付はこのページの id で、入れ子の embed の添付は
  * 埋め込み先の id で引く。サーバーが振る名前の形に合わないもの（アップロード中の placeholder を
- * 含む）は、404 になる要求を出さないよう null にする。
+ * 含む）は、404 になるリクエストを出さないよう null にする。
  */
 export function createAttachmentUrlResolver(
   options: AttachmentUrlResolverOptions,

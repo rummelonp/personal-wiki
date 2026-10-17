@@ -26,7 +26,7 @@ export interface TitleResolverOptions {
   debounceMs?: number;
   maxWaitMs?: number;
   failureCooldownMs?: number;
-  /** 覚えておく target の数。超えたら、最後に使ってから最も経つものから忘れる */
+  /** キャッシュしておく target の数。超えたら、最後に使ってから最も経つものから忘れる */
   maxEntries?: number;
   now?: () => number;
 }
@@ -50,21 +50,21 @@ export interface TitleResolver {
    */
   refresh(): void;
   /**
-   * 進行中の問い合わせを中断し、待っている要求を捨てる。その後に使ってもよい（StrictMode は
+   * 進行中の問い合わせを中断し、待っているリクエストを捨てる。その後に使ってもよい（StrictMode は
    * effect を 1 度解除してから付け直す）。
    */
   dispose(): void;
 }
 
 /**
- * 連続した入力でも要求が出ていくよう、最後の追加から待つ時間と、最初の追加からの待ちの上限。
+ * 連続した入力でもリクエストが出ていくよう、最後の追加から待つ時間と、最初の追加からの待ちの上限。
  * `[[` の中を 1 字ずつ打つと、そのたびに別の target を見つける。
  */
 export const TITLE_RESOLVE_DEBOUNCE_MS = 250;
 export const TITLE_RESOLVE_MAX_WAIT_MS = 1_000;
 /** 失敗した target を次の組み直しで問い合わせ直すまでの間隔。編集のたびに 5xx を叩き直さない */
 export const TITLE_RESOLVE_FAILURE_COOLDOWN_MS = 10_000;
-/** 覚えておく target の既定の数。打ちかけの target が溜まる分を見込む */
+/** キャッシュしておく target の既定の数。打ちかけの target が溜まる分を見込む */
 const MAX_ENTRIES = 1_000;
 
 interface Entry {
@@ -85,8 +85,8 @@ interface Entry {
  * 結果は target の `foldTitle`（Worker の title_key と同じ規則）をキーにメモリに持つ。
  * target の切り出し（`#` や `^` の扱い）は editor が行い、ここでは受け取った文字列をそのまま使う。
  *
- * 失敗（404、5xx、通信の失敗、応答の形の違い）では結果を書き換えない。「存在しない」の印を
- * 付けるのは、存在しないという応答を受けたときだけにする。
+ * 失敗（404、5xx、通信の失敗、レスポンスの形の違い）では結果を書き換えない。「存在しない」の印を
+ * 付けるのは、存在しないというレスポンスを受けたときだけにする。
  */
 export function createTitleResolver(options: TitleResolverOptions): TitleResolver {
   const debounceMs = options.debounceMs ?? TITLE_RESOLVE_DEBOUNCE_MS;

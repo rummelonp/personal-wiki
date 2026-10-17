@@ -60,7 +60,7 @@ const resolvePath = (titles: readonly string[]) =>
 const MIXED = ["Open Note", "Hidden Plan", "Gone", "Missing Page"];
 
 describe("GET /api/pages/resolve", () => {
-  it("owner には draft も visibility 付きで解決し、応答は private, no-store", async () => {
+  it("owner には draft も visibility 付きで解決し、レスポンスは private, no-store", async () => {
     const { asOwner, open, draft } = await seed();
     const res = await asOwner(resolvePath(MIXED));
     expect(res.status).toBe(200);
@@ -100,10 +100,10 @@ describe("GET /api/pages/resolve", () => {
     }
   });
 
-  it("匿名には draft を存在しない title と同じ null で返し、応答のどこにも draft の id と title を含めない", async () => {
+  it("匿名には draft を存在しない title と同じ null で返し、レスポンスのどこにも draft の id と title を含めない", async () => {
     const { call, open, draft } = await seed();
-    // 入力の title は応答にそのまま返るので、draft は正式な title と違う表記で引き、正式な表記が
-    // 応答に出ないことを確かめる
+    // 入力の title はレスポンスにそのまま返るので、draft は正式な title と違う表記で引き、正式な表記が
+    // レスポンスに出ないことを確かめる
     const res = await call(
       resolvePath(["Open Note", "hidden plan", "ＨＩＤＤＥＮ　ＰＬＡＮ", "Gone", "Missing Page"]),
     );

@@ -145,7 +145,7 @@ export function createProxyHandler({ upstreamPort, sessionSecret, email }) {
         upstreamRes.pipe(res);
       },
     );
-    // ブラウザが途中で切ったら上流へのリクエストも切り、読む相手のいない応答を wrangler dev に残さない
+    // ブラウザが途中で切ったら上流へのリクエストも切り、読む相手のいないレスポンスを wrangler dev に残さない
     res.on("close", () => {
       if (!res.writableFinished) upstream.destroy();
     });

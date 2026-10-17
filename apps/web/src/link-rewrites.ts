@@ -3,7 +3,7 @@ import { type FailedLinkRewrite, type StepResult, stepLinkRewrites } from "./lin
 import type { Visibility } from "./pages-api";
 
 /*
- * title の変更で Worker が積んだリンクの書き換えを、step を繰り返して最後まで進める。
+ * title の変更で Worker がキューに入れたリンクの書き換えを、step を繰り返して最後まで進める。
  * step は 1 回でリンク元 1 ページを処理する。同時に呼ぶと同じリンク元を取り合って失敗が増えるので、
  * タブの中では 1 本のループだけが呼ぶ。
  */
@@ -45,7 +45,7 @@ export const MAX_CONFLICTS = 20;
 export const ERROR_WAITS_MS = [1_000, 2_000, 4_000];
 
 /**
- * 同じリンク元が積み直されてまた失敗しても、一覧には 1 回だけ出す。試行の上限で諦めたときは title が
+ * 同じリンク元がキューに入れ直されてまた失敗しても、一覧には 1 回だけ出す。試行の上限で諦めたときは title が
  * 無いので、前に分かった title を残す。
  */
 function mergeFailed(
@@ -108,12 +108,12 @@ export class LinkRewriteRunner {
   }
 
   /**
-   * 積んだ書き換えを進める。queued は保存の応答が知らせた数で、最初の応答を待たずに進み具合を出す。
-   * 何も積まれていなければ 1 回呼ぶだけで、何も見せずに終わる（起動時の再開）。
+   * キューに入れた書き換えを進める。queued は保存のレスポンスが知らせた数で、最初のレスポンスを待たずに進み具合を出す。
+   * 何もキューに入っていなければ 1 回呼ぶだけで、何も見せずに終わる（起動時の再開）。
    */
   start(queued = 0): void {
     if (this.active) {
-      // 新しく積まれていなければ、走っているループが同じ残りを処理する（StrictMode で起動時の再開が
+      // 新しくキューに入っていなければ、走っているループが同じ残りを処理する（StrictMode で起動時の再開が
       // 2 回来ても、step を余分に呼ばない）
       if (queued === 0) return;
       this.rerun = true;
@@ -123,7 +123,7 @@ export class LinkRewriteRunner {
       return;
     }
     if (this.suspended) {
-      // ログアウトの間に届いた保存の応答でも step は送らない。ログアウトに失敗して owner のままなら、
+      // ログアウトの間に届いた保存のレスポンスでも step は送らない。ログアウトに失敗して owner のままなら、
       // resume で送る
       this.deferred += queued;
       return;
@@ -159,7 +159,7 @@ export class LinkRewriteRunner {
   }
 
   /**
-   * ログアウトの結果が分かるまで、新しい step を送らずに待つ。通信中の step は捨てずに応答を取り込む
+   * ログアウトの結果が分かるまで、新しい step を送らずに待つ。通信中の step は捨てずにレスポンスを取り込む
    * （サーバーでは処理済みで、failed や公開ページの件数が二度と戻らなくなる）。結果は消さず、
    * ループは次の step の前で待つ。ログアウトに失敗して owner のままなら、止まった理由の通知の根拠
    * （failed と stopReason）が要る。
@@ -261,7 +261,7 @@ export class LinkRewriteRunner {
         continue;
       }
       conflicts = 0;
-      // 何も積まれていないときの応答（processed も failed も無く残りも 0）は処理に数えない
+      // 何もキューに入っていないときのレスポンス（processed も failed も無く残りも 0）は処理に数えない
       const handled = processed !== null || failed.length > 0 || this.state.total > this.state.done;
       const done = this.state.done + (handled ? 1 : 0);
       const rewritten =

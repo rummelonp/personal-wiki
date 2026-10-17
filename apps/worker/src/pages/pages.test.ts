@@ -71,7 +71,7 @@ describe("POST /api/pages", () => {
     expect(row?.visibility).toBe("draft");
   });
 
-  it("入力の誤りは 400", async () => {
+  it("入力のエラーは 400", async () => {
     const { request } = await buildClient();
     const post = (json: unknown) => request("/api/pages", { method: "POST", json });
     expect(await (await post({ title: "x", content: "" })).json()).toEqual({

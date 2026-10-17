@@ -43,7 +43,7 @@ function recorder(respond: () => Response) {
 
 const headersOf = (call: Call | undefined) => (call?.init.headers ?? {}) as Record<string, string>;
 
-describe("変更系の要求", () => {
+describe("変更系のリクエスト", () => {
   it("PUT は If-Match に版を付け、JSON の Content-Type で送る", async () => {
     const { calls, fetchFn } = recorder(() => Response.json(PAGE));
     const res = await updatePage(ID, 3, { title: "題", body: "新" }, {}, fetchFn);
@@ -58,7 +58,7 @@ describe("変更系の要求", () => {
     expect(calls[0]?.init.keepalive).toBe(false);
   });
 
-  it("PUT の応答のリンクの書き換えの数を、形を確かめて返す", async () => {
+  it("PUT のレスポンスのリンクの書き換えの数を、形を確かめて返す", async () => {
     const queued = await updatePage(ID, 3, { title: "新", body: "" }, {}, async () =>
       Response.json({ ...PAGE, linkRewrites: { queued: 2 } }),
     );
@@ -149,7 +149,7 @@ describe("失敗の分類", () => {
     expect(res).not.toHaveProperty("existing");
   });
 
-  it("通信の失敗と形の違う応答は error にする", async () => {
+  it("通信の失敗と形の違うレスポンスは error にする", async () => {
     const offline = async () => {
       throw new TypeError("Failed to fetch");
     };
@@ -172,7 +172,7 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("長さの超過は入力の誤りにし、応答の今の値と上限で画面の文を作る", async () => {
+  it("長さの超過は入力のエラーにし、レスポンスの今の値と上限で画面の文を作る", async () => {
     const title = failing(400, {
       error: "title_too_long",
       field: "title",
@@ -200,7 +200,7 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("今の値の無い超過の応答は、送った内容と domain の上限で補う", async () => {
+  it("今の値の無い超過のレスポンスは、送った内容と domain の上限で補う", async () => {
     const title = failing(400, { error: "title_too_long" });
     const long = "あ".repeat(400);
     expect(await updatePage(ID, 1, { title: long, body: "" }, {}, title.fetchFn)).toMatchObject({
@@ -217,7 +217,7 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("制御文字の誤りは、送った内容から位置を求め直し、再読み込みではなく消すよう伝える", async () => {
+  it("制御文字のエラーは、送った内容から位置を求め直し、再読み込みではなく消すよう伝える", async () => {
     const titled = failing(400, {
       error: "invalid_field",
       field: "title",
@@ -259,12 +259,12 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("入力の誤りは書き込みの応答でだけ読む", async () => {
+  it("入力のエラーは書き込みのレスポンスでだけ読む", async () => {
     const { fetchFn } = failing(400, { error: "title_too_long", message: "常体" });
     expect(await getPage(ID, fetchFn)).toMatchObject({ reason: "error" });
   });
 
-  it("タグの指定の誤りは、再読み込みを勧めず上限を伝える", async () => {
+  it("タグの指定のエラーは、再読み込みを勧めず上限を伝える", async () => {
     const long = failing(400, {
       error: "invalid_field",
       field: "tag",
@@ -307,7 +307,7 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("要求の形の誤りは、サーバーの message より固定の文にする", async () => {
+  it("リクエストの形のエラーは、サーバーの message より固定の文にする", async () => {
     const { fetchFn } = failing(400, {
       error: "invalid_field",
       field: "limit",
@@ -329,7 +329,7 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("検索語の誤りは、サーバーの常体の message ではなく、直す点を示す固定の文にする", async () => {
+  it("検索語のエラーは、サーバーの常体の message ではなく、直す点を示す固定の文にする", async () => {
     const tooLong = failing(400, {
       error: "invalid_field",
       field: "q",
@@ -358,7 +358,7 @@ describe("失敗の分類", () => {
     });
   });
 
-  it("検索の 5xx は、語の誤りにせず取得の失敗にする", async () => {
+  it("検索の 5xx は、語のエラーにせず取得の失敗にする", async () => {
     const { fetchFn } = failing(500, { error: "internal" });
     expect(await searchPages("abc", fetchFn)).toMatchObject({ ok: false, reason: "error" });
   });
@@ -601,7 +601,7 @@ describe("版の履歴", () => {
     ]);
   });
 
-  it("形の合わない応答は読めない失敗にする", async () => {
+  it("形の合わないレスポンスは読めない失敗にする", async () => {
     for (const author of [{ kind: "token", name: 1 }, { kind: "oauth" }, { kind: "x" }, null]) {
       const { fetchFn } = recorder(() =>
         Response.json({ revisions: [{ ...summary, author }], nextCursor: null }),

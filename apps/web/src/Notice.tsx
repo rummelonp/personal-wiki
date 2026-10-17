@@ -13,12 +13,12 @@ import { focusAfterInput, trackInputModality } from "./input-modality";
 import { bindNoticeDock } from "./notice-dock";
 
 /**
- * 通知を重ねて出す台。undefined は台が無い（部品だけを描画する）ので通知をその場に出し、
- * null は台の要素を作っている最中なので出さない。
+ * 通知を重ねて出すドック。undefined はドックが無い（コンポーネントだけを描画する）ので通知をその場に出し、
+ * null はドックの要素を作っている最中なので出さない。
  */
 const DockContext = createContext<HTMLElement | null | undefined>(undefined);
 
-/** アプリの骨格に 1 つ置く。通知（Notice）は画面の下端に固定したこの台へ出て、本文の流れを動かさない。 */
+/** アプリの骨格に 1 つ置く。通知（Notice）は画面の下端に固定したこのドックへ出て、本文の流れを動かさない。 */
 export function NoticeDockProvider({ children }: { children: ReactNode }) {
   const [dock, setDock] = useState<HTMLElement | null>(null);
   useEffect(() => (dock === null ? undefined : bindNoticeDock(dock)), [dock]);
@@ -58,14 +58,14 @@ interface NoticeProps {
   /** 操作の下に続けて置く内容（衝突の差分など）。読み上げには含めない。 */
   details?: ReactNode;
   /**
-   * 通知が出たとき、見出しへ focus を移す。台は main の外にあり、操作を求める通知へ Tab で届くまでが遠いため。
+   * 通知が出たとき、見出しへ focus を移す。ドックは main の外にあり、操作を求める通知へ Tab で届くまでが遠いため。
    * 本文や title を打っている最中は奪わない（入力を止め、IME の変換を切るので）。その場合は
    * alert の読み上げだけで知らせる。
    */
   claimFocus?: boolean;
   /**
    * 通知の要素が受け取る focus と pointer の handler。時間で下げる通知が、読んでいる間や操作している間は
-   * 下げないために使う。台に出る通知も、React の木の上では呼び出し元の中なので、台の外から指定できる。
+   * 下げないために使う。ドックに出る通知も、React の木の上では呼び出し元の中なので、ドックの外から指定できる。
    */
   interaction?: NoticeInteraction;
 }
@@ -83,8 +83,8 @@ function isTyping(element: Element | null): boolean {
 }
 
 /**
- * 通知の部品。見出し（何が起きたか）、本文（理由と次の手）、操作の順に並べ、色は tone で分ける。
- * 既定では台に重ねて出し、title と本文の位置を動かさない。
+ * 通知のコンポーネント。見出し（何が起きたか）、本文（理由と次の手）、操作の順に並べ、色は tone で分ける。
+ * 既定ではドックに重ねて出し、title と本文の位置を動かさない。
  */
 export function Notice({
   tone,
@@ -101,7 +101,7 @@ export function Notice({
   const dock = useContext(DockContext);
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
-  // dock が undefined（台が無い）なら null でないので、null の間（台の要素を作っている最中）だけ置かない
+  // dock が undefined（ドックが無い）なら null でないので、null の間（ドックの要素を作っている最中）だけ置かない
   const placed = inline || dock !== null;
   useEffect(() => {
     if (!claimFocus || !placed) return;

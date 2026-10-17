@@ -73,7 +73,7 @@ function definePolicy(
 /**
  * 全ルートに共通の基盤の middleware（認証、CORS、セキュリティヘッダーなど）として登録する。
  * wildcard の path（`*` で終わる）に `use()` で置いたときだけ enforceDeclaredPolicy の検査から
- * 外れる。外れるので、ハンドラの代わりに応答を作る middleware（principal に関係なく内容を返すもの）
+ * 外れる。外れるので、ハンドラの代わりにレスポンスを作る middleware（principal に関係なく内容を返すもの）
  * には使わない。
  */
 export function defineBaseMiddleware<T extends MiddlewareHandler>(handler: T): T {
@@ -135,7 +135,7 @@ function everyRouteDeclared(routes: readonly RouterRoute[]): boolean {
 }
 
 /**
- * 不正な形式、未登録、失効済みのトークンを区別させないため、どれも同じ応答にする。
+ * 不正な形式、未登録、失効済みのトークンを区別させないため、どれも同じレスポンスにする。
  * error パラメータ（RFC 6750 の invalid_token など）も付けない。
  */
 function unauthorized(c: Context<AppEnv>): Response {
@@ -162,16 +162,16 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
  * セッション cookie はブラウザが自動で付けるので、cookie 付きの変更系は同一オリジンのページから
- * 送られたことを確かめる。SameSite=Lax だけでは、同じサイトの別のサブドメインからの要求を防げない。
+ * 送られたことを確かめる。SameSite=Lax だけでは、同じサイトの別のサブドメインからのリクエストを防げない。
  * - Sec-Fetch-Site があれば same-origin、Origin があればリクエストのオリジンと一致すること。
- *   どちらも無い要求は拒む（ブラウザは変更系の fetch にどちらかを必ず付ける）。
+ *   どちらも無いリクエストは拒む（ブラウザは変更系の fetch にどちらかを必ず付ける）。
  * - Content-Type は application/json に限る。フォームの送信（text/plain など）は preflight 無しに
  *   別のオリジンから送れるため、それを受け付ける型を残さない。
  * cookie の検証より前に置き、署名の有無に関係なく掛ける（ログアウトのように、期限切れの cookie
- * でも受け付けるルートを守るため）。Bearer の要求は rejectAmbiguousCredentials で cookie を
+ * でも受け付けるルートを守るため）。Bearer のリクエストは rejectAmbiguousCredentials で cookie を
  * 持てないので、この検査を受けない。
  *
- * OAuth の同意画面（POST /_auth/oauth/authorize）だけはフォームの送信を受け付ける。承認の応答はクライアントの
+ * OAuth の同意画面（POST /_auth/oauth/authorize）だけはフォームの送信を受け付ける。承認のレスポンスはクライアントの
  * redirect URI への遷移なので fetch では送れない。同一オリジンの検査は掛けたままにし、加えて同意画面を
  * 開いたブラウザに結び付いた 1 回限りの handle（oauth-routes.ts）で守る。
  * 接続の取り消し（POST /_auth/oauth/grants/revoke）も、script を持たないページのフォームから送るので
@@ -244,12 +244,12 @@ export interface ResolvePrincipalOptions {
  * キャッシュの制御もここで行う。ルートの宣言ではなく principal を起点にするのは、宣言の種類や
  * 匿名に開くルートを増やしたときに付け忘れないようにするため（401 と 400 の早期返却は
  * キャッシュされないステータスなので付けない）。
- * - principal で内容が変わりうるので、principal が決まった後の応答には Vary を付ける
- * - owner と token の応答は private, no-store で上書きする
- * - 匿名の応答は、ハンドラが Cache-Control を付けていなければ no-store にする。public から draft に
+ * - principal で内容が変わりうるので、principal が決まった後のレスポンスには Vary を付ける
+ * - owner と token のレスポンスは private, no-store で上書きする
+ * - 匿名のレスポンスは、ハンドラが Cache-Control を付けていなければ no-store にする。public から draft に
  *   戻したページは直ちに title で引けなくなる必要があり、ETag はあっても If-None-Match に応じないので、
  *   no-cache で再検証させても得るものが無い。id で取った draft の本文を共有キャッシュに置かせない意味も
- *   ある。キャッシュさせてよい応答（SPA の HTML の no-cache など）は、ハンドラが明示して外す
+ *   ある。キャッシュさせてよいレスポンス（SPA の HTML の no-cache など）は、ハンドラが明示して外す
  */
 export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHandler<AppEnv> {
   return defineBaseMiddleware(
@@ -282,7 +282,7 @@ const apiTokenResolver: BearerResolver = {
     const found = await findActiveApiToken(c.env.DB, await hashApiToken(token));
     if (found === null) return null;
     // waitUntil に回さず待つ。書くのは 1 トークンあたり 1 時間に 1 回なので遅延は小さく、
-    // 応答の時点で記録が終わっている方がテストと運用で扱いやすい。
+    // レスポンスの時点で記録が終わっている方がテストと運用で扱いやすい。
     await recordApiTokenUse(c.env.DB, found, now());
     return {
       kind: "token",
@@ -336,7 +336,7 @@ async function authenticateSession(c: Context<AppEnv>, now: () => number): Promi
 }
 
 /**
- * 検証できなかったセッション cookie をブラウザから消す。次の要求からは cookie の無い匿名になる。
+ * 検証できなかったセッション cookie をブラウザから消す。次のリクエストからは cookie の無い匿名になる。
  * /api/me だけが呼ぶ（どこで消すかの理由は resolvePrincipal）。
  */
 export function clearStaleSession(c: Context<AppEnv>): void {
@@ -347,7 +347,7 @@ export function clearStaleSession(c: Context<AppEnv>): void {
 }
 
 /**
- * 存在しないパスと同じ応答にする。500 にしないのは、宣言漏れと未知のパスをこの段階では
+ * 存在しないパスと同じレスポンスにする。500 にしないのは、宣言漏れと未知のパスをこの段階では
  * 区別できず、匿名の探索に対して宣言漏れの有無を見せないため。
  */
 export const enforceDeclaredPolicy = defineBaseMiddleware(
@@ -411,7 +411,7 @@ const ANONYMOUS_READ_METHODS = new Set(["GET", "HEAD"]);
  * - 検証できないセッション cookie は 401 にする。cookie は消さないので、同じ cookie の間は 401 が続く
  *   （理由は resolvePrincipal）
  * - anonymous は GET と HEAD だけ。読み取りの宣言を変更系のルートに付け間違えても、匿名には開かない
- * - 応答の Cache-Control は resolvePrincipal が principal から決める。ハンドラは Cache-Control を
+ * - レスポンスの Cache-Control は resolvePrincipal が principal から決める。ハンドラは Cache-Control を
  *   付けない（付けると anonymous の no-store が外れる）。例外は添付の配信で、名前ごとに中身が変わらず
  *   ETag で再検証できるので、anonymous の 200 と 304 にだけ private, no-cache を付ける（attachments/routes.ts）
  */

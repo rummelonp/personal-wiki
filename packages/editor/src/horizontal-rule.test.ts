@@ -42,7 +42,7 @@ describe("horizontal rule decoration", () => {
       const v = mount(doc);
 
       expect(rules(v)).toHaveLength(1);
-      // 字下げも残さない。残ると罫線が次の表示行へ折り返す
+      // インデントも残さない。残ると罫線が次の表示行へ折り返す
       expect(lineText(v, 2)).toBe("");
       expect(v.state.doc.toString()).toBe(doc);
     },

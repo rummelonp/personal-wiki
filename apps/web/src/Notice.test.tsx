@@ -127,7 +127,7 @@ describe("通知が出たときの focus", () => {
   describe("見出しの focus の枠", () => {
     const heading = () => noticeOf("操作が要ります").querySelector("h2") as HTMLElement;
 
-    /** 台が先に描かれ、操作があってから通知が出る。 */
+    /** ドックが先に描かれ、操作があってから通知が出る。 */
     function claimAfter(input: Event[]) {
       const render = (shown: boolean) =>
         act(() =>
@@ -188,8 +188,8 @@ describe("通知が出たときの focus", () => {
   });
 });
 
-describe("台の中の並びと畳み方", () => {
-  it("重大度の高い通知が、出た順によらず台の上に並ぶ", () => {
+describe("ドックの中の並びと畳み方", () => {
+  it("重大度の高い通知が、出た順によらずドックの上に並ぶ", () => {
     notices([
       ["info", "案内"],
       ["warn", "注意"],
@@ -328,7 +328,7 @@ describe("台の中の並びと畳み方", () => {
     });
   });
 
-  it("重大度が往復しても、同じ重大度の中は台に出た順", async () => {
+  it("重大度が往復しても、同じ重大度の中はドックに出た順", async () => {
     const render = (second: NoticeTone) =>
       act(() =>
         root?.render(
@@ -443,7 +443,7 @@ describe("キーボードと拡大", () => {
     expect(dock()?.style.getPropertyValue("--notice-inset")).toBe("0px");
   });
 
-  it("details を持つ通知は台の上限に自分で収まり、スクロールするのは details の欄だけ", async () => {
+  it("details を持つ通知はドックの上限に自分で収まり、スクロールするのは details の欄だけ", async () => {
     await browserPage.viewport(375, 659);
     fakeViewport({ height: 659 });
     mount(
@@ -501,7 +501,7 @@ describe("details の欄の高さ", () => {
   });
 });
 
-describe("台の高さの上限", () => {
+describe("ドックの高さの上限", () => {
   it("見えている高さ（visual viewport）に対する割合で決まる", async () => {
     await browserPage.viewport(375, 800);
     const viewport = fakeViewport({ height: 400 });
@@ -512,7 +512,7 @@ describe("台の高さの上限", () => {
     expect(limit()).toBeCloseTo(360, 0);
   });
 
-  it("details を持つ通知の下限の高さが収まる分だけ、台の上限を広げる。広げる先にも限りがある", async () => {
+  it("details を持つ通知の下限の高さが収まる分だけ、ドックの上限を広げる。広げる先にも限りがある", async () => {
     await browserPage.viewport(375, 700);
     const viewport = fakeViewport({ height: 700 });
     mount(
@@ -529,20 +529,20 @@ describe("台の高さの上限", () => {
       </NoticeDockProvider>,
     );
     const limit = () => Number.parseFloat(getComputedStyle(dock() as Element).maxHeight);
-    // 下限の高さ（24rem）と台の余白（上下 0.75rem ずつ）を足した 408px
+    // 下限の高さ（24rem）とドックの余白（上下 0.75rem ずつ）を足した 408px
     expect(limit()).toBeCloseTo(420, 0);
     await browserPage.viewport(375, 500);
     viewport.set({ height: 500 });
     expect(limit()).toBeCloseTo(408, 0);
-    // 見える高さの 0.85 でも収まらない低さでは、限りで止めて台の中をスクロールさせる
+    // 見える高さの 0.85 でも収まらない低さでは、限りで止めてドックの中をスクロールさせる
     await browserPage.viewport(375, 360);
     viewport.set({ height: 360 });
     expect(limit()).toBeCloseTo(306, 0);
   });
 });
 
-describe("台の外形", () => {
-  it("台の地は余白まで不透明で、後ろの本文を透かさず、余白の操作も後ろへ通さない", () => {
+describe("ドックの外形", () => {
+  it("ドックの地は余白まで不透明で、後ろの本文を透かさず、余白の操作も後ろへ通さない", () => {
     document.body.style.cssText = "margin:0";
     mount(
       <>
@@ -560,7 +560,7 @@ describe("台の外形", () => {
   });
 });
 
-describe("台の上限に達して中でスクロールするとき", () => {
+describe("ドックの上限に達して中でスクロールするとき", () => {
   function tall() {
     mount(
       <NoticeDockProvider>
@@ -604,13 +604,13 @@ describe("台の上限に達して中でスクロールするとき", () => {
     expect(hint("after")).toBe("none");
   });
 
-  it("手がかりは通知の配置と台の高さを動かさず、操作を覆っても押せる", async () => {
+  it("手がかりは通知の配置とドックの高さを動かさず、操作を覆っても押せる", async () => {
     await browserPage.viewport(375, 400);
     tall();
     const el = dock() as HTMLElement;
     await vi.waitFor(() => expect(el.hasAttribute("data-more-below")).toBe(true));
     // 手がかりが負の margin で打ち消されていなければ、先頭の手がかりは通知を押し下げ、
-    // 末尾の手がかりは台のスクロールの長さを伸ばす。両方を出した状態と出さない状態を比べる
+    // 末尾の手がかりはドックのスクロールの長さを伸ばす。両方を出した状態と出さない状態を比べる
     el.setAttribute("data-more-above", "");
     const notice = noticeOf("失敗");
     expect(getComputedStyle(el, "::before").content).not.toBe("none");
@@ -623,7 +623,7 @@ describe("台の上限に達して中でスクロールするとき", () => {
     expect({ top: notice.offsetTop, scrollHeight: el.scrollHeight }).toEqual(withHints);
   });
 
-  it("先頭の手がかりは、台の端に届いた details の上に描かれる", async () => {
+  it("先頭の手がかりは、ドックの端に届いた details の上に描かれる", async () => {
     await browserPage.viewport(375, 280);
     fakeViewport({ height: 280 });
     mount(
@@ -647,7 +647,7 @@ describe("台の上限に達して中でスクロールするとき", () => {
       el.dispatchEvent(new Event("scroll"));
     });
     expect(el.hasAttribute("data-more-above")).toBe(true);
-    // 台の先頭の端に details が届いている状態で、手がかりが details に隠れていないかを見る
+    // ドックの先頭の端に details が届いている状態で、手がかりが details に隠れていないかを見る
     const edge = el.getBoundingClientRect().top;
     expect(details.getBoundingClientRect().top).toBeLessThanOrEqual(edge);
     expect(details.getBoundingClientRect().bottom).toBeGreaterThan(edge + 40);

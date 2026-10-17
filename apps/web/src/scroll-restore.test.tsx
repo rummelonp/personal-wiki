@@ -199,7 +199,7 @@ describe("復元の待ち中", () => {
     expect(window.scrollY).toBe(10);
   });
 
-  it("再読み込みの起動中の帯でブラウザの復元が丸めても、待ちを捨てずに一覧で戻す", () => {
+  it("再読み込みの起動中のスケルトンでブラウザの復元が丸めても、待ちを捨てずに一覧で戻す", () => {
     history.replaceState(stateOf({ search: "?t=reload", y: 333, count: 30 }), "", "?t=reload");
     uninstall();
     uninstall = installScrollRestore();

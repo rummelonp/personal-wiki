@@ -5,7 +5,7 @@ import { type Cursor, listPageTitles, listRecentPages, parseCursor } from "./sea
 
 /*
  * 匿名にも開いた一覧の、1 回の D1 の読み取り行数（meta.rows_read）がページ数に比例しないこと。
- * D1 Free の読み取りは 1 日 500 万行で、全ページを読む一覧は少ない要求で使い切れる。
+ * D1 Free の読み取りは 1 日 500 万行で、全ページを読む一覧は少ないリクエストで使い切れる。
  * rows_read は SQLite の版や計画で数行ずつ揺れるので、固定値でなく、全ページを読んだら超える上限で確かめる。
  */
 
@@ -88,7 +88,7 @@ describe("一覧の読み取り行数", () => {
       readable: "all",
     });
     expect(page.pages[0]?.title).toBe(`bulk ${PAGES - 501}`);
-    // 先頭から読み飛ばすと 1,000 行を超え、索引を使わなければ全ページを読んで並べ替える
+    // 先頭から読み飛ばすと 1,000 行を超え、インデックスを使わなければ全ページを読んで並べ替える
     expect(next.counter.rowsRead).toBeLessThan(800);
   });
 });

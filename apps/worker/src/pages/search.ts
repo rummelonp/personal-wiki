@@ -70,10 +70,10 @@ export const LIST_DEFAULT_LIMIT = 20;
 export const LIST_MAX_LIMIT = 100;
 /**
  * title の一覧の 1 回の上限。1 件は id（22 文字）と title、visibility、updatedAt だけで、title は
- * 平均で数十バイト、上限の MAX_TITLE_BYTES（1024）でも 500 件の応答は 1MB 程度（JSON のエスケープで最大 2 倍になる分を含む）に収まる。
+ * 平均で数十バイト、上限の MAX_TITLE_BYTES（1024）でも 500 件のレスポンスは 1MB 程度（JSON のエスケープで最大 2 倍になる分を含む）に収まる。
  * Worker の CPU（Workers Free は 1 リクエスト 10ms）を使うのは 500 件の JSON 化くらいで、
  * 抜粋とタグを引く LIST_MAX_LIMIT の一覧のように件数を絞る理由が無い。
- * 並びは pages_alive_updated の索引をたどるので、読む行数は limit（と、匿名なら読み飛ばす draft の数）で決まる。
+ * 並びは pages_alive_updated のインデックスをたどるので、読む行数は limit（と、匿名なら読み飛ばす draft の数）で決まる。
  */
 export const TITLES_MAX_LIMIT = 500;
 export const SEARCH_DEFAULT_LIMIT = 20;
@@ -107,7 +107,7 @@ export function parseCursor(value: string): Cursor | null {
 /**
  * cursor より後ろ（並び (updated_at DESC, id DESC) で先）の行に絞る条件。?1 と ?2 に cursor を bind する。
  * cursor が無いときは条件を足さない。`?1 IS NULL OR ...` の 1 本の SQL にすると、SQLite は bind する値を
- * 見ずに計画を立てるので索引を範囲の検索に使えず、cursor の位置まで索引を先頭から読み飛ばす。
+ * 見ずに計画を立てるのでインデックスを範囲の検索に使えず、cursor の位置までインデックスを先頭から読み飛ばす。
  */
 function afterCursor(cursor: Cursor | null, alias: string): string {
   return cursor === null ? "" : `AND (${alias}updated_at, ${alias}id) < (?1, ?2)`;
@@ -175,7 +175,7 @@ const TAG_FILTER_MESSAGES: Record<Extract<TagFilter, { ok: false }>["reason"], s
   too_long: `tag が長すぎる（表記をそろえた後の UTF-16 の単位で上限 ${TAG_MAX_LENGTH}）`,
 };
 
-/** タグの絞り込みの誤りに添える項目。上限は too_long のときだけ返す。 */
+/** タグの絞り込みのエラーに添える項目。上限は too_long のときだけ返す。 */
 export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["reason"]) {
   return {
     reason,
@@ -189,8 +189,8 @@ export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["
  *
  * tagKey（prepareTagFilter の値）を渡すと、そのタグが付いたページに絞る。ネストタグは親で子も拾い、
  * `a` は `a/b`、`a/b/c` が付いたページにも一致する（Obsidian の検索と同じ）。tag_key は `/` 区切りの
- * 文字列なので、子は `a/` 以上 `a0` 未満（`/` の次の文字が `0`）の範囲になり、tags_tag_key の索引を
- * 使える。LIKE は大文字小文字を畳むため索引を使えず、tag_key の畳み方とも合わない。
+ * 文字列なので、子は `a/` 以上 `a0` 未満（`/` の次の文字が `0`）の範囲になり、tags_tag_key のインデックスを
+ * 使える。LIKE は大文字小文字を畳むためインデックスを使えず、tag_key の畳み方とも合わない。
  * 子のタグを複数持つページは 1 件にまとめる。
  *
  * visibility を渡すと、その公開範囲のページに絞る。readable との AND で、readable が public なら
@@ -198,8 +198,8 @@ export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["
  *
  * keyset のページングなので、走査中に更新されたページは先頭へ移り、後続のページでは返らない。
  * 差分の同期には使えず、先頭から取り直す。
- * タグで絞らない一覧は pages_alive_updated の索引を新しい順にたどり、limit + 1 件で止まる。
- * visibility と readable の条件は索引でなく行ごとに照合するので、合う行が少ないと多くの行を読む。
+ * タグで絞らない一覧は pages_alive_updated のインデックスを新しい順にたどり、limit + 1 件で止まる。
+ * visibility と readable の条件はインデックスでなく行ごとに照合するので、合う行が少ないと多くの行を読む。
  */
 export async function listRecentPages(
   db: D1Database,
@@ -417,7 +417,7 @@ const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["reason"
   control_char: "検索語に制御文字を含められない",
 };
 
-/** REST と MCP が検索語の誤りに添える項目。上限は too_long のときだけ返す。 */
+/** REST と MCP が検索語のエラーに添える項目。上限は too_long のときだけ返す。 */
 export function searchQueryErrorFields(reason: Extract<SearchQuery, { ok: false }>["reason"]) {
   return {
     reason,
@@ -451,8 +451,8 @@ const compact = (text: string) => text.replace(/\s+/g, " ").trim();
  *   本文が短くタグにだけ語を含むページより下になる（title の重みを 4 倍にしても逆転しない）。
  *   title の重み（本文の 4 倍）は、title に含むページどうしを title の一致の多さで並べる。同点は更新が新しい順。
  * - 2 文字以下: LIKE（`%`、`_`、`\` はエスケープ）。関連度が無いので、title に含むページを先に、
- *   その中と残りをそれぞれ更新が新しい順に返す。索引が使えず全ページを走査するが、一人用の wiki の規模では許容する。
- *   匿名の短い語は REST が ANONYMOUS_SEARCH_MIN_CHARS で拒むので、ここで走査するのは owner と token の要求だけ。
+ *   その中と残りをそれぞれ更新が新しい順に返す。インデックスが使えず全ページを走査するが、一人用の wiki の規模では許容する。
+ *   匿名の短い語は REST が ANONYMOUS_SEARCH_MIN_CHARS で拒むので、ここで走査するのは owner と token のリクエストだけ。
  *   LIKE が畳む大文字小文字は ASCII だけで、MATCH（Unicode の大文字小文字を畳む）とは差がある。
  * 抜粋は本文から取る。title にだけ一致したときは本文の先頭になる。
  */

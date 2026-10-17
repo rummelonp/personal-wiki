@@ -134,7 +134,7 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({ status: "done", done: 2, failed: [failure("x")] });
   });
 
-  it("何も積まれていなければ 1 回呼ぶだけで何も見せない（起動時の再開）", async () => {
+  it("何もキューに入っていなければ 1 回呼ぶだけで何も見せない（起動時の再開）", async () => {
     const { runner, step, states } = setup([ok({ remaining: 0 })]);
     runner.start();
     await vi.waitFor(() => expect(step).toHaveBeenCalledTimes(1));
@@ -178,7 +178,7 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({ status: "done", rewritten: [{ id: "b" }] });
   });
 
-  it("走っている間に新しく積まれていない start（StrictMode の 2 回目の再開）では、step を余分に呼ばない", async () => {
+  it("走っている間に新しくキューに入っていない start（StrictMode の 2 回目の再開）では、step を余分に呼ばない", async () => {
     let release: () => void = () => {};
     const { runner, step, settled } = setup([]);
     step.mockImplementationOnce(
@@ -290,7 +290,7 @@ describe("LinkRewriteRunner", () => {
     expect(step).toHaveBeenCalledTimes(2);
   });
 
-  it("suspend の間は start も再試行も step を送らず、resume で積まれた分を送る", async () => {
+  it("suspend の間は start も再試行も step を送らず、resume でキューのジョブを送る", async () => {
     const { runner, step, settled } = setup([ok({ processed: processed("a"), remaining: 0 })]);
     runner.suspend();
     runner.start(1);
@@ -305,7 +305,7 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({ status: "done", rewritten: [{ id: "a" }] });
   });
 
-  it("通信中に suspend しても応答は取り込み、次の step は resume まで送らない", async () => {
+  it("通信中に suspend してもレスポンスは取り込み、次の step は resume まで送らない", async () => {
     let release: () => void = () => {};
     const { runner, step, settled } = setup([ok({ processed: processed("b"), remaining: 0 })]);
     step.mockImplementationOnce(async () => ok({ processed: processed("a"), remaining: 1 }));
@@ -342,7 +342,7 @@ describe("LinkRewriteRunner", () => {
     });
   });
 
-  it("通信中の step の応答を待たずに resume しても、step を並べて送らない", async () => {
+  it("通信中の step のレスポンスを待たずに resume しても、step を並べて送らない", async () => {
     let release: () => void = () => {};
     const { runner, step, settled } = setup([ok({ processed: processed("b"), remaining: 0 })]);
     step.mockImplementationOnce(
@@ -362,7 +362,7 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState()).toMatchObject({ status: "done", done: 2 });
   });
 
-  it("suspend の間に応答で残りが無くなれば、そのまま終わった結果を見せる", async () => {
+  it("suspend の間にレスポンスで残りが無くなれば、そのまま終わった結果を見せる", async () => {
     let release: () => void = () => {};
     const { runner, step } = setup([]);
     step.mockImplementationOnce(

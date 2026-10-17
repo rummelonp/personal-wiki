@@ -19,7 +19,7 @@ import { createWikiLinks } from "./wiki-links";
 interface PageReaderProps {
   page: Page;
   /**
-   * 添付（画像）を使える環境か。`/api/me` の features。false なら画像の要求を出さない。
+   * 添付（画像）を使える環境か。`/api/me` の features。false なら画像のリクエストを出さない。
    * 作った時点の値で固定される（エディタを作り直さない限り反映されない）。
    * 後から変わりうるなら、PageView の key に含めて画面ごと作り直させる。
    */

@@ -112,7 +112,7 @@ test("ログインの状態が届く前も、URL の visibility=draft で見出�
 test("draft の title の URL は存在しないページと同じ空のページになる", async ({ page }) => {
   const shown: string[] = [];
   for (const title of [SEED.draftSecret, "本当に存在しないページ"]) {
-    // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことは応答で待つ
+    // 匿名にはリンク元 0 件の節を出さないので、取得を終えたことはレスポンスで待つ
     const backlinks = page.waitForResponse((res) =>
       res.url().includes("/api/pages/by-title/backlinks"),
     );
@@ -241,7 +241,7 @@ test("一覧、title、タグ、検索、backlink の API が draft を返さな
     expect(text, path).not.toContain(DRAFT_MARKER);
     expect(text, path).not.toContain(seedIds[SEED.draftSecret]);
   }
-  // 空の応答でも上の検査は通るので、public のページが返ることも確かめる
+  // 空のレスポンスでも上の検査は通るので、public のページが返ることも確かめる
   for (const { path, text } of bodies.slice(0, 2)) {
     expect(text, path).toContain(welcomeId);
   }

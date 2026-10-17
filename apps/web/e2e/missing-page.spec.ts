@@ -79,7 +79,7 @@ test.describe("匿名", () => {
       title: uniqueTitle(testInfo, "下書きのリンク元"),
       body: `[[${missing}]]`,
     });
-    // 取得中も欄は隠れるので、応答を待たないと取得前の状態で通ってしまう
+    // 取得中も欄は隠れるので、レスポンスを待たないと取得前の状態で通ってしまう
     const backlinks = page.waitForResponse((res) =>
       res.url().includes("/api/pages/by-title/backlinks"),
     );

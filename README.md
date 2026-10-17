@@ -117,7 +117,7 @@ pnpm typecheck
 pnpm test
 ```
 
-`packages/editor` と `apps/web` の部品のテストは、Playwright の Chromium の中で動く。
+`packages/editor` と `apps/web` のコンポーネントのテストは、Playwright の Chromium の中で動く。
 初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れる。
 `pnpm format` で biome が整形する。
 E2E、規約、開発用コマンドの一覧は [AGENTS.md](./AGENTS.md) にある。

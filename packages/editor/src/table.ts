@@ -187,7 +187,7 @@ interface CellText {
 
 /**
  * GFM がセルの前後から除くのは ASCII の空白とタブだけ。`trim()` のように全角空白（U+3000）や NBSP まで
- * 除くと、それで書いた字下げが消える。
+ * 除くと、それで書いたインデントが消える。
  */
 const LEADING_SPACE = /^[ \t]+/;
 const TRAILING_SPACE = /[ \t]+$/;
@@ -230,7 +230,7 @@ function columnSegments(state: EditorState, row: SyntaxNode): Segment[] {
 const QUOTE_MARKS = /^(?:[ \t]*>[ \t]?)*/;
 
 /**
- * 行頭から表の行の始まりまでのうち、引用の記法を除いて画面に残る部分（リストの中の字下げなど）。
+ * 行頭から表の行の始まりまでのうち、引用の記法を除いて画面に残る部分（リストの中のインデントなど）。
  * 行は flex で描くので、空白だけの文字は mark で包まないと flex の規則で描かれずに消える。
  */
 function visibleIndent(state: EditorState, rowFrom: number): string {
@@ -248,7 +248,7 @@ interface MeasuredRow {
 }
 
 /**
- * 行頭の字下げ（リストの中の表）を mark で包み、最も広い字下げの幅を返す。字下げはセルの外に
+ * 行頭のインデント（リストの中の表）を mark で包み、最も広いインデントの幅を返す。インデントはセルの外に
  * 描かれるので、列に配れる幅から引く（theme.ts の `--cm-lp-table-available`）。
  */
 function decorateIndents(
@@ -355,7 +355,7 @@ function build(view: EditorView): BuiltDecorations {
         // 表のどこかにカーソルがあれば表全体を source に戻す。行単位で戻すと、
         // 戻した行だけ列幅の揃えが外れて編集中の行の位置が左右に動く。
         // 範囲を表の行の頭と末尾まで広げるのは、rendered の行（flex。theme.ts）にカーソルを置かせない
-        // ため。字下げの手前や行末の空白の後ろで変換すると、未確定の文字が flex の行の中に入る。
+        // ため。インデントの手前や行末の空白の後ろで変換すると、未確定の文字が flex の行の中に入る。
         const { doc } = view.state;
         const from = doc.lineAt(node.from).from;
         const to = doc.lineAt(node.to).to;

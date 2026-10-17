@@ -14,7 +14,7 @@ export function switcherShortcutKeys(): string {
 /**
  * quick switcher を開閉するキーか。Mac は ⌘ だけ、それ以外は Ctrl だけを受ける。Mac の Ctrl+K は
  * CodeMirror が「行末まで削除」に使い、両方を受けると削除と switcher が同時に動く。
- * 編集部品などが先に処理したキー（defaultPrevented）と、押しっぱなしの繰り返しは受けない。
+ * 編集コンポーネントなどが先に処理したキー（defaultPrevented）と、押しっぱなしの繰り返しは受けない。
  */
 export function isSwitcherShortcut(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.repeat || event.key.toLowerCase() !== "k") return false;

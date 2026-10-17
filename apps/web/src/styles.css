@@ -168,7 +168,7 @@ a {
   gap: var(--space-1);
 }
 
-/* ログイン状態が分かるまで右の操作の場所を空ける。帯は遅れて描く（下の「読み込み中」の節） */
+/* ログイン状態が分かるまで右の操作の場所を空ける。スケルトンは遅れて描く（下の「読み込み中」の節） */
 .header-pending {
   display: flex;
   gap: var(--space-2);
@@ -202,7 +202,7 @@ a {
   padding-bottom: var(
     --notice-height,
     0px
-  ); /* 通知の台の高さ。台が出ても最後の行を台の上まで上げられる */
+  ); /* 通知のドックの高さ。ドックが出ても最後の行をドックの上まで上げられる */
 }
 
 .main {
@@ -606,7 +606,7 @@ a {
   opacity: 0.5;
 }
 
-/* 応答を待っている間は、押した選択を薄くせず、押したことが分かるようにする */
+/* レスポンスを待っている間は、押した選択を薄くせず、押したことが分かるようにする */
 .segmented[data-pending] .segmented-option[aria-pressed="true"]:disabled {
   opacity: 1;
 }
@@ -675,7 +675,7 @@ a.segmented-option {
   color: var(--color-fg);
 }
 
-/* 部品 */
+/* コンポーネント */
 
 .button {
   display: inline-flex;
@@ -825,7 +825,7 @@ a.segmented-option {
 /*
  * 通知。見出し（何が起きたか）、本文（理由と次の手）、操作の順に並べる。色は重大度で分け、
  * 文字はどの色でも本文の色にして、読みやすさを地の色に左右させない。
- * 台（.notice-dock）に出る通知は、本文の流れから外れて画面の下端に重なる。
+ * ドック（.notice-dock）に出る通知は、本文の流れから外れて画面の下端に重なる。
  */
 .notice {
   display: flex;
@@ -915,11 +915,11 @@ a.segmented-option {
 }
 
 /*
- * 台に収まらないとき、スクロールするのは見出しと操作の下のこの欄だけにする。差分の欄と台の両方が
+ * ドックに収まらないとき、スクロールするのは見出しと操作の下のこの欄だけにする。差分の欄とドックの両方が
  * スクロールすると、二重になって操作が届きにくい。
  */
 .notice-details {
-  /* 差分の行の visually-hidden（absolute）を含める。台（fixed）が基準だと、スクロールの外にはみ出して台の高さを押し上げる */
+  /* 差分の行の visually-hidden（absolute）を含める。ドック（fixed）が基準だと、スクロールの外にはみ出してドックの高さを押し上げる */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -941,12 +941,12 @@ a.segmented-option {
 }
 
 /*
- * 通知の台。画面の下端（キーボードが出ている間はその上）に固定し、本文の流れに高さを取らない。
- * title と本文は通知の出入りで動かず、本文のスクロールは台の高さを避ける（sticky-header.ts）。
- * 文書の末尾には台の高さの余白を足し、最後の行も台の上までスクロールできるようにする。
+ * 通知のドック。画面の下端（キーボードが出ている間はその上）に固定し、本文の流れに高さを取らない。
+ * title と本文は通知の出入りで動かず、本文のスクロールはドックの高さを避ける（sticky-header.ts）。
+ * 文書の末尾にはドックの高さの余白を足し、最後の行もドックの上までスクロールできるようにする。
  *
- * 台の地は余白まで不透明にする。透かすと、通知の上下の余白に本文の行が半端に見える。
- * 余白も台の一部なので、操作も受け取り、後ろの本文には届かせない。
+ * ドックの地は余白まで不透明にする。透かすと、通知の上下の余白に本文の行が半端に見える。
+ * 余白もドックの一部なので、操作も受け取り、後ろの本文には届かせない。
  */
 .notice-dock {
   position: fixed;
@@ -960,7 +960,7 @@ a.segmented-option {
   gap: var(--space-2);
   max-width: calc(var(--prose-width) + 2 * var(--space-3));
   max-height: calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio));
-  /* 影が overflow で切れないよう、台の内側に余白を取り、その分だけ外へ出して通知の左端を本文の列に合わせる */
+  /* 影が overflow で切れないよう、ドックの内側に余白を取り、その分だけ外へ出して通知の左端を本文の列に合わせる */
   margin: 0 calc(var(--gutter) - var(--space-3)) 0
     calc(var(--frame-start) + var(--gutter) - var(--space-3));
   padding: var(--space-3);
@@ -979,11 +979,11 @@ a.segmented-option {
 }
 
 /*
- * 差分などの details を持つ通知は、台の上限（padding を除く）に自分で収め、details の欄が縮む。見える高さが
- * 足りず台の上限がこの通知の下限を下回る低い画面では、通知は下限の高さのままにする。
- * 台の上限は、その下限の高さが収まる分だけ広げる（見える高さに対する割合の限りまで）。広げないと、
- * 上限をわずかに下回る高さで台が数十 px だけスクロールし、details の欄と二重にスクロールする。
- * 限りでも収まらない低い画面では、台の中をスクロールさせる。
+ * 差分などの details を持つ通知は、ドックの上限（padding を除く）に自分で収め、details の欄が縮む。見える高さが
+ * 足りずドックの上限がこの通知の下限を下回る低い画面では、通知は下限の高さのままにする。
+ * ドックの上限は、その下限の高さが収まる分だけ広げる（見える高さに対する割合の限りまで）。広げないと、
+ * 上限をわずかに下回る高さでドックが数十 px だけスクロールし、details の欄と二重にスクロールする。
+ * 限りでも収まらない低い画面では、ドックの中をスクロールさせる。
  */
 .notice-dock:not([data-keyboard]):has(> .notice > .notice-details) {
   max-height: max(
@@ -1003,8 +1003,8 @@ a.segmented-option {
 }
 
 /*
- * 台の上限に達して中でスクロールするとき、続きのある側の端を地の色へ淡く溶かす。iOS ではスクロールバーが
- * 隠れ、台の端が画面の下端で切れたように見えるため。mask では台の地も透けて本文が見えるので、
+ * ドックの上限に達して中でスクロールするとき、続きのある側の端を地の色へ淡く溶かす。iOS ではスクロールバーが
+ * 隠れ、ドックの端が画面の下端で切れたように見えるため。mask ではドックの地も透けて本文が見えるので、
  * 端に貼りつく sticky の疑似要素を通知に重ねる。続きのある側にだけ置く（notice-dock.ts の data-more-*）。
  * 高さ分を負の margin で戻し、通知の配置を動かさない。
  */
@@ -1021,7 +1021,7 @@ a.segmented-option {
 
 .notice-dock[data-more-above]::before {
   content: "";
-  /* sticky は台の padding の内側に貼りつくので、padding の分を戻して台の端に合わせる */
+  /* sticky はドックの padding の内側に貼りつくので、padding の分を戻してドックの端に合わせる */
   top: calc(-1 * var(--space-3));
   margin-bottom: calc(-1 * (var(--space-5) + var(--space-2)));
   background: linear-gradient(to bottom, var(--color-bg), transparent);
@@ -1076,7 +1076,7 @@ a.segmented-option {
 /*
  * 検索の見出しは「」で始まる。全角の開き括弧は字の左半分が空いていて、見出しの文字だけが
  * 一覧の行の title より右に見える。行頭の空きを詰める。
- * text-spacing-trim に対応しない描画では、空き（半角分）だけ字下げを戻す。
+ * text-spacing-trim に対応しない描画では、空き（半角分）だけインデントを戻す。
  */
 .list-title {
   text-spacing-trim: trim-start;
@@ -1121,7 +1121,7 @@ a.segmented-option {
   max-width: var(--list-width);
 }
 
-/* skeleton-* は読み込み中の帯。実際の一覧の行（.entries .entry）と取り違えられないよう別の名前にして、見た目だけ揃える */
+/* skeleton-* は読み込み中のスケルトン。実際の一覧の行（.entries .entry）と取り違えられないよう別の名前にして、見た目だけ揃える */
 .entries,
 .skeleton-entries {
   margin: 0 0 var(--space-4);
@@ -1206,9 +1206,9 @@ a.segmented-option {
 }
 
 /*
- * 読み込み中: 最終の配置と同じ形の帯。帯の場所は初めから取り、描くのは遅れてから
+ * 読み込み中: 最終の配置と同じ形のスケルトン。スケルトンの場所は初めから取り、描くのは遅れてから
  * （親に skeleton-painted が付いたとき。遅れの長さは Loading.tsx が持つ）。
- * 文字の行の帯は、本物の 1 行と同じ高さを取る（行の高さ = 帯 + 上下の余白）。
+ * 文字の行のスケルトンは、本物の 1 行と同じ高さを取る（行の高さ = スケルトン + 上下の余白）。
  */
 .skeleton {
   visibility: hidden;
@@ -1237,7 +1237,7 @@ a.segmented-option {
   --skeleton-leading: var(--line-height);
 
   display: block;
-  height: 0.75em; /* token-ok: 帯の太さは、行の文字の大きさに比例させる */
+  height: 0.75em; /* token-ok: スケルトンの太さは、行の文字の大きさに比例させる */
   margin-block: calc(
     (var(--skeleton-leading) - 0.75) /
     2 *
@@ -1262,7 +1262,7 @@ a.segmented-option {
 
 .skeleton-entry-time {
   flex: none;
-  width: 7em; /* token-ok: 帯の幅は、相対の表記（「約 20 時間前」など）の字数に比例させる。画面の幅に比例させると狭い幅で表記より細くなる */
+  width: 7em; /* token-ok: スケルトンの幅は、相対の表記（「約 20 時間前」など）の字数に比例させる。画面の幅に比例させると狭い幅で表記より細くなる */
   margin-left: auto;
   font-size: var(--font-size-sm);
 }
@@ -1833,7 +1833,7 @@ a.segmented-option {
     border-left: 0;
   }
 
-  /* 狭い画面では本文の下に回るので、帯の場所には届いた本文が入る。帯は出さない */
+  /* 狭い画面では本文の下に回るので、スケルトンの場所には届いた本文が入る。スケルトンは出さない */
   .rail:has(.skeleton-rail) {
     display: none;
   }

@@ -13,7 +13,7 @@ import {
 import { longPageBody } from "./support/seed";
 
 /*
- * 1 万字ほどの長いページで、開いてから書けるまで、打鍵から表示まで、保存の要求から「保存済み」の
+ * 1 万字ほどの長いページで、開いてから書けるまで、打鍵から表示まで、保存のリクエストから「保存済み」の
  * 表示までを測り、e2e-output/perf-<project>.json に書く。中央値が perf-budget.json の上限を超えたら落とす。
  * 上限は、手元で 2 回測った中央値の大きい方（measured）の 2 倍を 10ms 単位で切り上げた値。打鍵から
  * 表示まではフレーム（約 16ms）の刻みで揺れるので、50ms を下限にする。端末が変わって外れるなら測り直す。
@@ -148,7 +148,7 @@ test("長いページの速さ @perf", async ({ page, api }, testInfo) => {
     const after = await probe(page);
     const putAt = after.putStarts[before.putStarts.length];
     const savedAt = after.savedAt[before.savedAt.length];
-    expect(putAt, "保存の要求を観測できなかった").toBeDefined();
+    expect(putAt, "保存のリクエストを観測できなかった").toBeDefined();
     expect(savedAt, "「保存済み」への変化を観測できなかった").toBeDefined();
     saveSamples.push((savedAt ?? 0) - (putAt ?? 0));
   }

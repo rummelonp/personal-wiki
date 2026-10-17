@@ -197,7 +197,7 @@ describe("POST /api/attachments", () => {
     expect(row).toEqual({ created_by: "owner" });
   });
 
-  it("cookie の要求は、別オリジンからと、画像でも JSON でもない Content-Type を 403 にする", async () => {
+  it("cookie のリクエストは、別オリジンからと、画像でも JSON でもない Content-Type を 403 にする", async () => {
     const { call, upload, ownerHeaders } = await setup();
     const crossSite = await upload(PNG, "image/png", {
       ...ownerHeaders,

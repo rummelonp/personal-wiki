@@ -11,7 +11,7 @@
 // 本文にもとからある 2 文字の `\n`（バックスラッシュと n）を、改行を逃がした `\n` と区別せず、
 // 復元後に本物の改行へ変えてしまう。ここでは文字列の列を hex() で受け取り、CAST(X'…' AS TEXT) で戻すので、
 // NUL を含むどんなバイト列も変わらない。
-// load は、migration を適用済みで対象の表が空の D1 にだけ戻す。派生データ（links、tags、抜粋、検索の索引）は
+// load は、migration を適用済みで対象のテーブルが空の D1 にだけ戻す。派生データ（links、tags、抜粋、検索インデックス）は
 // ダンプに含まれないので、load のあとに Worker をデプロイして derived:rebuild を回す。
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -40,11 +40,11 @@ const MANIFEST_FILE = "manifest.json";
 export const STATEMENT_LIMIT = 100_000;
 /** 上限に余裕を持たせた、1 文の長さの目標。長い列を分けるときの基準にする */
 const STATEMENT_BUDGET = 90_000;
-/** 1 回の SELECT で読む行数の上限。ウィンドウ関数の対象を絞り、読み取る行数が表の大きさの 2 乗に増えないようにする */
+/** 1 回の SELECT で読む行数の上限。ウィンドウ関数の対象を絞り、読み取る行数がテーブルの大きさの 2 乗に増えないようにする */
 const BATCH_ROWS = 100;
 /**
  * 1 回の SELECT で受け取る本文などの合計（hex にする前のバイト数）の目安。hex で 2 倍、JSON で少し増えるので、
- * 応答は 1 MB 弱になる。D1 の応答の大きさの上限は公式の limits に書かれておらず、remote では確かめていない。
+ * レスポンスは 1 MB 弱になる。D1 のレスポンスの大きさの上限は公式の limits に書かれておらず、remote では確かめていない。
  * 行の大きさの上限は 2 MB なので、これを超える 1 行でも単独で読める（超えた行で打ち切る）。
  */
 const BATCH_BYTES = 256 * 1024;
@@ -60,7 +60,7 @@ const int = (name) => /** @type {Column} */ ({ name, kind: "int" });
 const text = (name) => /** @type {Column} */ ({ name, kind: "text" });
 
 /**
- * ダンプする表の列と、読む順序の主キー。列は migrations/*.sql の定義の順で、テストが突き合わせる。
+ * ダンプするテーブルの列と、読む順序の主キー。列は migrations/*.sql の定義の順で、テストが突き合わせる。
  * long は 1 文に収まらないことがある列（本文は最大 64 KiB で、hex にすると 128 KiB になる）。
  * pages、revisions、attachments は正本、api_tokens は --with-tokens でだけ出す。
  * @type {Record<string, TableSpec>}
@@ -130,17 +130,17 @@ export const DATA_TABLES = ["pages", "revisions", "attachments"];
 export const TOKEN_TABLES = ["api_tokens"];
 
 /**
- * 後の migration で足した表と、それを作る migration。読む D1 や manifest の migration の一覧に無ければ、
- * その表は無いものとして扱う（migration を当てる前の D1 もバックアップでき、表を足す前のバックアップも
- * load できるように）。ここに無い表は、最初からある表として扱う。
+ * 後の migration で足したテーブルと、それを作る migration。読む D1 や manifest の migration の一覧に無ければ、
+ * そのテーブルは無いものとして扱う（migration を当てる前の D1 もバックアップでき、テーブルを足す前のバックアップも
+ * load できるように）。ここに無いテーブルは、最初からあるテーブルとして扱う。
  * @type {Record<string, string>}
  */
 export const TABLE_MIGRATIONS = { attachments: "0006_attachments.sql" };
 
 /**
- * ダンプする表の保存値を書き換えた migration と、その書き換えの SQL。バックアップの後にこの migration を
+ * ダンプするテーブルの保存値を書き換えた migration と、その書き換えの SQL。バックアップの後にこの migration を
  * 当てた D1 へ load すると、値はバックアップの時点の規則のまま入るので、load の後に同じ書き換えを当てる。
- * ダンプしない表（links など）の分は derived:rebuild が作り直すので含めない。
+ * ダンプしないテーブル（links など）の分は derived:rebuild が作り直すので含めない。
  * @type {Record<string, string>}
  */
 export const DATA_MIGRATIONS = {
@@ -149,7 +149,7 @@ export const DATA_MIGRATIONS = {
 };
 
 /**
- * 適用済みの migration が migrations である D1 から、ダンプする表。
+ * 適用済みの migration が migrations である D1 から、ダンプするテーブル。
  * @param {boolean} withTokens
  * @param {string[]} migrations
  */
@@ -162,8 +162,8 @@ export function tablesToDump(withTokens, migrations) {
 }
 
 /**
- * ダンプしない表と、その理由。migrations/*.sql の表が TABLES かここに入っていることをテストが検査する
- * （表を足したときに、バックアップの要否を決め忘れないため）。
+ * ダンプしないテーブルと、その理由。migrations/*.sql のテーブルが TABLES かここに入っていることをテストが検査する
+ * （テーブルを足したときに、バックアップの要否を決め忘れないため）。
  */
 export const EXCLUDED_TABLES = {
   // 派生データ。pages と revisions の本文から derived:rebuild で作り直せる。
@@ -174,11 +174,11 @@ export const EXCLUDED_TABLES = {
   attachment_refs: "derived",
   // FTS5 の仮想テーブルは D1 の export もできない。shadow table（pages_fts_*）は仮想テーブルが作る
   pages_fts: "derived",
-  // 保存の batch が版の衝突を検出するための表。常に空
+  // 保存の batch が版の衝突を検出するためのテーブル。常に空
   save_guard: "transient",
-  // OAuth の client の登録数を UTC の 1 日ごとに数える表。復元しても過ぎた日の行は使われない
+  // OAuth の client の登録数を UTC の 1 日ごとに数えるテーブル。復元しても過ぎた日の行は使われない
   oauth_client_registrations: "transient",
-  // title の変更でリンクを書き換える待ち行列。処理が済めば空になる。バックアップの時点で処理を
+  // title の変更でリンクを書き換えるキュー。処理が済めば空になる。バックアップの時点で処理を
   // 待っていた分は、復元した本文に古い title のリンクとして残る
   link_rewrites: "transient",
 };
@@ -274,7 +274,7 @@ function literal(column, value) {
 }
 
 /**
- * 表を主キーの順に、本文の大きさで区切って読む SELECT。文字列の列は hex() で受け取り（NULL は NULL のまま）、
+ * テーブルを主キーの順に、本文の大きさで区切って読む SELECT。文字列の列は hex() で受け取り（NULL は NULL のまま）、
  * 列は c0, c1, … の別名で返す。
  * 区切りは「それまでの合計が BATCH_BYTES に達していない行まで」で、最初の行は必ず入るので読み進められる。
  * @param {string} table
@@ -310,7 +310,7 @@ export function selectSql(table, after) {
 }
 
 /**
- * 表ごとの行数を 1 つの SELECT で返す SQL。表名は TABLES のキーだけ。
+ * テーブルごとの行数を 1 つの SELECT で返す SQL。テーブル名は TABLES のキーだけ。
  * @param {string[]} tables
  */
 export function countSql(tables) {
@@ -408,8 +408,8 @@ export function backupDirName(date, remote) {
  */
 
 /**
- * manifest は手元のファイルだが、load が SQL に埋め込む表名の出どころなので、TABLES にある表名だけを通す。
- * 表の過不足は manifest の migration の一覧と照らす。その時点で在った正本の表が欠けていれば、
+ * manifest は手元のファイルだが、load が SQL に埋め込むテーブル名の出どころなので、TABLES にあるテーブル名だけを通す。
+ * テーブルの過不足は manifest の migration の一覧と照らす。その時点で在った正本のテーブルが欠けていれば、
  * 復元で黙って失うので拒む。
  * @param {unknown} value
  * @returns {Manifest}
@@ -569,7 +569,7 @@ function query(sql, target, io) {
 }
 
 /**
- * 表の全行を、主キーの順に batch ごとに読む。
+ * テーブルの全行を、主キーの順に batch ごとに読む。
  * @param {string} table
  * @param {Target} target
  * @param {Io} io
@@ -628,7 +628,7 @@ function readMigrations(target, io) {
 
 /**
  * pages を先に読んで INSERT を書き、revisions はその pages の版までのものだけを書く。
- * 読んでいる間にも保存は続くので、表を複数回に分けて読むと時点がずれる。ずれは次の 2 つに限り、
+ * 読んでいる間にも保存は続くので、テーブルを複数回に分けて読むと時点がずれる。ずれは次の 2 つに限り、
  * どちらも dump の外に出すので、load は外部キーでも版の衝突でも失敗しない。
  *   - 読んだ後に作られたページ: pages に無いので、その revisions は書かない
  *   - 読んだ後に保存されたページ: revisions のうち pages.version より新しい版は書かない
@@ -639,7 +639,7 @@ function readMigrations(target, io) {
  * 読んでも、新しい版は pages.version を超えて外れるので、同じ行が dump で重ならない。
  * ページ同士の時点は揃わず、先に読んだページは古く、後に読んだページは新しい。
  * そのため、先に読んだページが削除や改名で title を手放し、後に読んだページがその title を取ると、
- * 生きたページの title_key が dump の中で重なる。load は部分一意索引で失敗するので、
+ * 生きたページの title_key が dump の中で重なる。load は部分一意インデックスで失敗するので、
  * 重なりを見つけた時点で backup を失敗させる（片方を落として直すと、どちらが正しいか決められない）。
  * @param {Extract<ParsedArgs, { command: "backup" }>} args
  * @param {Io} io
@@ -757,7 +757,7 @@ export function load(args, io) {
   const names = Object.keys(manifest.tables);
   const target = resolveTarget(args, io);
 
-  // migrations の表が無いのは migration が未適用、一覧の食い違いは別の版の schema
+  // migrations のテーブルが無いのは migration が未適用、一覧の食い違いは別の版の schema
   /** @type {string[]} */
   let applied;
   try {
@@ -772,7 +772,7 @@ export function load(args, io) {
       `migrations differ: the backup was taken at [${manifest.migrations.join(", ")}] but the target D1 has [${applied.join(", ")}]. Apply the same migrations (db:migrate:remote) to the new D1 first`,
     );
   }
-  // バックアップに無い表（表を足す前のバックアップの attachments など）も、復元先で空であることを確かめる
+  // バックアップに無いテーブル（テーブルを足す前のバックアップの attachments など）も、復元先で空であることを確かめる
   const guarded = [...new Set([...names, ...tablesToDump(false, applied)])];
   const before = Object.fromEntries(
     query(countSql(guarded), target, io).map((r) => [String(r.t), Number(r.n)]),
@@ -806,7 +806,7 @@ export function load(args, io) {
     try {
       query(sql, target, io);
     } catch (error) {
-      // 生きたページ同士が新しい規則で同じ title_key になると、一意索引で止まる。行は入ったまま残る
+      // 生きたページ同士が新しい規則で同じ title_key になると、一意インデックスで止まる。行は入ったまま残る
       throw new Error(
         `loaded the backup, but could not apply the data change of ${name}: ${error instanceof Error ? error.message : error}. Rename one of the conflicting pages (open it by /p/<id>)${conflictingPages(target, io)}, then run this SQL with wrangler d1 execute: ${sql}`,
       );

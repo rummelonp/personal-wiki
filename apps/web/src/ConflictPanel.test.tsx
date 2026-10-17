@@ -128,7 +128,7 @@ describe("衝突の操作の確認", () => {
 
 const LINES = Array.from({ length: 40 }, (_, index) => `${index + 1} 行目`);
 
-/** 台の中に置く。差分の欄の高さは、台と通知の CSS で決まる。 */
+/** ドックの中に置く。差分の欄の高さは、ドックと通知の CSS で決まる。 */
 async function mountInDock(options: {
   changeAt: number;
   detailsMaxHeight?: number;

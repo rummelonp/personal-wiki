@@ -48,7 +48,7 @@ interface Saved {
 /** 復元の対象。popstate か初回の読み込みで決め、画面が描かれたときに使い切る */
 let pending: { url: string; saved: Saved } | null = null;
 
-/** 復元を受け持つ画面（useRestoreScroll を呼んでいる画面と、その前に出る帯）の数 */
+/** 復元を受け持つ画面（useRestoreScroll を呼んでいる画面と、その前に出るスケルトン）の数 */
 let consumers = 0;
 
 /** 描画が済んでいる画面の URL。popstate で同じ URL へ戻るときは、画面が残っているので復元しない */
@@ -219,8 +219,8 @@ export function registerScrollAnchor(source: ScrollAnchorSource): () => void {
 }
 
 /**
- * 受け持つ画面より先に出る帯（起動時や lazy の読み込み中）で呼ぶ。
- * 帯でも画面は少しスクロールできる。呼ばないと、ブラウザの復元が帯の間に丸めた位置を通常のスクロールとみなし、
+ * 受け持つ画面より先に出るスケルトン（起動時や lazy の読み込み中）で呼ぶ。
+ * スケルトンでも画面は少しスクロールできる。呼ばないと、ブラウザの復元がスケルトンの間に丸めた位置を通常のスクロールとみなし、
  * 待っていた復元を捨ててしまう（再読み込みのあとに位置が戻らない）。
  */
 export function useHoldScrollRestore(): void {

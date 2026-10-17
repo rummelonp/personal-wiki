@@ -81,7 +81,7 @@ export const pageHrefFor = canonicalPagePath;
  * まだ無いページへのリンクの行き先（title の URL の空のページ）。予約語と重なるなど title の URL に
  * できない title と、長すぎて存在しえない（問い合わせられない）title は null。
  * 空白は `_` にしない。開いた画面が URL の文字列を作るページの title にするため（literalTitlePath）。
- * 行き先の取得中の帯が `snake_case` を空白に読み替えないよう、path を返すときに title の表記を覚える。
+ * 行き先の取得中のスケルトンが `snake_case` を空白に読み替えないよう、path を返すときに title の表記を覚える。
  * 呼び出し側はこの path へ移る前提で使う。
  */
 export function missingPagePath(title: string): string | null {

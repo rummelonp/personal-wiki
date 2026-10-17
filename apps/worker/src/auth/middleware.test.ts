@@ -390,7 +390,7 @@ describe("allowAnonymousRead", () => {
 });
 
 describe("キャッシュの制御", () => {
-  it("トークンで認証した応答は、拒否も含めて共有キャッシュに載せない", async () => {
+  it("トークンで認証したレスポンスは、拒否も含めて共有キャッシュに載せない", async () => {
     const token = await insertToken({ name: "reader", scopes: "read" });
     const { request } = buildApp();
     for (const res of [
@@ -403,7 +403,7 @@ describe("キャッシュの制御", () => {
     }
   });
 
-  it("匿名の応答は、ハンドラが Cache-Control を付けていなければ no-store にする", async () => {
+  it("匿名のレスポンスは、ハンドラが Cache-Control を付けていなければ no-store にする", async () => {
     const app = createApp()
       .get("/api/test/plain", allowAnonymous(), (c) => c.json({ ok: true }))
       .get("/api/test/cacheable", allowAnonymous(), (c) => {

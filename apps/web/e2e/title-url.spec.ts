@@ -77,7 +77,7 @@ test.describe("anonymous", () => {
     }
   });
 
-  test("直接開いた取得中の帯は `_` でつないだ URL を空白にした title で出し、取得後は本当の title になる", async ({
+  test("直接開いた取得中のスケルトンは `_` でつないだ URL を空白にした title で出し、取得後は本当の title になる", async ({
     page,
     api,
   }, testInfo) => {

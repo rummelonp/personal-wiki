@@ -18,7 +18,7 @@ import { readBounded } from "../read-bounded";
  * 1 日の書き込みの上限を守れない。
  */
 
-/** claude.ai のカスタムコネクタの戻り先。deploy.env の OAUTH_REDIRECT_URIS で足せる。 */
+/** claude.ai のカスタムコネクタのリダイレクト先。deploy.env の OAUTH_REDIRECT_URIS で足せる。 */
 export const DEFAULT_OAUTH_REDIRECT_URIS: readonly string[] = [
   "https://claude.ai/api/mcp/auth_callback",
 ];

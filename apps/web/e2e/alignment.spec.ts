@@ -13,7 +13,7 @@ import { SEED } from "./support/seed";
  * 画面ごとに本文の左端がそろうこと。ヘッダーのロゴを基準に、一覧の行、ページの title と本文、
  * 読み込み中、404、空の状態の文字の左端が、3 つの幅で同じ x になることを測る。
  * 左端は最初の文字の箱（Range）で測る。要素の箱で測ると、編集欄の内側の padding の分がずれて見える。
- * 文字の無い読み込み中の帯（スケルトン）だけは、要素の箱の左端で測る。
+ * 文字の無い読み込み中のスケルトンだけは、要素の箱の左端で測る。
  */
 
 const WIDTHS = [375, 768, 1280];
@@ -37,7 +37,7 @@ async function textLeft(page: Page, selector: string): Promise<number> {
     });
 }
 
-/** selector に一致する最初の要素の、箱の左端。文字の無い帯を測る。 */
+/** selector に一致する最初の要素の、箱の左端。文字の無いスケルトンを測る。 */
 async function boxLeft(page: Page, selector: string): Promise<number> {
   return page
     .locator(selector)
@@ -48,7 +48,7 @@ async function boxLeft(page: Page, selector: string): Promise<number> {
 const brandLeft = (page: Page) => textLeft(page, ".brand");
 
 /*
- * 測り直しを待つ。起動時の帯は画面ごとの帯に差し替わるので、
+ * 測り直しを待つ。起動時のスケルトンは画面ごとのスケルトンに差し替わるので、
  * 要素を見つけてから測るまでの間に外れると、外れた要素の箱（0）を測ってしまう。
  */
 async function expectAligned(
@@ -65,7 +65,7 @@ async function expectAligned(
     .toBeLessThan(TOLERANCE);
 }
 
-/** 応答を release が呼ばれるまで止める。読み込み中の画面を捉える。 */
+/** レスポンスを release が呼ばれるまで止める。読み込み中の画面を捉える。 */
 async function holdResponses(
   page: Page,
   match: (url: URL) => boolean,
@@ -129,7 +129,7 @@ test.describe("本文の左端 @widths", () => {
   });
 
   test("owner の読み込み中", async ({ page, seedIds }) => {
-    // 帯は遅れて描く。描かれるまで（visible になるまで）待ってから、最初の帯の箱の左端を測る
+    // スケルトンは遅れて描く。描かれるまで（visible になるまで）待ってから、最初のスケルトンの箱の左端を測る
     const firstBand = page.locator(".main .skeleton").first();
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
@@ -163,7 +163,7 @@ test.describe("本文の左端 @widths", () => {
   });
 });
 
-test("短いページに通知の台が出ても、横スクロールは出ず、欄の線は台の上端まで引かれる", async ({
+test("短いページに通知のドックが出ても、横スクロールは出ず、欄の線はドックの上端まで引かれる", async ({
   page,
   api,
 }, testInfo) => {
@@ -186,8 +186,8 @@ test("短いページに通知の台が出ても、横スクロールは出ず�
   await typeAtBodyEnd(page, "、打った");
   await expect(page.locator(".notice-dock").getByRole("alert")).toBeVisible();
   await expectNoHorizontalScroll(page);
-  // 台の高さの分だけ文書の末尾に余白が付くので縦には少しスクロールできるが、それ以上は伸びない。
-  // 台の高さの余白は .app の最低の高さに含まれるので、欄の線（rail）は台の上端まで引かれる
+  // ドックの高さの分だけ文書の末尾に余白が付くので縦には少しスクロールできるが、それ以上は伸びない。
+  // ドックの高さの余白は .app の最低の高さに含まれるので、欄の線（rail）はドックの上端まで引かれる
   await page.evaluate(() => window.scrollTo(0, 0));
   const { overflow, railBottom, dockHeight } = await page.evaluate(() => {
     const root = document.documentElement;
@@ -197,8 +197,10 @@ test("短いページに通知の台が出ても、横スクロールは出ず�
       dockHeight: document.querySelector(".notice-dock")?.getBoundingClientRect().height ?? 0,
     };
   });
-  expect(overflow, "台の高さより多く縦にスクロールできる").toBeLessThanOrEqual(dockHeight + 1);
-  expect(railBottom, "欄の線が台の上端まで届かない").toBeGreaterThanOrEqual(800 - dockHeight - 1);
+  expect(overflow, "ドックの高さより多く縦にスクロールできる").toBeLessThanOrEqual(dockHeight + 1);
+  expect(railBottom, "欄の線がドックの上端まで届かない").toBeGreaterThanOrEqual(
+    800 - dockHeight - 1,
+  );
 });
 
 test.describe("匿名の本文の左端 @widths", () => {

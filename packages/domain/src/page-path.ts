@@ -6,7 +6,7 @@ import { foldKeepingUnderscore, foldTitle } from "./title";
  */
 
 /**
- * Worker が自分で応答する先頭の segment。SPA の index.html を返さず、未定義のパスは JSON の 404 にする。
+ * Worker が自分でレスポンスを返す先頭の segment。SPA の index.html を返さず、未定義のパスは JSON の 404 にする。
  * - `.well-known`: MCP クライアントは 401 の後に OAuth のメタデータを取りに来る。HTML を返すと
  *   JSON の解析に失敗する
  * - `assets`: Static Assets のハッシュ付きファイルの置き場。`/assets/*` は普段 Worker を通らないが、
@@ -23,7 +23,7 @@ export const WORKER_PATH_SEGMENTS: readonly string[] = [
 /**
  * `/<title>` の URL に使わない先頭の segment（foldKeepingUnderscore で畳んだ形）。
  * - Worker の分と、SPA が開く `/p/<id>` の `p`
- * - Static Assets が Worker より先に応答するパス。`/index.html` と `/index` は、Static Assets の
+ * - Static Assets が Worker より先にレスポンスを返すパス。`/index.html` と `/index` は、Static Assets の
  *   html_handling（auto-trailing-slash）が `/` への 307 にするので、同じ title のページを開けない。
  *   `apps/web/public` にファイルを置くときは、その名前（`.html` なら拡張子を除いた名前も）をここに足す
  */

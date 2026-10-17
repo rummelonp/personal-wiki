@@ -13,7 +13,7 @@ export const MAX_BODY_BYTES = 65_536;
 
 /**
  * title の上限（UTF-8 のバイト数）。title は一覧やリンクの解決で何度も読み書きし、title_key の
- * 索引にも入るので、本文と別に小さく抑える。
+ * インデックスにも入るので、本文と別に小さく抑える。
  */
 export const MAX_TITLE_BYTES = 1024;
 

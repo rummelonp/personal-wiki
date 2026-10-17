@@ -9,7 +9,7 @@ interface Call {
   body: { after: string | null };
 }
 
-/** 応答を順に返す fetch。呼び出しの内容を calls に溜める。 */
+/** レスポンスを順に返す fetch。呼び出しの内容を calls に溜める。 */
 function fakeFetch(responses: (Response | Error)[]) {
   const calls: Call[] = [];
   const fetchFn = async (url: string | URL | Request, init?: RequestInit) => {
@@ -64,7 +64,7 @@ describe("parseArgs", () => {
 });
 
 describe("rebuildAll", () => {
-  it("next が null になるまで、前の応答の next を after にして呼ぶ", async () => {
+  it("next が null になるまで、前のレスポンスの next を after にして呼ぶ", async () => {
     const { fetchFn, calls } = fakeFetch([step("a"), step("b"), step(null, { rebuilt: 0 })]);
     const summary = await rebuildAll({
       baseUrl: "http://x",
@@ -99,7 +99,7 @@ describe("rebuildAll", () => {
     });
   });
 
-  it("通信の失敗、JSON でない応答、形の違う応答、進まない cursor で止まる", async () => {
+  it("通信の失敗、JSON でないレスポンス、形の違うレスポンス、進まない cursor で止まる", async () => {
     const cases: [Response | Error, string][] = [
       [new Error("boom"), "request failed: boom"],
       [new Response("<html>", { status: 200 }), "response is not JSON"],
@@ -149,7 +149,7 @@ describe("run", () => {
     expect(out.stderr).toContain("resume with: --after a");
   });
 
-  it("WIKI_TOKEN が無ければ、要求を送らずに 1 にする", async () => {
+  it("WIKI_TOKEN が無ければ、リクエストを送らずに 1 にする", async () => {
     for (const token of [undefined, "", "  "]) {
       const { io, out, calls } = fakeIo([], { WIKI_TOKEN: token });
       expect(await run([], io)).toBe(1);

@@ -45,9 +45,9 @@ read -rs WIKI_TOKEN && export WIKI_TOKEN
 pnpm derived:rebuild [--remote] [--url <base>] [--after <id>]
 ```
 
-links、tags、添付の参照、一覧の抜粋、検索の索引を、本文から作り直す。
+links、tags、添付の参照、一覧の抜粋、検索インデックスを、本文から作り直す。
 API は `POST /api/admin/derived/rebuild` で、CPU の上限に収まるよう 1 回の呼び出しで 1 ページずつ進める。
-スクリプトは、応答の `next` が null になるまで繰り返して全ページ分を回す。
+スクリプトは、レスポンスの `next` が null になるまで繰り返して全ページ分を回す。
 
 - 既定の送り先はローカルの `wrangler dev`（`http://localhost:8787`）である。
   `--remote` は `WIKI_HOSTNAME`、`--url` は指定したオリジンに送る（`--remote` とは同時に使えない）。
@@ -57,15 +57,15 @@ API は `POST /api/admin/derived/rebuild` で、CPU の上限に収まるよう 
 
 実行するのは次のときである。
 
-- migration が派生データの表を足した更新のあと（[deploy.md](./deploy.md) の「更新」）
+- migration が派生データのテーブルを足した更新のあと（[deploy.md](./deploy.md) の「更新」）
 - Worker を前の版に戻して再デプロイしたあと（[deploy.md](./deploy.md) の「前の版に戻す」）
 - バックアップから復元したあと。
   復元した直後は、一覧の抜粋、backlink、タグ、検索が空で、匿名には画像も 404 になる（配信の判定に使う添付の参照が空のため）
 
 ## リンクの書き換え
 
-title を変えると、他のページの `[[旧 title]]` を書き換える仕事が `link_rewrites` に積まれる。
-積まれた仕事は、ブラウザで開いている画面と Cron が進める。
+title を変えると、他のページの `[[旧 title]]` を書き換えるジョブが `link_rewrites` のキューに入る。
+キューに入ったジョブは、ブラウザで開いている画面と Cron が進める。
 画面は `POST /api/link-rewrites/step` を呼んで 1 回に 1 ページずつ書き換え、Cron（[deploy.md](./deploy.md) の「リンクの書き換えの自動実行（Cron）」）は発火ごとに 1 リンク元を進める。
 
 手動で最後まで進めるには、write の token で次を実行する。
@@ -75,12 +75,12 @@ pnpm link-rewrites [--remote] [--url <base>] [--target <page id>]
 ```
 
 - `--remote` と `--url` の送り先と制限は、`derived:rebuild` と同じである
-- 応答の `remaining` が 0 になるまで step を呼ぶ。
-  `--target` を付けると、そのページの rename で積まれた分だけを進める
+- レスポンスの `remaining` が 0 になるまで step を呼ぶ。
+  `--target` を付けると、そのページの rename でキューに入ったジョブだけを進める
 - 書き換えると他のリンクやタグが変わるページ、書き換えた本文が上限（64 KiB）を超えるページ、3 回試しても処理が終わらなかったページは、書き換えずに飛ばす。
   その id を標準エラーに出して、終了コード 1 になる
 - 5xx などで途中で止まったときも終了コード 1 になる。
-  積んだ分は D1 に残るので、同じコマンドを再実行すれば続きから進む。
+  キューのジョブは D1 に残るので、同じコマンドを再実行すれば続きから進む。
   飛ばしたページの id は、止まる前の分も標準エラーに出ている
 - 試行の回数は再実行でも引き継ぐ。
   同じページで 5xx が 3 回続くと、そのページは飛ばす
@@ -109,7 +109,7 @@ pnpm backup load <dir> [--remote]
 `data.sql` は draft の本文を含むので、扱いに気を付ける。
 
 - ダンプするのは `pages`、`revisions`、`attachments` だけである。
-  links、tags、添付の参照、抜粋、検索の索引は本文から作り直せるので出さない
+  links、tags、添付の参照、抜粋、検索インデックスは本文から作り直せるので出さない
 - 待っているリンクの書き換え（`link_rewrites`）も出さない。
   復元すると、その分は本文に旧 title のリンクとして残る。
   残さないには、`pnpm backup --remote` の前に `pnpm link-rewrites --remote` で残りを 0 にする
@@ -119,9 +119,9 @@ pnpm backup load <dir> [--remote]
   前と違う名前を使うか、`--with-tokens` で戻す。
   hash ごと戻したいときだけ `--with-tokens` を付け、ダンプを秘密として扱う。
   この場合は `api-token issue` を省ける
-- `manifest.json` に、読んだ時点の migration の一覧と、表ごとの行数と全列の SHA-256 を書く
+- `manifest.json` に、読んだ時点の migration の一覧と、テーブルごとの行数と全列の SHA-256 を書く
 - R2 は対象外である。
-  `attachments` の表（添付の名前と種類）は入るが、画像の中身は入らない
+  `attachments` のテーブル（添付の名前と種類）は入るが、画像の中身は入らない
 
 `wrangler d1 export` は使わない。
 export の形式は、本文にもとからある 2 文字の `\n` を、改行を逃がした `\n` と区別せず、復元後に本物の改行へ変える。
@@ -146,7 +146,7 @@ owner の保存は、まとまりの最初の保存から 10 分以内の保存�
 `load` は次を行う。
 
 - 復元先の migration の一覧が、バックアップの時点のものを先頭に含まなければ止める（復元先が先に進んでいるのは許す）
-- 対象の表が空でなければ止める
+- 対象のテーブルが空でなければ止める
 - 流し込んだあとに、復元先から読み直して行数と SHA-256 を `manifest.json` と照合する
 - バックアップより後の migration が保存値の規則を変えていれば、照合のあとにその書き換えを当てる（`0008_title_key_underscore.sql` の title_key）。
   `_` と空白だけが違う title のページが両方あると止まり、流し込んだ行は残る。
@@ -169,5 +169,5 @@ pnpm derived:rebuild --remote  # WIKI_TOKEN に write の token を入れて実�
   復元後も、前と同じバケットを `R2_BUCKET_NAME` に書く
 - 元の D1 に、バックアップを取ってから `deploy:remote` までの間に入った書き込みは移らない
 - `load` が wrangler の失敗で止まったときは、同じコマンドで再試行できる。
-  ローカルの D1 では、失敗した SQL ファイルは全体が巻き戻り、表は空のまま残る。
-  remote で表が空でなくなっていたら（`load` が not empty で拒否する）、新しい D1 を作り直して最初からやり直す
+  ローカルの D1 では、失敗した SQL ファイルは全体が巻き戻り、テーブルは空のまま残る。
+  remote でテーブルが空でなくなっていたら（`load` が not empty で拒否する）、新しい D1 を作り直して最初からやり直す

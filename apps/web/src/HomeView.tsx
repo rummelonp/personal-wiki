@@ -208,7 +208,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
               {state.loadingMore && <LoadingMoreRows />}
             </EntryList>
             {state.next !== null && (
-              // 文字を変えるとボタンの幅が動くので、読み込み中も同じ文字にして、状態は disabled と一覧の末尾の帯で伝える
+              // 文字を変えるとボタンの幅が動くので、読み込み中も同じ文字にして、状態は disabled と一覧の末尾のスケルトンで伝える
               <button
                 type="button"
                 className="button"

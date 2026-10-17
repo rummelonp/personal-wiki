@@ -1,6 +1,6 @@
 /*
  * 見た目の値（色、フォント、角丸、余白、影、境界線）はこのファイルのトークンに集める。
- * 部品の CSS（styles.css）はここで定義した変数だけを参照するので、このファイルを差し替えれば
+ * コンポーネントの CSS（styles.css）はここで定義した変数だけを参照するので、このファイルを差し替えれば
  * 全体の印象が変わる。ダークは prefers-color-scheme で色のトークンだけを上書きする。
  *
  * 現在のテーマは、青みのある白とグラファイトに藍の差し色（Graphite）、
@@ -16,7 +16,7 @@
   --color-input: #f1f2f5; /* 検索欄、本文の編集欄、コードの背景 */
   --color-selected: #eaecf0; /* 一覧の行にカーソルを置いたとき、押下状態のボタン */
   --color-backdrop: rgb(0 0 0 / 0.4); /* ダイアログの背後 */
-  --color-skeleton: #e8eaef; /* 読み込み中の帯。地（--color-bg）に対し、入力欄の地より差をつける */
+  --color-skeleton: #e8eaef; /* 読み込み中のスケルトン。地（--color-bg）に対し、入力欄の地より差をつける */
 
   /* 色: 文字と線 */
   --color-fg: #1b1e24; /* 本文の文字 */
@@ -86,8 +86,8 @@
   --space-7: 4rem;
 
   /* 重なり */
-  --z-notice: 9; /* ヘッダーのすぐ下。通知の台は本文に重なるが、ヘッダーの前には出ない */
-  --z-notice-edge: 1; /* 通知の台の中で、続きの手がかりを通知の内側の欄（position: relative の details）より前に出す */
+  --z-notice: 9; /* ヘッダーのすぐ下。通知のドックは本文に重なるが、ヘッダーの前には出ない */
+  --z-notice-edge: 1; /* 通知のドックの中で、続きの手がかりを通知の内側の欄（position: relative の details）より前に出す */
   --z-header: 10; /* 本文より前に出すヘッダー。ダイアログは top layer なのでこの値に関係なく前に出る */
 
   /* 寸法 */
@@ -100,7 +100,7 @@
   --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
   --revision-viewer-width: 46rem; /* 履歴の版を開くダイアログの幅。本文の幅（--prose-width）が収まる */
-  --auth-sheet-width: 30rem; /* Worker が返す OAuth の画面（同意、接続の一覧、誤り）の枠の幅 */
+  --auth-sheet-width: 30rem; /* Worker が返す OAuth の画面（同意、接続の一覧、エラー）の枠の幅 */
   --rail-width: 14.375rem; /* ノートの右の情報レールの幅 */
   --editor-line-inset: 6px; /* CodeMirror の行の左 padding の既定値。編集欄と読み取りの title を、この分だけ左へ出して文字の左端を列に合わせる */
   --gutter: clamp(
@@ -134,10 +134,10 @@
   ); /* 固定した右の列の高さの上限（超えると列の中でスクロール） */
   --outline-max-height: 40vh; /* 目次の高さの上限（超えると目次の中でスクロール） */
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
-  --viewport-height: 100dvh; /* 見えている高さの既定。通知の台が visual viewport の高さを知らせるまで、それに代わる */
-  --notice-dock-ratio: 0.6; /* 通知の台の高さの上限を、見えている高さに対する割合で表す。超えると台の中でスクロールし、本文を覆いきらない */
-  --notice-with-details-min-height: 24rem; /* details を持つ通知の高さの上限の下限。低い画面で台の上限が縮んでも、見出し、理由、操作と、差分を読める高さの details が収まる */
-  --notice-dock-ratio-with-details: 0.85; /* details を持つ通知がある台の上限の、さらに上の限り。通知の下限の高さがちょうど収まる高さまで台を広げ、台の中が数十 px だけスクロールするのを避ける */
+  --viewport-height: 100dvh; /* 見えている高さの既定。通知のドックが visual viewport の高さを知らせるまで、それに代わる */
+  --notice-dock-ratio: 0.6; /* 通知のドックの高さの上限を、見えている高さに対する割合で表す。超えるとドックの中でスクロールし、本文を覆いきらない */
+  --notice-with-details-min-height: 24rem; /* details を持つ通知の高さの上限の下限。低い画面でドックの上限が縮んでも、見出し、理由、操作と、差分を読める高さの details が収まる */
+  --notice-dock-ratio-with-details: 0.85; /* details を持つ通知があるドックの上限の、さらに上の限り。通知の下限の高さがちょうど収まる高さまでドックを広げ、ドックの中が数十 px だけスクロールするのを避ける */
   --dot-size: 0.5rem; /* 保存済みの点 */
 
   /*

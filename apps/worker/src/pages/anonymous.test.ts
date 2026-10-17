@@ -9,7 +9,7 @@ import { RESOLVE_MAX_TITLES } from "./routes";
 
 /*
  * 匿名から見た公開範囲の境界。draft は id での直接取得だけで読め、title での取得、一覧、検索、
- * タグ、backlink には出ない。匿名向けの応答のどこにも draft の id が現れないことを、
+ * タグ、backlink には出ない。匿名向けのレスポンスのどこにも draft の id が現れないことを、
  * 登録されている GET の API を総当たりして確かめる。
  */
 
@@ -91,7 +91,7 @@ async function seed() {
   return { ...ctx, draft, open, linker, gone };
 }
 
-/** draft にだけ書かれた文字列。匿名向けの応答には、draft を id で取ったとき以外は現れない。 */
+/** draft にだけ書かれた文字列。匿名向けのレスポンスには、draft を id で取ったとき以外は現れない。 */
 const DRAFT_ONLY_MARKERS = ["zebrafish", "秘蔵", "draftonly", "shared/inner"];
 
 describe("匿名の読み取り", () => {
@@ -200,7 +200,7 @@ describe("匿名の読み取り", () => {
     expect(ids(draftBacklinks.pages)).toEqual([open.id]);
   });
 
-  it("title での backlink は、draft の title と存在しない title で同じ応答になり、public のリンク元だけを返す", async () => {
+  it("title での backlink は、draft の title と存在しない title で同じレスポンスになり、public のリンク元だけを返す", async () => {
     const { anonymous, open, linker, create, setVisibility } = await seed();
     const ids = (pages: Listed[]) => pages.map((page) => page.id);
     // draft のリンク元。owner には見え、匿名には出ない
@@ -435,7 +435,7 @@ describe("検証できないセッション cookie", () => {
       features: { attachments: true, linkRewrites: true },
     });
     expectCookieCleared(me);
-    // ブラウザは Max-Age=0 の cookie を捨てるので、以降の要求は cookie を持たない
+    // ブラウザは Max-Age=0 の cookie を捨てるので、以降のリクエストは cookie を持たない
     for (const path of readPaths(open)) {
       const res = await anonymous(path);
       expect(res.status, path).toBe(200);
@@ -473,7 +473,7 @@ describe("検証できないセッション cookie", () => {
   });
 });
 
-describe("匿名向けの応答の総当たり", () => {
+describe("匿名向けのレスポンスの総当たり", () => {
   /**
    * 匿名を受け付ける宣言（allowAnonymousRead と allowAnonymous）を付けたルートと、匿名で呼ぶ具体的な
    * パス。キーは `METHOD path`。そうしたルートを足すとこの表との突き合わせが落ちるので、足したルートも
@@ -622,7 +622,7 @@ describe("匿名向けの応答の総当たり", () => {
     expect([...registered].sort()).toEqual(Object.keys(anonymousRequests(pages)).sort());
   });
 
-  it("どの応答の本文にも draft の id、draft だけの語、削除済みの id が現れない", async () => {
+  it("どのレスポンスの本文にも draft の id、draft だけの語、削除済みの id が現れない", async () => {
     const { app, ...pages } = await seed();
     const forbidden = [pages.draft.id, pages.gone.id, ...DRAFT_ONLY_MARKERS];
     for (const [route, paths] of Object.entries(anonymousRequests(pages))) {
@@ -653,7 +653,7 @@ describe("匿名向けの応答の総当たり", () => {
 });
 
 describe("owner と token の読み取りは変わらない", () => {
-  it("owner は draft を title、一覧、タグ、検索、backlink で見られ、応答は private, no-store", async () => {
+  it("owner は draft を title、一覧、タグ、検索、backlink で見られ、レスポンスは private, no-store", async () => {
     const { asOwner, create, draft, open, linker } = await seed();
     const byTitle = await asOwner(`/api/pages/by-title?title=${encodeURIComponent("Hidden Plan")}`);
     expect(byTitle.status).toBe(200);
@@ -725,7 +725,7 @@ describe("owner と token の読み取りは変わらない", () => {
     expect(await ids("?visibility=public")).toEqual([linker.id, open.id]);
   });
 
-  it("同じパスでも、owner の応答と匿名の応答は principal で分かれ、匿名には draft が出ない", async () => {
+  it("同じパスでも、owner のレスポンスと匿名のレスポンスは principal で分かれ、匿名には draft が出ない", async () => {
     const { asOwner, anonymous, draft } = await seed();
     const owner = await asOwner("/api/pages/recent");
     expect(await owner.text()).toContain(draft.id);
@@ -878,7 +878,7 @@ describe("GET /api/tags?visibility=", () => {
     expect(after.status).toBe(200);
     expect(await after.json()).toEqual({ tags: [] });
     expect(await before.json()).toEqual({ tags: [] });
-    // 応答のヘッダーも、指定なしの一覧と同じ形にする
+    // レスポンスのヘッダーも、指定なしの一覧と同じ形にする
     const plain = await anonymous("/api/tags");
     expect([...after.headers]).toEqual([...plain.headers]);
     expect(await (await anonymous("/api/tags?visibility=public")).json()).toEqual(

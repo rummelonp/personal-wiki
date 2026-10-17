@@ -195,7 +195,7 @@ export async function updatePageWithOAuth(
   });
   await expectStatus(res, 200, "MCP の update_page");
   const text = await res.text();
-  // 応答は JSON か、1 件の SSE のどちらか
+  // レスポンスは JSON か、1 件の SSE のどちらか
   const payload = text.startsWith("{")
     ? text
     : (text

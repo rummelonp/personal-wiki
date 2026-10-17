@@ -61,7 +61,7 @@ describe("parseMe", () => {
     }
   });
 
-  it("知らない kind の応答の features は読まない", () => {
+  it("知らない kind のレスポンスの features は読まない", () => {
     expect(parseMe({ kind: "admin", features: { attachments: true } })).toEqual({
       kind: "anonymous",
       features: off,

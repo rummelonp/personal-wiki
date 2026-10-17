@@ -42,14 +42,14 @@ export const TITLE_INDEX_MAX_REQUESTS = 4;
 
 /**
  * 匿名の閲覧者の候補に読む一覧の回数の上限。匿名は quick switcher を開くたびに取り直し、
- * 1 回の要求で D1 を 500 行あまり読む（最近の更新の 1 回は 100 行ほど）。誰でも開ける入口で
+ * 1 回のリクエストで D1 を 500 行あまり読む（最近の更新の 1 回は 100 行ほど）。誰でも開ける入口で
  * 読み取りの無料枠を減らしにくくするため、最近の公開 500 件より古いページを候補から落とす。
  */
 export const ANONYMOUS_TITLE_INDEX_MAX_REQUESTS = 1;
 
 /**
  * `retry` が、前の失敗から取り直すまでに空ける間隔。補完は打鍵のたびに呼ぶので、API が落ちている間に
- * 打つ速さで要求を送り直さない。
+ * 打つ速さでリクエストを送り直さない。
  */
 export const TITLE_INDEX_RETRY_COOLDOWN_MS = 5_000;
 
@@ -144,7 +144,7 @@ export type FindPageByTitle = (title: string, signal: AbortSignal) => Promise<Ap
 /**
  * `[[Title#` と `[[Title#^` の候補。リンク先の本文を取りに行き、見出しと block id を取り出す。
  * 取れなかったとき（ページが無い、通信の失敗、中断）は候補なしにして、エディタの入力は止めない。
- * 取れた分は作った LinkTargetSource が生きている間（ページを開いている間）覚えておく。
+ * 取れた分は作った LinkTargetSource が生きている間（ページを開いている間）キャッシュしておく。
  */
 export function createLinkTargetSource(find: FindPageByTitle): LinkTargetSource {
   const cache = new Map<string, LinkTargets>();

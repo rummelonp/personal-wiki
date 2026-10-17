@@ -36,7 +36,7 @@ interface ToolOutcome {
   json: Record<string, unknown>;
 }
 
-/** 応答は単発の JSON か、1 件のメッセージを運ぶ SSE のどちらでも来うる。 */
+/** レスポンスは単発の JSON か、1 件のメッセージを運ぶ SSE のどちらでも来うる。 */
 async function readRpc(res: Response): Promise<RpcResponse> {
   const text = await res.text();
   if (res.headers.get("Content-Type")?.includes("text/event-stream")) {
@@ -151,7 +151,7 @@ describe("/mcp の認可", () => {
     expect(await snapshotDb()).toEqual(before);
   });
 
-  it("応答は共有キャッシュに載せない", async () => {
+  it("レスポンスは共有キャッシュに載せない", async () => {
     const { post } = await mcpClient();
     const res = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(res.status).toBe(200);
@@ -159,7 +159,7 @@ describe("/mcp の認可", () => {
     expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
-  it("Cookie だけの要求は匿名として 401", async () => {
+  it("Cookie だけのリクエストは匿名として 401", async () => {
     await mcpClient();
     const res = await createApp().request(
       "/mcp",
@@ -177,7 +177,7 @@ describe("/mcp の認可", () => {
     expect(res.status).toBe(401);
   });
 
-  it("Origin の付いた要求は token があっても 403 で、tool を実行しない", async () => {
+  it("Origin の付いたリクエストは token があっても 403 で、tool を実行しない", async () => {
     const { post, metrics } = await mcpClient();
     const before = await snapshotDb();
     for (const origin of ["https://evil.example", ORIGIN, "null"]) {
@@ -208,7 +208,7 @@ describe("/mcp の認可", () => {
     }
   });
 
-  it("JSON-RPC の batch は 400 で、どの要求も実行しない", async () => {
+  it("JSON-RPC の batch は 400 で、どのリクエストも実行しない", async () => {
     const { post, metrics } = await mcpClient();
     const before = await snapshotDb();
     const call = (id: number) => ({
@@ -448,7 +448,7 @@ describe("ページの tool", () => {
     });
   });
 
-  it("read_page の誤りは isError", async () => {
+  it("read_page のエラーは isError", async () => {
     const { call } = await mcpClient();
     const { json: created } = await call("create_page", { title: "A", body: "" });
     expect(await call("read_page", {})).toMatchObject({
@@ -525,7 +525,7 @@ describe("ページの tool", () => {
     expect(metrics).toHaveLength(2);
   });
 
-  it("update_page で title を変えると、リンクの書き換えを積んだ件数を返す", async () => {
+  it("update_page で title を変えると、リンクの書き換えをキューに入れた件数を返す", async () => {
     const { call, request } = await mcpClient();
     const { json: target } = await call("create_page", { title: "Old", body: "" });
     const { json: source } = await call("create_page", { title: "S", body: "[[Old]]" });
@@ -899,7 +899,7 @@ describe("版の履歴の tool", () => {
     }
   });
 
-  it("list_revisions の id と title と cursor の誤りは isError", async () => {
+  it("list_revisions の id と title と cursor のエラーは isError", async () => {
     const { call, id } = await threeVersions();
     expect(await call("list_revisions", {})).toMatchObject({
       isError: true,
@@ -1102,7 +1102,7 @@ describe("検索と一覧の tool", () => {
     expect(ids(await reader.call("list_backlinks", { title: "Ghost Page Self" }))).toEqual([]);
   });
 
-  it("list_backlinks は id と title の指定の誤りを invalid_arguments か invalid_field で返す", async () => {
+  it("list_backlinks は id と title の指定のエラーを invalid_arguments か invalid_field で返す", async () => {
     const { call } = await mcpClient({ scopes: "read write" });
     const { json: target } = await call("create_page", { title: "Target", body: "" });
 
@@ -1171,7 +1171,7 @@ describe("検索と一覧の tool", () => {
 });
 
 describe("リクエストをまたいだ状態", () => {
-  // 1 つの app（= 1 つの handler）に別の principal の要求を交互に流し、値が混ざらないことを確かめる
+  // 1 つの app（= 1 つの handler）に別の principal のリクエストを交互に流し、値が混ざらないことを確かめる
   async function sharedApp() {
     const metrics: WriteMetric[] = [];
     const app = createApp({ now: () => T0, recordWrite: (m) => metrics.push(m) });
@@ -1221,7 +1221,7 @@ describe("リクエストをまたいだ状態", () => {
     expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
-  it("同時に流した要求でも、principal ごとの結果が入れ替わらない", async () => {
+  it("同時に流したリクエストでも、principal ごとの結果が入れ替わらない", async () => {
     const { create, metrics, tokens } = await sharedApp();
     const results = await Promise.all(
       Array.from({ length: 6 }, (_, i) => create(i % 2 === 0 ? "alice" : "bob", `P${i}`)),

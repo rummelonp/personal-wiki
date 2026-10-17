@@ -174,7 +174,7 @@ test("未保存の入力は先に保存してから戻し、戻す前の内容�
 
   await page.goto(`/p/${created.id}`);
   await expect(entries(page)).toHaveCount(2);
-  // 保存の要求を止め、戻す操作を押す時点で入力が保存されていない状態にする
+  // 保存のリクエストを止め、戻す操作を押す時点で入力が保存されていない状態にする
   let releaseSave: () => void = () => {};
   const saveHeld = new Promise<void>((resolve) => {
     releaseSave = resolve;

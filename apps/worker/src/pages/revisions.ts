@@ -54,7 +54,7 @@ export interface RevisionInput {
  * 照合を直前の版に限るので、間に別の actor の保存が入ると（直前の版の revision がその actor のもの）、
  * 公開範囲を切り替えると（版を進めるが revision を積まないので、直前の版の revision が無い）、そこが
  * まとめの境目になる。公開した時点の本文は、後の保存に上書きされず残る。
- * owner の rename によるリンクの書き換えの revision は、表の上で owner の保存と見分けられないので、
+ * owner の rename によるリンクの書き換えの revision は、テーブルの上で owner の保存と見分けられないので、
  * 続く owner の保存にはまとめられる（その保存の本文は書き換えを含む）。
  *
  * 挿入は、新しい版の行が既にあるか（書き換えたか）で条件付ける。D1 の batch で、前の文の changes() を

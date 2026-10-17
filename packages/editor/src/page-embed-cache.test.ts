@@ -119,7 +119,7 @@ describe("createPageEmbedCache", () => {
     cache.resolve("Note");
     cache.refresh();
     expect(loads[0]?.signal.aborted).toBe(false);
-    // 取得中の間は重ねて出さない（応答が出した順に届くことを保つ）
+    // 取得中の間は重ねて出さない（レスポンスが出した順に届くことを保つ）
     cache.resolve("Note");
     expect(loads).toHaveLength(1);
 

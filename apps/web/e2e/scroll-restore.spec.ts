@@ -169,7 +169,7 @@ test("戻る、進む、戻ると続けたあとも、再読み込みのあと�
   await expect.poll(() => scrollY(page)).toBeLessThan(SCROLL + TOLERANCE);
 });
 
-test("再読み込みの起動中に帯が出ても、位置が戻る", async ({ page }) => {
+test("再読み込みの起動中にスケルトンが出ても、位置が戻る", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".entries .entry").first()).toBeVisible();
   await page.evaluate((y) => window.scrollTo(0, y), SCROLL);
@@ -181,7 +181,7 @@ test("再読み込みの起動中に帯が出ても、位置が戻る", async ({
     )
     .toBe(SCROLL);
 
-  // ログイン状態の確認を止め、一覧より先に起動中の帯を描かせる
+  // ログイン状態の確認を止め、一覧より先に起動中のスケルトンを描かせる
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -192,11 +192,11 @@ test("再読み込みの起動中に帯が出ても、位置が戻る", async ({
   });
   await page.reload();
   await expect(page.locator(".skeleton-painted").first()).toBeVisible();
-  // 負荷が高いとブラウザの復元が帯の間に走り、帯の高さに丸める。その時点を待たずに、同じ丸めを起こす。
-  // 帯がスクロールできない幅（広い画面）では丸めが起きないので、検査にならない
+  // 負荷が高いとブラウザの復元がスケルトンの間に走り、スケルトンの高さに丸める。その時点を待たずに、同じ丸めを起こす。
+  // スケルトンがスクロールできない幅（広い画面）では丸めが起きないので、検査にならない
   await page.evaluate((y) => window.scrollTo(0, y), SCROLL);
   const clamped = await scrollY(page);
-  test.skip(clamped === 0, "この幅では起動中の帯がスクロールできない");
+  test.skip(clamped === 0, "この幅では起動中のスケルトンがスクロールできない");
   expect(clamped).toBeLessThan(SCROLL - TOLERANCE);
   release();
   await page.unrouteAll({ behavior: "ignoreErrors" });

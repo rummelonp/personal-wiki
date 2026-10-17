@@ -1,4 +1,4 @@
-// 部品の CSS が、見た目の値を theme.css の token を通さずに直書きしていないか検査する。
+// コンポーネントの CSS が、見た目の値を theme.css の token を通さずに直書きしていないか検査する。
 //   引数なし:     apps/web/src と apps/worker/src 以下の *.css（theme.css を除く）
 //   ファイル/dir: 指定したものだけ（dir は再帰して *.css を集める。theme.css は常に除く）
 // 見つかれば `file:行: 値 (種類)` を出力して終了コード 1 で終わる。

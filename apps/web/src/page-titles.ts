@@ -20,7 +20,7 @@ export function rememberTitle(id: string, title: string): void {
 
 /**
  * title の表記だけを覚える。まだ無いページへのリンクを押して移るとき、URL の文字列がそのまま title になる
- * ので、移った先の帯で `_` を空白に読み替えさせない。
+ * ので、移った先のスケルトンで `_` を空白に読み替えさせない。
  */
 export function rememberTitleFor(title: string): void {
   titlesByKey.set(foldTitle(title), title);
@@ -42,7 +42,7 @@ export function recallTitleFor(urlTitle: string): string | undefined {
 const UNDERSCORED_WORDS = /^[^\s_]+(?:_[^\s_]+)*$/;
 
 /**
- * 開く途中の帯に出す title。覚えた表記が無いとき、`_` でつないだ URL は空白の title として出す。
+ * 開く途中のスケルトンに出す title。覚えた表記が無いとき、`_` でつないだ URL は空白の title として出す。
  * 空白の title の方が `_` を含む title より多いので、この読み替えを既定にする。`_` を含む title は、
  * 開く前に表記が分かる経路（一覧、リンク）では覚えた表記が出る。URL の直接アクセスなどで
  * 覚えていないときだけ、取得が終わるまで空白で出て、終わると本当の title に変わる。

@@ -7,7 +7,7 @@ import { T0 } from "./test/pages";
 const CORP = "Cross-Origin-Resource-Policy";
 
 describe("Cross-Origin-Resource-Policy", () => {
-  it("/api/* の JSON の応答に same-origin を付ける（匿名、owner、エラーを問わない）", async () => {
+  it("/api/* の JSON のレスポンスに same-origin を付ける（匿名、owner、エラーを問わない）", async () => {
     const app = createApp({ now: () => T0 });
     const cookie = await ownerCookie(T0);
     for (const [path, init] of [

@@ -293,7 +293,7 @@ function build(view: EditorView): BuiltDecorations {
           return false;
         }
         if (node.name === "HorizontalRule") {
-          // node は直前の字下げを含まない。字下げを残すと横幅いっぱいの罫線が次の表示行へ
+          // node は直前のインデントを含まない。インデントを残すと横幅いっぱいの罫線が次の表示行へ
           // 折り返すので、隠す範囲に含める。`>` などの前置きは他の記法の持ち物なので残す。
           const line = state.doc.lineAt(node.from);
           const prefix = state.doc.sliceString(line.from, node.from);

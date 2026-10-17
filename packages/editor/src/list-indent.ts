@@ -3,7 +3,7 @@ import { TASK_CHECKBOX_EM } from "./list-syntax";
 
 /** リスト項目の行で、行頭から本文の始まりまでに見えているもの */
 export interface ListPrefix {
-  /** checkbox より前に見えている文字（字下げと行頭の記号、番号付きなら番号と空白） */
+  /** checkbox より前に見えている文字（インデントと行頭の記号、番号付きなら番号と空白） */
   readonly before: string;
   readonly checkbox: boolean;
   /** checkbox の後ろ、本文の始まりまでの文字 */
