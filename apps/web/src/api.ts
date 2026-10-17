@@ -4,9 +4,11 @@ export interface Features {
   attachments: boolean;
   /** title の変更でキューに入れたリンクの書き換えを進める step（`POST /api/link-rewrites/step`）がある */
   linkRewrites: boolean;
+  /** OAuth を開いている（`/_auth/oauth/*` が 404 を返さない）。接続の一覧へのリンクを出せる */
+  oauth: boolean;
 }
 
-export const NO_FEATURES: Features = { attachments: false, linkRewrites: false };
+export const NO_FEATURES: Features = { attachments: false, linkRewrites: false, oauth: false };
 
 /** `GET /api/me` のレスポンス。Worker はメールアドレスを返さない。 */
 export type Me = (
@@ -27,6 +29,7 @@ function parseFeatures(value: unknown): Features {
   return {
     attachments: features.attachments === true,
     linkRewrites: features.linkRewrites === true,
+    oauth: features.oauth === true,
   };
 }
 

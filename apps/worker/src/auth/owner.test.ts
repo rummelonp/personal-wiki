@@ -264,7 +264,7 @@ describe("GET /api/me", () => {
     const owner = await request("/api/me", { headers: { Cookie: await ownerCookie(T0) } });
     expect(await owner.json()).toEqual({
       kind: "owner",
-      features: { attachments: true, linkRewrites: true },
+      features: { attachments: true, linkRewrites: true, oauth: true },
     });
     expect(owner.headers.get("Cache-Control")).toBe("private, no-store");
     const viaToken = await request("/api/me", { headers: { Authorization: `Bearer ${token}` } });
@@ -272,12 +272,12 @@ describe("GET /api/me", () => {
       kind: "token",
       name: "laptop",
       scopes: ["read"],
-      features: { attachments: true, linkRewrites: true },
+      features: { attachments: true, linkRewrites: true, oauth: true },
     });
     const anonymous = await request("/api/me");
     expect(await anonymous.json()).toEqual({
       kind: "anonymous",
-      features: { attachments: true, linkRewrites: true },
+      features: { attachments: true, linkRewrites: true, oauth: true },
     });
     expect(anonymous.headers.get("Cache-Control")).toBe("no-store");
   });
@@ -287,8 +287,33 @@ describe("GET /api/me", () => {
     const res = await request("/api/me", {}, ownerEnvWithoutBucket());
     expect(await res.json()).toEqual({
       kind: "anonymous",
-      features: { attachments: false, linkRewrites: true },
+      features: { attachments: false, linkRewrites: true, oauth: true },
     });
+  });
+});
+
+describe("GET /api/me の features.oauth", () => {
+  const featuresOf = async (bindings: Bindings) => {
+    const { request } = await setup();
+    const res = await request("/api/me", {}, bindings);
+    return ((await res.json()) as { features: { oauth: boolean } }).features.oauth;
+  };
+
+  it("OAUTH_KV と owner のログインの設定がそろっているときだけ true", async () => {
+    expect(await featuresOf(ownerEnv())).toBe(true);
+    const withoutKv = ownerEnv();
+    delete withoutKv.OAUTH_KV;
+    expect(await featuresOf(withoutKv)).toBe(false);
+    expect(await featuresOf({ ...ownerEnv(), OWNER_EMAILS: "" } as Bindings)).toBe(false);
+  });
+
+  it("true の環境では /_auth/oauth/* が 404 にならず、false の環境では 404 になる", async () => {
+    const { request } = await setup();
+    const metadata = "/.well-known/oauth-authorization-server";
+    expect((await request(metadata, {}, ownerEnv())).status).toBe(200);
+    const withoutKv = ownerEnv();
+    delete withoutKv.OAUTH_KV;
+    expect((await request(metadata, {}, withoutKv)).status).toBe(404);
   });
 });
 
@@ -444,7 +469,7 @@ describe("セッション cookie と Bearer の併用", () => {
       kind: "token",
       name: "agent",
       scopes: ["read"],
-      features: { attachments: true, linkRewrites: true },
+      features: { attachments: true, linkRewrites: true, oauth: true },
     });
   });
 });

@@ -11,7 +11,7 @@ describe("loginHref", () => {
 });
 
 describe("parseMe", () => {
-  const off = { attachments: false, linkRewrites: false };
+  const off = { attachments: false, linkRewrites: false, oauth: false };
 
   it("知らない形は anonymous にする", () => {
     for (const value of [
@@ -36,7 +36,7 @@ describe("parseMe", () => {
   });
 
   it("features の各項目は true のときだけ true にし、項目が無ければ false にする", () => {
-    const on = { attachments: true, linkRewrites: true };
+    const on = { attachments: true, linkRewrites: true, oauth: true };
     expect(parseMe({ kind: "owner", features: on })).toEqual({ kind: "owner", features: on });
     expect(parseMe({ kind: "anonymous", features: on })).toEqual({
       kind: "anonymous",
@@ -44,12 +44,12 @@ describe("parseMe", () => {
     });
     expect(parseMe({ kind: "owner", features: { attachments: true } })).toEqual({
       kind: "owner",
-      features: { attachments: true, linkRewrites: false },
+      features: { attachments: true, linkRewrites: false, oauth: false },
     });
     for (const features of [
-      { attachments: false, linkRewrites: false },
+      { attachments: false, linkRewrites: false, oauth: false },
       {},
-      { attachments: "true", linkRewrites: "true" },
+      { attachments: "true", linkRewrites: "true", oauth: "true" },
     ]) {
       expect(parseMe({ kind: "owner", features })).toEqual({ kind: "owner", features: off });
     }
@@ -76,7 +76,10 @@ describe("fetchMe と logout", () => {
       calls.push([input, init]);
       return Response.json({ kind: "owner" });
     });
-    expect(me).toEqual({ kind: "owner", features: { attachments: false, linkRewrites: false } });
+    expect(me).toEqual({
+      kind: "owner",
+      features: { attachments: false, linkRewrites: false, oauth: false },
+    });
     expect(calls).toEqual([["/api/me", { credentials: "same-origin", cache: "no-store" }]]);
   });
 

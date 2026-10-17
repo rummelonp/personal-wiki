@@ -3,7 +3,7 @@ import { deleteCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
 import type { AccessVerifier } from "./access";
 import { allowAnonymous, clearStaleSession } from "./middleware";
-import { OAUTH_AUTHORIZE_PATH, OAUTH_GRANTS_PATH } from "./oauth-server";
+import { isOAuthEnabled, OAUTH_AUTHORIZE_PATH, OAUTH_GRANTS_PATH } from "./oauth-server";
 import { isOwnerEmail, readOwnerAuthConfig } from "./owner-config";
 import {
   createSessionValue,
@@ -112,8 +112,13 @@ export function registerAuthRoutes(app: Hono<AppEnv>, { now, accessVerifier }: A
       const principal = c.get("principal");
       // 画面が、使えない機能（R2 の無い構成での画像の貼り付け）の導線を出さずに済むよう返す。
       // linkRewrites は step（POST /api/link-rewrites/step）がある版で常に true。画面は、項目が無い
-      // 前の版の Worker では step を呼ばない
-      const features = { attachments: c.env.BUCKET !== undefined, linkRewrites: true };
+      // 前の版の Worker では step を呼ばない。
+      // oauth は /_auth/oauth/* が 404 にならない環境で true。画面は、接続の一覧へのリンクをこれで出し分ける
+      const features = {
+        attachments: c.env.BUCKET !== undefined,
+        linkRewrites: true,
+        oauth: isOAuthEnabled(c.env),
+      };
       switch (principal.kind) {
         case "owner":
           return c.json({ kind: "owner", features });

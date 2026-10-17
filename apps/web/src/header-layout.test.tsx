@@ -34,7 +34,10 @@ function mountHeader(query: string) {
   act(() =>
     root?.render(
       <Header
-        session={{ status: "ready", me: { kind: "owner", features: NO_FEATURES } }}
+        session={{
+          status: "ready",
+          me: { kind: "owner", features: { ...NO_FEATURES, oauth: true } },
+        }}
         loggingOut={false}
         onLogout={() => {}}
         query={query}
@@ -74,7 +77,8 @@ describe.each([320, 375, 1280])("長いサイト名のヘッダー（%dpx）", (
 describe.each([320, 375])("検索語を出すヘッダー（%dpx）", (width) => {
   it("ロゴが先に縮み、短めの検索語は省略せずに出す", async () => {
     await browserPage.viewport(width, 800);
-    const find = mountHeader("どこにも無い語句");
+    // owner の操作は 4 つ。320px で検索語に残る幅は 100px 前後なので、字数はそこに収まる範囲に置く
+    const find = mountHeader("どこにも無い");
     const text = find(".header-search-text");
     expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth);
     // ロゴは縮み切っても、下限の幅は残す
@@ -156,7 +160,8 @@ describe("省略したサイト名の全文", () => {
         nodes: AXNode[];
       };
       const links = nodes.filter((node) => node.role?.value === "link" && !node.ignored);
-      expect(links.map((node) => node.name?.value)).toEqual([LONG_SITE_NAME]);
+      // owner のヘッダーには、サイト名のほかに接続の一覧へのリンクがある
+      expect(links.map((node) => node.name?.value)).toEqual([LONG_SITE_NAME, "許可した接続"]);
       expect(links[0]?.description?.value ?? "").toBe("");
     } finally {
       await cdp().send("Accessibility.disable");

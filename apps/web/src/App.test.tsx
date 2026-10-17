@@ -137,11 +137,12 @@ function serve(
   pages: readonly Page[],
   attachments = false,
   linkRewrites = true,
+  oauth = true,
 ) {
   let signedIn = me === "owner";
   vi.mocked(fetchMe).mockImplementation(async () => ({
     kind: signedIn ? "owner" : "anonymous",
-    features: { attachments, linkRewrites },
+    features: { attachments, linkRewrites, oauth },
   }));
   vi.mocked(logout).mockImplementation(async () => {
     signedIn = false;
@@ -611,7 +612,7 @@ describe("App の owner の画面", () => {
     vi.mocked(logout).mockRejectedValueOnce(new Error("応答が途中で切れた"));
     vi.mocked(fetchMe).mockResolvedValue({
       kind: "anonymous",
-      features: { attachments: false, linkRewrites: true },
+      features: { attachments: false, linkRewrites: true, oauth: true },
     });
     const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
       (b) => b.textContent === "ログアウト",
@@ -680,7 +681,7 @@ describe("App の owner の画面", () => {
     await vi.waitFor(() => expect(main()?.querySelector("[role='alert']")).not.toBeNull());
     vi.mocked(fetchMe).mockResolvedValue({
       kind: "anonymous",
-      features: { attachments: false, linkRewrites: true },
+      features: { attachments: false, linkRewrites: true, oauth: true },
     });
 
     act(() => {
@@ -707,6 +708,39 @@ describe("App の owner の画面", () => {
       expect(headerButtons()).toEqual(["ページを検索", "新規作成", "ログアウト"]),
     );
     expect(header()?.textContent).not.toContain("ログイン中");
+  });
+
+  it("許可した接続の一覧へのリンクは、owner のヘッダーにだけ出し、素のリンクにする", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    const link = () => header()?.querySelector<HTMLAnchorElement>("a[href='/_auth/oauth/grants']");
+    await vi.waitFor(() => expect(link()?.getAttribute("aria-label")).toBe("許可した接続"));
+    // SPA の遷移にすると Worker の画面を開けない。SPA が遷移を引き受けたら defaultPrevented になる
+    // React の handler は root で動き、document はその後に受ける。テストのページ自体が移らないよう、見た後で止める
+    let claimedBySpa: boolean | null = null;
+    const observe = (event: Event) => {
+      claimedBySpa = event.defaultPrevented;
+      event.preventDefault();
+    };
+    document.addEventListener("click", observe, { once: true });
+    link()?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    expect(claimedBySpa).toBe(false);
+  });
+
+  it("features.oauth が false の環境では、owner のヘッダーにも許可した接続の一覧へのリンクを出さない", async () => {
+    serve("owner", [PUBLIC], false, true, false);
+    await renderAt("/");
+    await vi.waitFor(() => expect(headerButtons()).toContain("ログアウト"));
+    expect(header()?.querySelector("a[href^='/_auth/oauth']")).toBeNull();
+  });
+
+  it("匿名のヘッダーには許可した接続の一覧へのリンクを出さない", async () => {
+    serve("anonymous", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    expect(header()?.querySelector("a[href^='/_auth/oauth']")).toBeNull();
   });
 
   describe("新規作成の画面", () => {

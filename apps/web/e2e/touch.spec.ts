@@ -107,6 +107,7 @@ test.describe("タップ対象", () => {
       ".brand",
       ".header-search",
       ".header-new",
+      ".header-grants",
       ".header-logout",
       ".entry-title",
       ".entries .chip-link",

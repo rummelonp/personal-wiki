@@ -432,7 +432,7 @@ describe("検証できないセッション cookie", () => {
     expect(me.status).toBe(200);
     expect(await me.json()).toEqual({
       kind: "anonymous",
-      features: { attachments: true, linkRewrites: true },
+      features: { attachments: true, linkRewrites: true, oauth: true },
     });
     expectCookieCleared(me);
     // ブラウザは Max-Age=0 の cookie を捨てるので、以降のリクエストは cookie を持たない

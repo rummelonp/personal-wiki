@@ -45,6 +45,14 @@ export function LogoutIcon() {
   );
 }
 
+export function ConnectionIcon() {
+  return (
+    <Icon>
+      <path d="M6.75 9.25a2.5 2.5 0 0 0 3.5 0l2.25-2.25a2.5 2.5 0 0 0-3.5-3.5l-.75.75M9.25 6.75a2.5 2.5 0 0 0-3.5 0L3.5 9a2.5 2.5 0 0 0 3.5 3.5l.75-.75" />
+    </Icon>
+  );
+}
+
 export function CloseIcon() {
   return (
     <Icon>

@@ -1,13 +1,16 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { loginHref, type Me } from "./api";
 import { followVisualViewportTop } from "./header-viewport";
-import { LogoutIcon, PlusIcon, SearchIcon } from "./icons";
+import { ConnectionIcon, LogoutIcon, PlusIcon, SearchIcon } from "./icons";
 import { Link } from "./Link";
 import { useSkeletonPainted } from "./Loading";
 import { openNewPage } from "./new-page";
 import { homeHref } from "./route";
 import { switcherShortcutKeys, switcherShortcutLabel } from "./shortcut";
 import { SITE_NAME } from "./site-name";
+
+/** 許可した接続の一覧。Worker が owner にだけ返す画面。 */
+const OAUTH_GRANTS_HREF = "/_auth/oauth/grants";
 
 export type SessionState =
   | { status: "loading" }
@@ -24,7 +27,7 @@ interface HeaderProps {
   onOpenSearch: () => void;
 }
 
-/** ログイン状態が分かるまで、右の操作の場所を空ける。owner と匿名のどちらかは分からないので、owner の 2 つ分の幅を取る。 */
+/** ログイン状態が分かるまで、右の操作の場所を空ける。owner と匿名のどちらかは分からないので、owner の 3 つ分の幅を取る。OAuth の無い環境では 2 つになるが、分かる前は区別できない。 */
 function ActionsPlaceholder() {
   const painted = useSkeletonPainted();
   return (
@@ -32,6 +35,7 @@ function ActionsPlaceholder() {
       className={painted ? "header-pending skeleton-painted" : "header-pending"}
       aria-hidden="true"
     >
+      <span className="skeleton header-skeleton" />
       <span className="skeleton header-skeleton" />
       <span className="skeleton header-skeleton" />
     </span>
@@ -64,6 +68,8 @@ function useClipped(ref: RefObject<HTMLElement | null>): boolean {
  * リンクの title は説明として公開され、読み上げが名前の後に同じ文字をもう一度読む実装があり得る。
  * タッチ端末には hover が無いが、ロゴのタップはホームへの移動で、全文は tab の title にも出るので、
  * 全文を見る別の手段は置かない。
+ * 「接続」は Worker が返す画面なので、SPA の遷移にせず素のリンクで開く。
+ * Worker は OAuth を設定していない環境で 404 を返すので、`/api/me` の features.oauth が true のときだけ出す。
  * 匿名の「ログイン」は塗らない。塗りの差し色は、読者が読むページより目立つ。
  */
 export function Header({ session, loggingOut, onLogout, query, onOpenSearch }: HeaderProps) {
@@ -112,6 +118,18 @@ export function Header({ session, loggingOut, onLogout, query, onOpenSearch }: H
           </button>
         )}
         {session.status === "loading" && <ActionsPlaceholder />}
+        {isOwner && session.me.features.oauth && (
+          <a
+            className="button button-quiet button-compact header-grants"
+            href={OAUTH_GRANTS_HREF}
+            aria-label="許可した接続"
+          >
+            <span className="header-grants-icon">
+              <ConnectionIcon />
+            </span>
+            <span className="header-grants-label">接続</span>
+          </a>
+        )}
         {isOwner && (
           <button
             type="button"
