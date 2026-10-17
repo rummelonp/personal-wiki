@@ -539,7 +539,7 @@ describe("HomeView の公開範囲の絞り込み", () => {
       current: a.getAttribute("aria-current"),
     }));
 
-  it("owner にはタグの下に欄を出し、選択中のタグを保ったリンクにする", async () => {
+  it("owner にはタグの上に欄を出し、選択中のタグを保ったリンクにする", async () => {
     vi.mocked(listTags).mockResolvedValue(
       ok([
         { tag: "x", count: 1 },
@@ -562,7 +562,7 @@ describe("HomeView の公開範囲の絞り込み", () => {
       { label: "下書き", href: "/?tag=x&visibility=draft", current: "page" },
     ]);
     const sections = [...(container?.querySelectorAll(".rail .rail-label") ?? [])];
-    expect(sections.map((label) => label.textContent)).toEqual(["タグ", "公開範囲"]);
+    expect(sections.map((label) => label.textContent)).toEqual(["公開範囲", "タグ"]);
     // タグを外しても別のタグに移っても、公開範囲の絞り込みは残す
     const tagHrefs = [...(container?.querySelectorAll(".rail .chip-link") ?? [])].map((chip) =>
       chip.getAttribute("href"),
@@ -625,14 +625,23 @@ describe("HomeView の公開範囲の絞り込み", () => {
     expect(vi.mocked(listTags).mock.calls).toEqual([[{ visibility: "" }]]);
   });
 
-  it("タグの取得が済むまでは欄を出さない", async () => {
-    vi.mocked(listTags).mockReturnValue(new Promise(() => {}));
+  it("タグの取得が済む前から欄を出し、タグが届いても欄は先頭のまま動かない", async () => {
+    let resolveTags: (value: Awaited<ReturnType<typeof listTags>>) => void = () => {};
+    vi.mocked(listTags).mockReturnValue(
+      new Promise((resolve) => {
+        resolveTags = resolve;
+      }),
+    );
     vi.mocked(listRecent).mockResolvedValue(
       ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: null }),
     );
     await mountHome("", true, "", "draft");
     await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
-    expect(filter()).toBeNull();
+    const labels = () =>
+      [...(container?.querySelectorAll(".rail .rail-label") ?? [])].map((l) => l.textContent);
+    expect(labels()).toEqual(["公開範囲"]);
+    await act(async () => resolveTags(ok([{ tag: "x", count: 1 }])));
+    expect(labels()).toEqual(["公開範囲", "タグ"]);
   });
 
   it("タグの取得に失敗しても、owner には公開範囲の欄を出す", async () => {

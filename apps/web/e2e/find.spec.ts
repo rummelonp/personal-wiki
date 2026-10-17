@@ -403,6 +403,54 @@ test("owner は公開範囲で絞り込め、タグと組み合わせられ、�
   await expect(page.getByRole("heading", { name: `タグ「${tag}」の公開ページ` })).toBeVisible();
 });
 
+test("右の列は公開範囲の欄をタグの欄の上に置き、タグの数が変わっても欄の位置は動かない", async ({
+  page,
+  api,
+  isMobile,
+}, testInfo) => {
+  const tops = () =>
+    page.evaluate(() => {
+      const top = (label: string) =>
+        [...document.querySelectorAll(".rail .rail-label")]
+          .find((el) => el.textContent === label)
+          ?.getBoundingClientRect().top;
+      return { visibility: top("公開範囲"), tags: top("タグ") };
+    });
+
+  // タグの取得を止めて、タグの欄が無い間の位置を測る
+  let releaseTags = () => {};
+  const held = new Promise<void>((resolve) => {
+    releaseTags = resolve;
+  });
+  await page.route("**/api/tags*", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto("/");
+  const filter = page.getByRole("navigation", { name: "公開範囲で絞り込む" });
+  await expect(filter).toBeVisible();
+  await expect(page.locator(".rail .rail-label", { hasText: "タグ" })).toHaveCount(0);
+  const before = (await tops()).visibility;
+  expect(before).toBeDefined();
+
+  releaseTags();
+  await expect(page.locator(".rail .chip-link").first()).toBeVisible();
+  const loaded = await tops();
+  expect(loaded.tags).toBeDefined();
+  // 狭い画面では右の列が本文の下に回る。並びは同じで、公開範囲の欄が先に来る
+  expect(loaded.visibility ?? 0).toBeLessThan(loaded.tags ?? 0);
+  if (isMobile) return;
+  expect(loaded.visibility).toBe(before);
+
+  // タグが増えて欄が長くなっても、公開範囲の欄は同じ場所にある
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  const tag = `rail${Math.random().toString(36).slice(2, 8)}`;
+  await api.createPage({ title: uniqueTitle(testInfo, "右の列の位置"), body: `#${tag}` });
+  await page.reload();
+  await expect(page.locator(".rail .chip-link", { hasText: tag })).toBeVisible();
+  expect((await tops()).visibility).toBe(before);
+});
+
 test("ネストタグの親を URL で選ぶと、子のページを出し、親のチップに 0 と出さない", async ({
   page,
   api,

@@ -10,8 +10,8 @@ import { listHref, type VisibilityFilter } from "./route";
  * タグの一覧。tags が null は「出さない」を表す（読み込み中、または API がまだタグを返せない）。
  * 取得に失敗しても一覧の邪魔にならないよう、エラーは表に出さない。
  * settled は取得の成否が決まったことを表す（失敗でも true）。画面の高さが決まるのを待つ側が使う。
- * visibility を変えて取り直す間は、前の結果と settled を保つ。settled を戻すと、それを待って出す
- * 公開範囲の欄が押した直後に消え、focus と配置が飛ぶ。
+ * visibility を変えて取り直す間は、前の結果と settled を保つ。settled を戻すと、それを待つ
+ * スクロールの復元が取り直しのたびに再び動く。
  */
 export function useTags(visibility: VisibilityFilter = ""): {
   tags: TagCount[] | null;

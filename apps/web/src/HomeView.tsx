@@ -93,21 +93,21 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
   );
 
   const heading = listHeading(trimmed, tag, ownerVisibility);
-  // 公開範囲の欄もタグの取得が済むまで出さない。先に出すと、後から届いたタグの欄に押し下げられる。
   // 検索中は公開範囲で絞れず、欄のリンクを押すと検索語も落ちるので出さない
-  const showVisibilityFilter = owner && tagsSettled && !searching;
+  const showVisibilityFilter = owner && !searching;
   const busy = state.status === "loading" || (state.status === "ready" && state.loadingMore);
 
   return (
     <RailLayout
       rail={
         tags === null && !showVisibilityFilter ? null : (
+          // 公開範囲の欄を先頭に置く。タグの数で長さが変わる欄より下に置くと、欄の位置が動く
           <>
-            {tags !== null && (
-              <TagsPanel tags={tags} active={effectiveTag} visibility={effectiveVisibility} />
-            )}
             {showVisibilityFilter && (
               <VisibilityFilterPanel tag={effectiveTag} active={effectiveVisibility} />
+            )}
+            {tags !== null && (
+              <TagsPanel tags={tags} active={effectiveTag} visibility={effectiveVisibility} />
             )}
           </>
         )
