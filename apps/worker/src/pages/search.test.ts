@@ -331,9 +331,9 @@ describe("listTagCounts の公開範囲", () => {
     await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
       .bind(open.id)
       .run();
-    expect(await listTagCounts(env.DB, "public", "draft")).toEqual([]);
+    expect(await listTagCounts(env.DB, "public", "draft")).toEqual({ tags: [], truncated: false });
     const unfiltered = await listTagCounts(env.DB, "public");
-    expect(unfiltered.map((t) => t.tag).sort()).toEqual(["public-only", "shared"]);
+    expect(unfiltered.tags.map((t) => t.tag).sort()).toEqual(["public-only", "shared"]);
     expect(await listTagCounts(env.DB, "public", "public")).toEqual(unfiltered);
   });
 });

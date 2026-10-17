@@ -21,8 +21,8 @@ const byTag = (client: Client, tag: string) => recent(client, `?tag=${encodeURIC
 
 const titles = (pages: { title: string }[]) => pages.map((page) => page.title).sort();
 
-async function tagCounts(client: Client) {
-  const res = await client.request("/api/tags");
+async function tagCounts(client: Client, query = "") {
+  const res = await client.request(`/api/tags${query}`);
   expect(res.status).toBe(200);
   return (await res.json<{ tags: { tag: string; count: number }[] }>()).tags;
 }
@@ -260,6 +260,83 @@ describe("GET /api/tags", () => {
     ]);
     const res = await createApp().request("/api/tags", {}, env);
     expect(await res.json()).toEqual({ tags: [{ tag: "alive", count: 1 }] });
+  });
+
+  it("limit は上位から切り、切ったときだけ truncated を true にする", async () => {
+    const client = await buildClient();
+    await client.create("1", "#beta #work");
+    await client.create("2", "#Beta #work/a");
+    await client.create("3", "#alpha #work/a #work/b");
+    const all = await tagCounts(client);
+    expect(all).toHaveLength(5);
+    const limited = async (limit: number) => {
+      const res = await client.request(`/api/tags?limit=${limit}`);
+      expect(res.status).toBe(200);
+      return res.json();
+    };
+    expect(await limited(2)).toEqual({ tags: all.slice(0, 2), truncated: true });
+    expect(await limited(all.length - 1)).toEqual({ tags: all.slice(0, -1), truncated: true });
+    expect(await limited(all.length)).toEqual({ tags: all, truncated: false });
+    expect(await limited(1000)).toEqual({ tags: all, truncated: false });
+  });
+
+  it("limit が無ければ従来どおり tags だけの全件を返す", async () => {
+    const client = await buildClient();
+    await client.create("1", "#a #b #c");
+    const res = await client.request("/api/tags");
+    expect(await res.json()).toEqual({
+      tags: [
+        { tag: "a", count: 1 },
+        { tag: "b", count: 1 },
+        { tag: "c", count: 1 },
+      ],
+    });
+  });
+
+  it("範囲外か整数でない limit は 400 invalid_field", async () => {
+    const client = await buildClient();
+    for (const limit of ["0", "-1", "1001", "1.5", "abc", ""]) {
+      const res = await client.request(`/api/tags?limit=${limit}`);
+      expect(res.status, limit).toBe(400);
+      expect(await res.json(), limit).toMatchObject({
+        error: "invalid_field",
+        field: "limit",
+        max: 1000,
+      });
+    }
+  });
+
+  it("limit を付けても、匿名には public のページのタグだけを出し、draft の指定は空にする", async () => {
+    const client = await buildClient();
+    const open = await client.create("公開", "#shared #shared2 #open");
+    await client.create("下書き", "#shared #secret");
+    await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
+      .bind(open.id)
+      .run();
+    const anonymous = (query: string) => createApp().request(`/api/tags${query}`, {}, env);
+    expect(await (await anonymous("?limit=2")).json()).toEqual({
+      tags: [
+        { tag: "open", count: 1 },
+        { tag: "shared", count: 1 },
+      ],
+      truncated: true,
+    });
+    expect(await (await anonymous("?limit=10")).json()).toMatchObject({ truncated: false });
+    expect(await (await anonymous("?limit=10&visibility=draft")).json()).toEqual({
+      tags: [],
+      truncated: false,
+    });
+    expect((await anonymous("?limit=0&visibility=draft")).status).toBe(400);
+    // owner は draft を含めて数え、visibility で絞れる
+    expect(await tagCounts(client, "?visibility=draft")).toEqual([
+      { tag: "secret", count: 1 },
+      { tag: "shared", count: 1 },
+    ]);
+    const draftOnly = await client.request("/api/tags?visibility=draft&limit=1");
+    expect(await draftOnly.json()).toEqual({
+      tags: [{ tag: "secret", count: 1 }],
+      truncated: true,
+    });
   });
 
   it("token が無ければ匿名として 200、read の token で 200", async () => {

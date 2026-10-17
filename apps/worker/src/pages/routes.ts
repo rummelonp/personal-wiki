@@ -48,6 +48,7 @@ import {
   SEARCH_MAX_LIMIT,
   searchPages,
   searchQueryErrorFields,
+  TAGS_MAX_LIMIT,
   TITLES_MAX_LIMIT,
   tagFilterErrorFields,
 } from "./search";
@@ -388,10 +389,22 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         if (visibility !== undefined && !isVisibility(visibility)) {
           return errorResponse(c, 400, "invalid_field", { field: "visibility" });
         }
+        // limit を付けたときだけ件数を絞り、切ったかを truncated で返す。付けないときのレスポンスは
+        // 従来のまま全件の { tags } で、既存のクライアントを黙って切り詰めない
+        const limited = c.req.query("limit") !== undefined;
+        const limit = readLimit(c, TAGS_MAX_LIMIT, TAGS_MAX_LIMIT);
+        if (!limit.ok) return limit.response;
         const readable = readableVisibilityOf(c.get("principal"));
-        if (readable === "public" && visibility === "draft") return c.json({ tags: [] });
-        const tags = await listTagCounts(c.env.DB, readable, visibility ?? null);
-        return c.json({ tags });
+        if (readable === "public" && visibility === "draft") {
+          return c.json(limited ? { tags: [], truncated: false } : { tags: [] });
+        }
+        const { tags, truncated } = await listTagCounts(
+          c.env.DB,
+          readable,
+          visibility ?? null,
+          limited ? limit.value : null,
+        );
+        return c.json(limited ? { tags, truncated } : { tags });
       })
       .get("/api/search", allowAnonymousRead(), async (c) => {
         const raw = c.req.query("q");

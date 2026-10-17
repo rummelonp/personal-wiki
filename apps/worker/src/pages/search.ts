@@ -76,6 +76,11 @@ export const LIST_MAX_LIMIT = 100;
  * 並びは pages_alive_updated のインデックスをたどるので、読む行数は limit（と、匿名なら読み飛ばす draft の数）で決まる。
  */
 export const TITLES_MAX_LIMIT = 500;
+/**
+ * タグの一覧の limit の上限。件数は GROUP BY の後の相関副問い合わせで全タグ分を数えてから切るので、
+ * limit を小さくしても読む行数は減らず、上限は応答の大きさを抑えるためのもの。
+ */
+export const TAGS_MAX_LIMIT = 1000;
 export const SEARCH_DEFAULT_LIMIT = 20;
 /** 抜粋を作る分、一覧より 1 件あたりの CPU が重いので小さく抑える */
 export const SEARCH_MAX_LIMIT = 50;
@@ -289,6 +294,12 @@ export interface TagCount {
   count: number;
 }
 
+export interface TagCountList {
+  tags: TagCount[];
+  /** limit で切り、後ろに残りがあるとき true */
+  truncated: boolean;
+}
+
 /**
  * 削除されていないページに付いたタグを、ページ数の降順で返す。同数は tag_key の順（大文字小文字を畳んだ順）。
  *
@@ -304,12 +315,16 @@ export interface TagCount {
  * readable が public なら draft にしか付いていないタグは出さず、draft の表記（`Beta` と `beta` の違いなど）も
  * 表に出さない。readable が public で visibility が draft なら、必ず空になる。
  * count は listRecentPages に同じ visibility を渡したときの件数に合う。
+ *
+ * limit を渡すと上の並びの上位 limit 件で切り、残りがあれば truncated を true にする。
+ * 件数の集計はページ間で動くので、cursor は持たない。limit が null なら全件で、truncated は常に false。
  */
 export async function listTagCounts(
   db: D1Database,
   readable: ReadableVisibility,
   visibility: Visibility | null = null,
-): Promise<TagCount[]> {
+  limit: number | null = null,
+): Promise<TagCountList> {
   const { results } = await db
     .prepare(
       `WITH visible AS (
@@ -323,11 +338,14 @@ export async function listTagCounts(
          (SELECT count(DISTINCT c.page_id) FROM visible AS c
           WHERE c.tag_key = t.tag_key
              OR (c.tag_key >= t.tag_key || '/' AND c.tag_key < t.tag_key || '0')) AS count
-       FROM visible AS t GROUP BY t.tag_key ORDER BY count DESC, t.tag_key`,
+       FROM visible AS t GROUP BY t.tag_key ORDER BY count DESC, t.tag_key
+       LIMIT ?3`,
     )
-    .bind(publicOnlyFlag(readable), visibility)
+    // 切り詰めたかを知るため 1 件多く読む。SQLite は負の LIMIT を無制限と読む
+    .bind(publicOnlyFlag(readable), visibility, limit === null ? -1 : limit + 1)
     .all<TagCount>();
-  return results;
+  if (limit === null || results.length <= limit) return { tags: results, truncated: false };
+  return { tags: results.slice(0, limit), truncated: true };
 }
 
 /**
