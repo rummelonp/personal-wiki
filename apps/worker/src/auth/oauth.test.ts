@@ -420,7 +420,6 @@ describe("認可と同意画面", () => {
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("form-action 'self' https://claude.ai");
     expect(res.headers.get("Set-Cookie")).toMatch(/^__Host-oauth-consent-/);
-    expect(html).not.toContain("<script>");
     // 画面の CSS は web の theme の token を参照するので、token の定義が先に入っていること。
     // CSS は escape せずに埋めるので、途中に </style> があると後ろの規則が本文に漏れる
     const style = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
@@ -432,6 +431,39 @@ describe("認可と同意画面", () => {
     expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
     expect(html).toContain("<dt>接続するアプリ</dt>");
     expect(html).toMatch(/<dt>要求された権限<\/dt>\s*<dd>読み書き<\/dd>/);
+  });
+
+  it("script は二重送信を止める 1 つだけで、CSP はその hash だけを許す", async () => {
+    const { request } = setup();
+    const client = await register(request, { client_name: "<script>x</script>" });
+    const path = authorizePath(client.client_id, (await pkcePair()).challenge);
+    const { res, html } = await openConsent(request, path);
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+    expect(scripts).toHaveLength(1);
+    expect(html.match(/<script/g)).toHaveLength(1);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(scripts[0]));
+    const hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
+    const directives = (res.headers.get("Content-Security-Policy") ?? "").split("; ");
+    expect(directives).toContain(`script-src 'sha256-${hash}'`);
+    expect(directives.filter((directive) => directive.startsWith("script-src"))).toHaveLength(1);
+    expect(directives).toContain("default-src 'none'");
+  });
+
+  it("エラーの画面と接続の一覧の CSP は script を許さない", async () => {
+    const { request } = setup();
+    await connect(request, "read");
+    const session = await ownerCookie(T0);
+    for (const [path, status] of [
+      ["/_auth/oauth/grants", 200],
+      ["/_auth/oauth/authorize", 400],
+    ] as const) {
+      const res = await request(path, { headers: { Cookie: session } });
+      expect(res.status).toBe(status);
+      const csp = res.headers.get("Content-Security-Policy") ?? "";
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).not.toContain("script-src");
+      expect(await res.text()).not.toContain("<script");
+    }
   });
 
   it("redirect の種類にかかわらず自分で始めた接続だけを許可する警告と、client の登録時刻を出す", async () => {

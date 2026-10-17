@@ -1,6 +1,7 @@
 /*
  * Worker が返す OAuth の画面（同意、接続の一覧、エラー）。SPA の theme.css の token の後ろに埋めるので、
- * 値は token だけを使う。script を持たない画面なので、状態の見た目は :checked と :has() で作る。
+ * 値は token だけを使う。script は同意の二重送信を止めるものだけで、状態の見た目は :checked、
+ * :has()、:disabled などの疑似クラスで作る。
  */
 
 *,
@@ -230,13 +231,18 @@ h1 {
 }
 
 @media (hover: hover) {
-  .button:hover {
+  .button:hover:not(:disabled) {
     background-color: var(--color-selected);
   }
 }
 
-.button:active {
+.button:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .button-primary {
@@ -247,7 +253,7 @@ h1 {
 }
 
 @media (hover: hover) {
-  .button-primary:hover {
+  .button-primary:hover:not(:disabled) {
     background-color: var(--color-accent);
     opacity: 0.88;
   }
@@ -334,7 +340,7 @@ h1 {
     transition: none;
   }
 
-  .button:active {
+  .button:active:not(:disabled) {
     transform: none;
   }
 }

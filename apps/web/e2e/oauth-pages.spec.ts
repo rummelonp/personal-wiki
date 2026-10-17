@@ -3,7 +3,7 @@ import { expect, test } from "./support/fixtures";
 import { connectOAuthClient } from "./support/principals";
 
 /*
- * OAuth の画面（同意、エラー、接続の一覧）の折り返しと、タッチ端末での押せる範囲。
+ * OAuth の画面（同意、エラー、接続の一覧）の折り返し、タッチ端末での押せる範囲、同意の送信、接続の取り消し。
  * 画面は Worker が組む HTML で、SPA の styles.css は読まない。
  * 行の折れ目は座標で測る。`word-break: auto-phrase` は WebKit に無いので、測るのは Chromium だけにする（@widths）。
  */
@@ -13,21 +13,34 @@ const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 // 文節の途中で切れないことを見る語。画面の警告文（.warn）に含まれる
 const WORDS = ["許可", "ください", "リンク", "接続", "自分", "限りません", "始めた"];
 
+let consentClient: Promise<string> | undefined;
+
+/**
+ * 同じ worker のテストは 1 つの client を使い回す。Worker が受け付ける登録は 1 日に 20 件までで、
+ * テストごとに登録すると、全部の環境を流す 1 回の実行で上限に届く。
+ */
+function registerConsentClient(origin: string): Promise<string> {
+  consentClient ??= (async () => {
+    const res = await fetch(`${origin}/_auth/oauth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redirect_uris: [CALLBACK],
+        client_name: "Claude",
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+      }),
+    });
+    expect(res.status).toBe(201);
+    return ((await res.json()) as { client_id: string }).client_id;
+  })();
+  return consentClient;
+}
+
 async function openConsent(page: Page): Promise<void> {
   const origin = process.env.E2E_ORIGIN ?? "";
-  const res = await fetch(`${origin}/_auth/oauth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      redirect_uris: [CALLBACK],
-      client_name: "Claude",
-      token_endpoint_auth_method: "none",
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-    }),
-  });
-  expect(res.status).toBe(201);
-  const { client_id: clientId } = (await res.json()) as { client_id: string };
+  const clientId = await registerConsentClient(origin);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -38,8 +51,20 @@ async function openConsent(page: Page): Promise<void> {
     scope: "read",
     resource: `${origin}/mcp`,
   });
-  await page.goto(`/_auth/oauth/authorize?${params}`);
+  const response = await page.goto(`/_auth/oauth/authorize?${params}`);
   await expect(page.locator("h1")).toContainText("接続を許可しますか");
+  // WebKit は http://localhost で Secure の Set-Cookie を受け付けず、同意の binding の cookie が無いと
+  // 送信が通らない。受け付けなかったときは置き直す（WebKit が送るのは url で置いた cookie だけ）
+  const binding = /^(__Host-oauth-consent-[^=;]+)=([^;]*)/.exec(
+    (await response?.headerValue("set-cookie")) ?? "",
+  );
+  expect(binding).not.toBeNull();
+  const [, name = "", value = ""] = binding ?? [];
+  if (!(await page.context().cookies()).some((cookie) => cookie.name === name)) {
+    await page
+      .context()
+      .addCookies([{ name, value, url: origin, secure: true, httpOnly: true, sameSite: "Lax" }]);
+  }
 }
 
 /** 1 つの text node の文字ごとに座標を測り、行ごとの文字列に分ける。 */
@@ -101,6 +126,149 @@ test.describe("OAuth の画面の折り返し @widths", () => {
         expect(row.endsWith("/"), `${width}px の行末: ${rows.join(" | ")}`).toBe(true);
       }
     }
+  });
+});
+
+/**
+ * 同意の送信を Worker へ流して数え、応答は release まで返さない。client への 302 は辿らず（送り先は
+ * claude.ai）、Location を載せた画面に置き換える。それ以外の応答（エラーの画面）はそのまま返す。
+ */
+async function holdConsentSubmissions(
+  page: Page,
+): Promise<{ count: () => number; release: () => void }> {
+  let count = 0;
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/_auth/oauth/authorize",
+    async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      count += 1;
+      const response = await route.fetch({ maxRedirects: 0 });
+      await released;
+      const location = response.headers().location;
+      try {
+        await route.fulfill(
+          response.status() === 302 && location !== undefined
+            ? {
+                status: 200,
+                contentType: "text/html; charset=utf-8",
+                body: `<!doctype html><p id="location">${location.replaceAll("&", "&amp;")}</p>`,
+              }
+            : { response },
+        );
+      } catch {
+        // 後の送信に置き換えられた遷移は、fulfill の前に打ち切られる
+      }
+    },
+  );
+  return { count: () => count, release };
+}
+
+/** 承認の応答が、client の redirect URI へ code と state を付けて戻すものだったこと */
+async function expectCallback(page: Page): Promise<void> {
+  await expect(page.locator("#location")).toBeVisible();
+  const location = new URL((await page.locator("#location").textContent()) ?? "");
+  expect(`${location.origin}${location.pathname}`).toBe(CALLBACK);
+  expect(location.searchParams.get("code")).toBeTruthy();
+  expect(location.searchParams.get("state")).toBe("e2e");
+}
+
+test.describe("同意の送信", () => {
+  // release の前に落ちたテストの handler を残さない
+  test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
+
+  test("「許可する」を続けて押しても送信は 1 回で、client へ code を付けて戻す", async ({
+    page,
+  }) => {
+    await openConsent(page);
+    const submissions = await holdConsentSubmissions(page);
+    // 2 回目の押下は、1 回目の送信が Worker に届いた後、応答が返る前に当てる。続けて押すだけだと
+    // ブラウザが 1 回目の遷移を始める前に 2 回目で置き換え、送信は 1 回で済む。遷移の途中の locator は
+    // 遷移の終わりを待つので、座標で押す
+    const approve = page.getByRole("button", { name: "許可する" });
+    await approve.scrollIntoViewIfNeeded();
+    const box = await approve.boundingBox();
+    if (box === null) throw new Error("「許可する」の位置を取れない");
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    await page.mouse.click(x, y);
+    await expect.poll(submissions.count).toBe(1);
+    await page.mouse.click(x, y);
+    // 2 回目の送信が起きた場合に、Worker へ届くまで待つ
+    await page.waitForTimeout(500);
+    submissions.release();
+
+    await expectCallback(page);
+    expect(submissions.count()).toBe(1);
+  });
+
+  test("送信すると、許可と拒否のボタンをどちらも無効にする", async ({ page }) => {
+    await openConsent(page);
+    // 応答を待つ間は遷移の途中で、locator は遷移の終わりを待つ。遷移を取りやめて同意画面に留める
+    let count = 0;
+    await page.route(
+      (url) => url.pathname === "/_auth/oauth/authorize",
+      (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        count += 1;
+        return route.abort("aborted");
+      },
+    );
+    await page.getByRole("button", { name: "許可する" }).click();
+
+    await expect(page.getByRole("button", { name: "許可する" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "拒否する" })).toBeDisabled();
+    await expect.poll(() => count).toBe(1);
+  });
+
+  // 戻るは確かめない。ここの client への遷移は同意画面と同じ URL に留まり、Firefox は履歴を置き換えるので戻れない
+  test("送信が届かずに再読み込みすると、ボタンを押せる @smoke", async ({ page }) => {
+    await openConsent(page);
+    await page.route(
+      (url) => url.pathname === "/_auth/oauth/authorize",
+      (route) => (route.request().method() === "POST" ? route.abort("aborted") : route.continue()),
+    );
+    await page.getByRole("button", { name: "許可する" }).click();
+    await expect(page.getByRole("button", { name: "許可する" })).toBeDisabled();
+
+    await page.reload();
+    await expect(page.locator("h1")).toContainText("接続を許可しますか");
+    await expect(page.getByRole("button", { name: "許可する" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "拒否する" })).toBeEnabled();
+  });
+
+  test("動きを減らす設定では、押したボタンを縮めない", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "CSS の詳細度だけを見るので、1 つのエンジンで足りる");
+    await openConsent(page);
+    const approve = page.getByRole("button", { name: "許可する" });
+    await approve.scrollIntoViewIfNeeded();
+    const box = await approve.boundingBox();
+    if (box === null) throw new Error("「許可する」の位置を取れない");
+    const transform = () => approve.evaluate((el) => getComputedStyle(el).transform);
+    // 押したまま（:active）で測り、離す前に外へ動かして送信しない
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect.poll(transform).not.toBe("none");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect.poll(transform).toBe("none");
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+  });
+
+  test.describe("JS が無い環境", () => {
+    test.use({ javaScriptEnabled: false });
+
+    test("form は送れて、client へ code を付けて戻す", async ({ page }) => {
+      await openConsent(page);
+      const submissions = await holdConsentSubmissions(page);
+      submissions.release();
+      await page.getByRole("button", { name: "許可する" }).click();
+
+      await expectCallback(page);
+      expect(submissions.count()).toBe(1);
+    });
   });
 });
 

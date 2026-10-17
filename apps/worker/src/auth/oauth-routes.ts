@@ -280,13 +280,54 @@ const CSP_ORIGIN_PATTERN = /^https?:\/\/[A-Za-z0-9.\-[\]:]+$/;
 /**
  * form-action に client の redirect URI のオリジンも入れる。Chrome は form の送信後のリダイレクト先にも
  * form-action を当てるので、'self' だけでは承認後の client への遷移が止まる。
+ * script は CONSENT_SUBMIT_GUARD の hash だけを許す。
  */
 function consentPagePolicy(redirectUri: string): string {
   const sources = ["'self'"];
   const { origin } = new URL(redirectUri);
   if (CSP_ORIGIN_PATTERN.test(origin)) sources.push(origin);
-  return [...BASE_PAGE_POLICY, `form-action ${sources.join(" ")}`].join("; ");
+  return [
+    ...BASE_PAGE_POLICY,
+    `script-src ${CONSENT_SCRIPT_SOURCE}`,
+    `form-action ${sources.join(" ")}`,
+  ].join("; ");
 }
+
+/**
+ * 同意の form を 1 回だけ送らせる。handle は 1 回で使い切るので、2 回目の送信は失敗の画面になり、
+ * ブラウザは 1 回目の応答（client への遷移）を捨てる。1 回目で作った grant は code を交換されないまま、
+ * KV の有効期限（10 分）で消えるまで残る。同じ client の以前の grant は、1 回目の承認の時点で取り消されている。
+ * ボタンを submit の中で無効にすると、押したボタンの decision が送信の内容から落ちるので、無効にするのは
+ * 送信の内容ができた後にし、それまでの 2 回目の送信は sent で止める。
+ * フォームの状態の復元や bfcache からの復帰で画面を開き直したときは、ボタンを押せる状態に戻す。
+ * bfcache から戻した画面の handle は使用済みなので、押すと失敗の画面になる。
+ * JS が無い環境ではこの script が動かないだけで、form はそのまま送れる。
+ */
+const CONSENT_SUBMIT_GUARD = `(() => {
+  const form = document.querySelector(".consent-form");
+  const buttons = form.querySelectorAll("button");
+  let sent = false;
+  form.addEventListener("submit", (event) => {
+    if (sent) {
+      event.preventDefault();
+      return;
+    }
+    sent = true;
+    setTimeout(() => {
+      for (const button of buttons) button.disabled = true;
+    });
+  });
+  addEventListener("pageshow", (event) => {
+    if (event.persisted) sent = false;
+    for (const button of buttons) button.disabled = sent;
+  });
+})();`;
+
+/**
+ * CONSENT_SUBMIT_GUARD を許す CSP の source。要求の中で計算すると、計算に失敗したときに同意の記録だけが
+ * KV に残るので、定数で持つ。script と一致することは単体テストが確かめる。
+ */
+const CONSENT_SCRIPT_SOURCE = "'sha256-/OqX9RESOREtZ6plj+MY88BllJ+rkySF60VCJ1pKDNg='";
 
 /** 1 ページに出す接続の数。1 件ごとに KV の読み取りが grant と client で 2 回かかる */
 const GRANTS_PAGE_SIZE = 50;
@@ -383,8 +424,8 @@ async function findGrant(
 }
 
 /**
- * `2026/10/01 12:34 UTC` の形。同意画面と一覧は CSP で script を持たず、端末のタイムゾーンで書き直せない
- * ので、UTC と明記して出す。
+ * `2026/10/01 12:34 UTC` の形。同意画面と一覧は日時を script で端末のタイムゾーンに書き直さないので、
+ * UTC と明記して出す。
  */
 function formatUtcMinutes(epochMs: number): string {
   const iso = new Date(epochMs).toISOString();
@@ -570,7 +611,7 @@ ${registered}<div><dt>要求された権限</dt>
 </dl>
 <p class="warn">この接続を、いま自分で始めた場合だけ許可してください。他の人から送られたリンクで開いた場合は、許可しないでください。送り先が claude.ai でも、接続を始めた人が自分とは限りません。</p>
 ${loopback}
-<form method="post" class="consent-form">
+<form method="post" class="consent-form" autocomplete="off">
 <input type="hidden" name="handle" value="${escapeHtml(handle)}">
 <fieldset class="choices">
 <legend>許可する権限</legend>
@@ -578,7 +619,8 @@ ${loopback}
 <label class="choice"><input type="radio" name="access" value="write"><span><strong>読み書き</strong>: 読み取りに加えて、ページの作成と書き換えができます。公開中のページも書き換えられます。削除、画像の添付、公開と下書きの切り替えはできません。</span></label>
 </fieldset>
 <div class="actions"><button class="button button-primary" name="decision" value="approve">許可する</button><button class="button button-quiet" name="decision" value="deny">拒否する</button></div>
-</form>`,
+</form>
+<script>${CONSENT_SUBMIT_GUARD}</script>`,
     siteName,
   );
 }
