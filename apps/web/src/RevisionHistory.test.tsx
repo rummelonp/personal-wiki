@@ -623,6 +623,9 @@ describe("RevisionHistory の版を戻す操作", () => {
     const close = [...dialog.querySelectorAll("button")].find((b) => b.textContent === "閉じる");
     await act(async () => close?.click());
     const entry = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[1];
+    // dialog の close イベントは閉じた後の別タスクで届く。焦点が戻るまでにそのイベントを処理済みになる。
+    // 待たずに開き直すと、遅れて届いたイベントが開き直したばかりの版を閉じてしまう
+    await vi.waitFor(() => expect(document.activeElement).toBe(entry));
     await act(async () => entry?.click());
     await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
     expect(note(dialog)).toBe("");
