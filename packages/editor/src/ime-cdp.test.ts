@@ -537,8 +537,12 @@ describe("settling after a delayed DOM flush (iOS Safari)", () => {
 
   /** 確定後の選択を flush が読んでから、settle の transaction が来た */
   function expectSettledAfterFlush(): void {
-    // 遅れた flush は確定後の選択を compose の入力として入れ、settle は空の transaction（effect）
-    expect(kindsOf(afterComposition(), "transaction")).toEqual(["input.type.compose", "effect"]);
+    // 遅れた flush は確定後の選択を入力として入れ、settle は空の transaction（effect）。
+    // CodeMirror は compositionend から 50ms 以内の flush にだけ compose を付けるので、負荷で
+    // 遅れると付かない。確かめるのは flush が settle より先であることで、compose の有無ではない
+    const [input, ...rest] = kindsOf(afterComposition(), "transaction");
+    expect(input).toMatch(/^input\.type(\.compose)?$/);
+    expect(rest).toEqual(["effect"]);
   }
 
   async function expectCommittedBracketsKept(v: EditorView): Promise<void> {
