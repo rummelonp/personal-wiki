@@ -175,6 +175,36 @@ test("文字だけの embed は、名前に hover して、名前の下に出た
   await expect(editor.locator(".cm-embed-source")).toContainText("![[ab]]");
 });
 
+test("折り返した名前の embed では、「記法を編集」が名前の最後の行の左端の下に出る", async ({
+  page,
+  api,
+}, testInfo) => {
+  const name = "存在しないページの名前をとても長くして折り返す確認".repeat(3);
+  await openWithBody(
+    page,
+    api,
+    uniqueTitle(testInfo, "折り返した名前"),
+    `前の文です。![[${name}]] 後\n\n最後`,
+  );
+  test.skip(!(await canHover(page)), "hover できない端末では出さない");
+  const editor = bodyEditor(page);
+  await editor.locator(".cm-line", { hasText: "最後" }).click();
+  const embed = editor.locator(".cm-embed-unresolved").locator("xpath=..");
+  const lastLine = await embed.evaluate((el) => {
+    const r = [...(el.firstElementChild?.getClientRects() ?? [])];
+    const last = r.at(-1);
+    return { lines: r.length, x: last?.left ?? 0, y: last?.top ?? 0, bottom: last?.bottom ?? 0 };
+  });
+  expect(lastLine.lines).toBeGreaterThan(1);
+  await page.mouse.move(lastLine.x + 10, lastLine.y + 4);
+  const button = embed.locator(".cm-embed-edit");
+  await expect(button).toBeVisible();
+  const box = await button.boundingBox();
+  if (!box) throw new Error("the button is not laid out");
+  expect(box.x).toBeCloseTo(lastLine.x, 0);
+  expect(box.y).toBeCloseTo(lastLine.bottom, 0);
+});
+
 test("embed の「記法を編集」は Tab で止まらず、callout の開閉と tag の chip は止まる", async ({
   page,
   api,

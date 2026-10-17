@@ -1454,6 +1454,47 @@ describe("edit button", () => {
     }
   });
 
+  // 折り返した名前でも、ボタンは最後の行の左端の真下に出る（行の途中から始まる名前では、
+  // 位置合わせが無いと最初の行の左端に付き、最後の行の下から離れる）。
+  it.each([
+    ["a single line", "前 ", "短い", "unresolved", false, 1],
+    ["a name wrapped from the start of the line", "", "あ".repeat(40), "unresolved", false, 3],
+    ["a name wrapped after text", "前の文です。", "あ".repeat(30), "unresolved", false, 2],
+    [
+      "a name with spaces",
+      "前の文です。 ",
+      "Getting Started With Cloudflare Workers",
+      "unresolved",
+      false,
+      2,
+    ],
+    ["a draft name with a badge", "前の文です。 ", "あ".repeat(30), "loading", true, 3],
+    ["a draft name with a badge on one line", "前 ", "短い", "loading", true, 1],
+  ] as const)(
+    "puts the button of %s under the left edge of its last line",
+    (_label, prefix, name, kind, draft, lines) => {
+      const doc = `${prefix}![[${name}]]\n\n最後`;
+      const v = mount(doc, {
+        resolvePageEmbed: () => ({ kind }),
+        isDraftWikiLink: () => draft,
+      });
+      if (host) host.style.width = "300px";
+      placeCursor(v, doc.length);
+      const embed = embedOf(v, name);
+      const button = editButtonOf(v, name);
+      if (!embed || !button) throw new Error("embed is not drawn");
+      const lastLine = [...(embed.firstElementChild?.getClientRects() ?? [])].at(-1);
+      if (!lastLine) throw new Error("name is not drawn");
+      expect(embed.firstElementChild?.getClientRects().length).toBe(lines);
+      const width = button.getBoundingClientRect().width;
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      const rect = button.getBoundingClientRect();
+      expect(rect.left).toBeCloseTo(lastLine.left, 0);
+      expect(rect.top).toBeCloseTo(lastLine.bottom, 0);
+      expect(rect.width).toBeCloseTo(width, 0);
+    },
+  );
+
   it.each([
     ["image", "![[a.png]]", {}],
     ["unresolved page", "![[a]]", { resolvePageEmbed: () => ({ kind: "unresolved" as const }) }],

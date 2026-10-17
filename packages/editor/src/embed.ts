@@ -656,15 +656,22 @@ function appendEditButton(
     event.preventDefault();
     editEmbedSource(view, root);
   });
-  // 文字だけの widget のボタンは名前の左端から右へ出る（embedTheme）ので、行の右端に近い名前では
-  // editor の外へ切れる。見せる直前に、収まる分だけ左へ寄せる。
+  // 文字だけの widget のボタンは名前の下から右へ出る（embedTheme）。見せる直前に位置を合わせる。
+  // - 名前が折り返すと、`left: 0` は最初の行の左端になり、最後の行の下から離れる。
+  //   最後の行の左端へ寄せる。
+  // - 行の右端に近い名前では editor の外へ切れるので、収まる分だけ左へ寄せる。
   // 画像と動画のボタンは右端に付くので、left を入れると横に伸びる
   root.addEventListener("pointerenter", () => {
-    if (!TEXT_ONLY_NAMES.some((name) => root.querySelector(`:scope > ${name}`))) return;
+    const name = TEXT_ONLY_NAMES.map((selector) => root.querySelector(`:scope > ${selector}`)).find(
+      (element) => element !== null,
+    );
+    if (!name) return;
     button.style.removeProperty("left");
-    const overflow =
-      button.getBoundingClientRect().right - view.contentDOM.getBoundingClientRect().right;
-    if (overflow > 0) button.style.left = `${-overflow}px`;
+    const lastLine = [...name.getClientRects()].at(-1);
+    const natural = button.getBoundingClientRect();
+    let shift = lastLine ? lastLine.left - natural.left : 0;
+    shift -= Math.max(0, natural.right + shift - view.contentDOM.getBoundingClientRect().right);
+    if (shift !== 0) button.style.left = `${shift}px`;
   });
   container.append(button);
 }
@@ -924,7 +931,7 @@ const embedTheme = EditorView.baseTheme({
   // 幅を確保すると文の中に空白が残り、inline-block にすると長い名前が行の途中で折り返せなくなる。
   // そこで widget は inline のまま、ボタンを名前の下の左端から出して、次の行の文字に重ねる。
   // 見せるのは hover の間だけで、名前は読めたまま残る。幅は名前に縛られず、文字の分だけ取る。
-  // 行の右端に近い名前では右へ切れるので、収める位置合わせは appendEditButton の pointerenter で行う。
+  // 折り返した名前と行の右端に近い名前の位置合わせは、appendEditButton の pointerenter で行う。
   [TEXT_ONLY_NAMES.map((name) => `.cm-embed:has(> ${name}) > .cm-embed-edit`).join(", ")]: {
     top: "100%",
     right: "auto",
