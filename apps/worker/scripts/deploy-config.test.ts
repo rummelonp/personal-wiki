@@ -9,8 +9,8 @@ import {
   BASE_CONFIG_PATH,
   composeConfig,
   GENERATED_CONFIG_PATH,
+  isValidSiteNameText,
   readDeployValues,
-  SITE_NAME_FORBIDDEN_PATTERN,
   stripJsonc,
   writeGeneratedConfig,
 } from "./deploy-config.mjs";
@@ -135,6 +135,13 @@ describe("readDeployValues", () => {
       "می\u200cخواهم",
       "a\u0085b",
       "a\u007fb",
+      "\u200c",
+      "\u200d",
+      "\u200c\u200d",
+      "\u200d \u200c",
+      " \u200d",
+      "a\u200d",
+      "\u200d.",
       "😀".repeat(40),
       "😀".repeat(41),
       "あ".repeat(40),
@@ -154,7 +161,7 @@ describe("readDeployValues", () => {
     for (let cp = 0; cp <= 0x10ffff; cp++) {
       if (cp >= 0xd800 && cp <= 0xdfff) continue;
       const char = String.fromCodePoint(cp);
-      if (SITE_NAME_FORBIDDEN_PATTERN.test(char) === isValidSiteName(char)) {
+      if (isValidSiteNameText(char) !== isValidSiteName(char)) {
         mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")}`);
       }
     }

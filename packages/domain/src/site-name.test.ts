@@ -27,4 +27,13 @@ describe("isValidSiteName", () => {
     expect(isValidSiteName("👨\u200d👩\u200d👧")).toBe(true);
     expect(isValidSiteName("می\u200cخواهم")).toBe(true);
   });
+
+  it("U+200C と U+200D と空白だけで、見える文字が無い名前は弾く", () => {
+    for (const bad of ["\u200c", "\u200d", "\u200c\u200d", "\u200d \u200c", " ", "\u3000\u200d"]) {
+      expect(isValidSiteName(bad), JSON.stringify(bad)).toBe(false);
+    }
+    for (const good of ["a\u200d", "\u200c.", "\u200d😀"]) {
+      expect(isValidSiteName(good), JSON.stringify(good)).toBe(true);
+    }
+  });
 });

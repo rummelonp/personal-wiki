@@ -109,9 +109,21 @@ const KNOWN_KEYS = new Set([
 ]);
 const OWNER_AUTH_KEYS = ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "OWNER_EMAILS"];
 const SITE_NAME_MAX_CHARS = 40;
-// packages/domain/src/site-name.ts の isValidSiteName と同じ規則。この script は node でそのまま動かす
-// ので TypeScript の domain を読めず、写している（食い違わないことは deploy-config.test.ts が確かめる）
-export const SITE_NAME_FORBIDDEN_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/u;
+const SITE_NAME_FORBIDDEN_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/u;
+const SITE_NAME_VISIBLE_PATTERN = /[^\s\u200c\u200d]/u;
+
+/**
+ * packages/domain/src/site-name.ts の isValidSiteName と同じ規則。この script は node でそのまま動かす
+ * ので TypeScript の domain を読めず、写している（食い違わないことは deploy-config.test.ts が確かめる）。
+ * @param {string} name
+ */
+export function isValidSiteNameText(name) {
+  return (
+    SITE_NAME_VISIBLE_PATTERN.test(name) &&
+    [...name].length <= SITE_NAME_MAX_CHARS &&
+    !SITE_NAME_FORBIDDEN_PATTERN.test(name)
+  );
+}
 const SITE_NAME_LINE_PATTERN = /^\s*(?:export\s+)?SITE_NAME\s*=(.*)$/;
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -163,9 +175,9 @@ export function readDeployValues(envText) {
   const problems = [];
   if (siteName !== undefined) {
     // 改行や制御文字は、HTML の title、MCP の表示名、OAuth の画面に混ざると壊れやすい
-    if (SITE_NAME_FORBIDDEN_PATTERN.test(siteName) || [...siteName].length > SITE_NAME_MAX_CHARS) {
+    if (!isValidSiteNameText(siteName)) {
       problems.push(
-        `SITE_NAME は制御文字（改行を含む）、U+2028 と U+2029、書式文字（文字の向きを変える文字やゼロ幅空白など。U+200C と U+200D は除く）を含まない ${SITE_NAME_MAX_CHARS} 文字以内にしてください`,
+        `SITE_NAME は制御文字（改行を含む）、U+2028 と U+2029、書式文字（文字の向きを変える文字やゼロ幅空白など。U+200C と U+200D は除く）を含まず、U+200C と U+200D と空白だけにもならない ${SITE_NAME_MAX_CHARS} 文字以内にしてください`,
       );
     }
   }
