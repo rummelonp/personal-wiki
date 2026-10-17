@@ -88,7 +88,8 @@ class TaskCheckboxWidget extends WidgetType {
     checkbox.checked = this.checked;
     checkbox.disabled = this.readOnly;
     checkbox.setAttribute("aria-label", this.label);
-    // Tab で checkbox に止まると、contentDOM から focus が外れて入力位置を見失う
+    // Tab で止めない。キーボードでは、caret を行へ動かすと `[ ]` が source で出て、同じ切り替えができる。
+    // checkbox の数だけ Tab が止まると、本文から出るまでに押す回数が増える（docs/design.md の操作）
     checkbox.tabIndex = -1;
     // mousedown で処理する。click まで待つと editor がカーソルを task の行へ動かし、source が出る。
     checkbox.addEventListener("mousedown", (event) => {

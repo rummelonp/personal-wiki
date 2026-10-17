@@ -40,6 +40,11 @@
 - エディタは日本語の変換を崩さない。
   守る条件は `packages/editor/src/ime.ts` の冒頭にある。
 - 失敗したときは直し方の分かる案内を出し、入力した内容を残す。
+- エディタの本文の中の部品は、caret を動かしても代わりにならない操作だけを Tab で止める。
+  caret を動かすと記法が source で出て、同じことができる操作（タスクの checkbox、embed の「記法を編集」）は、Tab で止めない。
+  caret では代わりにならない操作（callout の開閉、frontmatter の tag の chip）は、Tab で止め、Enter と Space で押せるようにする。
+  Tab の順は文書の順で、caret の位置には合わせない。
+  chip は文書の先頭にあり、caret が前にあることはまず無いので、caret より後ろに限ると届かなくなる。
 
 ### アクセシビリティ
 

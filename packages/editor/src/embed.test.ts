@@ -1358,14 +1358,109 @@ describe("edit button", () => {
     expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
   });
 
-  it("does not reserve the button width for a short name in a readOnly view", () => {
-    const v = mount("前 ![[a]] 後", {
-      resolvePageEmbed: () => ({ kind: "unresolved" }),
-      readOnly: true,
-    });
+  it("does not reserve room for the button after a short name", () => {
+    const v = mount("前 ![[a]] 後", { resolvePageEmbed: () => ({ kind: "unresolved" }) });
     const embed = embedOf(v, "a");
-    if (!embed) throw new Error("embed is not drawn");
-    expect(getComputedStyle(embed).minWidth).toBe("0px");
+    const button = editButtonOf(v, "a");
+    const name = embed?.querySelector(".cm-embed-unresolved");
+    if (!embed || !button || !name) throw new Error("embed is not drawn");
+    expect(embed.getBoundingClientRect().width).toBeLessThan(button.getBoundingClientRect().width);
+    // 名前の下に出し、hover の間も名前に重ならない
+    expect(button.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      name.getBoundingClientRect().bottom,
+    );
+    expect(button.getBoundingClientRect().left).toBeCloseTo(embed.getBoundingClientRect().left, 0);
+  });
+
+  it("keeps the button of a name near the right edge inside the editor when it is shown", () => {
+    const doc = `${Array.from({ length: 24 }, (_, i) => `${"あ".repeat(i + 4)} ![[ab]]`).join("\n\n")}\n\n最後`;
+    const v = mount(doc, { resolvePageEmbed: () => ({ kind: "unresolved" }) });
+    if (host) host.style.width = "300px";
+    placeCursor(v, doc.length);
+    const contentRight = () => v.contentDOM.getBoundingClientRect().right;
+    const embeds = [...v.contentDOM.querySelectorAll<HTMLElement>(".cm-embed")];
+    const buttonOf = (embed: HTMLElement) => {
+      const button = embed.querySelector<HTMLElement>(".cm-embed-edit");
+      if (!button) throw new Error("edit button is not drawn");
+      return button;
+    };
+    // 初期の位置では切れる embed がある（無ければ、この test は何も見張らない）
+    expect(
+      embeds.some((embed) => buttonOf(embed).getBoundingClientRect().right > contentRight()),
+    ).toBe(true);
+    for (const embed of embeds) {
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      expect(buttonOf(embed).getBoundingClientRect().right).toBeLessThanOrEqual(
+        contentRight() + 0.5,
+      );
+    }
+  });
+
+  it.each([
+    ["image", "![[a.png]]", {}],
+    ["unresolved page", "![[a]]", { resolvePageEmbed: () => ({ kind: "unresolved" as const }) }],
+    ["page", "![[Note]]", { resolvePageEmbed: () => resolved("Note", "本文") }],
+    ["video", "![[a.webm]]", {}],
+  ] satisfies [string, string, CreateEditorOptions][])(
+    "keeps the button of a %s embed out of the Tab order",
+    (_label, doc, options) => {
+      const v = mount(doc, options);
+      expect(v.contentDOM.querySelector<HTMLElement>(".cm-embed-edit")?.tabIndex).toBe(-1);
+    },
+  );
+
+  it.each([
+    ["a short name", "ab", false],
+    ["a name that fits in one line", "a".repeat(30), false],
+    ["a long name with spaces", "Getting Started With Cloudflare Workers Guide", false],
+    ["a long name without spaces", "あ".repeat(25), true],
+    ["a long ASCII name without spaces", "A".repeat(41), true],
+  ])("marks %s as breakable at any character: %s", (_label, name, expected) => {
+    const doc = `![[${name}]]\n\n最後`;
+    const v = mount(doc, { resolvePageEmbed: () => ({ kind: "unresolved" }) });
+    placeCursor(v, doc.length);
+    const element = embedOf(v, name)?.querySelector(".cm-embed-unresolved");
+    expect(element?.classList.contains("cm-embed-long-name")).toBe(expected);
+  });
+
+  it("does not move the button of an image embed when the pointer enters", async () => {
+    const v = mount("前\n![[image.png|120x80]]\n後");
+    await loadedImg(v, "image.png");
+    const embed = embedOf(v, "image.png");
+    const button = editButtonOf(v, "image.png");
+    if (!embed || !button) throw new Error("embed is not drawn");
+    // 右へはみ出した状態にしても、補正は文字だけの widget のボタンにしか入れない
+    embed.style.transform = "translateX(700px)";
+    const content = v.contentDOM.getBoundingClientRect();
+    expect(button.getBoundingClientRect().right).toBeGreaterThan(content.right);
+    embed.dispatchEvent(new PointerEvent("pointerenter"));
+    expect(button.style.left).toBe("");
+  });
+
+  it("hides the button of a text-only embed on a device that cannot hover, and leaves an image's", async () => {
+    const v = mount("![[a]]\n\n![[image.png|120x80]]\n\n最後", {
+      resolvePageEmbed: () => ({ kind: "unresolved" }),
+    });
+    await loadedImg(v, "image.png");
+    // 実機の media の判定は差し替えられないので、media 抜きで同じ規則を当てる
+    const rules: string[] = [];
+    for (const sheet of [...document.styleSheets, ...document.adoptedStyleSheets]) {
+      for (const rule of sheet.cssRules) {
+        if (rule instanceof CSSMediaRule && rule.conditionText.includes("hover: none")) {
+          for (const inner of rule.cssRules) rules.push(inner.cssText);
+        }
+      }
+    }
+    expect(rules.join("\n"), "no rule under @media (hover: none)").toContain("cm-embed-edit");
+    const style = document.createElement("style");
+    style.textContent = rules.join("\n");
+    document.head.append(style);
+    try {
+      expect(getComputedStyle(editButtonOf(v, "a") as Element).display).toBe("none");
+      expect(getComputedStyle(editButtonOf(v, "image.png") as Element).display).not.toBe("none");
+    } finally {
+      style.remove();
+    }
   });
 
   it("does not show the button in a readOnly view", () => {

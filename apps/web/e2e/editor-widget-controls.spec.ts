@@ -18,6 +18,9 @@ async function openWithBody(page: Page, api: OwnerApi, title: string, body: stri
   await expect(saveState(page)).toHaveText("保存済み");
 }
 
+/** hover できない端末（iPhone）では、文字だけの embed に編集ボタンを出さない */
+const canHover = (page: Page) => page.evaluate(() => matchMedia("(hover: hover)").matches);
+
 test("callout の開閉ボタンは Tab で届き、Enter と Space で開閉し、focus が残る", async ({
   page,
   api,
@@ -115,15 +118,83 @@ test("tag の chip から Shift+Tab で本文に戻ると、caret は Tab の前
   await expect(bodyEditor(page).locator(".cm-line", { hasText: "本文" })).toHaveText("本文X");
 });
 
-test("短い名前の未解決の embed でも「記法を編集」の文字が省略されない", async ({
+test("短い名前の未解決の embed の「記法を編集」は、文字が省略されず、名前の下に出て editor からはみ出さない", async ({
   page,
   api,
 }, testInfo) => {
-  await openWithBody(page, api, uniqueTitle(testInfo, "短い名前"), "前 ![[ab]] 後");
-  const button = bodyEditor(page).locator(".cm-embed-edit");
-  await expect(button).toHaveCount(1);
-  const clipped = await button.evaluate((element) => element.scrollWidth > element.clientWidth);
-  expect(clipped).toBe(false);
+  // 行の右端に寄る位置へ置いて、右へ切れる場合も見る
+  const filler = "あ".repeat(14);
+  await openWithBody(
+    page,
+    api,
+    uniqueTitle(testInfo, "短い名前"),
+    `前 ![[ab]] 後\n\n${filler} ![[cd]]\n\n最後`,
+  );
+  const editor = bodyEditor(page);
+  await editor.locator(".cm-line", { hasText: "最後" }).click();
+  for (const target of ["ab", "cd"]) {
+    const embed = editor.locator(`.cm-embed[data-embed-target="${target}"]`);
+    const button = embed.locator(".cm-embed-edit");
+    await embed.hover();
+    if (!(await canHover(page))) {
+      await expect(button).toBeHidden();
+      continue;
+    }
+    await expect(button).toBeVisible();
+    await expect(button).toHaveCSS("opacity", "1");
+    const clipped = await button.evaluate((element) => element.scrollWidth > element.clientWidth);
+    expect(clipped).toBe(false);
+    const name = await embed.locator(".cm-embed-unresolved").boundingBox();
+    const box = await button.boundingBox();
+    const content = await editor.boundingBox();
+    if (!name || !box || !content) throw new Error("the embed is not laid out");
+    expect(box.y).toBeGreaterThanOrEqual(name.y + name.height - 0.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(content.x + content.width + 0.5);
+  }
+});
+
+test("文字だけの embed は、名前に hover して、名前の下に出た「記法を編集」を押すと記法が出る", async ({
+  page,
+  api,
+}, testInfo) => {
+  await openWithBody(page, api, uniqueTitle(testInfo, "ボタンの操作"), "前 ![[ab]] 後\n\n最後");
+  const editor = bodyEditor(page);
+  await editor.locator(".cm-line", { hasText: "最後" }).click();
+  const embed = editor.locator('.cm-embed[data-embed-target="ab"]');
+  await expect(editor.locator(".cm-embed-source")).toHaveCount(0);
+  await embed.hover();
+  const button = embed.locator(".cm-embed-edit");
+  if (!(await canHover(page))) {
+    await expect(button).toBeHidden();
+    return;
+  }
+  await expect(button).toBeVisible();
+  const box = await button.boundingBox();
+  if (!box) throw new Error("the button is not laid out");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(editor.locator(".cm-embed-source")).toContainText("![[ab]]");
+});
+
+test("embed の「記法を編集」は Tab で止まらず、callout の開閉と tag の chip は止まる", async ({
+  page,
+  api,
+}, testInfo) => {
+  await openWithBody(
+    page,
+    api,
+    uniqueTitle(testInfo, "Tab の方針"),
+    "---\ntags: [alpha]\n---\n> [!note]- 手順\n> 中の本文\n\n![[ab]] と ![[cd.png]]\n\n最後",
+  );
+  const editor = bodyEditor(page);
+  await editor.locator(".cm-line", { hasText: "最後" }).click();
+  const stops: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press("Tab");
+    stops.push(await page.evaluate(() => String(document.activeElement?.className ?? "")));
+  }
+  expect(stops.some((name) => name.includes("cm-frontmatter-chip"))).toBe(true);
+  expect(stops.some((name) => name.includes("cm-lp-callout-fold"))).toBe(true);
+  expect(stops.some((name) => name.includes("cm-embed-edit"))).toBe(false);
 });
 
 test("caret が仮の記法の上にあるまま添付が済むと、添付の画像に替わる", async ({

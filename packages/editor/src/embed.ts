@@ -123,11 +123,39 @@ const COMPACT_ATTR = "data-embed-compact";
  */
 const BLOCK_CLASS = "cm-embed-block";
 
-function unresolvedElement(target: string): HTMLElement {
+/**
+ * 空白の無い名前の幅がこれを超えると、375px の幅の本文（約 335px）に 1 行で入らない。
+ * 幅は、半角を 1、それ以外を 2 として数える（16px の書体で半角は約 8px、全角は約 16px）。
+ */
+const LONG_NAME_WIDTH = 40;
+
+function nameWidth(name: string): number {
+  let width = 0;
+  for (const char of name) width += char.charCodeAt(0) < 0x80 ? 1 : 2;
+  return width;
+}
+
+/** 折り返せる位置が無く、行に入りきらない名前。空白があれば、そこで折り返せる */
+function isLongName(name: string): boolean {
+  return !/\s/.test(name) && nameWidth(name) > LONG_NAME_WIDTH;
+}
+
+function nameElement(className: string, target: string): HTMLElement {
   const element = document.createElement("span");
-  element.className = "cm-embed-unresolved";
+  element.className = className;
+  if (isLongName(target)) element.classList.add("cm-embed-long-name");
   element.textContent = target;
   return element;
+}
+
+/**
+ * 名前だけを描く widget の中身。編集ボタンを重ねる余地が無いので、ボタンは名前の下に出す
+ * （`embedTheme`）。
+ */
+const TEXT_ONLY_NAMES = [".cm-embed-unresolved", ".cm-embed-page-pending", ".cm-embed-page-self"];
+
+function unresolvedElement(target: string): HTMLElement {
+  return nameElement("cm-embed-unresolved", target);
 }
 
 /**
@@ -447,8 +475,7 @@ class PageEmbedWidget extends WidgetType {
   }
 
   private link(text: string): HTMLElement {
-    const element = document.createElement("span");
-    element.textContent = text;
+    const element = nameElement("", text);
     this.makeOpenable(element);
     return element;
   }
@@ -602,12 +629,25 @@ function appendEditButton(
   button.className = "cm-embed-edit";
   button.setAttribute("aria-label", `「${target}」の埋め込み記法を編集`);
   button.textContent = "記法を編集";
+  // Tab で止めない。キーボードでは、caret を embed の端へ動かせば記法が source で出て、同じ編集に入れる。
+  // embed の数だけ、見えないボタンに Tab が止まるのを避ける
+  button.tabIndex = -1;
   // click まで待つと、editor が先にボタンへカーソルを置こうとして selection が動く
   // （callout.ts の折りたたみ、task-list.ts のチェックボックスと同じ対処）
   button.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
     editEmbedSource(view, root);
+  });
+  // 文字だけの widget のボタンは名前の左端から右へ出る（embedTheme）ので、行の右端に近い名前では
+  // editor の外へ切れる。見せる直前に、収まる分だけ左へ寄せる。
+  // 画像と動画のボタンは右端に付くので、left を入れると横に伸びる
+  root.addEventListener("pointerenter", () => {
+    if (!TEXT_ONLY_NAMES.some((name) => root.querySelector(`:scope > ${name}`))) return;
+    button.style.removeProperty("left");
+    const overflow =
+      button.getBoundingClientRect().right - view.contentDOM.getBoundingClientRect().right;
+    if (overflow > 0) button.style.left = `${-overflow}px`;
   });
   container.append(button);
 }
@@ -862,18 +902,30 @@ const embedTheme = EditorView.baseTheme({
     opacity: "0",
     pointerEvents: "none",
   },
-  // 文字だけの widget（未解決、取得中、自分自身）は名前が短いと、絶対配置のボタンが widget の幅までに
-  // 切り詰められる。ボタンの幅（5 字、padding、border、margin）の分だけ widget の幅を確保する。
-  // inline のままだと min-width が効かない。ボタンの無い view（readOnly）では幅を取らない。
-  ".cm-embed:has(> .cm-embed-unresolved):has(> .cm-embed-edit), .cm-embed:has(> .cm-embed-page-pending):has(> .cm-embed-edit), .cm-embed:has(> .cm-embed-page-self):has(> .cm-embed-edit)":
-    {
-      display: "inline-block",
-      minWidth: "calc(4.5em + 6px)",
+  // 文字だけの widget（未解決、取得中、自分自身）は名前が短く、右上に重ねると名前がボタンに隠れる。
+  // 幅を確保すると文の中に空白が残り、inline-block にすると長い名前が行の途中で折り返せなくなる。
+  // そこで widget は inline のまま、ボタンを名前の下の左端から出して、次の行の文字に重ねる。
+  // 見せるのは hover の間だけで、名前は読めたまま残る。幅は名前に縛られず、文字の分だけ取る。
+  // 行の右端に近い名前では右へ切れるので、収める位置合わせは appendEditButton の pointerenter で行う。
+  [TEXT_ONLY_NAMES.map((name) => `.cm-embed:has(> ${name}) > .cm-embed-edit`).join(", ")]: {
+    top: "100%",
+    right: "auto",
+    left: "0",
+    margin: "0",
+    maxWidth: "none",
+    zIndex: "1",
+  },
+  // hover できない端末では、タップのあとも :hover が残り、ボタンが次の行の文字の上に居座って、
+  // 次の行へのタップが編集に化ける。caret を embed の端に置けば記法が source で出るので、そちらで編集する
+  "@media (hover: none)": {
+    [TEXT_ONLY_NAMES.map((name) => `.cm-embed:has(> ${name}) > .cm-embed-edit`).join(", ")]: {
+      display: "none",
     },
+  },
   // ページ embed のタイトル行に置くボタンだけは重ねない（下の `.cm-embed-page-header` 参照）。
   // position: static はタイトル行の flex の中で通常のアイテムとして並ぶことを意味する。
   ".cm-embed-page-header > .cm-embed-edit": { position: "static" },
-  // hover / focus-within でだけ見せる。display: none は Tab で辿れなくなるので使わない
+  // hover か、widget の中（動画の操作など）に focus がある間だけ見せる
   ".cm-embed:hover .cm-embed-edit, .cm-embed:focus-within .cm-embed-edit": {
     opacity: "1",
     pointerEvents: "auto",
@@ -902,6 +954,10 @@ const embedTheme = EditorView.baseTheme({
     textDecoration: "underline dashed",
     textDecorationColor: "var(--ui-color-accent)",
   },
+  // 空白の無い、1 行より長い名前は、行頭の `img.cm-widgetBuffer` との間で折り返し、行の先頭に空行を作る。
+  // どの字でも折り返せるようにして、名前を行の残りへ入れる。1 行に入る名前や、空白で折り返せる名前に
+  // 付けると、行末で単語や名前の途中が切れる
+  ".cm-embed-long-name": { wordBreak: "break-all" },
   ".cm-embed-uploading": { color: "var(--ui-color-muted)" },
   // 展開した本文は行の中で 1 行分の幅を取る。block の decoration は ViewPlugin から出せないので
   // inline の widget を行幅いっぱいの inline-block にする。

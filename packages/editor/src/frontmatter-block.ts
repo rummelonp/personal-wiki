@@ -66,6 +66,7 @@ class FrontmatterWidget extends WidgetType {
       const chipElement = chip("cm-tag cm-frontmatter-chip", `#${name}`);
       chipElement.setAttribute(TAG_NAME_ATTR, name);
       if (navigable) {
+        // caret を動かしても遷移できないので、Tab で止める（docs/design.md の操作）。
         // 遷移先を持たない view（遷移を受け取る handler が無い）では、押せないものに Tab を止めない
         chipElement.setAttribute("role", "link");
         chipElement.tabIndex = 0;

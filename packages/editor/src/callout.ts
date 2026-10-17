@@ -346,7 +346,8 @@ export class CalloutFoldWidget extends WidgetType {
     const button = document.createElement("span");
     button.className = "cm-lp-callout-fold";
     button.setAttribute("role", "button");
-    // Tab で届くようにする。`<button>` でなく span なのは、mousedown と keydown を自前で処理し、
+    // caret を動かしても開閉できないので、Tab で止める（docs/design.md の操作）。
+    // `<button>` でなく span なのは、mousedown と keydown を自前で処理し、
     // button の既定の click（Space は keyup で発火する）と二重に開閉しないため
     button.tabIndex = 0;
     this.describe(button);
