@@ -442,14 +442,13 @@ a {
   overflow-wrap: anywhere;
 }
 
-.revision-viewer {
-  width: min(100% - var(--space-5), var(--revision-viewer-width));
-  max-height: calc(var(--viewport-height) - 2 * var(--space-5));
-  margin: auto;
+/*
+ * 画面の上に出すダイアログの枠（版の履歴、quick switcher）。幅と位置と高さはダイアログごとに決める。
+ * 高さが足りないときは、見出しや入力欄を残して本文や候補の列だけが縮んでスクロールするよう、開いている間は縦の flex にする。
+ */
+.dialog-frame {
   padding: 0;
   overflow: hidden;
-  /* top layer に出ても右の列（.rail）の小さい文字を継ぐので、画面の本文と同じ大きさ（と em で決まる本文の幅）にそろえる */
-  font-size: var(--font-size-base);
   color: var(--color-fg);
   background: var(--color-bg);
   border: var(--border-width) solid var(--color-border);
@@ -457,14 +456,21 @@ a {
   box-shadow: var(--shadow-popover);
 }
 
-/* 見出しは残し、本文だけがダイアログの中でスクロールする */
-.revision-viewer[open] {
+.dialog-frame[open] {
   display: flex;
   flex-direction: column;
 }
 
-.revision-viewer::backdrop {
+.dialog-frame::backdrop {
   background: var(--color-backdrop);
+}
+
+.revision-viewer {
+  width: min(100% - var(--space-5), var(--revision-viewer-width));
+  max-height: calc(var(--viewport-height) - 2 * var(--space-5));
+  margin: auto;
+  /* top layer に出ても右の列（.rail）の小さい文字を継ぐので、画面の本文と同じ大きさ（と em で決まる本文の幅）にそろえる */
+  font-size: var(--font-size-base);
 }
 
 .revision-viewer-header {
@@ -1639,23 +1645,6 @@ a.segmented-option {
     var(--space-4)
   ); /* token-ok: 画面全体の高さ。viewport の単位そのもの */
   margin: var(--switcher-top) auto auto;
-  padding: 0;
-  overflow: hidden;
-  color: var(--color-fg);
-  background: var(--color-bg);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-popover);
-}
-
-/* 高さが足りないときは候補の列だけが縮んでスクロールし、入力欄と失敗の文とヒントは切れない */
-.switcher[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.switcher::backdrop {
-  background: var(--color-backdrop);
 }
 
 .switcher-body {

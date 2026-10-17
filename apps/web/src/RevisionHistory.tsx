@@ -370,7 +370,7 @@ function RevisionViewer({
   return (
     <dialog
       ref={dialogRef}
-      className="revision-viewer"
+      className="dialog-frame revision-viewer"
       aria-labelledby={titleId}
       onClose={() => {
         onClose();

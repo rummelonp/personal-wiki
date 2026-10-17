@@ -92,7 +92,7 @@ export function QuickSwitcher({
   return (
     <dialog
       ref={dialogRef}
-      className="switcher"
+      className="dialog-frame switcher"
       aria-label="ページを検索"
       onClose={() => onOpenChange(false)}
       onMouseDown={(event) => {
