@@ -1,3 +1,4 @@
+import { parsePagePath } from "@personal-wiki/domain/page-path";
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor";
@@ -22,7 +23,7 @@ import {
 import { openNewPage } from "./new-page";
 import { rememberTitle } from "./page-titles";
 import { listPageTitles } from "./pages-api";
-import { homeHref, navigate, pageHref } from "./route";
+import { homeHref, navigate, pageHref, parseRoute } from "./route";
 
 const RECENT_LABEL = "最近更新したページ";
 const ROWS_LABEL = "候補と操作";
@@ -142,6 +143,19 @@ function PendingCandidates() {
   );
 }
 
+/**
+ * 候補のページが、いま開いているページか。候補は公開範囲を持たず、正の URL（`/<title>`）を作れない。
+ * `/p/<id>` へ移ると、移った先の画面が正の URL へ置き換えるまでに履歴が 2 つ積まれる。
+ * title の URL は title の畳み込み（foldTitle）で比べる。サーバーが同じ畳み込みで引くため。
+ */
+function isOpenPage(candidate: PageCandidate): boolean {
+  const path = parsePagePath(window.location.pathname);
+  if (path === null) return false;
+  return path.kind === "id"
+    ? path.id === candidate.id
+    : foldTitle(path.title) === foldTitle(candidate.title);
+}
+
 function SwitcherBody({
   index,
   owner,
@@ -239,10 +253,12 @@ function SwitcherBody({
     if (row.kind === "page") {
       rememberTitle(row.candidate.id, row.candidate.title);
       onClose();
-      navigate(pageHref(row.candidate.id));
+      if (!isOpenPage(row.candidate)) navigate(pageHref(row.candidate.id));
     } else if (row.kind === "content-search") {
       onClose();
-      navigate(homeHref(trimmed));
+      // 今の検索結果と同じ語なら移らない。検索は tag で絞らないので、移っても一覧の結果は変わらず、URL の tag を外して履歴を 1 つ積むだけになる
+      const current = parseRoute(window.location.pathname, window.location.search);
+      if (current.name !== "home" || current.query.trim() !== trimmed) navigate(homeHref(trimmed));
     } else if (row.kind === "clear-search") {
       onClose();
       navigate(homeHref());

@@ -42,6 +42,19 @@ test("public のページを title の URL で開き、リンクをたどれる 
   await expectNoHorizontalScroll(page);
 });
 
+test("開いているページを quick switcher で選んでも、履歴を積まない", async ({ page }) => {
+  await page.goto(titlePath(SEED.welcome));
+  await expect(page.getByRole("heading", { level: 1, name: SEED.welcome })).toBeVisible();
+  const before = await page.evaluate(() => history.length);
+  await page.getByRole("button", { name: "ページを検索" }).click();
+  const switcher = page.getByRole("dialog", { name: "ページを検索" });
+  await switcher.getByRole("combobox", { name: "検索語" }).fill(SEED.welcome);
+  await switcher.getByRole("option", { name: SEED.welcome, exact: true }).click();
+  await expect(switcher).toBeHidden();
+  await expect(page).toHaveURL(titlePath(SEED.welcome));
+  expect(await page.evaluate(() => history.length)).toBe(before);
+});
+
 test("本文の #tag を押すとタグの一覧へ移り、戻るで元のページに戻る", async ({ page }) => {
   await page.goto(titlePath(SEED.welcome));
   await bodyEditor(page).locator(".cm-tag", { hasText: "#メモ" }).click();
@@ -201,12 +214,36 @@ test("匿名の 2 文字では本文の検索を出さず、3 文字以上と案
   await expect(switcher.getByRole("option", { name: "「ほげふ」を本文から検索" })).toBeVisible();
 });
 
-test("匿名が短い語の検索結果から窓を開くと、3 文字以上の案内が status に入る", async ({ page }) => {
+test("匿名が短い語の検索結果から窓を開くと、案内は中身が空の status に後から入る", async ({
+  page,
+}) => {
+  // 中身を持ったまま挿入された status は、多くの読み上げで読まれない。挿入された時点の中身を記録する
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { statusAtInsert: string[] }).statusAtInsert = seen;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          const statuses = node.matches(".switcher-status")
+            ? [node]
+            : [...node.querySelectorAll(".switcher-status")];
+          for (const status of statuses) seen.push(status.textContent ?? "");
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
   await page.goto(`/?q=${encodeURIComponent("ほげ")}`);
   await page.getByRole("button", { name: "ページを検索: ほげ", exact: true }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
   await expect(switcher.getByRole("status")).toContainText("3 文字以上");
   await expect(switcher.getByRole("option", { name: /本文から検索/ })).toHaveCount(0);
+  const inserted = await page.evaluate(
+    () => (window as unknown as { statusAtInsert: string[] }).statusAtInsert,
+  );
+  expect(inserted).toHaveLength(1);
+  // 文言の「3」と「文字」の間は改行しない空白（\s は U+00A0 も含む）
+  expect(inserted[0]).not.toMatch(/3\s文字以上/);
 });
 
 test("匿名の 0 件の検索結果には作成の導線が出ない", async ({ page }) => {

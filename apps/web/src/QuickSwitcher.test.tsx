@@ -141,6 +141,26 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
     expect(history.length).toBe(before);
   });
 
+  it("tag で絞った検索結果から同じ語を選んでも、tag を外さず履歴を積まない", async () => {
+    history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92&tag=x");
+    await renderSwitcher(true, "ほげ");
+    const before = history.length;
+    press("Enter");
+    expect(location.search).toBe("?q=%E3%81%BB%E3%81%92&tag=x");
+    expect(history.length).toBe(before);
+    expect(dialog().open).toBe(false);
+  });
+
+  it("別の語を選ぶと、検索結果へ移って履歴を積む", async () => {
+    history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92&tag=x");
+    await renderSwitcher(true, "ほげ");
+    const before = history.length;
+    typeText("ふが");
+    press("Enter");
+    expect(location.search).toBe("?q=%E3%81%B5%E3%81%8C");
+    expect(history.length).toBe(before + 1);
+  });
+
   it("語を消すと先頭に検索を解除する行が出て、Enter で検索語の無いトップへ戻る", async () => {
     history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92");
     await renderSwitcher(true, "ほげ");
@@ -355,6 +375,31 @@ describe("QuickSwitcher の操作", () => {
     press("Enter");
     expect(location.pathname).toBe(`/p/${RECENT[1]?.id}`);
     expect(dialog().open).toBe(false);
+  });
+
+  it.each([
+    ["title の URL", `/${encodeURIComponent("Hono_のメモ")}`],
+    ["id の URL", `/p/${RECENT[1]?.id}`],
+  ])("いま開いているページを選んでも、%s のまま履歴を積まない", async (_name, path) => {
+    history.replaceState(null, "", path);
+    await renderSwitcher(true);
+    const before = history.length;
+    typeText("Hono のメモ");
+    expect(selected()).toBe("Hono のメモ");
+    press("Enter");
+    expect(location.pathname + location.search).toBe(path);
+    expect(history.length).toBe(before);
+    expect(dialog().open).toBe(false);
+  });
+
+  it("別のページを開いている間は、選んだページへ移って履歴を積む", async () => {
+    history.replaceState(null, "", `/${encodeURIComponent("メモ")}`);
+    await renderSwitcher(true);
+    const before = history.length;
+    typeText("Hono のメモ");
+    press("Enter");
+    expect(location.pathname).toBe(`/p/${RECENT[1]?.id}`);
+    expect(history.length).toBe(before + 1);
   });
 
   it("語を打つと先頭の行が選ばれ、打ち直すと選択も先頭に戻る", async () => {
