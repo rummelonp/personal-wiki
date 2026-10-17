@@ -44,6 +44,7 @@ import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { createLinkTargetSource, createTitleIndex } from "./link-sources";
+import { findLinkedDrafts } from "./linked-drafts";
 import { Notice } from "./Notice";
 import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
@@ -403,12 +404,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
 
   useEffect(() => uploader.bindUnloadGuard(window), [uploader]);
 
-  // 自分の title が変わると、その title への link の存在が変わる。ほかの page は保存では変わらない
-  // ので、embed の本文は取り直さない（autosave のたびに全部取り直すことになる）
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 保存された title が変わったことを合図に取り直す
+  // 自分の title が変わると、その title への link の存在が変わる。公開範囲が変わると、自分への link の
+  // 「下書き」の印が変わる。ほかの page は保存では変わらないので、embed の本文は取り直さない
+  // （autosave のたびに全部取り直すことになる）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 保存された title と公開範囲が変わったことを合図に取り直す
   useEffect(() => {
     links.refreshTitles();
-  }, [links, state.base.title]);
+  }, [links, state.base.title, savedVisibility]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -467,6 +469,16 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     } finally {
       setPendingVisibility(null);
     }
+  }
+
+  // 公開の前に未保存の本文も保存される（session の changeVisibility）ので、保存済みではなく画面の本文で調べる
+  async function findDrafts(signal: AbortSignal) {
+    const current = session.getState();
+    const found = await findLinkedDrafts(current.draft.body, {
+      selfId: current.base.id,
+      fetchFn: (input, init) => fetch(input, { ...init, signal }),
+    });
+    return found.ok ? found.value : [];
   }
 
   async function handleDelete() {
@@ -988,6 +1000,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           sharePath={pageHrefFor({ id: pageId, title: savedTitle, visibility: "public" })}
           pending={pendingVisibility}
           onChange={changeVisibility}
+          findLinkedDrafts={findDrafts}
         />
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
@@ -998,6 +1011,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           pageIndex={titleIndex}
           linkTargets={linkTargets}
           links={links}
+          markDraftLinks={savedVisibility === "public" && !uncreated}
           resolveAttachmentUrl={attachmentUrl}
           {...(attachments ? { onUploadAttachment: upload, acceptAttachment } : {})}
           onWikiLinkClick={(link) => void handleWikiLinkClick(link)}

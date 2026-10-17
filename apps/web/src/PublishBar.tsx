@@ -1,5 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
+import type { LinkedDraft } from "./linked-drafts";
+import { rememberTitle } from "./page-titles";
+import { pageHref } from "./route";
 
 type Visibility = "draft" | "public";
 
@@ -63,6 +67,11 @@ interface PublishBarProps {
   pending: Visibility | null;
   /** 切り替えを依頼し、済むまで待つ。失敗は呼び出し側の通知が伝え、状態は元のまま */
   onChange: (to: Visibility) => Promise<void>;
+  /**
+   * 本文からリンクしている draft。公開の確認を開くたびに呼び、確認に一覧で出す。
+   * 調べられなかったときは空で返す（公開は止めない）
+   */
+  findLinkedDrafts?: (signal: AbortSignal) => Promise<readonly LinkedDraft[]>;
 }
 
 /**
@@ -70,6 +79,10 @@ interface PublishBarProps {
  *
  * draft から public への変化だけ、確定の前に確認を挟む。public にすると匿名の一覧、検索、タグに載り、
  * 取り消してもすでに見た人の手元には残るため。public から draft へは、見えなくなる側なので確認しない。
+ *
+ * 公開の確認には、本文からリンクしている draft を並べる。公開すると、それらへの link は匿名には
+ * リンクにならない文字列に見えるので、先に公開するかを決めてもらう。一覧は確認の操作の後ろに置き、
+ * 届いたときに押そうとしている操作の位置を動かさない。
  *
  * 共有の URL をコピーする操作は public のときだけ出す。draft の URL（`/p/<id>`）も知っていれば
  * 匿名に本文が読めるので、draft のまま共有する導線は作らない。共有したいときは先に公開させる。
@@ -83,20 +96,26 @@ export function PublishBar({
   sharePath,
   pending,
   onChange,
+  findLinkedDrafts,
 }: PublishBarProps) {
   const [confirming, setConfirming] = useState(false);
+  const [linkedDrafts, setLinkedDrafts] = useState<readonly LinkedDraft[]>([]);
   const [note, setNote] = useState<string | null>(null);
   const [manualUrl, setManualUrl] = useState<string | null>(null);
   const publicOption = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const urlInput = useRef<HTMLInputElement>(null);
   const confirmTextId = useId();
+  const draftsTextId = useId();
+  const latestFind = useRef(findLinkedDrafts);
+  latestFind.current = findLinkedDrafts;
   const previousVisibility = useRef(visibility);
   const refocusPublic = useRef(false);
   // 選択は押した直後に動かす。文字はレスポンスがすぐ届くときにちらつかないよう、遅らせて出す
   const pendingShown = useDelayedWhile(pending !== null);
   const shownVisibility = pending ?? visibility;
   const shareUrl = `${window.location.origin}${sharePath}`;
+  const describedBy = linkedDrafts.length > 0 ? `${confirmTextId} ${draftsTextId}` : confirmTextId;
   const manualShown =
     manualUrl !== null && manualUrl === shareUrl && visibility === "public" && !uncreated;
 
@@ -127,6 +146,22 @@ export function PublishBar({
 
   useEffect(() => {
     if (confirming) cancel.current?.focus();
+  }, [confirming]);
+
+  useEffect(() => {
+    const find = latestFind.current;
+    if (!confirming || find === undefined) return;
+    const controller = new AbortController();
+    find(controller.signal).then(
+      (drafts) => {
+        if (!controller.signal.aborted) setLinkedDrafts(drafts);
+      },
+      () => {},
+    );
+    return () => {
+      controller.abort();
+      setLinkedDrafts([]);
+    };
   }, [confirming]);
 
   useEffect(() => {
@@ -249,7 +284,7 @@ export function PublishBar({
             <button
               type="button"
               className="button button-accent"
-              aria-describedby={confirmTextId}
+              aria-describedby={describedBy}
               disabled={disabled}
               onClick={() => void apply("public")}
             >
@@ -259,7 +294,7 @@ export function PublishBar({
               ref={cancel}
               type="button"
               className="button"
-              aria-describedby={confirmTextId}
+              aria-describedby={describedBy}
               onClick={() => {
                 setConfirming(false);
                 publicOption.current?.focus();
@@ -267,6 +302,29 @@ export function PublishBar({
             >
               やめる
             </button>
+          </div>
+          {/* 焦点が「やめる」にある間に届くので、届いたことを読み上げる */}
+          <div className="publish-drafts" role="status">
+            {linkedDrafts.length > 0 && (
+              <>
+                <p id={draftsTextId}>
+                  本文から {linkedDrafts.length}{" "}
+                  件の下書きにリンクしています。公開しても、読む人にはリンクではなく文字に見えます。
+                </p>
+                <ul>
+                  {linkedDrafts.map((draft) => (
+                    <li key={draft.id}>
+                      <Link
+                        href={pageHref(draft.id)}
+                        onClick={() => rememberTitle(draft.id, draft.title)}
+                      >
+                        {draft.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         </section>
       )}

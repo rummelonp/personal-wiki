@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { LinkedDraft } from "./linked-drafts";
 import { PublishBar } from "./PublishBar";
 
 beforeAll(() => {
@@ -20,7 +21,11 @@ afterEach(() => {
   else Object.defineProperty(navigator, "clipboard", clipboard);
 });
 
-function render(visibility: "draft" | "public", uncreated = false) {
+function render(
+  visibility: "draft" | "public",
+  uncreated = false,
+  findLinkedDrafts?: (signal: AbortSignal) => Promise<readonly LinkedDraft[]>,
+) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -35,6 +40,7 @@ function render(visibility: "draft" | "public", uncreated = false) {
         sharePath="/設計メモ"
         pending={null}
         onChange={async () => {}}
+        {...(findLinkedDrafts === undefined ? {} : { findLinkedDrafts })}
       />,
     ),
   );
@@ -74,6 +80,70 @@ describe("公開の確認", () => {
     expect(text?.id).not.toBe("");
     expect(button("公開する").getAttribute("aria-describedby")).toBe(text?.id);
     expect(button("やめる").getAttribute("aria-describedby")).toBe(text?.id);
+  });
+});
+
+describe("公開の確認の、リンクしている下書き", () => {
+  const draftsBox = () => container?.querySelector(".publish-drafts");
+
+  it("確認を開くと調べ、届いた下書きを id の URL のリンクで並べる", async () => {
+    const find = vi.fn(async () => [
+      { id: "d1", title: "計画" },
+      { id: "d2", title: "メモ" },
+    ]);
+    render("draft", false, find);
+    expect(find).not.toHaveBeenCalled();
+    await act(async () => button("公開").click());
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(draftsBox()?.getAttribute("role")).toBe("status");
+    const text = draftsBox()?.querySelector("p");
+    expect(text?.textContent).toBe(
+      "本文から 2 件の下書きにリンクしています。公開しても、読む人にはリンクではなく文字に見えます。",
+    );
+    const anchors = [...(draftsBox()?.querySelectorAll("a") ?? [])];
+    expect(anchors.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["計画", "/p/d1"],
+      ["メモ", "/p/d2"],
+    ]);
+    // 確定とやめるの読み上げにも、一覧の文を結び付ける
+    const confirmText = container?.querySelector(".publish-confirm > p");
+    expect(button("やめる").getAttribute("aria-describedby")).toBe(
+      `${confirmText?.id} ${text?.id}`,
+    );
+    // 一覧は操作の後ろに置き、届いても操作の位置を動かさない
+    const actions = container?.querySelector(".publish-confirm .actions");
+    expect(actions?.nextElementSibling).toBe(draftsBox());
+  });
+
+  it("0 件なら何も足さない", async () => {
+    render("draft", false, async () => []);
+    await act(async () => button("公開").click());
+    expect(draftsBox()?.textContent).toBe("");
+    expect(button("やめる").getAttribute("aria-describedby")).toBe(
+      container?.querySelector(".publish-confirm > p")?.id,
+    );
+  });
+
+  it("閉じた後に届いた結果は捨て、開き直すと調べ直す", async () => {
+    let release: (drafts: LinkedDraft[]) => void = () => {};
+    const signals: AbortSignal[] = [];
+    const find = vi.fn(
+      (signal: AbortSignal) =>
+        new Promise<readonly LinkedDraft[]>((resolve) => {
+          signals.push(signal);
+          release = resolve;
+        }),
+    );
+    render("draft", false, find);
+    await act(async () => button("公開").click());
+    await act(async () => button("やめる").click());
+    expect(signals[0]?.aborted).toBe(true);
+    await act(async () => release([{ id: "d1", title: "計画" }]));
+    expect(container?.querySelector(".publish-confirm")).toBeNull();
+
+    await act(async () => button("公開").click());
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(draftsBox()?.textContent).toBe("");
   });
 });
 

@@ -675,6 +675,23 @@ a.segmented-option {
   color: var(--color-fg);
 }
 
+/* 本文からリンクしている下書き。確認の操作の後ろに、届いたときだけ区切って足す */
+.publish-drafts:not(:empty) {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.publish-drafts > p {
+  margin: 0 0 var(--space-1);
+  color: var(--color-fg-muted);
+}
+
+.publish-drafts > ul {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+
 /* コンポーネント */
 
 .button {
@@ -2115,7 +2132,8 @@ a.segmented-option {
     gap: 0;
   }
 
-  .rail-list a {
+  .rail-list a,
+  .publish-drafts a {
     display: flex;
     align-items: center;
     min-height: var(--tap-size);
