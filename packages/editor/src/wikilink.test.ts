@@ -2,6 +2,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "./create-editor";
+import { invalidateDecorations } from "./decoration-plugin";
 import { charRect } from "./test-geometry";
 
 const DOC = "前置き [[Amazon Web Services|AWS]] と [[日本語ページ]] の後ろ\n\n2 行目";
@@ -172,6 +173,78 @@ describe("unresolved link styling", () => {
     const v = mountWithResolver("| h |\n| - |\n| [[C\\|D]] |", (target) => target === "C");
     const link = v.contentDOM.querySelector('[data-wikilink-target="C"]');
     expect(link?.className).not.toContain("cm-wikilink-unresolved");
+  });
+});
+
+describe("draft link badge", () => {
+  const BADGE = ".cm-wikilink-draft-badge";
+
+  function mountWithDraftTest(
+    doc: string,
+    isDraft: (target: string) => boolean,
+    resolve: (target: string) => boolean = () => true,
+  ): EditorView {
+    host = document.createElement("div");
+    document.body.append(host);
+    view = createEditor(host, { doc, resolveWikiLink: resolve, isDraftWikiLink: isDraft });
+    return view;
+  }
+
+  it("adds a text badge after a link whose target is a draft", () => {
+    const v = mountWithDraftTest("前 [[下書きのページ|ラベル]] 後", (t) => t === "下書きのページ");
+    const link = v.contentDOM.querySelector('[data-wikilink-target="下書きのページ"]');
+    expect(link?.className).toContain("cm-wikilink-draft");
+    const badges = v.contentDOM.querySelectorAll(BADGE);
+    expect(badges).toHaveLength(1);
+    // 読み上げにも伝わるよう、印は文字で持つ
+    expect(badges[0]?.textContent).toBe("下書き");
+    expect(firstLineText(v)).toBe("前 ラベル下書き 後");
+    expect(v.state.doc.toString()).toBe("前 [[下書きのページ|ラベル]] 後");
+  });
+
+  it("does not badge links to public pages, missing pages, or the same page", () => {
+    // 存在しないと分かった link と同じページへの link は、draft の判定より先に除く
+    const v = mountWithDraftTest(
+      "[[下書き]] [[公開]] [[無いページ]] [[#見出し]]",
+      (t) => t !== "公開",
+      (t) => t !== "無いページ",
+    );
+    expect(v.contentDOM.querySelectorAll(BADGE)).toHaveLength(1);
+    const open = v.contentDOM.querySelector('[data-wikilink-target="公開"]');
+    expect(open?.className).not.toContain("cm-wikilink-draft");
+    const missing = v.contentDOM.querySelector('[data-wikilink-target="無いページ"]');
+    expect(missing?.className).not.toContain("cm-wikilink-draft");
+    const same = v.contentDOM.querySelector('[data-wikilink-target=""]');
+    expect(same?.className).not.toContain("cm-wikilink-draft");
+  });
+
+  it("does not badge anything when no draft test is configured", () => {
+    const v = mount("[[下書きのページ]]");
+    expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+  });
+
+  it("hides the badge while the cursor touches the link", () => {
+    const doc = "前 [[下書きのページ]] 後";
+    const v = mountWithDraftTest(doc, () => true);
+    const end = doc.indexOf("]]") + 2;
+    placeCursor(v, end);
+    expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+    placeCursor(v, doc.length);
+    expect(v.contentDOM.querySelector(BADGE)).not.toBeNull();
+  });
+
+  it("holds a badge change that arrives during composition until it settles", async () => {
+    let drafts = false;
+    const v = mountWithDraftTest("[[あとで分かるページ]] 本文", () => drafts);
+    expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    drafts = true;
+    invalidateDecorations(v);
+    expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+
+    await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).not.toBeNull());
   });
 });
 

@@ -74,6 +74,7 @@ export { type CreateTitleEditorOptions, createTitleEditor } from "./title-editor
 export {
   type WikiLinkClick,
   type WikiLinkClickHandler,
+  type WikiLinkDraftTest,
   type WikiLinkResolver,
   wikiLinkResolver,
   wikiLinks,

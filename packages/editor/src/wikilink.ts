@@ -1,6 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
 import { type Extension, Facet, type Range } from "@codemirror/state";
-import { Decoration, EditorView } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import {
   type EmbedKind,
   embedKindOf,
@@ -47,11 +47,41 @@ export type WikiLinkResolver = (target: string) => boolean;
 
 export const wikiLinkResolver = Facet.define<WikiLinkResolver>();
 
+/**
+ * 解決先が draft のとき true を返す。true の link には「下書き」の印を付ける。
+ * public のページから draft への link は、匿名には存在しないページへの link と同じ文字列に見えるので、
+ * 書いている人にそれを知らせるために使う。印を付けるかどうか（今のページが public か）は host が決める。
+ * `WikiLinkResolver` の後に呼ぶ。host は resolver が始めた問い合わせの結果を読むだけでよい。
+ */
+export type WikiLinkDraftTest = (target: string) => boolean;
+
+const wikiLinkDraftTest = Facet.define<WikiLinkDraftTest>();
+
 const TARGET_ATTR = "data-wikilink-target";
 const LABEL_ATTR = "data-wikilink-label";
 const BLOCK_ID_ATTR = "data-wikilink-block-id";
 const HEADING_ATTR = "data-wikilink-heading";
 const hide = Decoration.replace({});
+
+/**
+ * draft への link の後ろに置く「下書き」の印。色だけに頼らず、読み上げでも link 名に続けて読まれるよう、
+ * 疑似要素ではなく文字を持つ widget にする。mark の疑似要素は、link の中の隠した記法や折り返しの
+ * 装飾で span が分かれると、分かれた数だけ描かれる。
+ */
+class DraftBadgeWidget extends WidgetType {
+  override eq(): boolean {
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const badge = document.createElement("span");
+    badge.className = "cm-wikilink-draft-badge";
+    badge.textContent = "下書き";
+    return badge;
+  }
+}
+
+const draftBadge = Decoration.widget({ widget: new DraftBadgeWidget(), side: 1 });
 
 /** 最初に URL を返した facet の値を採る（複数ぶら下げるのはテストだけを想定） */
 function hrefOf(hrefs: readonly WikiLinkHref[], link: WikiLinkClick): string | null {
@@ -73,6 +103,7 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
   const caret = view.hasFocus ? state.selection.ranges : [];
   const resolvers = state.facet(wikiLinkResolver);
   const hrefs = state.facet(wikiLinkHref);
+  const draftTests = state.facet(wikiLinkDraftTest);
   const decorations: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   const seen = new Set<number>();
@@ -111,7 +142,13 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
           parts.target === "" ||
           resolvers.length === 0 ||
           resolvers.some((resolve) => resolve(parts.target));
-        const cls = resolved ? "cm-wikilink" : "cm-wikilink cm-wikilink-unresolved";
+        const draft =
+          resolved && parts.target !== "" && draftTests.some((isDraft) => isDraft(parts.target));
+        const cls = resolved
+          ? draft
+            ? "cm-wikilink cm-wikilink-draft"
+            : "cm-wikilink"
+          : "cm-wikilink cm-wikilink-unresolved";
         const href = hrefOf(hrefs, parts);
         if (href !== null) {
           attributes.href = href;
@@ -127,8 +164,10 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
           }).range(node.from, node.to),
         );
 
-        // 記号を表示している間は素の文字なので、折り返しはブラウザの禁則に任せる
+        // 記号を表示している間は素の文字なので、折り返しはブラウザの禁則に任せる。
+        // 印も出さない。カーソルが link の端にあるとき、打つ文字の隣に widget を置かない
         if (reveal(node.from, node.to)) return false;
+        if (draft) decorations.push(draftBadge.range(node.to));
 
         // 簡略表示では label があれば label だけ、無ければ target だけを残す。
         const separator = node.node.getChild(wikiLinkNodes.separator);
@@ -199,6 +238,7 @@ export function wikiLinks(
   resolve?: WikiLinkResolver,
   expandedEmbeds: ReadonlySet<EmbedKind> = DEFAULT_EXPANDED_EMBEDS,
   href?: WikiLinkHref,
+  isDraft?: WikiLinkDraftTest,
 ): Extension {
   return [
     decorationPlugin({ name: "wikilink", build: (view) => build(view, expandedEmbeds) }),
@@ -206,5 +246,22 @@ export function wikiLinks(
     onClick ? wikiLinkClickHandler.of(onClick) : [],
     resolve ? wikiLinkResolver.of(resolve) : [],
     href ? wikiLinkHref.of(href) : [],
+    isDraft ? [wikiLinkDraftTest.of(isDraft), draftBadgeTheme] : [],
   ];
 }
+
+const draftBadgeTheme = EditorView.baseTheme({
+  ".cm-wikilink-draft-badge": {
+    display: "inline-block",
+    marginInlineStart: "0.3em",
+    padding: "0 0.3em",
+    border: "1px solid var(--ui-color-border)",
+    borderRadius: "var(--ui-radius-sm, 0.25rem)",
+    color: "var(--ui-color-muted)",
+    fontSize: "0.75em",
+    lineHeight: "1.4",
+    verticalAlign: "0.1em",
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+  },
+});

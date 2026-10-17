@@ -49,6 +49,7 @@ import { codeHighlighting, editorSurfaceTheme, livePreviewTheme, typographyTheme
 import {
   type WikiLinkClick,
   type WikiLinkClickHandler,
+  type WikiLinkDraftTest,
   type WikiLinkHref,
   type WikiLinkResolver,
   wikiLinks,
@@ -87,6 +88,11 @@ export interface CreateEditorOptions {
   readonly hrefForWikiLink?: WikiLinkHref;
   /** 渡したときだけ unresolved link のスタイルを適用する */
   readonly resolveWikiLink?: WikiLinkResolver;
+  /**
+   * 渡したときだけ、解決先が draft の WikiLink に「下書き」の印を付ける。展開したページ embed の
+   * 本文には渡さない（印は今のページの本文から張った link のためのもの）。
+   */
+  readonly isDraftWikiLink?: WikiLinkDraftTest;
   readonly onTagClick?: TagClickHandler;
   /**
    * 渡したときだけ本文の `#tag` を `<a href>` にする。素のクリックは `onTagClick` のままで、
@@ -180,6 +186,7 @@ export function createEditor(parent: HTMLElement, options: CreateEditorOptions =
       options.resolveWikiLink,
       expandedEmbedKinds(pageEmbeds),
       options.hrefForWikiLink,
+      options.isDraftWikiLink,
     ),
     embeds(options.resolveAttachmentUrl, pageEmbeds),
     tags(options.onTagClick, options.hrefForTag),
