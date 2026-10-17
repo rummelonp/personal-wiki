@@ -1,5 +1,5 @@
 import { type EditorState, type Extension, StateEffect, StateField } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { docReplacement } from "./replace-doc";
 import { dispatchWhenSettled } from "./settled-dispatch";
 
@@ -89,6 +89,16 @@ const uploadingTokens = StateField.define<ReadonlySet<string>>({
 export function isUploadingTarget(state: EditorState, target: string): boolean {
   const token = uploadTokenOf(target);
   return token !== null && (state.field(uploadingTokens, false)?.has(token) ?? false);
+}
+
+/**
+ * 進行中のアップロードの集合が、この update で変わったか。完了は、仮の記法が書き換わって doc から
+ * 探せないと doc を変えない transaction になるので、「添付中」の描き直しを doc の変化に頼れない。
+ */
+export function uploadsChanged(update: ViewUpdate): boolean {
+  return (
+    update.startState.field(uploadingTokens, false) !== update.state.field(uploadingTokens, false)
+  );
 }
 
 function insertPlaceholder(view: EditorView, pos: number, token: string): number {

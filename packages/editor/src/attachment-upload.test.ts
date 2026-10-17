@@ -262,6 +262,29 @@ describe("attachmentUpload", () => {
     expect(v.contentDOM.querySelector(".cm-embed-uploading")).not.toBeNull();
   });
 
+  // 記法が書き換わって doc から仮の記法を探せないと、完了は doc を変えない transaction になる
+  it("drops the progress label when the upload finishes after the placeholder was edited in place", async () => {
+    let finish: (filename: string) => void = () => {};
+    const upload: UploadAttachment = () =>
+      new Promise((resolve) => {
+        finish = (filename) => resolve({ filename });
+      });
+    const v = mountWithOptions({
+      onUploadAttachment: upload,
+      resolveAttachmentUrl: () => PIXEL,
+    });
+    dispatchPaste(v, dataTransferWithFiles([imageFile("a.png")]));
+    v.dispatch({ selection: { anchor: 0 } });
+    v.dispatch({ changes: { from: v.state.doc.length - 2, insert: "|300" } });
+    expect(v.contentDOM.querySelector(".cm-embed-uploading")).not.toBeNull();
+    const edited = v.state.doc.toString();
+
+    finish("DONE.png");
+
+    await vi.waitFor(() => expect(v.contentDOM.querySelector(".cm-embed-uploading")).toBeNull());
+    expect(v.state.doc.toString()).toBe(edited);
+  });
+
   it("draws an embed whose name only resembles the placeholder as a normal image", () => {
     const v = mountWithOptions({
       doc: "![[uploading.draft.png]]",

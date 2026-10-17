@@ -19,7 +19,7 @@ import {
   type WikiLinkParts,
   wikiLinkNodes,
 } from "@personal-wiki/markdown";
-import { isUploadingTarget } from "./attachment-upload";
+import { isUploadingTarget, uploadsChanged } from "./attachment-upload";
 import {
   type BuiltDecorations,
   decorationPlugin,
@@ -975,7 +975,11 @@ const embedTheme = EditorView.baseTheme({
  */
 export function embeds(resolveUrl?: AttachmentUrlResolver, page?: PageEmbedOptions): Extension {
   return [
-    decorationPlugin({ name: "embed", build: (view, previous) => build(view, previous, page) }),
+    decorationPlugin({
+      name: "embed",
+      build: (view, previous) => build(view, previous, page),
+      rebuildWhen: uploadsChanged,
+    }),
     embedTheme,
     resolveUrl ? attachmentUrlResolver.of(resolveUrl) : [],
   ];
