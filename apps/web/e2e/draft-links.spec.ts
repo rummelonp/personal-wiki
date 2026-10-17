@@ -147,6 +147,77 @@ test.describe("owner", () => {
     await expect(page.locator(".title-input")).toHaveText(draft.title);
   });
 
+  test("公開の確認の一覧は、行頭の記号と字下げを持たず、タッチ端末では行を 44px 以上にする", async ({
+    page,
+    api,
+    isMobile,
+  }, testInfo) => {
+    const short = await api.createPage({ title: uniqueTitle(testInfo, "短い下書き"), body: "" });
+    // 折り返す title。折り返した 1 件の中の行間と、件どうしの間を見分けられるかを見る
+    const long = await api.createPage({
+      title: uniqueTitle(
+        testInfo,
+        "とても長い名前の下書きページでスマートフォンの幅では折り返すことを確かめるための題名",
+      ),
+      body: "",
+    });
+    const self = await api.createPage({
+      title: uniqueTitle(testInfo, "一覧の見た目を調べる下書き"),
+      body: `前置き [[${long.title}]] と [[${short.title}]]`,
+    });
+    await page.goto(`/p/${self.id}`);
+    await expect(page.locator(".title-input")).toHaveText(self.title);
+    await option(page, "公開").click();
+    const drafts = confirmPanel(page).locator(".publish-drafts");
+    await expect(drafts.getByRole("link")).toHaveCount(2);
+
+    const rows = await drafts.locator("li").evaluateAll((items) => {
+      const left = (element: Element) => element.getBoundingClientRect().left;
+      const lead = document.querySelector(".publish-drafts > p");
+      return items.map((item) => {
+        const row = item.getBoundingClientRect();
+        const anchor = item.querySelector("a");
+        return {
+          top: row.top,
+          bottom: row.bottom,
+          leadBottom: lead?.getBoundingClientRect().bottom ?? 0,
+          lineHeight: Number.parseFloat(getComputedStyle(item).lineHeight),
+          listStyleType: getComputedStyle(item).listStyleType,
+          height: row.height,
+          anchorHeight: anchor?.getBoundingClientRect().height ?? 0,
+          // 説明の文と左端が揃う
+          indent: left(item) - (lead === null ? 0 : left(lead)),
+        };
+      });
+    });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.listStyleType).toBe("none");
+      expect(row.indent).toBe(0);
+    }
+    if (!isMobile) {
+      const [wrapped, next] = rows;
+      if (wrapped === undefined || next === undefined) throw new Error("行が 2 つ無い");
+      expect(wrapped.height, "折り返した件").toBeGreaterThan(wrapped.lineHeight * 1.5);
+      // 件どうしの間は、説明の文と一覧の間より狭く、0 より広い（1 件の中の行間と同じだと別の件に見える）
+      const between = next.top - wrapped.bottom;
+      expect(between).toBeGreaterThan(0);
+      expect(wrapped.top - wrapped.leadBottom).toBeGreaterThan(between);
+    }
+    if (isMobile) {
+      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+      // 計算で 44px ちょうどにした箱の端数を許す
+      for (const row of rows) {
+        expect(row.height).toBeGreaterThanOrEqual(43.9);
+        expect(row.anchorHeight).toBeGreaterThanOrEqual(43.9);
+      }
+      // 行の高さはリンクが決め、リンクの外に押せない余白が出ない
+      expect(rows[0]?.height).toBeCloseTo(rows[0]?.anchorHeight ?? 0, 1);
+      // 44px の行が件の間を作るので、余白は足さない
+      expect((rows[1]?.top ?? 0) - (rows[0]?.bottom ?? 0)).toBeCloseTo(0, 1);
+    }
+  });
+
   test("draft へのリンクが無ければ、公開の確認に一覧を出さない", async ({
     page,
     api,

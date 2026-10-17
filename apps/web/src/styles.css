@@ -703,14 +703,22 @@ a.segmented-option {
   border-top: var(--border-width) solid var(--color-border);
 }
 
+/*
+ * 間隔は、説明の文と一覧の間 > 件どうしの間 > 件の中の行間 の順に狭くする。
+ * 件どうしの間が行間と変わらないと、折り返した 1 件が別の件に見える。
+ */
 .publish-drafts > p {
-  margin: 0 0 var(--space-1);
+  margin: 0 0 var(--space-3);
   color: var(--color-fg-muted);
 }
 
+/* 行頭の黒丸は情報を持たず、字下げが左端を乱す。ほかのリンクの一覧（.rail-list など）と同じく、記号なしで左端に揃えて件の間を空ける */
 .publish-drafts > ul {
+  display: grid;
+  gap: var(--space-2);
   margin: 0;
-  padding-inline-start: var(--space-5);
+  padding: 0;
+  list-style: none;
 }
 
 /* コンポーネント */
@@ -2157,7 +2165,8 @@ a.segmented-option {
   }
 
   .rail-list,
-  .outline {
+  .outline,
+  .publish-drafts > ul {
     gap: 0;
   }
 
