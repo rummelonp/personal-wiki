@@ -118,6 +118,7 @@ pnpm test
 初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れます。
 `pnpm format` で biome が整形します。
 E2E、規約、開発用コマンドの一覧は [AGENTS.md](./AGENTS.md) にあります。
+画面の見た目と使い心地の原則は [docs/design.md](./docs/design.md) にあります。
 
 ## ライセンス
 
