@@ -3,6 +3,7 @@ import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import type { LinkedDraft } from "./linked-drafts";
 import { rememberTitle } from "./page-titles";
+import type { ApiResult } from "./pages-api";
 import { pageHref } from "./route";
 
 type Visibility = "draft" | "public";
@@ -45,6 +46,10 @@ function selectAll(input: HTMLInputElement) {
 /** 結果の知らせを出しておく時間。残しすぎると、前の操作の結果が今の状態のように読める */
 const NOTE_MS = 6_000;
 
+/** 確認に出すリンク先の draft。失敗の理由は出し分けないので持たない */
+type LinkedDraftsState = { ok: true; value: readonly LinkedDraft[] } | { ok: false };
+const FIND_FAILED: LinkedDraftsState = { ok: false };
+
 interface PublishBarProps {
   visibility: Visibility;
   /**
@@ -68,10 +73,11 @@ interface PublishBarProps {
   /** 切り替えを依頼し、済むまで待つ。失敗は呼び出し側の通知が伝え、状態は元のまま */
   onChange: (to: Visibility) => Promise<void>;
   /**
-   * 本文からリンクしている draft。公開の確認を開くたびに呼び、確認に一覧で出す。
-   * 調べられなかったときは空で返す（公開は止めない）
+   * 本文からリンクしている draft。公開の確認を開くたびに呼び、確認に一覧で出す。一覧は開いた時点の本文で
+   * 決まり、開いている間の編集は反映しない（開き直すと調べ直す）。失敗と reject は、確認に調べられなかった
+   * ことを 1 行出す（公開は止めない）
    */
-  findLinkedDrafts?: (signal: AbortSignal) => Promise<readonly LinkedDraft[]>;
+  findLinkedDrafts?: (signal: AbortSignal) => Promise<ApiResult<readonly LinkedDraft[]>>;
 }
 
 /**
@@ -83,6 +89,10 @@ interface PublishBarProps {
  * 公開の確認には、本文からリンクしている draft を並べる。公開すると、それらへの link は匿名には
  * リンクにならない文字列に見えるので、先に公開するかを決めてもらう。一覧は確認の操作の後ろに置き、
  * 届いたときに押そうとしている操作の位置を動かさない。
+ * 確認より下の本文は、一覧（と調べられなかった旨）が届いたときに押し下がる。読み込みでレイアウトを
+ * 動かさない規範（docs/design.md）の例外にする。件数は調べ終わるまで分からず、高さを先に取ると、多くを
+ * 占める 0 件のときに空白が残る。調べ終わるまで確認を開かないと、「公開」を押した応答が通信を待つ。
+ * 押し下がるのは、開いたばかりの確認の中で 1 回だけになる。
  *
  * 共有の URL をコピーする操作は public のときだけ出す。draft の URL（`/p/<id>`）も知っていれば
  * 匿名に本文が読めるので、draft のまま共有する導線は作らない。共有したいときは先に公開させる。
@@ -99,7 +109,8 @@ export function PublishBar({
   findLinkedDrafts,
 }: PublishBarProps) {
   const [confirming, setConfirming] = useState(false);
-  const [linkedDrafts, setLinkedDrafts] = useState<readonly LinkedDraft[]>([]);
+  // null は調べている間と、調べなかったとき
+  const [linkedDrafts, setLinkedDrafts] = useState<LinkedDraftsState | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [manualUrl, setManualUrl] = useState<string | null>(null);
   const publicOption = useRef<HTMLButtonElement>(null);
@@ -115,7 +126,8 @@ export function PublishBar({
   const pendingShown = useDelayedWhile(pending !== null);
   const shownVisibility = pending ?? visibility;
   const shareUrl = `${window.location.origin}${sharePath}`;
-  const describedBy = linkedDrafts.length > 0 ? `${confirmTextId} ${draftsTextId}` : confirmTextId;
+  const draftsShown = linkedDrafts !== null && (!linkedDrafts.ok || linkedDrafts.value.length > 0);
+  const describedBy = draftsShown ? `${confirmTextId} ${draftsTextId}` : confirmTextId;
   const manualShown =
     manualUrl !== null && manualUrl === shareUrl && visibility === "public" && !uncreated;
 
@@ -153,14 +165,16 @@ export function PublishBar({
     if (!confirming || find === undefined) return;
     const controller = new AbortController();
     find(controller.signal).then(
-      (drafts) => {
-        if (!controller.signal.aborted) setLinkedDrafts(drafts);
+      (found) => {
+        if (!controller.signal.aborted) setLinkedDrafts(found);
       },
-      () => {},
+      () => {
+        if (!controller.signal.aborted) setLinkedDrafts(FIND_FAILED);
+      },
     );
     return () => {
       controller.abort();
-      setLinkedDrafts([]);
+      setLinkedDrafts(null);
     };
   }, [confirming]);
 
@@ -305,14 +319,19 @@ export function PublishBar({
           </div>
           {/* 焦点が「やめる」にある間に届くので、届いたことを読み上げる */}
           <div className="publish-drafts" role="status">
-            {linkedDrafts.length > 0 && (
+            {linkedDrafts?.ok === false && (
+              <p id={draftsTextId}>
+                リンク先の下書きを調べられませんでした。やめて開き直すと、もう一度調べます。
+              </p>
+            )}
+            {linkedDrafts?.ok === true && linkedDrafts.value.length > 0 && (
               <>
                 <p id={draftsTextId}>
-                  本文から {linkedDrafts.length}{" "}
+                  本文から {linkedDrafts.value.length}{" "}
                   件の下書きにリンクしています。公開しても、読む人にはリンクではなく文字に見えます。
                 </p>
                 <ul>
-                  {linkedDrafts.map((draft) => (
+                  {linkedDrafts.value.map((draft) => (
                     <li key={draft.id}>
                       <Link
                         href={pageHref(draft.id)}

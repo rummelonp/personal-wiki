@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LinkedDraft } from "./linked-drafts";
 import { PublishBar } from "./PublishBar";
+import type { ApiResult } from "./pages-api";
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,7 +25,7 @@ afterEach(() => {
 function render(
   visibility: "draft" | "public",
   uncreated = false,
-  findLinkedDrafts?: (signal: AbortSignal) => Promise<readonly LinkedDraft[]>,
+  findLinkedDrafts?: (signal: AbortSignal) => Promise<ApiResult<readonly LinkedDraft[]>>,
 ) {
   container = document.createElement("div");
   document.body.append(container);
@@ -85,12 +86,48 @@ describe("公開の確認", () => {
 
 describe("公開の確認の、リンクしている下書き", () => {
   const draftsBox = () => container?.querySelector(".publish-drafts");
+  const found = (value: readonly LinkedDraft[]): ApiResult<readonly LinkedDraft[]> => ({
+    ok: true,
+    value,
+  });
+
+  // 0 件と見分けがつかないと、リンクしていないと誤って読める
+  it.each([
+    [
+      "失敗が返る",
+      async (): Promise<ApiResult<readonly LinkedDraft[]>> => ({
+        ok: false,
+        reason: "error",
+        message: "通信できませんでした",
+      }),
+    ],
+    [
+      "reject される",
+      async (): Promise<ApiResult<readonly LinkedDraft[]>> => {
+        throw new TypeError("Failed to fetch");
+      },
+    ],
+  ])("%s と、調べられなかったことを一覧の場所に出し、公開は止めない", async (_, find) => {
+    render("draft", false, find);
+    await act(async () => button("公開").click());
+    const text = draftsBox()?.querySelector("p");
+    expect(text?.textContent).toBe(
+      "リンク先の下書きを調べられませんでした。やめて開き直すと、もう一度調べます。",
+    );
+    expect(draftsBox()?.querySelector("ul")).toBeNull();
+    expect(button("やめる").getAttribute("aria-describedby")).toBe(
+      `${container?.querySelector(".publish-confirm > p")?.id} ${text?.id}`,
+    );
+    expect(button("公開する").disabled).toBe(false);
+  });
 
   it("確認を開くと調べ、届いた下書きを id の URL のリンクで並べる", async () => {
-    const find = vi.fn(async () => [
-      { id: "d1", title: "計画" },
-      { id: "d2", title: "メモ" },
-    ]);
+    const find = vi.fn(async () =>
+      found([
+        { id: "d1", title: "計画" },
+        { id: "d2", title: "メモ" },
+      ]),
+    );
     render("draft", false, find);
     expect(find).not.toHaveBeenCalled();
     await act(async () => button("公開").click());
@@ -116,7 +153,7 @@ describe("公開の確認の、リンクしている下書き", () => {
   });
 
   it("0 件なら何も足さない", async () => {
-    render("draft", false, async () => []);
+    render("draft", false, async () => found([]));
     await act(async () => button("公開").click());
     expect(draftsBox()?.textContent).toBe("");
     expect(button("やめる").getAttribute("aria-describedby")).toBe(
@@ -125,11 +162,11 @@ describe("公開の確認の、リンクしている下書き", () => {
   });
 
   it("閉じた後に届いた結果は捨て、開き直すと調べ直す", async () => {
-    let release: (drafts: LinkedDraft[]) => void = () => {};
+    let release: (drafts: ApiResult<readonly LinkedDraft[]>) => void = () => {};
     const signals: AbortSignal[] = [];
     const find = vi.fn(
       (signal: AbortSignal) =>
-        new Promise<readonly LinkedDraft[]>((resolve) => {
+        new Promise<ApiResult<readonly LinkedDraft[]>>((resolve) => {
           signals.push(signal);
           release = resolve;
         }),
@@ -138,7 +175,7 @@ describe("公開の確認の、リンクしている下書き", () => {
     await act(async () => button("公開").click());
     await act(async () => button("やめる").click());
     expect(signals[0]?.aborted).toBe(true);
-    await act(async () => release([{ id: "d1", title: "計画" }]));
+    await act(async () => release(found([{ id: "d1", title: "計画" }])));
     expect(container?.querySelector(".publish-confirm")).toBeNull();
 
     await act(async () => button("公開").click());

@@ -472,13 +472,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   }
 
   // 公開の前に未保存の本文も保存される（session の changeVisibility）ので、保存済みではなく画面の本文で調べる
-  async function findDrafts(signal: AbortSignal) {
+  function findDrafts(signal: AbortSignal) {
     const current = session.getState();
-    const found = await findLinkedDrafts(current.draft.body, {
+    return findLinkedDrafts(current.draft.body, {
       selfId: current.base.id,
       fetchFn: (input, init) => fetch(input, { ...init, signal }),
     });
-    return found.ok ? found.value : [];
   }
 
   async function handleDelete() {
