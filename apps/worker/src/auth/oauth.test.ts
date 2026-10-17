@@ -3,7 +3,14 @@ import { AuthorizationError, CimdFetchError } from "@cloudflare/workers-oauth-pr
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { Bindings } from "../env";
-import { fakeJwks, ownerCookie, ownerEnv, signAccessJwt, signingKey } from "../test/owner";
+import {
+  fakeJwks,
+  ownerCookie,
+  ownerEnv,
+  SESSION_SECRET,
+  signAccessJwt,
+  signingKey,
+} from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertApiToken, insertToken } from "../test/tokens";
 import { decodeBase64Url, encodeBase64Url } from "./base64url";
@@ -17,6 +24,7 @@ import {
 } from "./oauth-routes";
 import { oauthServerFor } from "./oauth-server";
 import { safeReturnUrl } from "./routes";
+import { signJson } from "./signed-value";
 
 const ORIGIN = "http://localhost";
 const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
@@ -1223,6 +1231,49 @@ describe("許可した接続の一覧と取り消し", () => {
       ]) {
         await expectNoNotice(request, value);
       }
+    });
+
+    // 用途の文字列は本体の非公開の定数なので、ここに写す。用途が変わったときに「別の用途」のテストが
+    // 空振りしないよう、写しが合っていることを正しい値の表示で確かめる
+    describe("正しく署名した値でも、用途か中身が違えば出さない", () => {
+      const NOTICE_CONTEXT = "personal-wiki/oauth-revoke-notice/v1.";
+      const SESSION_CONTEXT = "personal-wiki/session/v1.";
+      const exp = () => Math.floor(T0 / 1000) + 60;
+
+      it("知らせの用途で署名した、想定どおりの値は表示する", async () => {
+        const { request } = setup();
+        for (const payload of [
+          { k: "absent", exp: exp() },
+          { k: "revoked", c: "no-such-client", t: 1, exp: exp() },
+        ]) {
+          const value = await signJson(SESSION_SECRET, NOTICE_CONTEXT, payload);
+          const { res, html } = await openGrants(request, value);
+          expect(html, payload.k).toContain('<p class="done">');
+          expectNoticeCleared(res);
+        }
+      });
+
+      it("owner のセッションの用途で署名した値では出さない", async () => {
+        const { request } = setup();
+        const value = await signJson(SESSION_SECRET, SESSION_CONTEXT, { k: "absent", exp: exp() });
+        await expectNoNotice(request, value);
+      });
+
+      it("知らせの用途で署名しても、種別と型が想定外の値では出さない", async () => {
+        const { request } = setup();
+        const unexpected: Record<string, unknown>[] = [
+          { k: "other" },
+          {},
+          { k: "revoked", c: 1, t: 1 },
+          { k: "revoked", c: "x", t: "1" },
+          { k: "revoked", t: 1 },
+          { k: "revoked", c: "x" },
+        ];
+        for (const payload of unexpected) {
+          const value = await signJson(SESSION_SECRET, NOTICE_CONTEXT, { ...payload, exp: exp() });
+          await expectNoNotice(request, value);
+        }
+      });
     });
 
     it("期限を過ぎた値では知らせを出さない", async () => {
