@@ -96,13 +96,20 @@ async function mount({
   );
 }
 
-/** 見える文字だけ。読み上げにだけ届く絶対の時刻は stamps で確かめる */
+/** 画面に見える文字を DOM の順に並べる。読み上げにだけ届く文（.visually-hidden）は除く */
+function visibleText(root: Element): string {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let text = "";
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (node.parentElement?.closest(".visually-hidden") == null) text += node.textContent;
+  }
+  return text;
+}
+
+/** 読み上げにだけ届く絶対の時刻は stamps で確かめる */
 const entries = () =>
   [...(container?.querySelectorAll(".revision-entry") ?? [])].map((e) =>
-    `${e.querySelector(".revision-time")?.firstChild?.textContent}${e.querySelector(".revision-author")?.textContent}`.replace(
-      /\u00a0/g,
-      " ",
-    ),
+    visibleText(e).replace(/\u00a0/g, " "),
   );
 
 const stamps = () =>
