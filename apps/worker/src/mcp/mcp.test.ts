@@ -295,6 +295,9 @@ describe("tools/list", () => {
     expect(byName.create_page?.annotations.readOnlyHint).toBe(false);
     expect(byName.search?.description).toContain("2 文字以下は部分一致");
     expect(byName.create_page?.description).toContain("draft");
+    for (const rule of ["主題を表す名詞句", "接頭辞を付けない", "`[ ] | # ^`", "`\\` で終わる"]) {
+      expect(byName.create_page?.description).toContain(rule);
+    }
     expect(byName.update_page?.description).toContain("read_page で取った version が必須");
     expect(byName.update_page?.description).toContain("上書きで押し切らない");
     expect(byName.update_page?.description).toContain("`[[旧 title]]` はすぐには書き換わらない");
@@ -324,6 +327,18 @@ describe("tools/list", () => {
       "frontmatter",
       "[[title]]",
       "[[旧 title]]",
+      "記法は Obsidian と同じ",
+      "Mermaid",
+      "`<br>`",
+      "`![[page#^id]]`",
+      "`tags: a, b`",
+      "`aliases`",
+      "`%%コメント%%`",
+      "MCP からは添付を足せない",
+      "主題を表す名詞句",
+      "接頭辞を付けない",
+      "`[ ] | # ^`",
+      "`\\` で終わる",
     ]) {
       expect(instructions).toContain(rule);
     }

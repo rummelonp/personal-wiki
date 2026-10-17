@@ -180,6 +180,7 @@ export const createPageTool = defineTool({
   description: [
     "ページを新しく作る。作る前に search で同じ主題を探し、あれば作らずに append_to_page か update_page を使う。",
     "ページは常に draft で作られる。title は wiki 全体で一意で、重なると title_conflict になる。`_` と空白だけが違う title も重なるとみなす。",
+    "title はページの主題を表す名詞句にし、日付、エージェント名、「メモ」などの接頭辞を付けない。search で近いページの title の付け方を見て合わせる。`[ ] | # ^` を含む title と `\\` で終わる title は `[[...]]` のリンクが壊れるので使わない。",
     LIMITS,
     NO_SECRETS,
   ].join("\n"),

@@ -27,7 +27,10 @@ const SERVER_NAME = "personal-wiki";
 /** tools/list に出る順。tool を足すときはここに並べる。 */
 const TOOLS: readonly WikiTool[] = [...SEARCH_TOOLS, ...PAGE_TOOLS];
 
-/** 接続中ずっとクライアントの文脈に載るので、tool をまたぐ規則だけを短く書く。tool 固有の規則は description に書く */
+/**
+ * 接続中ずっとクライアントの文脈に載るので、tool をまたぐ規則だけを短く書く。tool 固有の規則は description に書く。
+ * instructions を渡さない client もあるので、作るときに欠かせない規則（title の付け方）は create_page の description にも重ねる。
+ */
 const INSTRUCTIONS = [
   "オーナー一人の Markdown wiki。",
   "- 作業の始めに主題の語で search し、関連するページを read_page で読む。",
@@ -37,6 +40,12 @@ const INSTRUCTIONS = [
   "- 公開範囲は tool から変えられない。公開はオーナーがブラウザで行うので、頼まれたらオーナーに伝える。frontmatter に書いても反映されない。",
   "- 本文の `[[title]]` は別のページへのリンク。参照元は list_backlinks（id か title で引く。まだ無いページの title でもよい）、最近の動きは list_recent で見る。",
   "- title を変えても、他のページの `[[旧 title]]` はすぐには書き換わらず、それまで新しい title の list_backlinks に出ない。詳しくは update_page の説明にある。",
+  "- title はページの主題を表す名詞句にし、日付、エージェント名、「メモ」などの接頭辞を付けない。作る前に search で近いページの title の付け方を見て合わせる。`[ ] | # ^` を含む title と `\\` で終わる title は `[[...]]` のリンクが壊れるので使わない。",
+  "記法は Obsidian と同じで、違いは次のとおり。",
+  "- 数式、脚注、Mermaid、HTML のタグ（`<br>` を含む）は専用の表示が無く、ほぼ書いた文字のまま見える。ブロックを指す embed（`![[page#^id]]`）は展開されず、リンクになる。",
+  "- frontmatter で効くのは `tags` だけ。リストで書く（`tags: a, b` は 1 つの値になり、tag として読めず落ちる）。`aliases` は `[[...]]` の解決にも search にも使わないので、リンクは title で書く。",
+  "- `%%コメント%%` は表示で隠れるだけで、本文を読めば誰でも見える。",
+  "- `![[...]]` で指せる添付は、アップロードで返った名前のものだけ。MCP からは添付を足せない。",
 ].join("\n");
 
 /**
