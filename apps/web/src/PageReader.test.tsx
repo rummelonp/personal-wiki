@@ -239,7 +239,7 @@ describe("PageReader", () => {
         expect(container?.querySelector(".note")?.classList.contains("note-leaving")).toBe(true),
       );
       expect(container?.querySelector(".note")?.getAttribute("aria-busy")).toBe("true");
-      expect(container?.textContent).toContain("「無い」を開いています…");
+      expect(container?.textContent).toContain("「無い」へ移動中…");
       // 押し直しても、問い合わせを最初からやり直さない
       const asked = () =>
         vi.mocked(findPageByTitle).mock.calls.length + vi.mocked(resolvePages).mock.calls.length;
@@ -251,7 +251,7 @@ describe("PageReader", () => {
       await act(async () => answer({ ok: false, reason: "not_found" }));
       await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
       expect(container?.querySelector(".note-leaving")).toBeNull();
-      expect(container?.textContent).not.toContain("を開いています…");
+      expect(container?.textContent).not.toContain("へ移動中…");
     } finally {
       restoreDelay();
     }

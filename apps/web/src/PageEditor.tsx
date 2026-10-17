@@ -618,7 +618,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       >
         {linkPending !== null && (
           <span className="visually-hidden" role="status">
-            {leaving ? `「${linkPending}」を開いています…` : ""}
+            {leaving ? `「${linkPending}」へ移動中…` : ""}
           </span>
         )}
         <p ref={saveStateEl} className={`save-state save-state-${status}`}>

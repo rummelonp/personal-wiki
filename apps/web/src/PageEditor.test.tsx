@@ -1110,7 +1110,7 @@ describe("PageEditor の wikilink", () => {
         expect(container?.querySelector(".note")?.classList.contains("note-leaving")).toBe(true),
       );
       expect(container?.querySelector(".note")?.getAttribute("aria-busy")).toBe("true");
-      expect(container?.textContent).toContain("「無い」を開いています…");
+      expect(container?.textContent).toContain("「無い」へ移動中…");
       // 押し直しても、問い合わせを最初からやり直さない
       expect(resolvePages).toHaveBeenCalledTimes(2);
       clickLink("無い");
@@ -1120,7 +1120,7 @@ describe("PageEditor の wikilink", () => {
       await act(async () => answer(ok([null])));
       await vi.waitFor(() => expect(location.pathname).toBe(`/${encodeURIComponent("無い")}`));
       expect(container?.querySelector(".note-leaving")).toBeNull();
-      expect(container?.textContent).not.toContain("を開いています…");
+      expect(container?.textContent).not.toContain("へ移動中…");
     } finally {
       restoreDelay();
     }

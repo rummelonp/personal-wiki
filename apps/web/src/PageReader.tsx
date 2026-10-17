@@ -138,7 +138,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
       >
         {linkPending !== null && (
           <span className="visually-hidden" role="status">
-            {leaving ? `「${linkPending}」を開いています…` : ""}
+            {leaving ? `「${linkPending}」へ移動中…` : ""}
           </span>
         )}
         {linkNotice !== null && (
