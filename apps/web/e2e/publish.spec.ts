@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { OwnerApi } from "./support/api";
-import { expect, test, uniqueTitle } from "./support/fixtures";
+import { expect, saveState, test, typeAtBodyEnd, uniqueTitle } from "./support/fixtures";
 import { E2E_ORIGIN } from "./support/stack";
 
 /*
@@ -152,6 +152,45 @@ test("公開に失敗したら draft のまま理由と再試行が出て、再�
   await page.getByRole("button", { name: "もう一度公開にする" }).click();
   await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
   await expect(notice(page)).toHaveText("公開しました。");
+  expect(await anonymousSees(title)).toBe(true);
+});
+
+test("本文を編集した直後に「公開」を 1 回押すと、保存の間でも確認が開き、保存の後に公開する", async ({
+  page,
+  api,
+  hasTouch,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "編集直後の公開");
+  const id = await openDraft(page, title, api);
+  // 保存を止め、押した時点で本文の blur が始めた保存が終わっていないようにする
+  let releaseSaves: () => void = () => {};
+  const saves = new Promise<void>((resolve) => {
+    releaseSaves = resolve;
+  });
+  await page.route(`**/api/pages/${id}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    await saves;
+    return route.fallback();
+  });
+
+  await typeAtBodyEnd(page, "追記");
+  // タッチの端末では、タップから作られる event の順でも届くことを見る
+  if (hasTouch) await option(page, "公開").tap();
+  else await option(page, "公開").click();
+  await expect(confirmPanel(page)).toBeVisible();
+  await expect(saveState(page)).toHaveText("保存中…");
+
+  await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+  await expect(notice(page)).toHaveText("公開に変更中…");
+  expect(await anonymousSees(title)).toBe(false);
+
+  releaseSaves();
+  await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
+  await expect(notice(page)).toHaveText("公開しました。");
+  await expect(saveState(page)).toHaveText("保存済み");
+  const saved = await api.getPage(id);
+  expect(saved.body).toBe("公開の検査に使う本文追記");
+  expect(saved.visibility).toBe("public");
   expect(await anonymousSees(title)).toBe(true);
 });
 

@@ -167,10 +167,7 @@ test.describe("owner", () => {
     await page.keyboard.press("End");
     // 1 字ずつ打つと括弧の補完と候補の窓が働くので、まとめて入れる
     await page.keyboard.insertText(` [[${draft.title}]]`);
-    // 本物のクリックは押した時点で本文の blur が保存を始め、保存中は「公開」が disabled になってクリックが
-    // 落ちる。本文から focus を外さずに確認を開くため、click の event だけを送る
-    await expect(option(page, "公開")).toBeEnabled();
-    await option(page, "公開").dispatchEvent("click");
+    await option(page, "公開").click();
     const drafts = confirmPanel(page).locator(".publish-drafts");
     await expect(drafts.getByRole("link")).toHaveText([draft.title]);
     expect((await api.getPage(self.id)).body).toBe("前置き");

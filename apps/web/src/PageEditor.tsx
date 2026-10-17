@@ -353,7 +353,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
   const deleting = state.busy === "deleting";
-  const canChangeVisibility = idle && (status === "saved" || status === "unsaved");
+  // 保存中も押せる。本文の編集中に公開の操作を押すと、mousedown の blur が保存を始めるので、保存中を
+  // disabled にすると mouseup の時点で押せなくなり、クリックが届かない。session は切り替えを保存の後ろに
+  // 並べ、保存で進んだ版に対して送り、保存できなければ切り替えない
+  const canChangeVisibility =
+    (idle || state.busy === "saving") &&
+    (status === "saved" || status === "unsaved" || status === "saving");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
   const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
   const [links] = useState(() => createWikiLinks({ pageId: () => session.getState().base.id }));

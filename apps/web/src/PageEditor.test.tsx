@@ -2332,6 +2332,112 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(publishNote()).toBe("下書きに戻しました。");
   });
 
+  it("本文の blur で始まった保存の間も「公開」で確認を開き、公開は保存で進んだ版に対して送る", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(setVisibility).mockResolvedValue(
+      ok({ ...PAGE, body: "本文追記", visibility: "public", version: 3 }),
+    );
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    expect(option("公開").disabled).toBe(false);
+
+    act(() => option("公開").click());
+    expect(container?.querySelector(".publish-confirm")).not.toBeNull();
+    expect(button("公開する").disabled).toBe(false);
+    act(() => button("公開する").click());
+    await flushAsync();
+    expect(setVisibility).not.toHaveBeenCalled();
+
+    await act(async () => save.resolve(ok({ ...PAGE, body: "本文追記", version: 2 })));
+    await flushAsync();
+    expect(setVisibility).toHaveBeenCalledTimes(1);
+    expect(setVisibility).toHaveBeenCalledWith(ID, 2, "public");
+    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+    expect(publishNote()).toBe("公開しました。");
+  });
+
+  it("保存の間に押した「下書き」は、保存の後に保存で進んだ版に対して送る", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(setVisibility).mockResolvedValue(
+      ok({ ...PUBLIC, body: "本文追記", visibility: "draft", version: 3 }),
+    );
+    const { view } = renderPage(PUBLIC);
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    act(() => option("下書き").click());
+    await flushAsync();
+    expect(setVisibility).not.toHaveBeenCalled();
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => save.resolve(ok({ ...PUBLIC, body: "本文追記", version: 2 })));
+    await flushAsync();
+    expect(setVisibility).toHaveBeenCalledWith(ID, 2, "draft");
+    expect(publishNote()).toBe("下書きに戻しました。");
+  });
+
+  it("確認を開いている間に保存が失敗したら、「公開する」を押せなくし、保存の失敗を知らせる", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    act(() => option("公開").click());
+
+    await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    expect(button("公開する").disabled).toBe(true);
+    expect(container?.textContent).toContain("保存できませんでした");
+    expect(setVisibility).not.toHaveBeenCalled();
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("保存の間に押した切り替えは、保存が失敗したら送らず、元の選択に戻して保存の失敗を知らせる", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    // 切り替えの前の保存し直しも失敗させる
+    vi.mocked(updatePage).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
+    const { view } = renderPage(PUBLIC);
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    act(() => option("下書き").click());
+    await flushAsync();
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    expect(setVisibility).not.toHaveBeenCalled();
+    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+    expect(publishNote()).toBe("");
+    expect(container?.textContent).toContain("保存できませんでした");
+  });
+
   it("レスポンスがすぐ届けば、状態の文字を出さない", async () => {
     restoreDelay = setLoadingDelay(1000);
     vi.mocked(setVisibility).mockResolvedValue(ok({ ...PUBLIC, version: 2 }));
