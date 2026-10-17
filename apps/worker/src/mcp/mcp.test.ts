@@ -342,6 +342,12 @@ describe("tools/list", () => {
     ]) {
       expect(instructions).toContain(rule);
     }
+    // title の規則は全ページに及ぶので、記法の差の箇条の配下に入れない。
+    expect(instructions.indexOf("主題を表す名詞句")).toBeLessThan(
+      instructions.indexOf("記法は Obsidian と同じ"),
+    );
+    // aliases は編集画面で見えても、リンクと検索の対象ではない。
+    expect(instructions).toContain("リンクと検索に効くのは `tags` だけ");
     const listed = await rpc("tools/list", undefined, { "MCP-Protocol-Version": "2025-06-18" });
     const listedTools = (listed.result?.tools ?? []) as { name: string }[];
     expect(listedTools.map((tool) => tool.name)).toEqual(TOOL_NAMES);
