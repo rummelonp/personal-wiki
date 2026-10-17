@@ -1442,10 +1442,13 @@ a.segmented-option {
 }
 
 /*
- * 長さの決まらない部分（元の title、リンクに書けない文字の並び）だけを縮めて省略し、前後の文は
- * 縮めない。文の末尾から省略すると、長い title で「のままです」まで消える。前後の文を縮み得る
- * 状態にすると、はみ出す量が 1px でもそこに省略の記号が出るので、縮めない。
- * 長さの数と並ぶ狭い幅で、可変の部分をなくしてもなお足りないときだけ、この要素の端で切れる。
+ * 長さの決まらない部分（元の title、リンクに書けない文字の並び）だけを省略し、前後の文は残す。
+ * 文の末尾から省略すると、長い title で「のままです」まで消える。前後の文には ellipsis を付けない。
+ * 付けると、はみ出しが 1px でも前後に省略の記号が出る。前後の文は nowrap のまま縮まない（flex の
+ * min-width: auto が文の幅になる）ので、足りないときは variable だけが縮み、前後は端で切れる。
+ * リンクに書けない文字の並びに下限を付けるのは、長さの数と並ぶ狭い幅で、文字が 1 つも見えないまま
+ * 「を含むタイトルには」だけが残るのを避けるため。足りない分は後ろの文の端で切れる。元の title には
+ * 付けない（短い title で、閉じる鉤括弧との間が空く）。並びは鉤括弧を含むので下限より広い。
  */
 .title-hint-text {
   display: flex;
@@ -1453,14 +1456,14 @@ a.segmented-option {
   overflow: hidden;
 }
 
-.title-hint-fixed {
-  flex: none;
-}
-
 .title-hint-variable {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.title-hint-chars {
+  min-width: var(--space-5);
 }
 
 .body-meter {

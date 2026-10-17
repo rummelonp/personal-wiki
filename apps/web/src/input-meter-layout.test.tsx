@@ -197,6 +197,26 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     noHorizontalScroll();
   });
 
+  it("title を空にしたときの案内は、前の title が短くても鉤括弧との間を空けない", async () => {
+    await browserPage.viewport(width, 800);
+    const { query, title, replace } = mountEditor({ ...PAGE, title: "a" });
+    await flushAsync();
+    replace(title(), "");
+    act(() => title().contentDOM.blur());
+    await flushAsync();
+    const kept = query(".title-hint [role='status'] > :nth-child(2)");
+    expect(kept.textContent).toBe("a");
+    const range = document.createRange();
+    range.selectNodeContents(kept);
+    const tail = query(".title-hint [role='status'] > :last-child");
+    expect(tail.getBoundingClientRect().left - range.getBoundingClientRect().right).toBeLessThan(1);
+    // リンクに書けない文字が 1 つでも、並びの下限で後ろの文との間を空けない
+    replace(title(), "[");
+    expect(kept.textContent).toBe("「[」");
+    range.selectNodeContents(kept);
+    expect(tail.getBoundingClientRect().left - range.getBoundingClientRect().right).toBeLessThan(1);
+  });
+
   it("リンクに書けない文字が多くても、案内の「リンクできません。」は切らずに見せる", async () => {
     await browserPage.viewport(width, 800);
     const { query, title, replace } = mountEditor();
@@ -210,6 +230,21 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     expect(tail.getBoundingClientRect().right).toBeLessThanOrEqual(
       status.getBoundingClientRect().right + 0.5,
     );
+    noHorizontalScroll();
+  });
+
+  it("長さの数と並んでも、リンクに書けない文字の並びを少しは見せ、帯に収める", async () => {
+    await browserPage.viewport(width, 800);
+    const { query, title, replace } = mountEditor();
+    await flushAsync();
+    replace(title(), `${"あ".repeat(275)}[`);
+    const meter = query(".title-hint .input-meter");
+    const variable = query(".title-hint [role='status'] > :nth-child(2)");
+    expect(variable.textContent).toBe("「[」");
+    expect(variable.clientWidth).toBeGreaterThan(0);
+    const rect = query(".title-hint").getBoundingClientRect();
+    expect(rect.right).toBeLessThanOrEqual(query(".note").getBoundingClientRect().right + 0.5);
+    expect(meter.getBoundingClientRect().right).toBeLessThanOrEqual(rect.right + 0.5);
     noHorizontalScroll();
   });
 

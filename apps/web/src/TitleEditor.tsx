@@ -174,9 +174,9 @@ export function TitleEditor({
   const title = singleLineTitle(value);
   const unsafe = wikiLinkUnsafeChars(title);
   const bytes = utf8ByteLength(title);
-  // title が空なら unsafe も空なので、文は同時に 2 つ出ない。幅が足りないときは、title や文字の並びの
-  // ように長さが決まらない variable だけを省略し、前後の文は残す（末尾の「のままです」まで消えない）
-  const hint: { head: string; variable: string; tail: string } =
+  // title が空なら unsafe も空なので、文は同時に 2 つ出ない。可変の部分と前後に分けるのは、CSS で
+  // 可変の部分だけを省略するため
+  const hint: { head: string; variable: string; tail: string; chars?: true } =
     title === "" && keptTitle !== ""
       ? saveHeldBack
         ? { head: "空のタイトルは保存しません。", variable: "", tail: "" }
@@ -185,6 +185,7 @@ export function TitleEditor({
         ? {
             head: "",
             variable: unsafe.map((ch) => `「${ch}」`).join(""),
+            chars: true,
             tail: "を含むタイトルには、[[ ]] でリンクできません。",
           }
         : { head: "", variable: "", tail: "" };
@@ -197,9 +198,13 @@ export function TitleEditor({
          * 要素は文が無いときも残す。後から role を付けて出した要素は、最初の文が読まれない読み上げがある
          */}
         <span role="status" className="title-hint-text">
-          <span className="title-hint-fixed">{hint.head}</span>
-          <span className="title-hint-variable">{hint.variable}</span>
-          <span className="title-hint-fixed">{hint.tail}</span>
+          <span>{hint.head}</span>
+          <span
+            className={hint.chars ? "title-hint-variable title-hint-chars" : "title-hint-variable"}
+          >
+            {hint.variable}
+          </span>
+          <span>{hint.tail}</span>
         </span>
         {bytes >= MAX_TITLE_BYTES * METER_SHOW_RATIO && (
           <InputMeter label="タイトルの長さ" bytes={bytes} max={MAX_TITLE_BYTES} />
