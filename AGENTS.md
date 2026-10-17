@@ -23,6 +23,7 @@ pnpm workspace の構成で、アプリは `apps/*`、共有パッケージは `
 - [docs/deploy.md](./docs/deploy.md): 初回のデプロイ、任意の機能（owner のログイン、R2、OAuth、Cron）の設定、ゾーンの WAF やレート制限と併用するときの注意、本番の更新、前の版に戻すときの注意
 - [docs/operations.md](./docs/operations.md): API token、派生データの作り直し、リンクの書き換え、バックアップと復元
 - [docs/attachments.md](./docs/attachments.md): 添付（R2）の API と公開範囲
+- [docs/design.md](./docs/design.md): 画面の見た目と使い心地の原則、守る条件、確かめ方
 
 ## コマンド
 
@@ -117,7 +118,11 @@ token を識別するのは id で、name は重複してよい。
 ## 規約
 
 - ドキュメントとコメントは日本語で書く。
-  コメントはコードから自明でないこと（判断の理由、制約）だけを書く。
+  コメントはコードから自明でないこと（今も有効な判断の理由、制約）だけを書き、変更の経緯は書かない。
+  「この guard が無いと X が起きる」は制約として書き、「以前 X が起きたので直した」はコミットメッセージに書く。
+- 文書は読み手で置き場所を分ける。
+  利用者向けの説明は README.md、開発の規約とコマンドは AGENTS.md に置く。
+  運用の手順や設計の規範のように長いものは `docs/` に置き、README.md と AGENTS.md からリンクする。
 - 秘密情報（`.dev.vars`、`.env*`、`apps/worker/deploy.env`）はコミットしない。
 - 見た目の値（色、長さ、font-family、影、z-index）は `apps/web/src/theme.css` の token に置き、部品の CSS は token だけを参照する。
   直書きが要る宣言は、同じ行の末尾に `/* token-ok: 理由 */` を書く。
