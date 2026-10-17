@@ -54,31 +54,6 @@ test.describe("owner @widths", () => {
     }
   });
 
-  test("0 件の検索結果の「作成」は、折り返しても開き括弧の空きで右に寄らない", async ({ page }) => {
-    const query = "どこにも無い語句をとても長く書いた検索語".repeat(3);
-    await page.setViewportSize({ width: 320, height: 800 });
-    await page.goto(`/?q=${encodeURIComponent(query)}`);
-    const create = page.getByRole("button", { name: `「${query}」を作成` });
-    await expect(create).toBeVisible();
-    // 結果が届くと描き直される。外れた要素を測ると計算済みの style が空で NaN になるので、測り直す
-    await expect
-      .poll(() =>
-        create.evaluate((element) => {
-          const text = element.firstChild as Text;
-          const range = document.createRange();
-          range.setStart(text, 0);
-          range.setEnd(text, 1);
-          // 開き括弧の幅の、字の大きさに対する割合。詰めると字の半分になり、詰めないと全角の 1 字分（1）を取る。
-          // text-spacing-trim に対応しない描画はインデントで戻すので、この測定の対象にならない
-          return (
-            range.getBoundingClientRect().width /
-            Number.parseFloat(getComputedStyle(element).fontSize)
-          );
-        }),
-      )
-      .toBeLessThan(0.75);
-  });
-
   test("新規作成の画面", async ({ page }) => {
     await page.goto("/?new");
     await expect(page.locator(".title-input .cm-content")).toBeVisible();
@@ -149,5 +124,54 @@ test.describe("匿名 @widths", () => {
     ).toBeVisible();
     await expect(page.locator(".rail")).toBeHidden();
     await sweepWidths(page);
+  });
+});
+
+test.describe("owner", () => {
+  /*
+   * 開き括弧は字の左半分が空いている。1 行目の先頭に残ると、中央寄せの文字が右に寄って見える。
+   * text-spacing-trim に対応する描画は空きを詰め、対応しない描画（Firefox など）は text-indent で戻す。
+   * 描画によって通る側が違うので、詰め方ではなく、1 行目のインクの左右の余白がそろうことを測る。
+   * 幅を指定するので iPhone の WebKit でも走る。
+   */
+  test("0 件の検索結果の「作成」は、折り返しても開き括弧の空きで右に寄らない", async ({ page }) => {
+    const query = "どこにも無い語句をとても長く書いた検索語".repeat(3);
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto(`/?q=${encodeURIComponent(query)}`);
+    const create = page.getByRole("button", { name: `「${query}」を作成` });
+    await expect(create).toBeVisible();
+    // 結果が届くと描き直される。外れた要素を測ると計算済みの style が空で NaN になるので、測り直す
+    await expect
+      .poll(() =>
+        create.evaluate((element) => {
+          const text = element.firstChild as Text;
+          const range = document.createRange();
+          const rectOf = (index: number) => {
+            range.setStart(text, index);
+            range.setEnd(text, index + 1);
+            return range.getBoundingClientRect();
+          };
+          const first = rectOf(0);
+          let last = first;
+          let lines = 1;
+          for (let index = 1; index < (text.textContent ?? "").length; index += 1) {
+            const rect = rectOf(index);
+            if (rect.top > first.top + first.height / 2) {
+              lines = 2;
+              break;
+            }
+            last = rect;
+          }
+          const style = getComputedStyle(element);
+          const box = element.getBoundingClientRect();
+          // 開き括弧のインクは字の右半分にあり、右端は送り幅の終わりと一致する。左端はそこから 0.5em 戻った位置
+          const em = Number.parseFloat(style.fontSize);
+          const inkLeft = first.left + first.width - 0.5 * em;
+          // 折り返さないと 1 行目の最後の字が文末になり測りが変わるので、失敗する値に倒す。
+          // 差は、直した描画で 0.05em 以下（字の送り幅の丸め）、直さないと 0.5em になる
+          return lines === 2 ? Math.abs(inkLeft - box.left - (box.right - last.right)) / em : 99;
+        }),
+      )
+      .toBeLessThan(0.15);
   });
 });
