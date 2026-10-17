@@ -122,6 +122,23 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     expect(state.right).toBeGreaterThan(note.right - 160);
   });
 
+  it("文字が、上のヘッダー（.rail-main の上端）にも下の title にも貼り付かない", async () => {
+    await browserPage.viewport(width, 800);
+    const { query } = mountEditor();
+    await flushAsync();
+    const mainTop = query(".rail-main").getBoundingClientRect().top;
+    const titleTop = query(".title-input").getBoundingClientRect().top;
+    // 箱ではなく、実際に描かれる文字の範囲で測る（箱は余白の高さいっぱいに取る）
+    const range = document.createRange();
+    range.selectNodeContents(query(".save-state"));
+    const glyphs = range.getBoundingClientRect();
+    const fontSize = Number.parseFloat(getComputedStyle(query(".save-state")).fontSize);
+
+    // 文字の高さの半分より狭いと、文字が隣の要素に貼り付いて見える
+    expect(glyphs.top - mainTop).toBeGreaterThanOrEqual(fontSize / 2);
+    expect(titleTop - glyphs.bottom).toBeGreaterThanOrEqual(fontSize / 2);
+  });
+
   it("未保存、保存中、失敗のどれでも、余白の中で読める大きさのまま出る", async () => {
     await browserPage.viewport(width, 800);
     let finish: (value: ApiResult<Page>) => void = () => {};

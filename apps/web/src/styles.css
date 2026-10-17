@@ -229,8 +229,11 @@ a {
 }
 
 .rail-main {
-  /* 保存の状態（.save-state）が、この上の余白に収まる高さ */
-  --rail-main-padding-top: var(--space-4);
+  /*
+   * 保存の状態（.save-state）が収まる高さ。1 行の文字（--font-size-xs）の上下に、ヘッダーと title から
+   * 離れて見える空きを残す。--space-4 では文字がヘッダーの下端に貼り付いて見える
+   */
+  --rail-main-padding-top: var(--space-5);
 
   min-width: 0;
   padding: var(--rail-main-padding-top) var(--gutter) var(--space-7);
