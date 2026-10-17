@@ -893,6 +893,7 @@ a.segmented-option {
   font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-heading);
+  line-break: strict;
   word-break: auto-phrase;
   text-wrap: balance;
 }
@@ -911,8 +912,14 @@ a.segmented-option {
   color: var(--color-danger);
 }
 
+/*
+ * 見出しと本文は line-break: strict で、小さい仮名、長音、句読点を行頭に置かない。
+ * WebKit は既定（auto）だとこれらを行頭に置き、word-break: auto-phrase も解釈しない。
+ * そのため WebKit では語の途中で折り返すことが残る。
+ */
 .notice-text {
   font-size: var(--font-size-sm);
+  line-break: strict;
   word-break: auto-phrase;
   text-wrap: pretty;
 }
