@@ -12,6 +12,15 @@ const TOLERANCE = 40;
 
 const scrollY = (page: Page) => page.evaluate(() => Math.round(window.scrollY));
 
+/**
+ * 公開のページを `/p/<id>` で開く。開いた後に title の URL へ置き換わるので、その後の URL を戻り先として
+ * 測る。置き換わる前の URL を測ると、戻った先の履歴が置き換え後の URL になっていて一致しない
+ */
+async function gotoCanonical(page: Page, path: string): Promise<void> {
+  await page.goto(path);
+  await expect(page).not.toHaveURL(/\/p\//);
+}
+
 interface BodyLine {
   text: string;
   top: number;
@@ -230,7 +239,7 @@ test("owner の編集画面で本文の #tag を押すと、タグの一覧へ�
   page,
   seedIds,
 }) => {
-  await page.goto(`/p/${seedIds[SEED.welcome]}`);
+  await gotoCanonical(page, `/p/${seedIds[SEED.welcome]}`);
   const tag = bodyEditor(page).locator(".cm-tag", { hasText: "#メモ" });
   await expect(tag).toBeVisible();
   const pageUrl = page.url();
@@ -292,7 +301,7 @@ test("長いページから wikilink で別のページへ移って戻ると、�
   page,
   seedIds,
 }) => {
-  await page.goto(`/p/${seedIds[SEED.longPage]}`);
+  await gotoCanonical(page, `/p/${seedIds[SEED.longPage]}`);
   await expect(bodyEditor(page).getByText("見出し 1", { exact: true })).toBeVisible();
   await page.evaluate((y) => window.scrollTo(0, y), 3000);
   await expect.poll(() => scrollY(page)).toBe(3000);
@@ -357,7 +366,7 @@ test.describe("狭い画面で目次から見出しへ移ったページ", () =>
       page,
       seedIds,
     }) => {
-      await page.goto(`/p/${seedIds[SEED.longPage]}`);
+      await gotoCanonical(page, `/p/${seedIds[SEED.longPage]}`);
       await expect(bodyEditor(page).getByText("見出し 1", { exact: true })).toBeVisible();
       const toc = page.locator("details.toc");
       await toc.locator("summary").click();
