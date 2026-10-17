@@ -9,6 +9,7 @@ import { insertApiToken, insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
 import {
   authorizationFailure,
+  breakableUriHtml,
   consentPage,
   describeRegistration,
   describeScopesHtml,
@@ -427,7 +428,7 @@ describe("認可と同意画面", () => {
     expect(style).toContain(".button-danger {");
     expect(html).toContain("&#60;script&#62;x&#60;/script&#62;");
     expect(html).toContain("<strong>claude.ai</strong>");
-    expect(html).toContain(CALLBACK);
+    expect(html).toContain(breakableUriHtml(CALLBACK));
     expect(html).toContain(`client_id: <code>${client.client_id}</code>`);
     expect(html).toContain("<dt>接続するアプリ</dt>");
     expect(html).toMatch(/<dt>要求された権限<\/dt>\s*<dd>読み書き<\/dd>/);
@@ -1121,6 +1122,51 @@ describe("describeScopesHtml", () => {
 
   it("scope が無ければ null にする", () => {
     expect(describeScopesHtml([])).toBeNull();
+  });
+});
+
+describe("送り先 URL の折り返し", () => {
+  const consent = {
+    clientId: "c1",
+    clientName: "Claude",
+    redirectUri: "https://claude.ai/api/mcp/auth_callback",
+    redirectHost: "claude.ai",
+    redirectIsLoopback: false,
+    scope: ["read"],
+  };
+  const page = () => consentPage(consent, "h", { registeredAt: null, now: T0, siteName: "wiki" });
+
+  it("区切りの直後に <wbr> を入れ、`//` の間と区切りの無い語の中には入れない", () => {
+    expect(breakableUriHtml("https://claude.ai/api/mcp/auth_callback")).toBe(
+      "https://<wbr>claude.ai/<wbr>api/<wbr>mcp/<wbr>auth_callback",
+    );
+    expect(breakableUriHtml("https://a.example/cb?x=1&y=2#top")).toBe(
+      "https://<wbr>a.example/<wbr>cb?<wbr>x=1&#38;<wbr>y=2#<wbr>top",
+    );
+    expect(breakableUriHtml("custom-scheme")).toBe("custom-scheme");
+  });
+
+  it("区切ってからエスケープするので、URL の中の特殊文字は <wbr> 以外のタグにならない", () => {
+    const html = breakableUriHtml(`https://a.example/<img src=x onerror=alert(1)>/"'&`);
+    expect(html.replaceAll("<wbr>", "")).toBe(
+      "https://a.example/&#60;img src=x onerror=alert(1)&#62;/&#34;&#39;&#38;",
+    );
+    expect(html).not.toContain("<img");
+  });
+
+  it("同意画面は送り先の URL だけに <wbr> を入れ、タグの中には入れない", () => {
+    const html = page();
+    expect(html).toContain(
+      '<code class="uri">https://<wbr>claude.ai/<wbr>api/<wbr>mcp/<wbr>auth_callback</code>',
+    );
+    expect(html.match(/<wbr>/g)).toHaveLength(4);
+    expect(html).not.toMatch(/<[^>]*<wbr>[^>]*>/);
+  });
+
+  it("画面の CSS は、日本語を文節で折り返し、最後の行を 1 文字にしない", () => {
+    const body = /\nbody \{([^}]*)\}/.exec(page())?.[1] ?? "";
+    expect(body).toContain("word-break: auto-phrase;");
+    expect(body).toContain("text-wrap: pretty;");
   });
 });
 

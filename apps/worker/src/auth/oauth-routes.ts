@@ -456,6 +456,18 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
+/**
+ * URL の区切り（`/`、`?`、`&`、`#`）の直後に折り返せる位置を作る。CSS の overflow-wrap だけでは
+ * 行の幅いっぱいで切れ、語の途中で折り返す。`//` のように区切りが続く間では切らない。
+ * 区切ってからそれぞれをエスケープするので、足すタグは `<wbr>` だけになる。
+ */
+export function breakableUriHtml(uri: string): string {
+  return uri
+    .split(/(?<=[/?&#])(?![/?&#])/)
+    .map(escapeHtml)
+    .join("<wbr>");
+}
+
 /** 「3 分前（2026/10/01 00:00 UTC）」の形。時計のずれで未来になった場合も 1 分以内に丸める */
 export function describeRegistration(registeredAt: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - registeredAt) / 60_000));
@@ -521,7 +533,7 @@ export function consentPage(
 <div><dt>接続するアプリ</dt>
 <dd>${name}<small class="note">この名前はアプリ自身が名乗ったもので、確かめられていません。</small><small class="note">client_id: <code>${escapeHtml(consent.clientId)}</code></small></dd></div>
 <div><dt>トークンの送り先</dt>
-<dd><strong>${escapeHtml(consent.redirectHost)}</strong><code class="uri">${escapeHtml(consent.redirectUri)}</code></dd></div>
+<dd><strong>${escapeHtml(consent.redirectHost)}</strong><code class="uri">${breakableUriHtml(consent.redirectUri)}</code></dd></div>
 ${registered}<div><dt>要求された権限</dt>
 <dd>${requested}</dd></div>
 </dl>

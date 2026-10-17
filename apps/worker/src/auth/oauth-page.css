@@ -28,6 +28,8 @@ body {
   padding: var(--space-6) var(--gutter);
   font-size: var(--font-size-base);
   overflow-wrap: anywhere;
+  word-break: auto-phrase;
+  text-wrap: pretty;
 }
 
 a {
