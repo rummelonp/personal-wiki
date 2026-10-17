@@ -407,8 +407,10 @@ describe("backup と load の往復", () => {
   it("大きな本文が多くても batch に分けて読み、往復で一致する", () => {
     const source = migratedDb();
     const body = "x\\n".repeat(15_000);
+    // batch が 4 つ以上になる最小限に抑える。同期の処理なので、増やすと負荷の高いときに時間切れになる
+    const PAGES = 40;
     const commands: string[] = [];
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < PAGES; i++) {
       seedPage(source, {
         id: `p${String(i).padStart(21, "0")}`,
         title: `t${i}`,
@@ -419,8 +421,8 @@ describe("backup と load の往復", () => {
     const { io } = ioFor(source, {}, (sql) => commands.push(sql));
     const result = backup({ command: "backup", remote: false, out: tmp(), withTokens: false }, io);
     expect(commands.filter((c) => c.includes('FROM "pages"')).length).toBeGreaterThan(3);
-    expect(result.tables.pages?.rows).toBe(130);
-    expect(result.tables.revisions?.rows).toBe(130 + 44);
+    expect(result.tables.pages?.rows).toBe(PAGES);
+    expect(result.tables.revisions?.rows).toBe(PAGES + Math.ceil(PAGES / 3));
 
     const dest = migratedDb();
     load({ command: "load", remote: false, dir: result.dir }, ioFor(dest).io);
