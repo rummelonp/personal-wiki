@@ -8,6 +8,13 @@
 /** ドックが本文を覆う範囲が変わったとき（通知の出入り、折り返しの変化、キーボードでの持ち上がり）に document へ送るイベント。 */
 export const NOTICE_DOCK_RESIZE = "notice-dock-resize";
 
+/**
+ * 打っている行とドックの間に空ける高さ（px）。行の直下にある本文のメーター（上限の近さ、超過量）が、
+ * ドックの通知に覆われないために、メーターの高さと余白を足した分より大きく取る。
+ * 行の下端をドックの上端に付けると、上限を超えたとき最も見たいメーターが通知の裏に隠れる。
+ */
+export const NOTICE_CARET_GAP = 32;
+
 /** ドックが覆っている範囲。通知が無ければ null。 */
 export function noticeDockRect(): DOMRect | null {
   const dock = document.querySelector(".notice-dock");

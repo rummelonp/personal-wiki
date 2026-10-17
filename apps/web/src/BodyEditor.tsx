@@ -21,7 +21,7 @@ import {
 import { extractBlockIds, findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { bodyScrollAnchor } from "./body-scroll-anchor";
-import { NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
+import { NOTICE_CARET_GAP, NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 import type { PageFragment } from "./page-fragment";
 import { tagHref } from "./route";
 import { registerScrollAnchor } from "./scroll-restore";
@@ -128,12 +128,15 @@ function leaveEditing(editor: EditorView): void {
   if (editor.hasFocus) editor.contentDOM.blur();
 }
 
-/** カーソルの行が、画面に見えていて、通知のドックに重なっているか。描画の外（coords が無い）なら false。 */
+/**
+ * カーソルの行が、画面に見えていて、通知のドックか、その上に空ける間（NOTICE_CARET_GAP）に重なっているか。
+ * 描画の外（coords が無い）なら false。
+ */
 function caretUnderNoticeDock(editor: EditorView): boolean {
   const dock = noticeDockRect();
   const caret = editor.coordsAtPos(editor.state.selection.main.head);
   if (dock === null || caret === null) return false;
-  return caret.bottom > dock.top && caret.top < dock.bottom;
+  return caret.bottom > dock.top - NOTICE_CARET_GAP && caret.top < dock.bottom;
 }
 
 /**

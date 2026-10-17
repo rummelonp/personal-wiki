@@ -1,7 +1,7 @@
 import { Prec } from "@codemirror/state";
 import { EditorView, repositionTooltips, tooltips, ViewPlugin } from "@codemirror/view";
 import { tooltipSpace } from "@personal-wiki/editor";
-import { NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
+import { NOTICE_CARET_GAP, NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 
 /**
  * ヘッダーの下端の位置（viewport の上端から）。ヘッダーは画面の上端に残るので、本文のスクロール先は
@@ -31,6 +31,7 @@ const markScrolling = EditorView.scrollHandler.of((view) => {
 /**
  * 見出しへの移動やカーソル行のスクロールで、対象がヘッダーの下と、画面の下端に重なる通知のドックの
  * 上に隠れないようにする。通知は本文を動かさず重なるので、打っている行はスクロールで逃がす。
+ * ドックの上は NOTICE_CARET_GAP だけ空ける。tooltip の読み手には空けない（窓はドックの上端まで使える）。
  * CodeMirror は CSS の scroll-padding を読まず、この facet だけを見る。
  *
  * scrollIntoView 以外の読み手には、本文の箱に実際に重なる分だけを返す。箱がヘッダーの下にあるのに
@@ -50,7 +51,12 @@ function scrollMarginsBelow(extraTop: (view: EditorView) => number) {
   return EditorView.scrollMargins.of((view) => {
     const header = stickyHeaderBottom();
     const dock = noticeDockRect();
-    if (scrolling.delete(view)) return { top: header + extraTop(view), bottom: dock?.height ?? 0 };
+    if (scrolling.delete(view)) {
+      return {
+        top: header + extraTop(view),
+        bottom: dock === null ? 0 : dock.height + NOTICE_CARET_GAP,
+      };
+    }
     const box = view.scrollDOM.getBoundingClientRect();
     return {
       top: Math.min(Math.max(header - box.top, 0), header),

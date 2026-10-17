@@ -12,7 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { BodyEditor, type BodyEditorHandle, type BodyEditorProps } from "./BodyEditor";
-import { NOTICE_DOCK_RESIZE } from "./notice-dock";
+import { NOTICE_CARET_GAP, NOTICE_DOCK_RESIZE } from "./notice-dock";
 import type { WikiLinkSources } from "./wiki-links";
 
 beforeAll(() => {
@@ -433,7 +433,27 @@ describe("通知のドック", () => {
     showDock();
     await vi.waitFor(() => {
       const bottom = v.coordsAtPos(at)?.bottom ?? Number.NaN;
-      expect(bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT);
+      expect(bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT - NOTICE_CARET_GAP);
+    });
+  });
+
+  it("ドックには覆われなくても、行とドックの間が空いていなければ、間を空けるまで逃がす", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    act(() => v.focus());
+    const at = offsetNearBottom(v);
+    v.dispatch({ selection: { anchor: at } });
+    // 行の下端をドックの上端のすぐ上（間 4px）に置く。覆われてはいないが、間が足りない
+    const bottom = v.coordsAtPos(at)?.bottom ?? Number.NaN;
+    window.scrollBy(0, bottom - (window.innerHeight - DOCK_HEIGHT - 4));
+    await vi.waitFor(() => {
+      const now = v.coordsAtPos(at)?.bottom ?? Number.NaN;
+      expect(now).toBeCloseTo(window.innerHeight - DOCK_HEIGHT - 4, 0);
+    });
+    showDock();
+    await vi.waitFor(() => {
+      const now = v.coordsAtPos(at)?.bottom ?? Number.NaN;
+      expect(now).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT - NOTICE_CARET_GAP);
     });
   });
 

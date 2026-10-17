@@ -91,6 +91,56 @@ test("本文が上限を超えると送らずに超えた量を出し、減ら�
   expect(saved.body.replace(/[a\n]/g, "")).toBe("bbbb");
 });
 
+test("本文の末尾を画面の下寄りで打って上限を超えても、通知は行の下のメーターを覆わない", async ({
+  page,
+  api,
+}, testInfo) => {
+  await openNearLimit(page, api, uniqueTitle(testInfo, "メーター"), 4);
+  const meter = page.locator(".body-meter .input-meter");
+  const over = notice(page, "本文が長すぎて保存できません");
+  const viewport = page.viewportSize();
+  if (viewport === null) throw new Error("viewport が無い");
+
+  // 末尾の行が画面の下寄りに来るまで、末尾から戻す。下寄りの行は、通知が出れば覆う位置にある
+  const last = bodyEditor(page).locator(".cm-line").last();
+  // 長い本文は描いた行から高さを測り直すので、末尾の位置は 1 回のスクロールでは定まらない
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      return meter.evaluate((element) => element.getBoundingClientRect().bottom <= innerHeight);
+    }, "末尾までスクロールできない")
+    .toBe(true);
+  const lastY = (await last.boundingBox())?.y;
+  if (lastY === undefined) throw new Error("末尾の行の位置を取れない");
+  await page.evaluate((by) => window.scrollBy(0, -by), viewport.height * 0.8 - lastY);
+  await expect
+    .poll(
+      async () => ((await last.boundingBox())?.y ?? 0) / viewport.height,
+      "末尾の行が下寄りにない",
+    )
+    .toBeGreaterThan(0.6);
+
+  await typeAtBodyEnd(page, "bbbbbb");
+  await expect(over).toBeVisible();
+  await expect
+    .poll(async () => {
+      const meterBox = await meter.boundingBox();
+      const overBox = await over.boundingBox();
+      if (meterBox === null || overBox === null) return Number.NaN;
+      return meterBox.y + meterBox.height - overBox.y;
+    }, "通知がメーターに重なっている")
+    .toBeLessThanOrEqual(0);
+
+  // 続けて打っても、行とメーターは通知の上に残る
+  await page.keyboard.type("b");
+  const lineBox = await last.boundingBox();
+  const overBox = await over.boundingBox();
+  const meterBox = await meter.boundingBox();
+  if (lineBox === null || overBox === null || meterBox === null) throw new Error("位置を取れない");
+  expect(lineBox.y + lineBox.height).toBeLessThanOrEqual(meterBox.y);
+  expect(meterBox.y + meterBox.height).toBeLessThanOrEqual(overBox.y + 0.5);
+});
+
 test("上限を超えたまま画面を離れると送らずに退避し、開き直すと復元を選べる", async ({
   page,
   api,
