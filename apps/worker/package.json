@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @personal-wiki/web build && wrangler dev",
-    "dev:owner": "pnpm --filter @personal-wiki/web build && node scripts/dev-owner.mjs",
+    "dev": "env -u VITE_SITE_NAME pnpm --filter @personal-wiki/web build && wrangler dev",
+    "dev:owner": "env -u VITE_SITE_NAME pnpm --filter @personal-wiki/web build && node scripts/dev-owner.mjs",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "node scripts/deploy.mjs migrate",
     "deploy:remote": "node scripts/deploy.mjs deploy",

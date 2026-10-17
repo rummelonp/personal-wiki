@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   test: {
+    // 既定のサイト名を期待するテストが、シェルに残った VITE_SITE_NAME に左右されないよう空にする
+    env: { VITE_SITE_NAME: "" },
     include: ["src/**/*.test.tsx"],
     browser: {
       enabled: true,

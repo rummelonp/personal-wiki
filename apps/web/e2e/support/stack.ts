@@ -161,7 +161,9 @@ export async function startStack(): Promise<Stack> {
     process.env.E2E_SKIP_BUILD === "1"
       ? Promise.resolve()
       : timed("build", async () => {
-          await run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR });
+          // Worker は SITE_NAME を持たず既定の名前を出すので、シェルに残った VITE_SITE_NAME を web に渡さない
+          const { VITE_SITE_NAME: _, ...env } = process.env;
+          await run("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: WEB_DIR, env });
         });
   // migration が先に失敗すると build は待たれないまま終わるので、未処理の reject にしない
   build.catch(() => {});

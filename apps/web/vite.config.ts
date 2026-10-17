@@ -26,8 +26,14 @@ const toWorker: ProxyOptions = {
   },
 };
 
+// サイト名は、bundle に埋める値（src/site-name.ts）と `<title>` を同じ環境変数から決める。
+// Vite は apps/web/.env* の VITE_SITE_NAME も bundle に読み込むので、define で上書きして、
+// `<title>` と Worker の SITE_NAME（deploy.mjs が同じ値を渡す）と値が分かれないようにする。
+const SITE_NAME = process.env.VITE_SITE_NAME?.trim() ?? "";
+
 export default defineConfig({
-  plugins: [react(), siteNameTitle(process.env.VITE_SITE_NAME)],
+  plugins: [react(), siteNameTitle(SITE_NAME)],
+  define: { "import.meta.env.VITE_SITE_NAME": JSON.stringify(SITE_NAME) },
   server: {
     proxy: {
       "/api": toWorker,
