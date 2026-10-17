@@ -57,6 +57,13 @@ E2E のポートは既定で 8790（inspector は 9339）。
 従の環境（Firefox、Android の Chromium、デスクトップの WebKit）の smoke と速さの計測（`apps/web/e2e/perf-budget.json` の予算）は `pnpm e2e:full` だけが走らせる。
 CI は E2E を流さないので、master に取り込む前と push の前に `pnpm e2e:full` を流す。
 
+速さの予算は、測った機械での値である。
+機械（CPU、OS など）を変えて予算を外れるようになったら、`pnpm e2e:full` を 2 回流し、`apps/web/e2e-output/perf-<project>.json` の `results` の `median` を指標ごとに見て、大きい方を `measured` に書く。
+`budget` は `measured` の 2 倍を 10ms 単位で切り上げた値にする。
+打鍵から表示まではフレームの刻みで揺れるので、50ms を下限にする。
+値の決め方は `apps/web/e2e/perf.spec.ts` の冒頭にもある。
+測り直さずに `budget` だけを上げない。
+
 ```sh
 pnpm e2e                    # apps/web/e2e のテスト（主の環境）。結果は apps/web/e2e-output/（gitignore 済み）
 pnpm e2e:full               # 全部の環境と速さの計測
