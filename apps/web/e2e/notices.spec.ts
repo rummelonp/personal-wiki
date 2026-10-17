@@ -622,29 +622,51 @@ test("台の上限に達して中でスクロールするとき、続きのあ�
   }
 });
 
-test("台の上限の手前の低さでは、台が数 px だけスクロールして details の欄と二重にならない", async ({
-  page,
-  api,
-}, testInfo) => {
-  await provokeLongConflict(page, api, uniqueTitle(testInfo, "低い画面"));
-  // 通知の下限の高さ（24rem）が、台の既定の上限（0.6）に収まらなくなる高さから、広げた上限（0.85）の手前まで
-  for (const height of [560, 520, 500, 485]) {
-    await page.setViewportSize({ width: 393, height });
-    await expect
-      .poll(
-        () =>
-          dock(page).evaluate((element) => ({
-            dockScrolls: element.scrollHeight > element.clientHeight + 1,
-            detailsScrolls: (() => {
-              const details = element.querySelector(".notice-details") as HTMLElement;
-              return details.scrollHeight > details.clientHeight + 1;
-            })(),
-          })),
-        { message: `高さ ${height}` },
-      )
-      .toEqual({ dockScrolls: false, detailsScrolls: true });
-    await expect(dock(page)).not.toHaveAttribute("data-more-below");
-    await expectDockOnScreen(page);
+test.describe("台の上限の境の前後の高さと狭い幅", () => {
+  // theme.css の値から出る境。通知の下限の高さ 24rem と台の余白 2 * 0.75rem を足した 408px が、
+  // 台の既定の上限（0.6）に収まる最も低い高さが 680px、広げた上限（0.85）に収まる最も低い高さが 480px
+  const HEIGHTS = [720, 700, 681, 679, 660, 560, 520, 500, 485];
+  const REM = 16;
+  const NOTICE_MIN = 24 * REM;
+  const DOCK_RATIO = 0.6;
+  const DOCK_PADDING = 2 * 0.75 * REM;
+
+  for (const width of [320, 375, 393]) {
+    test(`幅 ${width}`, async ({ page, api }, testInfo) => {
+      await provokeLongConflict(page, api, uniqueTitle(testInfo, "低い画面"));
+      for (const height of HEIGHTS) {
+        await page.setViewportSize({ width, height });
+        const label = `${width}x${height}`;
+        // 上の境（680）より高ければ通知は台の上限に合わせて伸び、低ければ下限の高さのまま、台が上限を広げて収める
+        const noticeHeight = Math.max(NOTICE_MIN, height * DOCK_RATIO - DOCK_PADDING);
+        await expect
+          .poll(
+            () =>
+              dock(page).evaluate((element) => {
+                const details = element.querySelector(".notice-details") as HTMLElement;
+                const notice = element.querySelector(".notice") as HTMLElement;
+                return {
+                  dockScrolls: element.scrollHeight > element.clientHeight + 1,
+                  detailsScrolls: details.scrollHeight > details.clientHeight + 1,
+                  detailsInside:
+                    details.getBoundingClientRect().bottom <=
+                    notice.getBoundingClientRect().bottom + 0.5,
+                  noticeHeight: Math.round(notice.getBoundingClientRect().height),
+                };
+              }),
+            { message: label },
+          )
+          .toEqual({
+            dockScrolls: false,
+            detailsScrolls: true,
+            detailsInside: true,
+            noticeHeight: Math.round(noticeHeight),
+          });
+        await expect(dock(page)).not.toHaveAttribute("data-more-below");
+        await expectDockOnScreen(page);
+        await expectNoHorizontalScroll(page);
+      }
+    });
   }
 });
 
