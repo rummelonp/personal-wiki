@@ -22,7 +22,9 @@ const NEWLINE = 10;
 // target は page の title で、title は 1 行に正規化される（domain の singleLineTitle）ので、
 // これらの文字を含む target は存在しない。`\n` と同じく、どの部分にあっても link にしない。
 // heading と block id にも使えなくなる。これらの文字を含む見出しへは link できない。
-const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+// editor の補完が打ちかけの `[[` の中身を同じ文字で切るので、文字の集合を export する。
+export const WIKILINK_LINE_TERMINATORS = "\n\r\u2028\u2029";
+const LINE_TERMINATOR = new RegExp(`[${WIKILINK_LINE_TERMINATORS}]`);
 const MARKER = /[#^]/;
 
 type LabelSeparator = "|" | "\\|";

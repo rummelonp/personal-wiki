@@ -27,7 +27,11 @@ import {
   tooltips,
   ViewPlugin,
 } from "@codemirror/view";
-import { extractLinkTargets, type LinkTargets } from "@personal-wiki/markdown";
+import {
+  extractLinkTargets,
+  type LinkTargets,
+  WIKILINK_LINE_TERMINATORS,
+} from "@personal-wiki/markdown";
 import { compositionSettled, compositionSettledNotifier, isComposing } from "./ime";
 import type { PageCandidate, PageIndex } from "./page-index";
 
@@ -72,8 +76,14 @@ export interface WikiLinkAutocompleteOptions {
   readonly typingDelay?: number;
 }
 
+/**
+ * 打ちかけの `[[` の中身に含められない改行の文字。wikilink の解析（`parseContent`）が弾く文字と
+ * 同じ集合を使う。補完だけが緩いと、リンクにならない `[[` に候補が出る。
+ */
+const BREAKS = WIKILINK_LINE_TERMINATORS;
+
 /** 行頭方向に `[[` があり、まだ `]]` も `|` も打たれていない位置 */
-const OPEN_LINK = /\[\[[^[\]|\n]*/;
+const OPEN_LINK = new RegExp(`\\[\\[[^[\\]|${BREAKS}]*`);
 const OPEN_LINK_AT_END = new RegExp(`${OPEN_LINK.source}$`);
 
 /**
@@ -82,7 +92,7 @@ const OPEN_LINK_AT_END = new RegExp(`${OPEN_LINK.source}$`);
  * それ以外は見出しの query。見出しの途中の `^`（`A^b`）は query の一部として許す。
  * 見出しを `A#B` と重ねる書き方（`extractHeadingSection`）は、候補を出す対象にしない。
  */
-const LINK_SECTION = /\[\[([^[\]|#^\n]*)#(\^?)([^[\]|#\n]*)/;
+const LINK_SECTION = new RegExp(`\\[\\[([^[\\]|#^${BREAKS}]*)#(\\^?)([^[\\]|#${BREAKS}]*)`);
 
 /**
  * query が続く間、同じ候補を使い続けてよい入力。
@@ -91,8 +101,8 @@ const LINK_SECTION = /\[\[([^[\]|#^\n]*)#(\^?)([^[\]|#\n]*)/;
  * 一覧に、空白で query の頭を飛ばした `from` に切り替わる。再利用すると、`^` や空白が絞り込みの
  * 文字として扱われて 0 件になり、候補が閉じる。
  */
-const HEADING_QUERY = /^(?:[^\s[\]|#^][^[\]|#\n]*)?$/;
-const BLOCK_QUERY = /^(?:[^\s[\]|#^][^[\]|#^\n]*)?$/;
+const HEADING_QUERY = new RegExp(`^(?:[^\\s[\\]|#^][^[\\]|#${BREAKS}]*)?$`);
+const BLOCK_QUERY = new RegExp(`^(?:[^\\s[\\]|#^][^[\\]|#^${BREAKS}]*)?$`);
 
 /**
  * 見出しと block id の候補の、本文での並び。絞り込みの点数が同じ候補（query が空のときは全部）の

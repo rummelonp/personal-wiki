@@ -4,7 +4,7 @@ import {
   currentCompletions,
   startCompletion,
 } from "@codemirror/autocomplete";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, runScopeHandlers } from "@codemirror/view";
 import type { LinkTargets } from "@personal-wiki/markdown";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +27,7 @@ function mount(
   doc = "",
   linkTargets?: LinkTargetSource,
   index?: PageIndex,
+  extra: Extension = [],
 ): { view: EditorView; transactions: () => number } {
   let transactions = 0;
   host = document.createElement("div");
@@ -39,9 +40,12 @@ function mount(
       createMemoryPageIndex([{ id: "p1", title: "Code" }], {
         normalize: (text) => text.toLowerCase(),
       }),
-    extensions: EditorView.updateListener.of((update) => {
-      transactions += update.transactions.length;
-    }),
+    extensions: [
+      extra,
+      EditorView.updateListener.of((update) => {
+        transactions += update.transactions.length;
+      }),
+    ],
   });
   return { view, transactions: () => transactions };
 }
@@ -311,6 +315,54 @@ describe("the index retry", () => {
 
 /** autocomplete が source の結果を受けて dispatch しうる期間（`updateSyncTime` の 100ms）より長く待つ */
 const afterCompletionWouldSettle = () => new Promise((resolve) => setTimeout(resolve, 200));
+
+/**
+ * 解析（`parseContent`）が弾く改行の文字。`\r` は CodeMirror の既定では行を分けるので、
+ * 行の区切りを `\n` だけにして、1 行の中に残す。
+ */
+describe.each(["\r", "\u2028", "\u2029"])("an unfinished [[ containing %j", (breakChar) => {
+  const mountKeepingBreaks = (linkTargets?: LinkTargetSource) =>
+    mount("", linkTargets, undefined, EditorState.lineSeparator.of("\n")).view;
+
+  it("does not offer title candidates", async () => {
+    const v = mountKeepingBreaks();
+    await typeQuery(v, `Co${breakChar}d`);
+
+    expect(v.state.doc.lines).toBe(1);
+    expect(completionStatus(v.state)).toBeNull();
+  });
+
+  it("does not offer the create option", async () => {
+    const v = mountKeepingBreaks();
+    await typeQuery(v, `Zeta${breakChar}`);
+
+    expect(completionStatus(v.state)).toBeNull();
+  });
+
+  it("does not offer headings", async () => {
+    const targets = noteTargets();
+    const v = mountKeepingBreaks(targets);
+    await typeQuery(v, `Note${breakChar}x#`);
+
+    expect(completionStatus(v.state)).toBeNull();
+    expect(targets.load).not.toHaveBeenCalled();
+  });
+
+  it("does not offer headings when the break comes after the #", async () => {
+    const targets = noteTargets();
+    const v = mountKeepingBreaks(targets);
+    await typeQuery(v, `Note#${breakChar}x`);
+
+    expect(completionStatus(v.state)).toBeNull();
+  });
+
+  it("still offers candidates for a [[ typed after the break", async () => {
+    const v = mountKeepingBreaks();
+    await typeQuery(v, "Co", `a${breakChar}`);
+
+    expect(labels(v)).toEqual(["Code"]);
+  });
+});
 
 /**
  * IME 不変条件 1 と 4。ここでは composition 中の view を作れないので、source の

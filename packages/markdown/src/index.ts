@@ -38,6 +38,7 @@ export {
   extractWikiLinks,
   isEmbedWikiLink,
   splitWikiLinkContent,
+  WIKILINK_LINE_TERMINATORS,
   WikiLink,
   type WikiLinkParts,
   type WikiLinkRef,
