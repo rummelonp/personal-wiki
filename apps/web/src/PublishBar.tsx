@@ -14,8 +14,8 @@ const OPTIONS: ReadonlyArray<{ value: Visibility; label: string }> = [
 ];
 
 /*
- * 結果の知らせは、操作の右の狭い余白（375px で 90px 前後）に折り返して入る。<wbr> は、文節の切れ目に置く
- * 折り返し位置。WebKit は文節を判定しないので、これが無いと語の途中で切れる。
+ * 公開の行の知らせは、操作の右の余白に折り返して入る。幅の狭い画面では、この余白に 1 行で入らない文がある。
+ * <wbr> は文節の切れ目に置く折り返し位置。WebKit は文節を判定しないので、これが無いと語の途中で切れる。
  */
 const PENDING_NOTES: Record<Visibility, ReactNode> = {
   public: (
