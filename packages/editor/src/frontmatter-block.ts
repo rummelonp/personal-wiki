@@ -9,7 +9,7 @@ import {
 import { type BuiltDecorations, decorationPlugin } from "./decoration-plugin";
 import { isCompositionUnsettled } from "./ime";
 import { createRevealTest } from "./reveal";
-import { TAG_NAME_ATTR } from "./tag";
+import { canNavigateToTag, navigateToTag, TAG_NAME_ATTR } from "./tag";
 
 /** 畳んだときに隠す 2 行目以降。1 行目は枠の widget に置き換わるので残す */
 const foldedLine = Decoration.line({ class: "cm-frontmatter-folded" });
@@ -32,15 +32,6 @@ function chip(className: string, text: string): HTMLElement {
  */
 const tagName = (tag: string) => tag.replace(/^#/, "");
 
-/** 枠の名前。役割が button なので、中の chip は名前に入らず、ここで中身を言う */
-function frontmatterLabel({ tags, aliases, otherKeys }: FrontmatterFields): string {
-  const parts: string[] = [];
-  if (tags.length > 0) parts.push(tags.map((tag) => `#${tagName(tag)}`).join(" "));
-  if (aliases.length > 0) parts.push(`別名 ${aliases.join(" ")}`);
-  if (otherKeys.length > 0) parts.push(`ほか ${otherKeys.length} 項目`);
-  return parts.length > 0 ? `プロパティ: ${parts.join("、")}` : "プロパティ";
-}
-
 /** 畳んだ frontmatter の枠。`tags` と `aliases` を chip で見せ、他のキーは件数だけ出す */
 class FrontmatterWidget extends WidgetType {
   constructor(private readonly fields: FrontmatterFields) {
@@ -62,14 +53,30 @@ class FrontmatterWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const box = document.createElement("div");
     box.className = "cm-frontmatter";
-    box.setAttribute("role", "button");
-    box.setAttribute("aria-label", frontmatterLabel(this.fields));
+    // button にしない。button の子は支援技術から操作できず、tag の chip を押せなくなる。
+    // 枠のクリックで source を開く動きは pointer の近道で、キーボードでは caret が枠に触れると開く。
+    box.setAttribute("role", "group");
+    // 名前に中身を並べない。group の中で chip が読まれるので、並べると同じ tag を 2 度読む
+    box.setAttribute("aria-label", "プロパティ");
     const { tags, aliases, otherKeys } = this.fields;
+    const navigable = canNavigateToTag(view.state);
 
     for (const tag of tags) {
       const name = tagName(tag);
       const chipElement = chip("cm-tag cm-frontmatter-chip", `#${name}`);
       chipElement.setAttribute(TAG_NAME_ATTR, name);
+      if (navigable) {
+        // 遷移先を持たない view（遷移を受け取る handler が無い）では、押せないものに Tab を止めない
+        chipElement.setAttribute("role", "link");
+        chipElement.tabIndex = 0;
+        chipElement.addEventListener("keydown", (event) => {
+          // link の Shift+Enter は「別の窓で開く」操作なので、同じ画面に移るこの遷移では取らない
+          const modified = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+          if (event.key !== "Enter" || modified) return;
+          event.preventDefault();
+          navigateToTag(view.state, name);
+        });
+      }
       box.append(chipElement);
     }
     if (aliases.length > 0) box.append(chip("cm-frontmatter-label", "別名"));
@@ -101,8 +108,10 @@ class FrontmatterWidget extends WidgetType {
   // widget 自身の listener は true でも呼ばれる。false が要るのは chip のクリックのほうで、
   // 既定の true だと `eventBelongsToEditor` が枠の中の event を editor の外のものとみなし、
   // `tag.ts` が facet で登録した `mousedown` の handler まで届かない。
-  override ignoreEvent(): boolean {
-    return false;
+  // キー入力だけは editor へ渡さない。chip に focus がある間も選択範囲は本文に残るので、
+  // 渡すと Enter や Backspace が見えていない本文を書き換える。
+  override ignoreEvent(event: Event): boolean {
+    return event instanceof KeyboardEvent;
   }
 }
 

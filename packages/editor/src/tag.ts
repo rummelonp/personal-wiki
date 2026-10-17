@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { type Extension, Facet, type Range } from "@codemirror/state";
+import { type EditorState, type Extension, Facet, type Range } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { tagNodes } from "@personal-wiki/markdown";
 import { type BuiltDecorations, decorationPlugin } from "./decoration-plugin";
@@ -72,6 +72,16 @@ function build(view: EditorView): BuiltDecorations {
   return { decorations: Decoration.set(decorations, true) };
 }
 
+/** tag の遷移を受け取る handler が登録されているか。無ければ tag は押しても何も起きない */
+export function canNavigateToTag(state: EditorState): boolean {
+  return state.facet(tagClickHandler).length > 0;
+}
+
+/** 登録された handler に tag の遷移を渡す。素のクリックと、キーボードでの起動が共有する */
+export function navigateToTag(state: EditorState, name: string): void {
+  for (const handler of state.facet(tagClickHandler)) handler({ name });
+}
+
 /**
  * 素のクリックでナビゲーションする（`wikilink.ts` と同じ規約）。修飾クリックは取らない。
  * `TagHref` を渡して `<a href>` にした tag の修飾クリックと中クリックは `link-activation.ts` が起動する。
@@ -81,13 +91,12 @@ function build(view: EditorView): BuiltDecorations {
 const clickToNavigate = EditorView.domEventHandlers({
   mousedown(event, view) {
     if (event.button !== 0 || isModifiedClick(event)) return false;
-    const handlers = view.state.facet(tagClickHandler);
-    if (handlers.length === 0) return false;
+    if (!canNavigateToTag(view.state)) return false;
     const element =
       event.target instanceof Element ? event.target.closest(`[${TAG_NAME_ATTR}]`) : null;
     const name = element?.getAttribute(TAG_NAME_ATTR);
     if (!element || !name) return false;
-    for (const handler of handlers) handler({ name });
+    navigateToTag(view.state, name);
     event.preventDefault();
     return true;
   },

@@ -442,6 +442,11 @@ export const livePreviewTheme = EditorView.baseTheme({
   // tag の chip は本文中の `#tag` と同じ見た目にする（`.cm-tag` が色と地を持つ）
   ".cm-frontmatter-chip.cm-tag": { border: "0" },
   ".cm-frontmatter-label": { marginRight: "0.35em", color: "var(--ui-color-muted)" },
+  // Tab で届いたときの目印。この package はホストの全体の style（`:focus-visible`）に頼らない
+  ".cm-frontmatter-chip:focus-visible": {
+    outline: "2px solid var(--ui-color-accent)",
+    outlineOffset: "1px",
+  },
   ".cm-wikilink": {
     color: "var(--ui-color-accent)",
     textDecoration: "underline",
@@ -591,5 +596,10 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-lp-callout-fold": { cursor: "pointer", paddingLeft: "0.4em", userSelect: "none" },
   ".cm-lp-callout-fold::before": { content: '"▾"' },
   '.cm-lp-callout-fold[aria-expanded="false"]::before': { content: '"▸"' },
+  // Tab で届いたときの目印。この package はホストの全体の style（`:focus-visible`）に頼らない
+  ".cm-lp-callout-fold:focus-visible": {
+    outline: "2px solid var(--ui-color-accent)",
+    outlineOffset: "1px",
+  },
   ...calloutTypeStyles,
 });

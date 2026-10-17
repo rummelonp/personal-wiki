@@ -62,28 +62,17 @@ describe("frontmatter block", () => {
   describe("枠の aria-label", () => {
     const label = (source: string) => box(mount(source))?.getAttribute("aria-label");
 
-    it("tags、aliases、他のキーの件数から組み立てる", () => {
-      expect(label(doc)).toBe("プロパティ: #仕事 #読書、別名 別名、ほか 1 項目");
-    });
-
-    it("無い部分は省く", () => {
-      expect(label("---\ntags: [仕事]\n---\n本文")).toBe("プロパティ: #仕事");
-      expect(label("---\naliases: [別名]\n---\n本文")).toBe("プロパティ: 別名 別名");
-      expect(label("---\ntitle: X\nkind: Y\n---\n本文")).toBe("プロパティ: ほか 2 項目");
-    });
-
-    it("tag の先頭の # は 1 つにそろえる", () => {
-      expect(label("---\ntags: ['#仕事']\n---\n本文")).toBe("プロパティ: #仕事");
-    });
-
-    it("キーが 1 つも無ければ「プロパティ」だけにする", () => {
+    it("中身を含めず「プロパティ」だけにする（中身は group の中の chip が伝える）", () => {
+      expect(label(doc)).toBe("プロパティ");
+      expect(label("---\ntags: [仕事]\n---\n本文")).toBe("プロパティ");
       expect(label("---\n---\n本文")).toBe("プロパティ");
     });
 
-    it("tags を書き換えると名前も変わる", () => {
+    it("tags を書き換えても名前は変わらない", () => {
       const v = mount("---\ntags: [仕事]\n---\n本文");
       v.dispatch({ changes: { from: "---\ntags: [".length, insert: "読書, " } });
-      expect(box(v)?.getAttribute("aria-label")).toBe("プロパティ: #読書 #仕事");
+      expect(box(v)?.getAttribute("aria-label")).toBe("プロパティ");
+      expect(chipTexts(v)).toEqual(["#読書", "#仕事"]);
     });
   });
 
@@ -134,6 +123,65 @@ describe("frontmatter block", () => {
     expect(onTagClick).toHaveBeenCalledWith({ name: "仕事" });
     expect(box(v)).not.toBeNull();
     expect(v.state.selection.main.head).toBe(0);
+  });
+
+  describe("キーボード", () => {
+    const keydown = (element: HTMLElement | null, key: string, init: KeyboardEventInit = {}) => {
+      if (!element) throw new Error("the element is not drawn");
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+      element.dispatchEvent(event);
+      return event;
+    };
+    const tagChip = (v: EditorView) =>
+      v.contentDOM.querySelector<HTMLElement>(".cm-frontmatter-chip.cm-tag");
+
+    it("tag の chip は Tab で届くリンクで、支援技術から押せるよう button の子にしない", () => {
+      const v = mount(doc, { onTagClick: vi.fn() });
+      const chip = tagChip(v);
+      expect(chip?.tabIndex).toBe(0);
+      expect(chip?.getAttribute("role")).toBe("link");
+      expect(chip?.closest("[role=button]")).toBeNull();
+      expect(box(v)?.getAttribute("role")).toBe("group");
+    });
+
+    it("tag の chip で Enter を押すとクリックと同じ遷移を呼び、枠を畳んだままにする", () => {
+      const onTagClick = vi.fn();
+      const v = mount(doc, { onTagClick });
+      const second = v.contentDOM.querySelectorAll<HTMLElement>(".cm-frontmatter-chip.cm-tag")[1];
+
+      const event = keydown(second ?? null, "Enter");
+
+      expect(onTagClick).toHaveBeenCalledExactlyOnceWith({ name: "読書" });
+      expect(event.defaultPrevented).toBe(true);
+      expect(box(v)).not.toBeNull();
+      expect(v.state.selection.main.head).toBe(0);
+    });
+
+    it("Enter 以外のキーと修飾キー付きの Enter では遷移しない", () => {
+      const onTagClick = vi.fn();
+      const v = mount(doc, { onTagClick });
+      keydown(tagChip(v), " ");
+      keydown(tagChip(v), "a");
+      keydown(tagChip(v), "Enter", { metaKey: true });
+      keydown(tagChip(v), "Enter", { ctrlKey: true });
+      keydown(tagChip(v), "Enter", { altKey: true });
+      keydown(tagChip(v), "Enter", { shiftKey: true });
+      expect(onTagClick).not.toHaveBeenCalled();
+    });
+
+    it("chip のキー入力は本文を書き換えない", () => {
+      const v = mount(doc, { onTagClick: vi.fn() });
+      const before = v.state.doc.toString();
+      for (const key of ["Enter", "Backspace", "Delete", "x"]) keydown(tagChip(v), key);
+      expect(v.state.doc.toString()).toBe(before);
+    });
+
+    it("遷移を受け取る handler が無い view では chip に Tab を止めない", () => {
+      const v = mount(doc);
+      const chip = tagChip(v);
+      expect(chip?.hasAttribute("tabindex")).toBe(false);
+      expect(chip?.hasAttribute("role")).toBe(false);
+    });
   });
 
   it("`#` 付きで書かれた tag も `#` を 1 つだけ見せる", () => {

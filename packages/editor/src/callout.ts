@@ -282,10 +282,12 @@ function calloutOnLine(state: EditorState, line: Line): (Callout & { to: number 
   return found;
 }
 
-function toggleFold(view: EditorView, dom: HTMLElement, collapse: boolean): void {
+/** `dom` は開閉ボタン。いまの状態は DOM の `aria-expanded` から読む（要素は状態が変わっても使い回す） */
+function toggleFold(view: EditorView, dom: HTMLElement): void {
   // クリックは通常 composition を確定させてから届くが、確定文字列を読み込む前に
   // dispatch すると確定文字列が消えるので、その間は何もしない（IME 不変条件 1）。
   if (isCompositionUnsettled(view)) return;
+  const collapse = dom.getAttribute("aria-expanded") === "true";
   const { state } = view;
   const line = state.doc.lineAt(view.posAtDOM(dom));
   const callout = calloutOnLine(state, line);
@@ -344,23 +346,38 @@ export class CalloutFoldWidget extends WidgetType {
     const button = document.createElement("span");
     button.className = "cm-lp-callout-fold";
     button.setAttribute("role", "button");
-    button.setAttribute("aria-expanded", String(!this.collapsed));
-    // 開閉の状態は aria-expanded が伝えるので、名前は開閉の対象に固定する
-    button.setAttribute("aria-label", `「${this.title}」の内容`);
+    // Tab で届くようにする。`<button>` でなく span なのは、mousedown と keydown を自前で処理し、
+    // button の既定の click（Space は keyup で発火する）と二重に開閉しないため
+    button.tabIndex = 0;
+    this.describe(button);
     // mousedown で処理する。click まで待つと editor がカーソルを見出し行へ動かし、source が出る。
     button.addEventListener("mousedown", (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
-      toggleFold(view, button, !this.collapsed);
+      toggleFold(view, button);
+    });
+    // 修飾キーを伴う Enter と Space は、ブラウザや OS の操作に残す
+    button.addEventListener("keydown", (event) => {
+      if (event.target !== button || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      // Space の既定の動作はスクロール
+      event.preventDefault();
+      toggleFold(view, button);
     });
     return button;
   }
 
-  // タイトルを打つたびに名前だけが変わるので、開閉の状態が同じなら DOM を残して名前を書き換える。
+  // 開閉の状態が変わっても要素を使い回す。作り直すと、キーボードで開閉した直後に focus が外れ、
+  // 続けて Enter を押せず、読み上げも状態の変化でなく新しいボタンとして読む。
   override updateDOM(dom: HTMLElement): boolean {
-    if (dom.getAttribute("aria-expanded") !== String(!this.collapsed)) return false;
-    dom.setAttribute("aria-label", `「${this.title}」の内容`);
+    this.describe(dom);
     return true;
+  }
+
+  // 開閉の状態は aria-expanded が伝えるので、名前は開閉の対象に固定する
+  private describe(button: HTMLElement): void {
+    button.setAttribute("aria-expanded", String(!this.collapsed));
+    button.setAttribute("aria-label", `「${this.title}」の内容`);
   }
 
   override ignoreEvent(): boolean {

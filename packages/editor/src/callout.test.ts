@@ -289,12 +289,14 @@ describe("callout fold button name", () => {
     expect(before?.getAttribute("aria-label")).toBe("「新」の内容");
   });
 
-  it("開閉の状態が変わるときはボタンの要素を作り直す", () => {
+  it("開閉の状態が変わるときも同じボタンの要素を使い続け、状態だけを書き換える", () => {
     const v = mount("> [!note]+ 手順\n> 本文");
     const before = foldButtons(v)[0];
     pressFold(before);
-    expect(foldButtons(v)[0]).not.toBe(before);
-    expect(foldButtons(v)[0]?.getAttribute("aria-expanded")).toBe("false");
+    expect(foldButtons(v)[0]).toBe(before);
+    expect(before?.getAttribute("aria-expanded")).toBe("false");
+    pressFold(before);
+    expect(before?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("タイトルを書き換えると名前も変わる", () => {
@@ -303,6 +305,75 @@ describe("callout fold button name", () => {
       changes: { from: "> [!note]+ ".length, to: "> [!note]+ 旧".length, insert: "新" },
     });
     expect(foldButtons(v)[0]?.getAttribute("aria-label")).toBe("「新」の内容");
+  });
+});
+
+describe("callout fold button keyboard", () => {
+  const keydown = (button: HTMLElement | undefined, key: string, init: KeyboardEventInit = {}) => {
+    if (!button) throw new Error("fold button is not rendered");
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+    button.dispatchEvent(event);
+    return event;
+  };
+
+  it("Tab で届き、ボタンとして読み上げられる", () => {
+    const v = mount("> [!note]- 手順\n> 本文");
+    const button = foldButtons(v)[0];
+    expect(button?.tabIndex).toBe(0);
+    expect(button?.getAttribute("role")).toBe("button");
+    expect(button?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it.each(["Enter", " "])("%j で開閉し、本文を書き換えない", (key) => {
+    const doc = "> [!note]- 手順\n> 本文";
+    const v = mount(doc);
+    expect(foldedLines(v)).toEqual([false, true]);
+
+    const event = keydown(foldButtons(v)[0], key);
+    expect(event.defaultPrevented).toBe(true);
+    expect(foldedLines(v)).toEqual([false, false]);
+    expect(foldButtons(v)[0]?.getAttribute("aria-expanded")).toBe("true");
+
+    keydown(foldButtons(v)[0], key);
+    expect(foldedLines(v)).toEqual([false, true]);
+    expect(v.state.doc.toString()).toBe(doc);
+  });
+
+  it("開閉した後も focus がボタンに残り、続けて操作できる", () => {
+    const v = mount("> [!note]+ 手順\n> 本文");
+    const button = foldButtons(v)[0];
+    button?.focus();
+    expect(document.activeElement).toBe(button);
+
+    keydown(button, "Enter");
+    expect(foldedLines(v)).toEqual([false, true]);
+    expect(document.activeElement).toBe(button);
+    keydown(foldButtons(v)[0], " ");
+    expect(foldedLines(v)).toEqual([false, false]);
+  });
+
+  it("他のキーと、修飾キーを伴う Enter では開閉しない", () => {
+    const v = mount("> [!note]- 手順\n> 本文");
+    const button = foldButtons(v)[0];
+    keydown(button, "a");
+    keydown(button, "Tab");
+    keydown(button, "Enter", { metaKey: true });
+    keydown(button, "Enter", { ctrlKey: true });
+    keydown(button, "Enter", { altKey: true });
+    expect(foldedLines(v)).toEqual([false, true]);
+  });
+
+  it("composition が落ち着くまでキーを無視する（IME 不変条件 1）", async () => {
+    const v = mount("> [!note]+ 手順\n> 本文");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    keydown(foldButtons(v)[0], "Enter");
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    keydown(foldButtons(v)[0], "Enter");
+    expect(foldedLines(v)).toEqual([false, false]);
+
+    await vi.waitFor(() => expect(isCompositionUnsettled(v)).toBe(false));
+    keydown(foldButtons(v)[0], "Enter");
+    expect(foldedLines(v)).toEqual([false, true]);
   });
 });
 
