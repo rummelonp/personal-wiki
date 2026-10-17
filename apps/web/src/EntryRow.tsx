@@ -43,10 +43,10 @@ export function EntryRow({
           className="entry-time"
           dateTime={new Date(entry.updatedAt).toISOString()}
           title={formatTime(entry.updatedAt)}
+          // 読み上げにだけ届ける絶対の日時。出すのは styles.css の .entry-time::after
+          data-absolute={`（${formatTime(entry.updatedAt)}）`}
         >
           {formatRelativeTime(entry.updatedAt, now)}
-          {/* タッチ端末と読み上げには hover の title が届かないので、絶対の日時を読み上げにだけ足す */}
-          <span className="visually-hidden">{`（${formatTime(entry.updatedAt)}）`}</span>
         </time>
       </div>
       {entry.excerpt !== undefined && entry.excerpt !== "" && (

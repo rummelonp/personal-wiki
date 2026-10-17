@@ -413,10 +413,10 @@ describe("HomeView の更新日", () => {
       "5 日前",
       expect.stringMatching(/年.*前$/),
     ]);
-    // 読み上げには絶対の日時も届ける（hover の title はタッチ端末と読み上げに届かない）
-    expect(rows[1]?.querySelector(".visually-hidden")?.textContent).toMatch(
-      /^（\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}）$/,
-    );
+    // 読み上げには絶対の日時も届ける（hover の title はタッチ端末と読み上げに届かない）。
+    // 本文に置くとコピーとページ内検索に混ざるので、CSS が data-absolute を ::after に出す
+    expect(rows[1]?.getAttribute("data-absolute")).toMatch(/^（\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}）$/);
+    expect(rows[1]?.textContent).not.toMatch(/\d{4}\/\d{2}/);
     expect(rows[1]?.getAttribute("datetime")).toBe(new Date(now - 5 * DAY).toISOString());
     expect(rows[1]?.getAttribute("title")).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/);
   });

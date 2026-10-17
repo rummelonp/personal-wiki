@@ -1195,6 +1195,20 @@ a.segmented-option {
   white-space: nowrap;
 }
 
+/*
+ * hover の title は読み上げに届かないので、絶対の日時（data-absolute）を読み上げに足す。本文に置くと
+ * コピーとページ内検索に混ざるので、生成した内容にする。.visually-hidden と同じ手法で、箱は持たない。
+ */
+.entry-time::after {
+  position: absolute;
+  width: 1px; /* token-ok: .visually-hidden と同じ、視覚的に隠す定型の 1px */
+  height: 1px; /* token-ok: 同上 */
+  overflow: hidden;
+  clip-path: inset(50%);
+  content: attr(data-absolute);
+  white-space: nowrap;
+}
+
 .entry-excerpt {
   display: -webkit-box;
   margin: 0;
@@ -1267,7 +1281,12 @@ a.segmented-option {
   font-size: var(--font-size-sm);
 }
 
+/*
+ * 抜粋 2 行でタグの無い行の高さに合わせる（タグの行を持つ行は、その分だけ本物のほうが高い）。
+ * grid にして、積んだ行の上下の margin を相殺させない（相殺すると 2 行の高さが本物より縮む）。
+ */
 .skeleton-entry-excerpt {
+  display: grid;
   font-size: var(--font-size-sm);
 }
 
@@ -1999,10 +2018,24 @@ a.segmented-option {
    * 抜粋は押す対象ではない。重ねても title とタグが前に出るよう position を付け、押せる範囲は削らない。
    * title とタグの箱どうしは重ねない。
    */
-  .entry {
+  .entry,
+  .skeleton-entry {
     --title-inset: calc((var(--tap-size) - var(--font-size-md) * var(--line-height)) / 2);
 
     padding-block: var(--space-2);
+  }
+
+  /* スケルトンの行も同じ高さと詰め方にして、読み込みが終わっても行の位置を動かさない */
+  .skeleton-entry-head {
+    padding-block: var(--title-inset);
+  }
+
+  .skeleton-entry-head + .skeleton-entry-excerpt {
+    margin-top: calc(-1 * var(--title-inset));
+  }
+
+  .skeleton-entry-excerpt:last-child {
+    margin-bottom: var(--space-2);
   }
 
   .entry-head {
