@@ -293,27 +293,25 @@ describe("GET /api/me", () => {
 });
 
 describe("GET /api/me の features.oauth", () => {
-  const featuresOf = async (bindings: Bindings) => {
+  /** features.oauth と、匿名で開いた接続の一覧の結果（開いていれば login へ 302、閉じていれば 404） */
+  const probe = async (bindings: Bindings) => {
     const { request } = await setup();
-    const res = await request("/api/me", {}, bindings);
-    return ((await res.json()) as { features: { oauth: boolean } }).features.oauth;
+    const me = (await (await request("/api/me", {}, bindings)).json()) as {
+      features: { oauth: boolean };
+    };
+    const grants = await request("/_auth/oauth/grants", {}, bindings);
+    return { oauth: me.features.oauth, grants: grants.status };
   };
 
-  it("OAUTH_KV と owner のログインの設定がそろっているときだけ true", async () => {
-    expect(await featuresOf(ownerEnv())).toBe(true);
+  it("OAUTH_KV と owner のログインの設定がそろっているときだけ true で、/_auth/oauth/* の開閉と一致する", async () => {
     const withoutKv = ownerEnv();
     delete withoutKv.OAUTH_KV;
-    expect(await featuresOf(withoutKv)).toBe(false);
-    expect(await featuresOf({ ...ownerEnv(), OWNER_EMAILS: "" } as Bindings)).toBe(false);
-  });
-
-  it("true の環境では /_auth/oauth/* が 404 にならず、false の環境では 404 になる", async () => {
-    const { request } = await setup();
-    const metadata = "/.well-known/oauth-authorization-server";
-    expect((await request(metadata, {}, ownerEnv())).status).toBe(200);
-    const withoutKv = ownerEnv();
-    delete withoutKv.OAUTH_KV;
-    expect((await request(metadata, {}, withoutKv)).status).toBe(404);
+    expect(await probe(ownerEnv())).toEqual({ oauth: true, grants: 302 });
+    expect(await probe(withoutKv)).toEqual({ oauth: false, grants: 404 });
+    expect(await probe({ ...ownerEnv(), OWNER_EMAILS: "" } as Bindings)).toEqual({
+      oauth: false,
+      grants: 404,
+    });
   });
 });
 

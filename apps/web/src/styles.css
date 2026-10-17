@@ -103,6 +103,11 @@ a {
   text-overflow: ellipsis;
 }
 
+/* 既定のサイト名のときだけある短い表示。狭い幅の節（下）が、長い表示と入れ替える */
+.brand-text-short {
+  display: none;
+}
+
 /* 検索欄に見えるが、押すと quick switcher を開くボタン */
 .header-search {
   display: flex;
@@ -171,7 +176,7 @@ a {
 /* ログイン状態が分かるまで右の操作の場所を空ける。スケルトンは遅れて描く（下の「読み込み中」の節） */
 .header-pending {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-2) var(--space-3); /* 実際の操作の列（.header-actions）と同じ間隔 */
 }
 
 .header-skeleton {
@@ -1965,6 +1970,18 @@ a.segmented-option {
     gap: var(--space-2) var(--space-3);
   }
 
+  /*
+   * 既定のサイト名は、owner の 4 つの操作と並ぶと電話の幅に収まらない。短い表示に替える。
+   * 利用者が付けた名前は選んだ文字なので、短くせず省略で収める（短い表示を出さない）
+   */
+  .brand-text-full {
+    display: none;
+  }
+
+  .brand-text-short {
+    display: block;
+  }
+
   .header-search {
     flex: none;
     justify-content: center;
@@ -2062,6 +2079,7 @@ a.segmented-option {
   .brand {
     display: inline-flex;
     align-items: center;
+    min-width: var(--tap-size); /* 短い表示（「wiki」）でも、横に 44px 押せる */
     min-height: var(--tap-size);
   }
 

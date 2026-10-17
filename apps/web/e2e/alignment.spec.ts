@@ -45,7 +45,8 @@ async function boxLeft(page: Page, selector: string): Promise<number> {
     .evaluate((element) => element.getBoundingClientRect().left);
 }
 
-const brandLeft = (page: Page) => textLeft(page, ".brand");
+// 既定のサイト名は幅で正式な名前と短い名前を出し分けるので、見えている方を測る
+const brandLeft = (page: Page) => textLeft(page, ".brand .brand-text:visible");
 
 /*
  * 測り直しを待つ。起動時のスケルトンは画面ごとのスケルトンに差し替わるので、

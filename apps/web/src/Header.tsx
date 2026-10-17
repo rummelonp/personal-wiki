@@ -1,3 +1,4 @@
+import { DEFAULT_SITE_NAME } from "@personal-wiki/domain";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { loginHref, type Me } from "./api";
 import { followVisualViewportTop } from "./header-viewport";
@@ -8,6 +9,9 @@ import { openNewPage } from "./new-page";
 import { homeHref } from "./route";
 import { switcherShortcutKeys, switcherShortcutLabel } from "./shortcut";
 import { SITE_NAME } from "./site-name";
+
+/** 既定のサイト名のときだけ、狭い幅でロゴに出す短い文字 */
+const SHORT_SITE_NAME = "wiki";
 
 /** 許可した接続の一覧。Worker が owner にだけ返す画面。 */
 const OAUTH_GRANTS_HREF = "/_auth/oauth/grants";
@@ -78,17 +82,28 @@ export function Header({ session, loggingOut, onLogout, query, onOpenSearch }: H
   useEffect(() => (ref.current === null ? undefined : followVisualViewportTop(ref.current)), []);
   const brandTextRef = useRef<HTMLSpanElement>(null);
   const brandClipped = useClipped(brandTextRef);
+  const shortened = SITE_NAME === DEFAULT_SITE_NAME;
 
   return (
     <header className="header" ref={ref}>
-      <Link className="brand" href={homeHref()}>
+      <Link
+        className="brand"
+        href={homeHref()}
+        // 短い表示に替わる幅でも、リンクの名前は正式な名前にする
+        aria-label={shortened ? SITE_NAME : undefined}
+      >
         <span
-          className="brand-text"
+          className={shortened ? "brand-text brand-text-full" : "brand-text"}
           ref={brandTextRef}
           title={brandClipped ? SITE_NAME : undefined}
         >
           {SITE_NAME}
         </span>
+        {shortened && (
+          <span className="brand-text brand-text-short" aria-hidden="true">
+            {SHORT_SITE_NAME}
+          </span>
+        )}
       </Link>
       {session.status !== "error" && (
         <button

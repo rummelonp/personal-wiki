@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { page as browserPage, cdp } from "vitest/browser";
 import { NO_FEATURES } from "./api";
-import { Header } from "./Header";
+import { Header, type SessionState } from "./Header";
 import "./theme.css";
 import "./styles.css";
 
@@ -27,17 +27,20 @@ afterEach(async () => {
   container = null;
 });
 
-function mountHeader(query: string) {
+function mountHeader(
+  query: string,
+  session: SessionState = {
+    status: "ready",
+    me: { kind: "owner", features: { ...NO_FEATURES, oauth: true } },
+  },
+) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   act(() =>
     root?.render(
       <Header
-        session={{
-          status: "ready",
-          me: { kind: "owner", features: { ...NO_FEATURES, oauth: true } },
-        }}
+        session={session}
         loggingOut={false}
         onLogout={() => {}}
         query={query}
@@ -166,5 +169,18 @@ describe("省略したサイト名の全文", () => {
     } finally {
       await cdp().send("Accessibility.disable");
     }
+  });
+});
+
+describe("ログイン状態が分かるまでの場所取り", () => {
+  it("デスクトップの owner では、読み込み後の操作の列とほぼ同じ幅を空ける", async () => {
+    await browserPage.viewport(1280, 800);
+    const pending = mountHeader("", { status: "loading" })(".header-pending");
+    const reserved = pending.getBoundingClientRect().width;
+    act(() => root?.unmount());
+    container?.remove();
+    const loaded = mountHeader("")(".header-actions").getBoundingClientRect().width;
+    // 場所取りは操作より広くても狭くても、読み込みの完了で操作がずれる
+    expect(Math.abs(reserved - loaded)).toBeLessThanOrEqual(4);
   });
 });

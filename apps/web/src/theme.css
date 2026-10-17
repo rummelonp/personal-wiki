@@ -95,7 +95,7 @@
   --list-width: 42.5rem; /* トップの一覧の幅 */
   --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
   --header-brand-min-width: 3rem; /* 検索語を出す狭い幅で、ロゴが縮む下限。語に幅を譲りつつ、ロゴだと分かる長さを残す */
-  --header-skeleton-width: 6rem; /* ログイン状態が分かるまで、ヘッダーの右に場所を空ける 1 つ分の幅。owner の操作 3 つの幅に近づける */
+  --header-skeleton-width: 5rem; /* ログイン状態が分かるまでヘッダーの右に空ける場所の、操作 1 つ分の幅。広い画面で 3 つ並べた幅が owner の操作の列（新規作成、接続、ログアウト）に近い */
   --switcher-width: 34rem; /* quick switcher の幅 */
   --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
@@ -165,7 +165,7 @@
      editor の既定値を使う */
 }
 
-/* 320px 級の画面。ヘッダーの 3 つの操作が 44px になっても 1 行に収まるよう、左右の余白を詰める */
+/* 320px 級の画面。ヘッダーの 4 つの操作が 44px になっても 1 行に収まるよう、左右の余白を詰める */
 @media (max-width: 22.5rem) {
   :root {
     --gutter: var(--space-3);
