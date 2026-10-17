@@ -587,6 +587,20 @@ a {
   outline-offset: calc(-2 * var(--border-width));
 }
 
+/*
+ * 両端の選択肢の外側の角を枠と同じ丸みにする。輪は要素の角丸に沿うので、四角いままだと枠の丸みに
+ * 外側の辺が切られて、端の選択肢だけ輪が欠けて見える
+ */
+.segmented-option:first-child {
+  border-start-start-radius: var(--radius-pill);
+  border-end-start-radius: var(--radius-pill);
+}
+
+.segmented-option:last-child {
+  border-start-end-radius: var(--radius-pill);
+  border-end-end-radius: var(--radius-pill);
+}
+
 .segmented-option:disabled {
   cursor: default;
   opacity: 0.5;
