@@ -330,40 +330,84 @@ test.describe("共有の URL", () => {
   });
 });
 
-test("公開の行の知らせは、375px でも語の途中で折り返さず、操作と同じ行に収まる", async ({
-  page,
-  api,
-}, testInfo) => {
-  // WebKit にも clipboard の権限は無いので、書き込みが成功する clipboard に差し替える
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "clipboard", { value: { writeText: async () => {} } });
+test.describe("公開の行の知らせ（375px）", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
   });
-  await page.setViewportSize({ width: 375, height: 812 });
-  const title = uniqueTitle(testInfo, "知らせの折り返し");
-  const created = await api.createPage({ title, body: "本文" });
-  await page.goto(`/p/${created.id}`);
-  await expect(page.locator(".title-input")).toHaveText(title);
 
-  const expectPhrased = async (text: string) => {
+  // 知らせは操作と同じ行に収まり、WebKit では語の途中で折り返さない
+  const expectPhrased = async (page: Page, text: string) => {
     await expect(notice(page)).toHaveText(text);
-    expect(await midPhraseBreaks(notice(page)), `「${text}」が語の途中で折り返している`).toEqual(
-      [],
-    );
     const note = await notice(page).boundingBox();
-    const bar = await page.locator(".publish-bar").boundingBox();
-    expect(note?.y ?? 0, `「${text}」が公開の行の外にある`).toBeGreaterThanOrEqual(bar?.y ?? 0);
-    expect((note?.y ?? 0) + (note?.height ?? 0)).toBeLessThanOrEqual(
-      (bar?.y ?? 0) + (bar?.height ?? 0) + 1,
-    );
+    // 指で押さない端末の操作は 2 行の知らせより低いので、行に収める条件は指で押す端末（--tap-size）にだけ当てる
+    if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) {
+      const control = await page.locator(".publish-bar .segmented").boundingBox();
+      expect(note, `「${text}」の箱が測れない`).not.toBeNull();
+      expect(control, "操作の箱が測れない").not.toBeNull();
+      const { y, height } = note as NonNullable<typeof note>;
+      const row = control as NonNullable<typeof control>;
+      expect(y, `「${text}」が操作の行より上にはみ出す`).toBeGreaterThanOrEqual(row.y - 1);
+      expect(y + height, `「${text}」が操作の行より下にはみ出す`).toBeLessThanOrEqual(
+        row.y + row.height + 1,
+      );
+    }
+    // auto-phrase を解釈する描画は文節で切るので、句読点と空白での折り返しだけを許す判定は WebKit にだけ当てる
+    if (!(await page.evaluate(() => CSS.supports("word-break", "auto-phrase")))) {
+      expect(await midPhraseBreaks(notice(page)), `「${text}」が語の途中で折り返している`).toEqual(
+        [],
+      );
+    }
   };
 
-  await option(page, "公開").click();
-  await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
-  await expectPhrased("公開しました。");
-  await page.getByRole("button", { name: "URL をコピー" }).click();
-  await expectPhrased("URL をコピーしました。");
-  await option(page, "下書き").click();
-  await expectPhrased("下書きに戻しました。");
+  test("結果の知らせ", async ({ page, api }, testInfo) => {
+    // WebKit にも clipboard の権限は無いので、書き込みが成功する clipboard に差し替える
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { value: { writeText: async () => {} } });
+    });
+    const title = uniqueTitle(testInfo, "知らせの折り返し");
+    const created = await api.createPage({ title, body: "本文" });
+    await page.goto(`/p/${created.id}`);
+    await expect(page.locator(".title-input")).toHaveText(title);
+
+    await option(page, "公開").click();
+    await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+    await expectPhrased(page, "公開しました。");
+    await page.getByRole("button", { name: "URL をコピー" }).click();
+    await expectPhrased(page, "URL をコピーしました。");
+    await option(page, "下書き").click();
+    await expectPhrased(page, "下書きに戻しました。");
+  });
+
+  test("変更中の知らせ", async ({ page, api }, testInfo) => {
+    const title = uniqueTitle(testInfo, "変更中の折り返し");
+    const created = await api.createPage({ title, body: "本文" });
+    await page.goto(`/p/${created.id}`);
+    await expect(page.locator(".title-input")).toHaveText(title);
+
+    // 変更の応答を止め、変更中の知らせが出ている間に測る
+    let release: () => void = () => {};
+    let held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/pages/*/visibility", async (route) => {
+      await held;
+      return route.fallback();
+    });
+
+    await option(page, "公開").click();
+    await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+    await expectPhrased(page, "公開に変更中…");
+    release();
+    await expect(notice(page)).toHaveText("公開しました。");
+
+    held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await option(page, "下書き").click();
+    await expectPhrased(page, "下書きに変更中…");
+    release();
+    await expect(notice(page)).toHaveText("下書きに戻しました。");
+  });
 });
 
 test("作る前のページでは、公開の操作を選べない", async ({ page }) => {
