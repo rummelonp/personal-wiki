@@ -208,7 +208,7 @@ export function ConflictPanel({
             {!hasDiff && titles}
             {hasDiff ? (
               <p className="muted diff-legend">
-                − は別の場所の内容だけにある行、＋ はこの画面だけにある行
+                −&nbsp;は別の場所の内容だけにある行、＋&nbsp;はこの画面だけにある行
               </p>
             ) : (
               <p className="notice-text muted">本文に差分はありません。</p>
