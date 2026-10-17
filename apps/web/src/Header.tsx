@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { loginHref, type Me } from "./api";
 import { followVisualViewportTop } from "./header-viewport";
 import { LogoutIcon, PlusIcon, SearchIcon } from "./icons";
@@ -39,20 +39,50 @@ function ActionsPlaceholder() {
 }
 
 /**
+ * ヘッダーのサイト名が省略されている間だけ true。幅の変化と検索語の出入りで省略の有無が変わるので、
+ * 名前の箱の大きさを観測して測り直す。
+ */
+function useClipped(ref: RefObject<HTMLElement | null>): boolean {
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null) return undefined;
+    const measure = () => setClipped(element.scrollWidth > element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return clipped;
+}
+
+/**
  * 狭い幅でも 1 行に収める。検索は欄でなく開くだけのボタンにし（変換中の文字を別の入力欄へ
  * 移さないため）、狭い幅では虫眼鏡だけにする。ただし検索語があるときは、語が分かるよう
  * 狭い幅でも語を出し、長い語は省略する。ラベルを隠す幅の切り替えは CSS が持つ。
+ * 省略したサイト名の全文は hover の tooltip（title）で見せる。title はリンクでなく中の文字に付ける。
+ * リンクの title は説明として公開され、読み上げが名前の後に同じ文字をもう一度読む実装があり得る。
+ * タッチ端末には hover が無いが、ロゴのタップはホームへの移動で、全文は tab の title にも出るので、
+ * 全文を見る別の手段は置かない。
  * 匿名の「ログイン」は塗らない。塗りの差し色は、読者が読むページより目立つ。
  */
 export function Header({ session, loggingOut, onLogout, query, onOpenSearch }: HeaderProps) {
   const isOwner = session.status === "ready" && session.me.kind === "owner";
   const ref = useRef<HTMLElement>(null);
   useEffect(() => (ref.current === null ? undefined : followVisualViewportTop(ref.current)), []);
+  const brandTextRef = useRef<HTMLSpanElement>(null);
+  const brandClipped = useClipped(brandTextRef);
 
   return (
     <header className="header" ref={ref}>
       <Link className="brand" href={homeHref()}>
-        <span className="brand-text">{SITE_NAME}</span>
+        <span
+          className="brand-text"
+          ref={brandTextRef}
+          title={brandClipped ? SITE_NAME : undefined}
+        >
+          {SITE_NAME}
+        </span>
       </Link>
       {session.status !== "error" && (
         <button
