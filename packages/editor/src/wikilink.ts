@@ -128,6 +128,7 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
         if (!parts) return false;
         // 展開する embed は embed extension が `!` から `]]` までを widget に置き換える。
         // ここでも装飾すると、2 つの extension の replace が同じ範囲で重なる。
+        // そのため draft の印も付かない。
         if (node.from > 0 && isEmbedWikiLink(state.doc.sliceString(node.from - 1, node.from))) {
           const kind = embedKindOf(parts);
           if (kind !== null && expandedEmbeds.has(kind)) return false;

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { bodyEditor, expect, test, uniqueTitle } from "./support/fixtures";
+import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
 
 /*
  * public のページから draft への link: 匿名には存在しないページへの link と同じ文字列に見えるので、
@@ -83,6 +83,12 @@ test.describe("owner", () => {
     await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
     // 本文の link は 2 つとも同じ draft を指すので、印も 2 つ
     await expect(badges(page)).toHaveCount(2);
+    // 展開した embed は widget に置き換わるので、一覧には数えても印は付かない
+    const embed = bodyEditor(page).locator(`.cm-embed-page[data-embed-target="${second.title}"]`);
+    await expect(embed).toHaveAttribute("data-embed-state", "resolved");
+    await expect(embed.locator(".cm-wikilink-draft-badge")).toHaveCount(0);
+    await expect(link(page, first.title)).toHaveCount(2);
+    await expect(link(page, first.title).first()).toHaveClass(/cm-wikilink-draft/);
   });
 
   test("公開の確認の一覧から、リンク先の draft を開ける", async ({ page, api }, testInfo) => {
@@ -130,6 +136,49 @@ test.describe("owner", () => {
     await listed;
     await expect(confirmPanel(page).locator(".publish-drafts")).toBeEmpty();
     await expect(confirmPanel(page)).not.toContainText("下書きにリンク");
+  });
+
+  test("保存前の本文に書いた draft への link も、公開の確認に並べる", async ({
+    page,
+    api,
+  }, testInfo) => {
+    const draft = await api.createPage({
+      title: uniqueTitle(testInfo, "保存前にリンクした下書き"),
+      body: "",
+    });
+    const self = await api.createPage({
+      title: uniqueTitle(testInfo, "まだ保存していない下書き"),
+      body: "前置き",
+    });
+    // 保存を止めておき、確認を開いた時点でサーバーの本文に link が無いようにする
+    let releaseSaves: () => void = () => {};
+    const saves = new Promise<void>((resolve) => {
+      releaseSaves = resolve;
+    });
+    await page.route(`**/api/pages/${self.id}`, async (route) => {
+      if (route.request().method() !== "PUT") return route.fallback();
+      await saves;
+      return route.fallback();
+    });
+    await page.goto(`/p/${self.id}`);
+    await expect(bodyEditor(page)).toHaveText("前置き");
+
+    await bodyEditor(page).locator(".cm-line").last().click();
+    await page.keyboard.press("End");
+    // 1 字ずつ打つと括弧の補完と候補の窓が働くので、まとめて入れる
+    await page.keyboard.insertText(` [[${draft.title}]]`);
+    // 本物のクリックは押した時点で本文の blur が保存を始め、保存中は「公開」が disabled になってクリックが
+    // 落ちる。本文から focus を外さずに確認を開くため、click の event だけを送る
+    await expect(option(page, "公開")).toBeEnabled();
+    await option(page, "公開").dispatchEvent("click");
+    const drafts = confirmPanel(page).locator(".publish-drafts");
+    await expect(drafts.getByRole("link")).toHaveText([draft.title]);
+    expect((await api.getPage(self.id)).body).toBe("前置き");
+
+    releaseSaves();
+    await confirmPanel(page).getByRole("button", { name: "やめる" }).click();
+    await expect(saveState(page)).toHaveText("保存済み");
+    expect((await api.getPage(self.id)).body).toBe(`前置き [[${draft.title}]]`);
   });
 
   test("自分への link には、公開した直後も印を出さない", async ({ page, api }, testInfo) => {

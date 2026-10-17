@@ -22,6 +22,7 @@ export interface FindLinkedDraftsOptions {
 /**
  * 本文の wikilink と page embed のうち、解決先が draft のものを、本文に現れた順に返す。
  * 公開すると、これらは匿名には存在しないページへの link と同じ文字列に見える。
+ * 展開した page embed も含める。編集画面では印が付かないが、匿名には draft の embed も展開されないため。
  *
  * 編集画面の印は表示中の link しか問い合わせていないので、ここでは本文の全部の link を問い合わせ直す。
  * 1 つでも失敗したら失敗を返す（一部だけの一覧を「これで全部」と見せない）。
