@@ -2438,6 +2438,75 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(container?.textContent).toContain("保存できませんでした");
   });
 
+  it("保存の間に押した切り替えは、保存が通信の失敗で終わっても、保存し直して通れば保存で進んだ版に対して送る", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(updatePage).mockResolvedValueOnce(ok({ ...PUBLIC, body: "本文追記", version: 2 }));
+    vi.mocked(setVisibility).mockResolvedValue(
+      ok({ ...PUBLIC, body: "本文追記", visibility: "draft", version: 3 }),
+    );
+    const { view } = renderPage(PUBLIC);
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => option("下書き").click());
+    await flushAsync();
+
+    await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(2);
+    expect(setVisibility).toHaveBeenCalledTimes(1);
+    expect(setVisibility).toHaveBeenCalledWith(ID, 2, "draft");
+    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(publishNote()).toBe("下書きに戻しました。");
+  });
+
+  it.each([
+    {
+      end: "409（版の衝突）",
+      provoke: () => {
+        vi.mocked(getPage).mockResolvedValue(ok({ ...PUBLIC, body: "サーバーの本文", version: 2 }));
+        return { ok: false, reason: "version_conflict", currentVersion: 2 } as const;
+      },
+      notice: "別の場所でも更新されています",
+    },
+    {
+      end: "401（ログアウト）",
+      provoke: () => ({ ok: false, reason: "unauthorized" }) as const,
+      notice: "ログインの期限切れ",
+    },
+  ])(
+    "保存の間に押した切り替えは、保存が $end で終わったら送らず、元の選択に戻す",
+    async ({ provoke, notice }) => {
+      restoreDelay = setLoadingDelay(0);
+      const save = deferred<ApiResult<Page>>();
+      vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+      const { view } = renderPage(PUBLIC);
+      await flushAsync();
+
+      act(() => view().focus());
+      act(() => typeAtEnd(view(), "追記"));
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+      expect(updatePage).toHaveBeenCalledTimes(1);
+      act(() => option("下書き").click());
+      await flushAsync();
+      expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+
+      await act(async () => save.resolve(provoke()));
+      await flushAsync();
+      expect(updatePage).toHaveBeenCalledTimes(1);
+      expect(setVisibility).not.toHaveBeenCalled();
+      expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+      expect(publishNote()).toBe("");
+      expect(container?.textContent).toContain(notice);
+    },
+  );
+
   it("レスポンスがすぐ届けば、状態の文字を出さない", async () => {
     restoreDelay = setLoadingDelay(1000);
     vi.mocked(setVisibility).mockResolvedValue(ok({ ...PUBLIC, version: 2 }));
