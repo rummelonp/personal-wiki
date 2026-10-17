@@ -10,7 +10,10 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 - `[[wikilink]]`、タグ、backlink、画像の添付（R2 を設定したときだけ）
 - ページごとの public / draft。
   public のページと一覧は、ログインしていない閲覧者にも見え、リンクのプレビュー用に OGP のメタ情報を返します。
-  draft は id を知っている人だけが開け、検索エンジンには載せません（`noindex`）
+  draft は id を知っている人だけが開け、検索エンジンには載せません（`noindex`）。
+  REST の最近の更新の一覧（`GET /api/pages/recent`）と、タグとその件数の一覧（`GET /api/tags`）は、`visibility=public` か `visibility=draft` で公開範囲を絞り込めます。
+  一覧で draft を見られるのは owner と read 以上の API token だけです。
+  ログインしていない閲覧者の `visibility=draft` は、draft があっても空の一覧を返します。
 - title を変えたときの、他のページの `[[旧 title]]` の書き換え
 - ページの版の履歴。
   保存のたびに版を残し、owner のブラウザからの保存は、最初の保存から 10 分までを 1 つの版にまとめます。
