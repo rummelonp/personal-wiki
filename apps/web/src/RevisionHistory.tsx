@@ -223,10 +223,10 @@ export function RevisionHistory({
                     className="revision-time"
                     dateTime={new Date(stamp.at).toISOString()}
                     title={stampText(stamp)}
+                    // 読み上げにだけ届ける絶対の時刻。出すのは styles.css の .revision-time::after
+                    data-absolute={`（${stampText(stamp)}）`}
                   >
                     {formatRelativeTime(stamp.at, now)}
-                    {/* 相対表記と title だけでは、タッチと読み上げが絶対の時刻に届かない */}
-                    <span className="visually-hidden">{`（${stampText(stamp)}）`}</span>
                   </time>
                   <span className="revision-author">{authorLabel(summary.author)}</span>
                 </button>

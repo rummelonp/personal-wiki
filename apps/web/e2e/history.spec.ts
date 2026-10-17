@@ -48,6 +48,22 @@ test("版を時刻と作成者で並べ、押した版の本文を読み取り�
   // 版の番号は飛ぶので見せない
   await expect(history(page)).not.toContainText("版");
 
+  // 絶対の時刻は本文に無いので、範囲選択（コピー）の文字列にも innerText（ページ内検索の対象）にも出ない。
+  // 読み上げ（アクセシビリティツリー）には、相対の表記に続けて届く
+  const copied = await history(page).evaluate((section) => {
+    getSelection()?.selectAllChildren(section);
+    return {
+      selection: getSelection()?.toString() ?? "",
+      text: (section as HTMLElement).innerText,
+    };
+  });
+  expect(copied.selection).not.toMatch(/\d{4}\/\d{2}\/\d{2}/);
+  expect(copied.text).not.toMatch(/\d{4}\/\d{2}\/\d{2}/);
+  const time = entries(page).first().locator(".revision-time");
+  const absolute = (await time.getAttribute("title")) ?? "";
+  expect(absolute).toMatch(/\d{4}\/\d{2}\/\d{2}/);
+  expect(await time.ariaSnapshot()).toBe(`- time: 1 分未満 （${absolute}）`);
+
   // キーボードで開くと、閉じた後に焦点が押した行へ戻る
   await entries(page).nth(1).focus();
   await page.keyboard.press("Enter");

@@ -1231,10 +1231,11 @@ a.segmented-option {
 }
 
 /*
- * hover の title は読み上げに届かないので、絶対の日時（data-absolute）を読み上げに足す。本文に置くと
- * コピーとページ内検索に混ざるので、生成した内容にする。.visually-hidden と同じ手法で、箱は持たない。
+ * hover の title は読み上げに届かないので、絶対の日時（data-absolute）を読み上げに足す。一覧と版の履歴の時刻が使う。
+ * 本文に置くとコピーとページ内検索に混ざるので、生成した内容にする。.visually-hidden と同じ手法で、箱は持たない。
  */
-.entry-time::after {
+.entry-time::after,
+.revision-time::after {
   position: absolute;
   width: 1px; /* token-ok: .visually-hidden と同じ、視覚的に隠す定型の 1px */
   height: 1px; /* token-ok: 同上 */

@@ -96,25 +96,18 @@ async function mount({
   );
 }
 
-/** 画面に見える文字を DOM の順に並べる。読み上げにだけ届く文（.visually-hidden）は除く */
-function visibleText(root: Element): string {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let text = "";
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    if (node.parentElement?.closest(".visually-hidden") == null) text += node.textContent;
-  }
-  return text;
-}
-
-/** 読み上げにだけ届く絶対の時刻は stamps で確かめる */
+/**
+ * 一覧の各行の本文。絶対の時刻が本文に混ざるとコピーとページ内検索に出るので、
+ * 読み上げにだけ届く絶対の時刻は stamps で確かめる
+ */
 const entries = () =>
   [...(container?.querySelectorAll(".revision-entry") ?? [])].map((e) =>
-    visibleText(e).replace(/\u00a0/g, " "),
+    (e.textContent ?? "").replace(/\u00a0/g, " "),
   );
 
 const stamps = () =>
-  [...(container?.querySelectorAll(".revision-time") ?? [])].map(
-    (time) => time.querySelector(".visually-hidden")?.textContent,
+  [...(container?.querySelectorAll(".revision-time") ?? [])].map((time) =>
+    time.getAttribute("data-absolute"),
   );
 
 describe("authorLabel", () => {
