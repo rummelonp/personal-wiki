@@ -1,7 +1,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ListSkeleton, PageSkeleton, setLoadingDelay } from "./Loading";
+import { ListSkeleton, PageSkeleton, RouteSkeleton, setLoadingDelay } from "./Loading";
+import { parseRoute } from "./route";
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -120,5 +121,31 @@ describe("読み込み中の帯", () => {
     mount(<PageSkeleton owner={false} />);
     expect(container?.querySelector(".skeleton-meta")).toBeNull();
     expect(container?.querySelector(".skeleton-body")).not.toBeNull();
+  });
+
+  it("owner か分からない間は、URL の公開範囲を見出しの文字に出さない", () => {
+    restoreDelay = setLoadingDelay(0);
+    const heading = (search: string, owner: boolean | undefined) => {
+      mount(<RouteSkeleton route={parseRoute("/", search)} owner={owner} />);
+      const text = container?.querySelector("h1")?.textContent ?? null;
+      const bar = container?.querySelector(".list-title .skeleton-heading") !== null;
+      act(() => root?.unmount());
+      container?.remove();
+      return { text, bar };
+    };
+    for (const search of ["?visibility=draft", "?visibility=public", "?tag=x&visibility=draft"]) {
+      expect(heading(search, undefined), search).toEqual({ text: null, bar: true });
+    }
+    expect(heading("?visibility=draft", false)).toEqual({ text: "最近の更新", bar: false });
+    expect(heading("?tag=x&visibility=draft", false)).toEqual({ text: "タグ「x」", bar: false });
+    expect(heading("?visibility=draft", true)).toEqual({ text: "下書き", bar: false });
+    // 公開範囲の指定が無ければ、owner でも匿名でも同じ見出しなので、分かる前から文字で出す
+    expect(heading("?tag=x", undefined)).toEqual({ text: "タグ「x」", bar: false });
+    expect(heading("", undefined)).toEqual({ text: "最近の更新", bar: false });
+    // 検索の見出しは公開範囲を使わないので、分かる前から文字で出す
+    expect(heading("?q=abc&visibility=draft", undefined)).toEqual({
+      text: "「abc」の検索結果",
+      bar: false,
+    });
   });
 });

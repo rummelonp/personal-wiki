@@ -185,7 +185,7 @@ export function ListSkeleton({
   heading,
   status = "一覧を読み込み中…",
 }: {
-  heading?: string;
+  heading?: string | undefined;
   status?: string;
 }) {
   const painted = useSkeletonPainted();
@@ -267,14 +267,20 @@ export function PageSkeleton({
 export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean | undefined }) {
   useHoldScrollRestore();
   switch (route.name) {
-    case "home":
-      // 見出しは URL だけから作り、データは出さない。起動時は owner か分からない（undefined）ので、
-      // 公開範囲も URL のとおりに出す
-      return (
-        <ListSkeleton
-          heading={listHeading(route.query, route.tag, owner === false ? "" : route.visibility)}
-        />
-      );
+    case "home": {
+      // 見出しは URL だけから作り、データは出さない。公開範囲で絞る見出しは owner だけのものなので、
+      // owner か分からない起動時（undefined）に owner と匿名で見出しが分かれるなら、文字にせず帯にする。
+      // owner の見出しで出すと匿名に一瞬「下書き」と見せ、匿名の見出しで出すと owner で見出しが変わる
+      const ownerHeading = listHeading(route.query, route.tag, route.visibility);
+      const anonymousHeading = listHeading(route.query, route.tag);
+      const heading =
+        owner === true
+          ? ownerHeading
+          : owner === false || ownerHeading === anonymousHeading
+            ? anonymousHeading
+            : undefined;
+      return <ListSkeleton heading={heading} />;
+    }
     case "title":
       return <PageSkeleton title={loadingTitleFor(route.title)} owner={owner} />;
     case "page":

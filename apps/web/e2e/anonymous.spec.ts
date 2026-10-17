@@ -91,6 +91,24 @@ test("公開範囲の絞り込みの欄を出さず、URL の visibility=draft �
   await expectNoDraftTrace(page);
 });
 
+test("ログインの状態が届く前も、URL の visibility=draft で見出しを下書きにしない", async ({
+  page,
+}) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/me", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto("/?visibility=draft");
+  await expect(page.locator(".home[aria-busy='true']")).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("下書き");
+  release();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("最近の更新");
+});
+
 test("draft の title の URL は存在しないページと同じ空のページになる", async ({ page }) => {
   const shown: string[] = [];
   for (const title of [SEED.draftSecret, "本当に存在しないページ"]) {
