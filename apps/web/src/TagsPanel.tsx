@@ -1,3 +1,4 @@
+import { foldKeepingUnderscore } from "@personal-wiki/domain";
 import { useEffect, useState } from "react";
 import { Link } from "./Link";
 import { VISIBILITY_FILTER_NOUNS } from "./list-heading";
@@ -42,9 +43,18 @@ export function TagsPanel({
   /** 一覧の公開範囲の絞り込み。タグを選んでも外しても保つ。tags もこの範囲で数えたものを渡す。 */
   visibility?: VisibilityFilter;
 }) {
+  // 一覧は大文字小文字と全角半角を畳んだ値でタグを照合し、API は畳んだ値ごとに代表の表記を 1 つ返す。
+  // URL のタグと表記が違うだけのチップが選択中になるよう、比較も畳んだ値で行う。
+  // 畳んだ値で一致するタグが結果に無い（範囲の中に 0 件の）ときは、チップごと消えると絞り込みを外す
+  // 入口も消えるので、件数 0 で補う。一覧の見出しや空の案内は、この範囲で 0 件であることを既に伝えている
+  const activeKey = foldKeepingUnderscore(active);
+  const shown =
+    active === "" || tags.some(({ tag }) => foldKeepingUnderscore(tag) === activeKey)
+      ? tags
+      : [...tags, { tag: active, count: 0 }];
   return (
     <RailSection title="タグ">
-      {tags.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="muted">
           {visibility === ""
             ? "タグはまだありません。"
@@ -52,8 +62,8 @@ export function TagsPanel({
         </p>
       ) : (
         <ul className="chips">
-          {tags.map(({ tag, count }) => {
-            const selected = tag === active;
+          {shown.map(({ tag, count }) => {
+            const selected = active !== "" && foldKeepingUnderscore(tag) === activeKey;
             return (
               <li key={tag}>
                 {/*

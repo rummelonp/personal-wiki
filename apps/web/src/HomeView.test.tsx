@@ -679,6 +679,46 @@ describe("HomeView の公開範囲の絞り込み", () => {
     expect(filter()).not.toBeNull();
   });
 
+  it("選んだタグが範囲の中に 0 件でも、件数 0 のチップを残して外せるようにする", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    const chips = () =>
+      [...(container?.querySelectorAll(".rail .chip-link") ?? [])].map((c) => ({
+        text: c.textContent,
+        href: c.getAttribute("href"),
+        current: c.getAttribute("aria-current"),
+      }));
+    // 範囲に別のタグはある場合と、1 つも無い場合
+    for (const [tags, expected] of [
+      [
+        [{ tag: "y", count: 2 }],
+        [
+          { text: "y2", href: "/?tag=y&visibility=draft", current: null },
+          { text: "x0", href: "/?visibility=draft", current: "page" },
+        ],
+      ],
+      [[], [{ text: "x0", href: "/?visibility=draft", current: "page" }]],
+    ] as const) {
+      vi.mocked(listTags).mockResolvedValue(ok([...tags]));
+      await mountHome("", true, "x", "draft");
+      await vi.waitFor(() => expect(filter()).not.toBeNull());
+      expect(chips()).toEqual(expected);
+      expect(container?.querySelector(".rail .muted")).toBeNull();
+      act(() => root?.unmount());
+      container?.remove();
+    }
+  });
+
+  it("選んだタグと表記が違うだけのタグは、0 件のチップを足さずにそのチップを選択中にする", async () => {
+    vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
+    vi.mocked(listTags).mockResolvedValue(ok([{ tag: "Beta", count: 2 }]));
+    await mountHome("", true, "beta");
+    await vi.waitFor(() => expect(filter()).not.toBeNull());
+    const chips = [...(container?.querySelectorAll(".rail .chip-link") ?? [])];
+    expect(chips.map((c) => [c.textContent, c.getAttribute("aria-current")])).toEqual([
+      ["Beta2", "page"],
+    ]);
+  });
+
   it("絞り込んだ公開範囲にタグが無ければ、その範囲に無いことを出す", async () => {
     vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
     for (const [visibility, expected] of [
