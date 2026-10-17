@@ -471,7 +471,9 @@ async function noticeHtmlOf(c: Context<AppEnv>, value: string, now: () => number
     return "";
   }
   const name = (await helpersOf(c).lookupClient(payload.c))?.clientName;
-  return `<p class="done">${clientLabelHtml(name)}（${formatEpochSeconds(payload.t)} に許可）の接続を取り消しました。</p>`;
+  // 許可の日時を括弧で添えるので、名前が無いときの括弧付きの表示は使わず、二重にしない
+  const label = name === undefined ? UNREGISTERED_CLIENT_LABEL : clientLabelHtml(name);
+  return `<p class="done">${label}（${formatEpochSeconds(payload.t)} に許可）の接続を取り消しました。</p>`;
 }
 
 async function findGrant(
@@ -549,9 +551,11 @@ ${BACK_LINK}`,
   );
 }
 
+const UNREGISTERED_CLIENT_LABEL = "登録が消えたアプリ";
+
 function clientLabelHtml(name: string | undefined): string {
   return name === undefined
-    ? "（登録が消えたアプリ）"
+    ? `（${UNREGISTERED_CLIENT_LABEL}）`
     : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
 }
 

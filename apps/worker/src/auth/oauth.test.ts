@@ -1163,6 +1163,17 @@ describe("許可した接続の一覧と取り消し", () => {
       expect((await postMcp(request, newer.tokens.access_token, "tools/list")).status).toBe(200);
     });
 
+    it("登録が消えたアプリの接続を取り消した知らせでは、括弧を二重にしない", async () => {
+      const { request } = setup();
+      const { client } = await connect(request, "read");
+      await ownerEnv().OAUTH_KV?.delete(`client:${client.client_id}`);
+      const [grant = ""] = grantIdsOf((await openGrants(request)).html);
+      const { html } = await revokeAndOpen(request, grant);
+      expect(html).toMatch(
+        /<p class="done">登録が消えたアプリ（[^（）]+に許可）の接続を取り消しました。<\/p>/,
+      );
+    });
+
     it("取り消した接続の名前はエスケープして、一覧と同じ長さで切る", async () => {
       const { request } = setup();
       const name = `<img src=x>${"あ".repeat(50)}`;
