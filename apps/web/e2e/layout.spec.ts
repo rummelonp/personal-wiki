@@ -38,6 +38,22 @@ test.describe("owner @widths", () => {
     });
   }
 
+  test("0 件の検索結果の「作成」は、長い検索語でも画面の幅に収まる", async ({ page }) => {
+    const query = "どこにも無い語句をとても長く書いた検索語".repeat(3);
+    await page.goto(`/?q=${encodeURIComponent(query)}`);
+    const create = page.getByRole("button", { name: `「${query}」を作成` });
+    await expect(create).toBeVisible();
+    for (const width of [320, 375, 768, 1280]) {
+      await test.step(`${width}px`, async () => {
+        await page.setViewportSize({ width, height: 800 });
+        const box = await create.boundingBox();
+        expect(box?.x).toBeGreaterThanOrEqual(0);
+        expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
+        await expectNoHorizontalScroll(page);
+      });
+    }
+  });
+
   test("新規作成の画面", async ({ page }) => {
     await page.goto("/?new");
     await expect(page.locator(".title-input .cm-content")).toBeVisible();

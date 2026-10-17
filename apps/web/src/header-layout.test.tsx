@@ -67,3 +67,17 @@ describe.each([320, 375, 1280])("長いサイト名のヘッダー（%dpx）", (
     },
   );
 });
+
+describe.each([320, 375])("検索語を出すヘッダー（%dpx）", (width) => {
+  it("ロゴが先に縮み、短めの検索語は省略せずに出す", async () => {
+    await browserPage.viewport(width, 800);
+    const find = mountHeader("どこにも無い語句");
+    const text = find(".header-search-text");
+    expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth);
+    // ロゴは縮み切っても、下限の幅は残す
+    const brand = find(".brand").getBoundingClientRect().width;
+    expect(brand).toBeGreaterThanOrEqual(
+      Number.parseFloat(getComputedStyle(find(".brand")).minWidth),
+    );
+  });
+});

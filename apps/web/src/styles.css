@@ -807,6 +807,15 @@ a.segmented-option {
   gap: var(--space-2);
 }
 
+/* 長い文言（検索語を含む作成の導線など）で、行の幅を超えないよう折り返す */
+.button-wrap {
+  max-width: 100%;
+  padding-block: var(--space-2);
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+}
+
 /* 主な操作は塗らず、差し色の枠と文字で示す。通知の中では塗らない（塗りの強調は画面の主操作の button-primary） */
 .button-main {
   color: var(--color-accent);
@@ -1875,8 +1884,20 @@ a.segmented-option {
     flex: 0 1 auto;
     justify-content: flex-start;
     width: auto;
-    padding: 0 var(--space-3);
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
     background: var(--color-input);
+  }
+
+  /*
+   * 検索語を出している間は、ロゴが残りの幅だけを取り、検索語のボタンは語の幅のまま縮めない
+   * （両方に縮む割合を付けると、長いサイト名の分だけ縮みの配分が語にも回り、語が 1px 欠けて省略される）。
+   * ロゴを下限まで縮めても入らない語だけが、ボタンの中で省略される
+   */
+  .header:has(.header-search-filled) .brand {
+    flex: 1 1 0;
+    min-width: var(--header-brand-min-width);
+    max-width: max-content;
   }
 
   .header-search-text,
