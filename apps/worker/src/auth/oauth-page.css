@@ -285,6 +285,13 @@ h1 {
   margin: 0;
 }
 
+.done {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+}
+
 .grants .meta {
   font-size: var(--font-size-sm);
   color: var(--color-fg-muted);

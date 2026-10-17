@@ -1015,8 +1015,7 @@ describe("許可した接続の一覧と取り消し", () => {
     );
 
     const res = await revoke(request, grant);
-    expect(res.status).toBe(303);
-    expect(res.headers.get("Location")).toBe("/_auth/oauth/grants");
+    expect(res.status).toBe(200);
     expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(401);
     const refreshed = await postToken(request, {
       grant_type: "refresh_token",
@@ -1027,6 +1026,75 @@ describe("許可した接続の一覧と取り消し", () => {
     expect(await refreshed.json()).toMatchObject({ error: "invalid_grant" });
     expect((await postMcp(request, other.tokens.access_token, "tools/list")).status).toBe(200);
     expect(grantIdsOf((await openGrants(request)).html)).not.toContain(grant);
+  });
+
+  describe("取り消した後の一覧", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** 許可の時刻を変えて、同じ名前の接続を 2 つ作る。grant の作成時刻はライブラリが Date.now で決める */
+    async function connectTwinsAt(request: Request, first: number, second: number) {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(first);
+      const older = await connect(request, "read");
+      vi.setSystemTime(second);
+      const newer = await connect(request, "read");
+      const { html } = await openGrants(request);
+      // 一覧は新しい順なので、先頭が後から許可した接続
+      const [newerGrant = "", olderGrant = ""] = grantIdsOf(html);
+      return { older, newer, olderGrant, newerGrant };
+    }
+
+    it("同じ名前の接続を取り消すと、その接続の許可の日時を添えて取り消したと出し、残りの一覧を返す", async () => {
+      const { request } = setup();
+      const { newer, olderGrant, newerGrant } = await connectTwinsAt(
+        request,
+        Date.UTC(2026, 9, 1, 9, 0),
+        Date.UTC(2026, 9, 2, 18, 30),
+      );
+      const res = await revoke(request, olderGrant);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Location")).toBeNull();
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+      expect(res.headers.get("Content-Security-Policy")).toContain("form-action 'self'");
+      const html = await res.text();
+      expect(html).toContain(
+        '<h1>許可した接続</h1>\n<p class="done">Claude（2026/10/01 09:00 UTC に許可）の接続を取り消しました。</p>',
+      );
+      expect(html).not.toContain("2026/10/02 18:30 UTC に許可）の接続を取り消しました");
+      expect(grantIdsOf(html)).toEqual([newerGrant]);
+      expect((await postMcp(request, newer.tokens.access_token, "tools/list")).status).toBe(200);
+    });
+
+    it("同じ grant をもう一度送っても、取り消したとは出さない", async () => {
+      const { request } = setup();
+      const { newer, olderGrant, newerGrant } = await connectTwinsAt(
+        request,
+        Date.UTC(2026, 9, 1, 9, 0),
+        Date.UTC(2026, 9, 2, 18, 30),
+      );
+      expect((await revoke(request, olderGrant)).status).toBe(200);
+      const again = await revoke(request, olderGrant);
+      expect(again.status).toBe(200);
+      const html = await again.text();
+      expect(html).toContain('<p class="done">取り消す接続は、すでにありませんでした。</p>');
+      expect(html).not.toContain("取り消しました");
+      expect(grantIdsOf(html)).toEqual([newerGrant]);
+      expect((await postMcp(request, newer.tokens.access_token, "tools/list")).status).toBe(200);
+    });
+
+    it("取り消した接続の名前はエスケープして、一覧と同じ長さで切る", async () => {
+      const { request } = setup();
+      const name = `<img src=x>${"あ".repeat(50)}`;
+      await connect(request, "read", { client: await register(request, { client_name: name }) });
+      const [grant = ""] = grantIdsOf((await openGrants(request)).html);
+      const html = await (await revoke(request, grant)).text();
+      const shown = /<p class="done">(.*?)（/.exec(html)?.[1];
+      expect(shown).toBe(`&#60;img src=x&#62;${"あ".repeat(29)}…`);
+      expect(html).not.toContain("<img");
+    });
   });
 
   it("別のオリジンからの送信、owner でない送信、読めない grant の id は受け付けない", async () => {

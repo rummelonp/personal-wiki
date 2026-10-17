@@ -311,6 +311,13 @@ async function showGrants(c: Context<AppEnv>): Promise<Response> {
       "許可した接続の一覧を開けません",
     );
   }
+  return grantsResponse(c, { cursor });
+}
+
+async function grantsResponse(
+  c: Context<AppEnv>,
+  { cursor, noticeHtml = "" }: { cursor?: string | undefined; noticeHtml?: string },
+): Promise<Response> {
   const oauth = helpersOf(c);
   const page = await oauth.listUserGrants(OAUTH_USER_ID, {
     limit: GRANTS_PAGE_SIZE,
@@ -323,7 +330,7 @@ async function showGrants(c: Context<AppEnv>): Promise<Response> {
     ),
   );
   const grants = page.items.toSorted((a, b) => b.createdAt - a.createdAt);
-  return new Response(grantsPage(grants, clients, page.cursor, siteNameOf(c.env)), {
+  return new Response(grantsPage(grants, clients, page.cursor, siteNameOf(c.env), noticeHtml), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": [...BASE_PAGE_POLICY, "form-action 'self'"].join("; "),
@@ -348,11 +355,31 @@ async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
       "取り消せません",
     );
   }
-  await helpersOf(c).revokeGrant(grantId, OAUTH_USER_ID);
-  return new Response(null, {
-    status: 303,
-    headers: { Location: OAUTH_GRANTS_PATH, "Cache-Control": "no-store" },
-  });
+  const oauth = helpersOf(c);
+  const revoked = await findGrant(oauth, grantId);
+  await oauth.revokeGrant(grantId, OAUTH_USER_ID);
+  // 取り消した接続の知らせは、この要求で見つけて取り消した grant から作り、一覧へのリダイレクトにしない。
+  // 名前や日時を URL で渡すと、書き換えた URL で任意の文や、取り消していない接続を取り消したと出せる。
+  // 再読み込みで送り直されても、2 回目は grant が見つからないので取り消したとは出ない
+  const noticeHtml =
+    revoked === undefined
+      ? `<p class="done">取り消す接続は、すでにありませんでした。</p>`
+      : `<p class="done">${clientLabelHtml((await oauth.lookupClient(revoked.clientId))?.clientName)}（${formatEpochSeconds(revoked.createdAt)} に許可）の接続を取り消しました。</p>`;
+  return grantsResponse(c, { noticeHtml });
+}
+
+async function findGrant(
+  oauth: Pick<ReturnType<typeof helpersOf>, "listUserGrants">,
+  grantId: string,
+): Promise<GrantSummary | undefined> {
+  let cursor: string | undefined;
+  do {
+    const page = await oauth.listUserGrants(OAUTH_USER_ID, cursor === undefined ? {} : { cursor });
+    const found = page.items.find((grant) => grant.id === grantId);
+    if (found !== undefined) return found;
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  return undefined;
 }
 
 /**
@@ -379,13 +406,10 @@ function grantsPage(
   clientNames: ReadonlyMap<string, string | undefined>,
   nextCursor: string | undefined,
   siteName: string,
+  noticeHtml: string,
 ): string {
   const rows = grants.map((grant) => {
-    const name = clientNames.get(grant.clientId);
-    const label =
-      name === undefined
-        ? "（登録が消えたアプリ）"
-        : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
+    const label = clientLabelHtml(clientNames.get(grant.clientId));
     const scope = describeScopesHtml(grant.scope) ?? "（なし）";
     const host = grant.redirectUri === undefined ? "" : safeHost(grant.redirectUri);
     // 読み上げでボタンを区別する。名前は client が決める値で重複しうるので、許可の日時も添える。
@@ -411,11 +435,18 @@ function grantsPage(
   return pageHtml(
     "許可した接続",
     `<h1>許可した接続</h1>
+${noticeHtml}
 ${list}
 ${more}
 ${BACK_LINK}`,
     siteName,
   );
+}
+
+function clientLabelHtml(name: string | undefined): string {
+  return name === undefined
+    ? "（登録が消えたアプリ）"
+    : escapeHtml(truncate(name, CONSENT_NAME_LENGTH));
 }
 
 function safeHost(uri: string): string {

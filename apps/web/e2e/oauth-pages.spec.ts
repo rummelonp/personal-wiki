@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./support/fixtures";
+import { connectOAuthClient } from "./support/principals";
 
 /*
  * OAuth の画面（同意、エラー、接続の一覧）の折り返しと、タッチ端末での押せる範囲。
@@ -103,6 +104,33 @@ test.describe("OAuth の画面の折り返し @widths", () => {
   });
 });
 
+test.describe("接続の取り消し", () => {
+  test("取り消した後の一覧に、取り消した接続の名前と許可の日時を出す", async ({
+    page,
+  }, testInfo) => {
+    // ほかの環境の同じテストも同じ KV に接続を足すので、名前を環境ごとに分け、件数ではなく grant の id で確かめる
+    const name = `Claude ${testInfo.project.name}`;
+    await connectOAuthClient(name);
+    await connectOAuthClient(name);
+    await page.goto("/_auth/oauth/grants");
+    const target = page
+      .locator(".grants li")
+      .filter({ has: page.locator("strong", { hasText: name }) })
+      .nth(1);
+    const grant = await target.locator('input[name="grant"]').getAttribute("value");
+    const granted = /許可: (\S+ \S+ UTC)/.exec(
+      (await target.locator(".meta").textContent()) ?? "",
+    )?.[1];
+    expect(granted).toBeDefined();
+    await target.getByRole("button", { name: /^取り消す/ }).click();
+
+    await expect(page.locator(".done")).toHaveText(
+      `${name}（${granted} に許可）の接続を取り消しました。`,
+    );
+    await expect(page.locator(`input[name="grant"][value="${grant}"]`)).toHaveCount(0);
+  });
+});
+
 test.describe("OAuth の画面のタップ対象", () => {
   test.skip(({ isMobile }) => !isMobile, "pointer: coarse の端末だけ");
   test.use({ viewport: { width: 375, height: 812 } });
@@ -112,6 +140,8 @@ test.describe("OAuth の画面のタップ対象", () => {
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
     const link = page.getByRole("link", { name: "wiki に戻る" });
     await expect(link).toBeVisible();
+    // 接続の一覧は、ほかのテストが足した接続の数で伸びる。elementFromPoint は画面の外を引けない
+    await link.scrollIntoViewIfNeeded();
     const box = await link.evaluate((el) => {
       const rect = el.getBoundingClientRect();
       const text = document.createRange();
