@@ -291,10 +291,13 @@ h1 {
   margin: 0;
 }
 
+/* 取り消しの知らせ。SPA の .notice と同じ地、枠、角丸、余白にして、同じ役割の要素を同じ見た目にする */
 .done {
   padding: var(--space-3) var(--space-4);
   font-size: var(--font-size-sm);
-  background: var(--color-surface);
+  color: var(--color-fg);
+  background: var(--color-input);
+  border: var(--border-width) solid var(--color-border-strong);
   border-radius: var(--radius-md);
 }
 
