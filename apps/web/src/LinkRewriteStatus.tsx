@@ -2,8 +2,12 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import { Link } from "./Link";
 import { useAfterFrames } from "./Loading";
-import { type LinkRewriteRunner, type LinkRewriteState, linkRewrites } from "./link-rewrites";
-import type { FailedLinkRewrite } from "./link-rewrites-api";
+import {
+  type FailedPage,
+  type LinkRewriteRunner,
+  type LinkRewriteState,
+  linkRewrites,
+} from "./link-rewrites";
 import { Notice, type NoticeInteraction } from "./Notice";
 import { pageHref, pageHrefFor } from "./route";
 
@@ -19,9 +23,7 @@ function subscribeVisibility(onChange: () => void): () => void {
 
 const isDocumentHidden = () => document.visibilityState === "hidden";
 
-/** title を返さない前の版の Worker からは id しか分からないので、id を出す。 */
-function failedPageLabel({ id, title }: FailedLinkRewrite): string {
-  if (title === undefined) return id;
+function failedPageLabel({ title }: FailedPage): string {
   return title ?? "タイトルを取得できなかったページ";
 }
 

@@ -33,13 +33,14 @@ const processed = (id: string) => ({
   rewritten: 1,
 });
 
-/** results を順に返す。尽きたら通信の失敗を返し続ける */
-function setup(results: StepResult[]) {
+/** results を順に返す。尽きたら通信の失敗を返し続ける。titles に無いページは title を引けない */
+function setup(results: StepResult[], titles: Record<string, string> = {}) {
+  const pageTitle = vi.fn(async (id: string) => titles[id] ?? null);
   const queue = [...results];
   const step = vi.fn(
     async (): Promise<StepResult> => queue.shift() ?? { ok: false, kind: "error" },
   );
-  const runner = new LinkRewriteRunner({ step, sleep: async () => {} });
+  const runner = new LinkRewriteRunner({ step, pageTitle, sleep: async () => {} });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -48,7 +49,7 @@ function setup(results: StepResult[]) {
     vi.waitFor(() => {
       if (runner.getState().status === "running") throw new Error("まだ走っている");
     });
-  return { runner, step, settled };
+  return { runner, step, pageTitle, settled };
 }
 
 const text = () => container?.textContent ?? "";
@@ -70,7 +71,11 @@ describe("リンクの書き換えの通知", () => {
       await gate;
       return stepOk({ processed: processed("a"), remaining: 0 });
     });
-    const runner = new LinkRewriteRunner({ step, sleep: async () => {} });
+    const runner = new LinkRewriteRunner({
+      step,
+      pageTitle: async () => null,
+      sleep: async () => {},
+    });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -130,7 +135,11 @@ describe("リンクの書き換えの通知", () => {
         await gate;
         return { ok: false, kind: "error" };
       });
-      const runner = new LinkRewriteRunner({ step, sleep: async () => {} });
+      const runner = new LinkRewriteRunner({
+        step,
+        pageTitle: async () => null,
+        sleep: async () => {},
+      });
       container = document.createElement("div");
       document.body.append(container);
       root = createRoot(container);
@@ -336,12 +345,13 @@ describe("通信の失敗で止まった書き換え", () => {
 });
 
 describe("終わったあとの一覧", () => {
-  async function report(results: StepResult[]) {
-    const { runner, settled } = setup(results);
+  async function report(results: StepResult[], titles: Record<string, string> = {}) {
+    const { runner, pageTitle, settled } = setup(results, titles);
     act(() => runner.start(results.length));
     await act(async () => {
       await settled();
     });
+    return { pageTitle };
   }
 
   it("書き換えたページの数を件で数え、公開ページがあればその数も添える", async () => {
@@ -359,13 +369,12 @@ describe("終わったあとの一覧", () => {
     expect(container?.querySelector("summary")?.textContent).toBe("書き換えたページ（1\u00a0件）");
   });
 
-  it("書き換えられなかったページは title で出し、title が無ければその旨、前の版の Worker なら id を出す", async () => {
+  it("書き換えられなかったページは title で出し、title が無ければその旨を出す", async () => {
     await report([
       stepOk({
         failed: [
           { id: "x", title: "前の題" },
           { id: "y", title: null },
-          { id: "z", title: undefined },
         ],
         remaining: 0,
       }),
@@ -380,7 +389,30 @@ describe("終わったあとの一覧", () => {
     expect(rows).toEqual([
       ["前の題", "/p/x"],
       ["タイトルを取得できなかったページ", "/p/y"],
-      ["z", "/p/z"],
     ]);
+  });
+
+  it("title を返さない前の版の Worker では、ページを読んで title を出し、読めなければ id でなくその旨を出す", async () => {
+    const { pageTitle } = await report(
+      [
+        stepOk({
+          failed: [
+            { id: "x", title: undefined },
+            { id: "gone", title: undefined },
+          ],
+          remaining: 0,
+        }),
+      ],
+      { x: "現在の題" },
+    );
+    const rows = [...(container?.querySelectorAll(".link-rewrites-pages a") ?? [])].map((a) => [
+      a.textContent,
+      a.getAttribute("href"),
+    ]);
+    expect(rows).toEqual([
+      ["現在の題", "/p/x"],
+      ["タイトルを取得できなかったページ", "/p/gone"],
+    ]);
+    expect(pageTitle).toHaveBeenCalledTimes(2);
   });
 });

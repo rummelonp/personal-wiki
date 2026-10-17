@@ -1,6 +1,6 @@
 import type { ProcessedLinkRewrite } from "./editor-session";
 import { type FailedLinkRewrite, type StepResult, stepLinkRewrites } from "./link-rewrites-api";
-import type { Visibility } from "./pages-api";
+import { getPage, type Visibility } from "./pages-api";
 
 /*
  * title の変更で Worker がキューに入れたリンクの書き換えを、step を繰り返して最後まで進める。
@@ -14,6 +14,12 @@ export interface RewrittenPage {
   visibility: Visibility;
 }
 
+/** 書き換えられなかったリンク元。title は、Worker も引き直しも title を得られなかったとき null */
+export interface FailedPage {
+  id: string;
+  title: string | null;
+}
+
 export interface LinkRewriteState {
   /** idle は何も見せない。done と stopped は閉じるまで結果を見せる */
   status: "idle" | "running" | "done" | "stopped";
@@ -23,7 +29,7 @@ export interface LinkRewriteState {
   total: number;
   rewritten: RewrittenPage[];
   /** 書き換えられなかったリンク元（意図しない変化が出る、本文の上限を超える、試行の上限に達した） */
-  failed: FailedLinkRewrite[];
+  failed: FailedPage[];
   /** auth はログインが切れたか書き込めない、error は通信や衝突が続いて諦めた */
   stopReason: "auth" | "error" | null;
 }
@@ -35,6 +41,8 @@ export interface LinkRewriteParticipant {
 
 export interface LinkRewriteRunnerDeps {
   step: () => Promise<StepResult>;
+  /** ページの現在の title。引けなければ null */
+  pageTitle: (id: string) => Promise<string | null>;
   sleep: (ms: number) => Promise<void>;
 }
 
@@ -48,10 +56,7 @@ export const ERROR_WAITS_MS = [1_000, 2_000, 4_000];
  * 同じリンク元がキューに入れ直されてまた失敗しても、一覧には 1 回だけ出す。試行の上限で諦めたときは title が
  * 無いので、前に分かった title を残す。
  */
-function mergeFailed(
-  current: FailedLinkRewrite[],
-  added: FailedLinkRewrite[],
-): FailedLinkRewrite[] {
+function mergeFailed(current: FailedPage[], added: FailedPage[]): FailedPage[] {
   const byId = new Map(current.map((page) => [page.id, page]));
   for (const page of added) {
     const known = byId.get(page.id)?.title;
@@ -228,6 +233,21 @@ export class LinkRewriteRunner {
     return result;
   }
 
+  /**
+   * title を返さない前の版の Worker の failed には title が無いので、リンク元のページを読んで補う。
+   * 同じリンク元が失敗として返り直すたびには読まないよう、すでに title が分かっている id は読まない。
+   */
+  private async nameFailed(failed: FailedLinkRewrite[]): Promise<FailedPage[]> {
+    return Promise.all(
+      failed.map(async ({ id, title }) => {
+        if (title !== undefined) return { id, title };
+        const known = this.state.failed.find((page) => page.id === id)?.title;
+        if (known !== undefined && known !== null) return { id, title: known };
+        return { id, title: await this.deps.pageTitle(id) };
+      }),
+    );
+  }
+
   private async loop(generation: number): Promise<void> {
     let conflicts = 0;
     let errors = 0;
@@ -261,6 +281,8 @@ export class LinkRewriteRunner {
         continue;
       }
       conflicts = 0;
+      const failedPages = await this.nameFailed(failed);
+      if (!current()) return;
       // 何もキューに入っていないときのレスポンス（processed も failed も無く残りも 0）は処理に数えない
       const handled = processed !== null || failed.length > 0 || this.state.total > this.state.done;
       const done = this.state.done + (handled ? 1 : 0);
@@ -280,7 +302,7 @@ export class LinkRewriteRunner {
         done,
         total: done + remaining,
         rewritten,
-        failed: mergeFailed(this.state.failed, failed),
+        failed: mergeFailed(this.state.failed, failedPages),
       };
       if (remaining > 0) {
         this.set({ ...next, status: "running" });
@@ -300,4 +322,11 @@ export class LinkRewriteRunner {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** アプリ全体で 1 つ。ページを移っても書き換えを続ける。 */
-export const linkRewrites = new LinkRewriteRunner({ step: () => stepLinkRewrites(), sleep });
+export const linkRewrites = new LinkRewriteRunner({
+  step: () => stepLinkRewrites(),
+  pageTitle: async (id) => {
+    const result = await getPage(id);
+    return result.ok ? result.value.title : null;
+  },
+  sleep,
+});

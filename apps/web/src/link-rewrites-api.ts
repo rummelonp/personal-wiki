@@ -2,7 +2,7 @@ import type { Fetch, Visibility } from "./pages-api";
 
 /**
  * 書き換えられなかったリンク元。title は、Worker がリンク元を読む前に諦めたとき null、
- * failedPages を返さない前の版の Worker では undefined（画面は id を出す）。
+ * failedPages を返さない前の版の Worker では undefined（runner がページを読んで補う）。
  */
 export interface FailedLinkRewrite {
   id: string;

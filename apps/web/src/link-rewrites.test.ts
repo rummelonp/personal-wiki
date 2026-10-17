@@ -22,21 +22,22 @@ const processed = (id: string, visibility: "public" | "draft" = "draft") => ({
   rewritten: 1,
 });
 
-function setup(results: StepResult[]) {
+function setup(results: StepResult[], titles: Record<string, string> = {}) {
   const step = vi.fn(async () => {
     const next = results.shift();
     if (next === undefined) throw new Error("想定より多く呼んだ");
     return next;
   });
   const sleep = vi.fn(async (_ms: number) => {});
-  const runner = new LinkRewriteRunner({ step, sleep });
+  const pageTitle = vi.fn(async (id: string) => titles[id] ?? null);
+  const runner = new LinkRewriteRunner({ step, pageTitle, sleep });
   const states: LinkRewriteState[] = [];
   runner.subscribe(() => states.push(runner.getState()));
   const settled = () =>
     vi.waitFor(() => {
       if (runner.getState().status === "running") throw new Error("まだ走っている");
     });
-  return { runner, step, sleep, states, settled };
+  return { runner, step, sleep, pageTitle, states, settled };
 }
 
 describe("LinkRewriteRunner", () => {
@@ -253,6 +254,29 @@ describe("LinkRewriteRunner", () => {
     runner.start(2);
     await settled();
     expect(runner.getState().failed).toEqual([failure("x")]);
+  });
+
+  it("title の無い失敗はリンク元のページを読んで補い、title が分かった id は読み直さない", async () => {
+    const { runner, pageTitle, settled } = setup(
+      [
+        ok({ failed: [{ id: "x", title: undefined }], remaining: 1 }),
+        ok({
+          failed: [
+            { id: "x", title: undefined },
+            { id: "y", title: undefined },
+          ],
+          remaining: 0,
+        }),
+      ],
+      { x: "現在の題 x" },
+    );
+    runner.start(2);
+    await settled();
+    expect(runner.getState().failed).toEqual([
+      { id: "x", title: "現在の題 x" },
+      { id: "y", title: null },
+    ]);
+    expect(pageTitle.mock.calls.map(([id]) => id)).toEqual(["x", "y"]);
   });
 
   it("stop のあとは古いループの結果を書かない", async () => {
