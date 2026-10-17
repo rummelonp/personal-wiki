@@ -18,7 +18,8 @@ interface InputMeterProps {
 
 /**
  * 入力の長さを「12,345 / 65,536 バイト」と出す。上限がバイトで決まっているので、文字数に直さない。
- * 打つたびに数が変わるので live region にしない。上限を超えたことは保存の状態と通知が伝える。
+ * 打つたびに数が変わるので live region にしない。上限を超えたことは、入力の問題の通知が見た目で、
+ * 見えない status が読み上げで伝える（PageEditor）。
  */
 export function InputMeter({ label, bytes, max }: InputMeterProps) {
   const level = bytes > max ? "over" : bytes >= max * NEAR_RATIO ? "near" : "normal";
