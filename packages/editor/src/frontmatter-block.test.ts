@@ -144,6 +144,18 @@ describe("frontmatter block", () => {
       expect(box(v)?.getAttribute("role")).toBe("group");
     });
 
+    it("chip の focus の枠（太さ 2px と間隔 1px）と枠の線の間に、2px 以上空ける", () => {
+      const v = mount(doc, { onTagClick: vi.fn() });
+      const chip = tagChip(v)?.getBoundingClientRect();
+      const frame = box(v);
+      if (!chip || !frame) throw new Error("the chip is not drawn");
+      const outer = frame.getBoundingClientRect();
+      const ring = 3;
+      const clearance = 2;
+      expect(chip.top - outer.top - frame.clientTop).toBeGreaterThanOrEqual(ring + clearance);
+      expect(outer.bottom - frame.clientTop - chip.bottom).toBeGreaterThanOrEqual(ring + clearance);
+    });
+
     it("tag の chip で Enter を押すとクリックと同じ遷移を呼び、枠を畳んだままにする", () => {
       const onTagClick = vi.fn();
       const v = mount(doc, { onTagClick });

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultCalloutTitle, parseCalloutHeader, resolveCalloutType } from "./callout";
 import { createEditor } from "./create-editor";
 import { isCompositionUnsettled } from "./ime";
+import { charRect } from "./test-geometry";
 
 let view: EditorView | null = null;
 let host: HTMLElement | null = null;
@@ -322,6 +323,16 @@ describe("callout fold button keyboard", () => {
     expect(button?.tabIndex).toBe(0);
     expect(button?.getAttribute("role")).toBe("button");
     expect(button?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("focus の枠（太さ 2px と間隔 1px）は、見出しの最後の字に重ならない", () => {
+    const v = mount("> [!note]- 手順書\n> 本文");
+    const button = foldButtons(v)[0];
+    const line = button?.closest(".cm-line");
+    if (!button || !line) throw new Error("fold button is not rendered");
+    expect(button.getBoundingClientRect().left - 3).toBeGreaterThanOrEqual(
+      charRect(line, "書").right,
+    );
   });
 
   it.each(["Enter", " "])("%j で開閉し、本文を書き換えない", (key) => {

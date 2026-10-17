@@ -415,7 +415,8 @@ export const livePreviewTheme = EditorView.baseTheme({
     verticalAlign: "top",
     border: "1px solid var(--ui-color-border)",
     borderRadius: "var(--ui-radius-sm, 0.25rem)",
-    padding: "0.25em 0.6em",
+    // 上下は、chip の focus の枠（太さ 2px と間隔 1px）が枠の線に届かない余白を取る
+    padding: "0.45em 0.6em",
     backgroundColor: SURFACE_SHADE,
     cursor: "pointer",
     fontSize: "0.875em",
@@ -593,7 +594,13 @@ export const livePreviewTheme = EditorView.baseTheme({
     display: "inline-block",
     minWidth: "1.2em",
   },
-  ".cm-lp-callout-fold": { cursor: "pointer", paddingLeft: "0.4em", userSelect: "none" },
+  // 間隔は margin で取る。padding だと focus の枠が間隔まで含んで、見出しの最後の字に重なる
+  ".cm-lp-callout-fold": {
+    cursor: "pointer",
+    marginLeft: "0.4em",
+    padding: "0 0.2em",
+    userSelect: "none",
+  },
   ".cm-lp-callout-fold::before": { content: '"▾"' },
   '.cm-lp-callout-fold[aria-expanded="false"]::before': { content: '"▸"' },
   // Tab で届いたときの目印。この package はホストの全体の style（`:focus-visible`）に頼らない
