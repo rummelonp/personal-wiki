@@ -257,7 +257,12 @@ export function wikiLinks(
   ];
 }
 
-const draftBadgeTheme = EditorView.baseTheme({
+/**
+ * 印の style。link の後ろの印（`wikiLinks()`）と展開した embed のタイトルの印（`embeds()`）で
+ * 同じ値を共有し、どちらか一方だけが入る構成でも印に style が付くようにする。
+ * 同じ extension の値は state が 1 つにまとめるので、両方に入れても重複しない。
+ */
+export const draftBadgeTheme = EditorView.baseTheme({
   ".cm-wikilink-draft-badge": {
     display: "inline-block",
     marginInlineStart: "0.3em",

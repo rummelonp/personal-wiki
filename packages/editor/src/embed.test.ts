@@ -1,11 +1,13 @@
+import { markdown } from "@codemirror/lang-markdown";
 import { EditorSelection, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { MAX_EMBED_DIMENSION } from "@personal-wiki/markdown";
+import { MAX_EMBED_DIMENSION, WikiLink } from "@personal-wiki/markdown";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { type CreateEditorOptions, createEditor } from "./create-editor";
 import { invalidateDecorations } from "./decoration-plugin";
-import type { PageEmbedContent } from "./embed";
+import { embeds, type PageEmbedContent } from "./embed";
 import { isCompositionUnsettled } from "./ime";
+import { wikiLinks } from "./wikilink";
 
 // 1x1 の透明な PNG。サイズ指定が無ければ 1px で描かれる。
 const PIXEL =
@@ -872,6 +874,51 @@ describe("page embed", () => {
         isDraftWikiLink: () => true,
       });
       expect(embedOf(unresolved, "Draft")?.querySelector(BADGE)).toBeNull();
+    });
+
+    // create-editor.ts は wikiLinks() にも同じ判定を渡すので、embeds() 単体の構成は別に組む
+    describe("style", () => {
+      const pageEmbeds = (): Extension =>
+        embeds(undefined, {
+          resolve: () => resolved("Draft", "本文"),
+          render: (parent, text) => {
+            parent.textContent = text;
+            return { destroy: () => {} };
+          },
+          isDraft: () => true,
+        });
+      const mountWith = (...extensions: Extension[]) => {
+        host = document.createElement("div");
+        document.body.append(host);
+        view = new EditorView({
+          parent: host,
+          state: EditorState.create({
+            doc: "![[Draft]]",
+            extensions: [markdown({ extensions: [WikiLink] }), ...extensions],
+          }),
+        });
+        return view;
+      };
+      const badgeRules = (v: EditorView) =>
+        v.state
+          .facet(EditorView.styleModule)
+          .filter((m) => m.getRules().includes("cm-wikilink-draft-badge")).length;
+
+      // style は document 単位で 1 度だけ mount され、先に動いた別のテストの view でも入るので、
+      // computed style ではなく、この view の state が theme を持つかを見る
+      it("includes the badge style when only embeds() is given the draft test", () => {
+        const v = mountWith(pageEmbeds());
+        expect(v.contentDOM.querySelector(BADGE)).not.toBeNull();
+        expect(badgeRules(v)).toBe(1);
+      });
+
+      it("keeps a single badge style when wikiLinks() is given the draft test too", () => {
+        const v = mountWith(
+          pageEmbeds(),
+          wikiLinks(undefined, undefined, undefined, undefined, () => true),
+        );
+        expect(badgeRules(v)).toBe(1);
+      });
     });
 
     it("does not badge an embed when no draft test is configured", () => {

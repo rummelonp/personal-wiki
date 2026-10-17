@@ -30,7 +30,7 @@ import { isCompositionUnsettled } from "./ime";
 import { linkSyntaxParts } from "./link-syntax";
 import { createRevealTest } from "./reveal";
 import { SectionContents } from "./section-content";
-import { createDraftBadge, type WikiLinkDraftTest } from "./wikilink";
+import { createDraftBadge, draftBadgeTheme, type WikiLinkDraftTest } from "./wikilink";
 
 /**
  * 添付のファイル名（`![[filename]]` の target）から、ブラウザが読む URL を返す。
@@ -1084,6 +1084,7 @@ export function embeds(resolveUrl?: AttachmentUrlResolver, page?: PageEmbedOptio
       rebuildWhen: uploadsChanged,
     }),
     embedTheme,
+    page?.isDraft ? draftBadgeTheme : [],
     resolveUrl ? attachmentUrlResolver.of(resolveUrl) : [],
   ];
 }
