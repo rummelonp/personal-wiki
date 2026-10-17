@@ -480,6 +480,28 @@ class PageEmbedWidget extends WidgetType {
     return wrapper;
   }
 
+  // 下書きの印だけが変わるときは、印を足し引きして DOM を使い回す。title の解決が本文より
+  // 後に届く場合や公開範囲を切り替えた場合に作り直すと、本文の入れ子の view が壊れ、
+  // 本文で選んでいた範囲が消える。
+  override updateDOM(dom: HTMLElement, _view: EditorView, from: WidgetType): boolean {
+    if (
+      !(from instanceof PageEmbedWidget) ||
+      from.target !== this.target ||
+      from.content !== this.content ||
+      from.page !== this.page
+    ) {
+      return false;
+    }
+    const host = dom.querySelector(
+      ":scope > .cm-embed-page-pending, :scope > .cm-embed-page-header > .cm-embed-page-title",
+    );
+    if (!host) return true;
+    const badge = host.querySelector(":scope > .cm-wikilink-draft-badge");
+    if (this.draft && !badge) host.append(createDraftBadge());
+    else if (!this.draft) badge?.remove();
+    return true;
+  }
+
   override destroy(dom: HTMLElement): void {
     renderedBodies.get(dom)?.destroy();
     renderedBodies.delete(dom);

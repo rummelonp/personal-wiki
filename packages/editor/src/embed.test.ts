@@ -900,6 +900,64 @@ describe("page embed", () => {
       invalidateDecorations(v);
       await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).not.toBeNull());
     });
+
+    // 作り直すと本文の入れ子の view が壊れ、本文で選んでいた範囲が消える
+    it("adds and removes the badge without rebuilding the embedded body", async () => {
+      let draft = false;
+      const content = resolved("Draft", "本文");
+      const v = mount("![[Draft]]", {
+        resolvePageEmbed: () => content,
+        isDraftWikiLink: () => draft,
+      });
+      const widget = embedOf(v, "Draft");
+      const nested = widget?.querySelector(".cm-embed-page-body .cm-editor");
+      expect(nested).not.toBeNull();
+
+      draft = true;
+      invalidateDecorations(v);
+      await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).not.toBeNull());
+      expect(embedOf(v, "Draft")).toBe(widget);
+      expect(widget?.querySelector(".cm-embed-page-body .cm-editor")).toBe(nested);
+      expect(widget?.querySelectorAll(BADGE)).toHaveLength(1);
+
+      draft = false;
+      invalidateDecorations(v);
+      await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).toBeNull());
+      expect(embedOf(v, "Draft")).toBe(widget);
+      expect(widget?.querySelector(".cm-embed-page-body .cm-editor")).toBe(nested);
+    });
+
+    it("adds the badge to the same element while the embed is loading", async () => {
+      let draft = false;
+      const v = mount("![[Draft]]", {
+        resolvePageEmbed: () => LOADING,
+        isDraftWikiLink: () => draft,
+      });
+      const widget = embedOf(v, "Draft");
+
+      draft = true;
+      invalidateDecorations(v);
+      await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).not.toBeNull());
+      expect(embedOf(v, "Draft")).toBe(widget);
+    });
+
+    it("still rebuilds the embedded body when its content changes with the badge", async () => {
+      let draft = false;
+      let content = resolved("Draft", "本文");
+      const v = mount("![[Draft]]", {
+        resolvePageEmbed: () => content,
+        isDraftWikiLink: () => draft,
+      });
+      const nested = embedOf(v, "Draft")?.querySelector(".cm-embed-page-body .cm-editor");
+
+      draft = true;
+      content = resolved("Draft", "別の本文");
+      invalidateDecorations(v);
+      await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).not.toBeNull());
+      const rebuilt = embedOf(v, "Draft")?.querySelector(".cm-embed-page-body .cm-editor");
+      expect(rebuilt).not.toBe(nested);
+      expect(rebuilt?.textContent).toContain("別の本文");
+    });
   });
 
   // 添付の配信 URL はページ単位なので、埋め込んだ本文の添付は埋め込み先のページで引く
