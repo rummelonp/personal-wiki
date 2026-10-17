@@ -119,8 +119,14 @@ token を識別するのは id で、name は重複してよい。
 
 - README、docs/、AGENTS.md、コメントは常体（である調）で書く。
 - ドキュメントとコメントは日本語で書く。
-  コメントはコードから自明でないこと（今も有効な判断の理由、制約）だけを書き、変更の経緯は書かない。
+  コメントはコードから自明でないこと（今も有効な判断の理由、制約）だけを書く。
+  変更の経緯は、コメント、README、AGENTS.md、docs/ のどれにも書かない。
+  既存の文に「以前は」「〜に変えた」があれば、今の値と今の制約で書き直す。
   「この guard が無いと X が起きる」は制約として書き、「以前 X が起きたので直した」はコミットメッセージに書く。
+- 並列は中黒（・）でなく読点（、）でつなぎ、範囲は「〜」で書く。
+  列挙で網羅を装わず、全部を挙げないときは「など」を付ける。
+- 術語は分野で慣用されている語を使い、訳し直さない（table は「テーブル」、index は「インデックス」）。
+  和語で自然に通じる語（行、入れ子など）は片仮名にしない。
 - 文書は読み手で置き場所を分ける。
   利用者向けの説明は README.md、開発の規約とコマンドは AGENTS.md に置く。
   運用の手順や設計の規範のように長いものは `docs/` に置き、README.md と AGENTS.md からリンクする。
@@ -128,6 +134,12 @@ token を識別するのは id で、name は重複してよい。
 - 見た目の値（色、長さ、font-family、影、z-index）は `apps/web/src/theme.css` の token に置き、コンポーネントの CSS は token だけを参照する。
   直書きが要る宣言は、同じ行の末尾に `/* token-ok: 理由 */` を書く。
   `pnpm lint` が検査する。
+- 不具合を直したら回帰のテスト（単体、コンポーネント、E2E のどれか）を足し、修正を外すと落ちることを確かめる。
+  テストで再現できない不具合（実機の IME など）は、確かめた手順をコミットメッセージに書く。
+- `packages/editor` の外で editor の view を扱うときは、`packages/editor/src/ime.ts` 冒頭の IME の不変条件を守るため、次のようにする。
+  本文や readOnly が変わっても view を作り直さず、本文の差し替えは `replaceDoc`、readOnly の切り替えは `setReadOnly` を使う。
+  `packages/editor` が公開する関数（`replaceDoc`、`setReadOnly`、`invalidateDecorations` など）は自分で変換が落ち着くのを待つので、そのまま呼ぶ。
+  アプリのコードで自分で書く `view.dispatch` は、`dispatchWhenSettled` の中で行う（テストで利用者の操作を模す dispatch は除く）。
 
 PR を出す前に `lint`、`typecheck`、`test` がすべて通ることを確認する。
 CI（`.github/workflows/ci.yml`）も同じ 3 つを実行する。

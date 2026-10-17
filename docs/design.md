@@ -62,3 +62,7 @@
 - axe のコントラストの検査はライトでしか走らない。
   ダークの色を変えたら、コントラスト比を手で測る。
 - 動きを足したら、`prefers-reduced-motion` で止まることを確かめる。
+- フォールバック先のフォントの名前は、撮影からは見分けられない。
+  Chromium では CDP の `CSS.getPlatformFontsForNode` で、実際に使われたフォントの名前を見る。
+- フォントのレンダリング（`-webkit-font-smoothing` など）は headless の撮影には出ない。
+  macOS の headed のブラウザで、指定を付けた場合と外した場合を並べて比べる。
