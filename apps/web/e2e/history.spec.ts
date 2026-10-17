@@ -60,7 +60,7 @@ test("版を時刻と作成者で並べ、押した版の本文を読み取り�
   await page.keyboard.type("書き換え");
   await expect(oldBody).toHaveText("最初の本文");
 
-  await page.keyboard.press("Escape");
+  await closeViewer(page);
   await expect(viewer(page)).toHaveCount(0);
   await expect(entries(page).nth(1)).toBeFocused();
   await expect(bodyEditor(page)).toHaveText("二つ目の本文");
