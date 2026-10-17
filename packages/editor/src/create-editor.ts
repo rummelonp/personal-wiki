@@ -90,7 +90,7 @@ export interface CreateEditorOptions {
   readonly resolveWikiLink?: WikiLinkResolver;
   /**
    * 渡したときだけ、解決先が draft の WikiLink に「下書き」の印を付ける。展開したページ embed の
-   * 本文には渡さない（印は今のページの本文から張った link のためのもの）。
+   * タイトルにも付けるが、embed の本文には渡さない（印は今のページの本文から張った link のためのもの）。
    */
   readonly isDraftWikiLink?: WikiLinkDraftTest;
   readonly onTagClick?: TagClickHandler;
@@ -257,10 +257,12 @@ function pageEmbedOptions(options: CreateEditorOptions): PageEmbedOptions | unde
     onTagClick,
     hrefForTag,
     resolveAttachmentUrl,
+    isDraftWikiLink,
   } = options;
   if (!resolvePageEmbed) return undefined;
   return {
     resolve: resolvePageEmbed,
+    ...(isDraftWikiLink ? { isDraft: isDraftWikiLink } : {}),
     render: (parent, text, onResize, embedTarget) => {
       // 埋め込み先の本文にある `[[#見出し]]` は、埋め込み元ではなく埋め込み先のページを指す
       const own = (link: WikiLinkClick): WikiLinkClick =>

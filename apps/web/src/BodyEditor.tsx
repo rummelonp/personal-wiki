@@ -246,8 +246,14 @@ export function BodyEditor({
             resolvePageEmbed: (target: string) =>
               latest.current.links?.resolvePageEmbed(target) ?? NO_EMBED,
             hrefForWikiLink: (link: WikiLinkClick) => latest.current.links?.hrefFor(link) ?? null,
-            isDraftWikiLink: (target: string) =>
-              latest.current.markDraftLinks && (latest.current.links?.isDraft(target) ?? false),
+            isDraftWikiLink: (target: string) => {
+              const { markDraftLinks, links } = latest.current;
+              if (!markDraftLinks || links === undefined) return false;
+              // 展開した embed の target は resolver に渡らない（widget が link の装飾を置き換える）。
+              // 解決先の取得を始めるため、印を付けるときだけここで resolver を呼ぶ。
+              links.resolveWikiLink(target);
+              return links.isDraft(target);
+            },
           }),
       ...(initial.onWikiLinkClick === undefined
         ? {}

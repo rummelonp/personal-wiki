@@ -30,6 +30,7 @@ import { isCompositionUnsettled } from "./ime";
 import { linkSyntaxParts } from "./link-syntax";
 import { createRevealTest } from "./reveal";
 import { SectionContents } from "./section-content";
+import { createDraftBadge, type WikiLinkDraftTest } from "./wikilink";
 
 /**
  * 添付のファイル名（`![[filename]]` の target）から、ブラウザが読む URL を返す。
@@ -100,6 +101,12 @@ export interface PageEmbedOptions {
   readonly render: PageBodyRenderer;
   /** title（未解決なら target）のクリックで呼ぶ。無ければクリックで何もしない */
   readonly open?: (target: string) => void;
+  /**
+   * 渡したときだけ、解決先が draft の embed のタイトルに「下書き」の印を付ける。
+   * 展開した embed は widget に置き換わり、WikiLink の装飾（と印）が付かないための代わり。
+   * embed の target は `WikiLinkResolver` に渡らないので、host は解決先の取得をこの中で始める。
+   */
+  readonly isDraft?: WikiLinkDraftTest;
 }
 
 const MEDIA_EMBED_KINDS: ReadonlySet<EmbedKind> = new Set<EmbedKind>(["image", "video"]);
@@ -375,6 +382,7 @@ class PageEmbedWidget extends WidgetType {
     readonly target: string,
     readonly content: PageEmbedContent,
     readonly page: PageEmbedOptions,
+    readonly draft: boolean,
   ) {
     super();
   }
@@ -386,7 +394,8 @@ class PageEmbedWidget extends WidgetType {
       other instanceof PageEmbedWidget &&
       other.target === this.target &&
       other.content === this.content &&
-      other.page === this.page
+      other.page === this.page &&
+      other.draft === this.draft
     );
   }
 
@@ -407,6 +416,7 @@ class PageEmbedWidget extends WidgetType {
       case "loading": {
         const label = this.link(this.target);
         label.classList.add("cm-embed-page-pending");
+        this.appendDraftBadge(label);
         wrapper.append(label);
         appendEditButton(wrapper, view, this.target);
         break;
@@ -439,6 +449,7 @@ class PageEmbedWidget extends WidgetType {
         titleRow.className = "cm-embed-page-header";
         const title = this.link(content.title);
         title.classList.add("cm-embed-page-title");
+        this.appendDraftBadge(title);
         titleRow.append(title);
         // titleRow は wrapper（widget の root）の内側の要素なので、reveal 判定に使う root は
         // 明示的に wrapper を渡す（appendEditButton の doc comment 参照）
@@ -472,6 +483,12 @@ class PageEmbedWidget extends WidgetType {
   override destroy(dom: HTMLElement): void {
     renderedBodies.get(dom)?.destroy();
     renderedBodies.delete(dom);
+  }
+
+  // 印はタイトルの要素の中に置く。タイトル行では title が残り幅いっぱいに広がるので、外に並べると
+  // 編集ボタン側へ離れる。
+  private appendDraftBadge(element: HTMLElement): void {
+    if (this.draft) element.append(createDraftBadge());
   }
 
   private link(text: string): HTMLElement {
@@ -854,6 +871,7 @@ function build(
               parts.target,
               sections.resolve(parts.target, page.resolve(parts.target), parts.heading),
               page,
+              page.isDraft?.(parts.target) ?? false,
             );
         } else {
           render = (block) => mediaWidgetFactories[kind](state, parts, resolveUrl, block);

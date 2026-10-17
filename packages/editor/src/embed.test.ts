@@ -844,6 +844,64 @@ describe("page embed", () => {
     expect(resolve).toHaveBeenCalledWith("Note");
   });
 
+  describe("draft badge", () => {
+    const BADGE = ".cm-wikilink-draft-badge";
+
+    it("adds a text badge to the title of an embed whose target is a draft", () => {
+      const v = mount("前\n![[Draft]]\n\n![[Open]]\n後", {
+        resolvePageEmbed: (target) => resolved(target, "本文"),
+        isDraftWikiLink: (target) => target === "Draft",
+      });
+      const title = embedOf(v, "Draft")?.querySelector(".cm-embed-page-title");
+      expect(title?.querySelector(BADGE)?.textContent).toBe("下書き");
+      // 読み上げでタイトルに続けて読まれるよう、印はタイトルの要素の中に置く
+      expect(title?.textContent).toBe("Draft下書き");
+      expect(embedOf(v, "Open")?.querySelector(BADGE)).toBeNull();
+      expect(v.contentDOM.querySelectorAll(BADGE)).toHaveLength(1);
+      expect(v.state.doc.toString()).toBe("前\n![[Draft]]\n\n![[Open]]\n後");
+    });
+
+    it("badges a draft embed while it is loading, but not when it is unresolved", () => {
+      const loading = mount("![[Draft]]", {
+        resolvePageEmbed: () => LOADING,
+        isDraftWikiLink: () => true,
+      });
+      expect(embedOf(loading, "Draft")?.querySelector(BADGE)).not.toBeNull();
+      const unresolved = mount("![[Draft]]", {
+        resolvePageEmbed: () => UNRESOLVED,
+        isDraftWikiLink: () => true,
+      });
+      expect(embedOf(unresolved, "Draft")?.querySelector(BADGE)).toBeNull();
+    });
+
+    it("does not badge an embed when no draft test is configured", () => {
+      const v = mount("![[Draft]]", { resolvePageEmbed: () => resolved("Draft", "本文") });
+      expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+    });
+
+    it("does not badge the links inside the embedded body", () => {
+      const v = mount("![[Note]]", {
+        resolvePageEmbed: () => resolved("Note", "[[Draft]]"),
+        isDraftWikiLink: (target) => target === "Draft",
+      });
+      expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+    });
+
+    it("redraws the embed when the draft test result changes", async () => {
+      let draft = false;
+      const content = resolved("Draft", "本文");
+      const v = mount("![[Draft]]", {
+        resolvePageEmbed: () => content,
+        isDraftWikiLink: () => draft,
+      });
+      expect(v.contentDOM.querySelector(BADGE)).toBeNull();
+
+      draft = true;
+      invalidateDecorations(v);
+      await vi.waitFor(() => expect(v.contentDOM.querySelector(BADGE)).not.toBeNull());
+    });
+  });
+
   // 添付の配信 URL はページ単位なので、埋め込んだ本文の添付は埋め込み先のページで引く
   it("resolves an attachment inside an embedded body with the embedded page's target", () => {
     const resolve = vi.fn((filename: string, embedTarget?: string) =>

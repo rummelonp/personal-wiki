@@ -51,7 +51,8 @@ export const wikiLinkResolver = Facet.define<WikiLinkResolver>();
  * 解決先が draft のとき true を返す。true の link には「下書き」の印を付ける。
  * public のページから draft への link は、匿名には存在しないページへの link と同じ文字列に見えるので、
  * 書いている人にそれを知らせるために使う。印を付けるかどうか（今のページが public か）は host が決める。
- * `WikiLinkResolver` の後に呼ぶ。host は resolver が始めた問い合わせの結果を読むだけでよい。
+ * link の装飾からは `WikiLinkResolver` の後に呼ぶので、resolver が始めた問い合わせの結果を読めば足りる。
+ * 展開した embed からは resolver を通さずに呼ぶので、host は解決先の取得が始まっていなければこの中で始める。
  */
 export type WikiLinkDraftTest = (target: string) => boolean;
 
@@ -82,6 +83,11 @@ class DraftBadgeWidget extends WidgetType {
 }
 
 const draftBadge = Decoration.widget({ widget: new DraftBadgeWidget(), side: 1 });
+
+/** 展開したページ embed のタイトルに付ける、link の後ろと同じ印 */
+export function createDraftBadge(): HTMLElement {
+  return new DraftBadgeWidget().toDOM();
+}
 
 /** 最初に URL を返した facet の値を採る（複数ぶら下げるのはテストだけを想定） */
 function hrefOf(hrefs: readonly WikiLinkHref[], link: WikiLinkClick): string | null {
@@ -128,7 +134,7 @@ function build(view: EditorView, expandedEmbeds: ReadonlySet<EmbedKind>): BuiltD
         if (!parts) return false;
         // 展開する embed は embed extension が `!` から `]]` までを widget に置き換える。
         // ここでも装飾すると、2 つの extension の replace が同じ範囲で重なる。
-        // そのため draft の印も付かない。
+        // draft の印は embed 側が widget のタイトルに付ける。
         if (node.from > 0 && isEmbedWikiLink(state.doc.sliceString(node.from - 1, node.from))) {
           const kind = embedKindOf(parts);
           if (kind !== null && expandedEmbeds.has(kind)) return false;

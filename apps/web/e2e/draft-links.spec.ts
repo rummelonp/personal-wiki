@@ -81,14 +81,49 @@ test.describe("owner", () => {
 
     await publish.click();
     await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
-    // 本文の link は 2 つとも同じ draft を指すので、印も 2 つ
-    await expect(badges(page)).toHaveCount(2);
-    // 展開した embed は widget に置き換わるので、一覧には数えても印は付かない
+    // 本文の link は 2 つとも同じ draft を指すので、印も 2 つ。展開した embed のタイトルにも付く
+    await expect(badges(page)).toHaveCount(3);
     const embed = bodyEditor(page).locator(`.cm-embed-page[data-embed-target="${second.title}"]`);
     await expect(embed).toHaveAttribute("data-embed-state", "resolved");
-    await expect(embed.locator(".cm-wikilink-draft-badge")).toHaveCount(0);
+    await expect(embed.locator(".cm-embed-page-title .cm-wikilink-draft-badge")).toHaveText(
+      "下書き",
+    );
+    await expect(embed.locator(".cm-wikilink-draft-badge")).toHaveCount(1);
     await expect(link(page, first.title)).toHaveCount(2);
     await expect(link(page, first.title).first()).toHaveClass(/cm-wikilink-draft/);
+  });
+
+  test("公開のページで展開した draft の embed のタイトルにも、「下書き」の印が付く", async ({
+    page,
+    api,
+  }, testInfo) => {
+    const draft = await api.createPage({
+      title: uniqueTitle(testInfo, "展開される下書き"),
+      body: "展開された本文",
+    });
+    const published = await api.createPage({
+      title: uniqueTitle(testInfo, "展開される公開"),
+      body: "公開の本文",
+      visibility: "public",
+    });
+    const source = await api.createPage({
+      title: uniqueTitle(testInfo, "下書きを展開する公開"),
+      body: `前置き\n\n![[${draft.title}]]\n\n![[${published.title}]]\n\n後`,
+      visibility: "public",
+    });
+    await page.goto(`/p/${source.id}`);
+
+    const embedOf = (title: string) =>
+      bodyEditor(page).locator(`.cm-embed-page[data-embed-target="${title}"]`);
+    await expect(embedOf(draft.title)).toHaveAttribute("data-embed-state", "resolved");
+    await expect(embedOf(published.title)).toHaveAttribute("data-embed-state", "resolved");
+    const title = embedOf(draft.title).locator(".cm-embed-page-title");
+    await expect(title.locator(".cm-wikilink-draft-badge")).toHaveText("下書き");
+    await expect(title).toHaveText(`${draft.title}下書き`);
+    await expect(embedOf(published.title).locator(".cm-wikilink-draft-badge")).toHaveCount(0);
+    await expect(badges(page)).toHaveCount(1);
+    // 本文は書き換えない
+    expect((await api.getPage(source.id)).body).toBe(source.body);
   });
 
   test("公開の確認の一覧から、リンク先の draft を開ける", async ({ page, api }, testInfo) => {

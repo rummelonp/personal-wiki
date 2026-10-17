@@ -953,6 +953,33 @@ describe("wikilink の存在の印", () => {
     await vi.waitFor(() => expect(badges(view())).toEqual([]));
   });
 
+  it("markDraftLinks の間だけ、展開した draft の embed のタイトルにも下書きの印を付ける", async () => {
+    const links = fakeLinks();
+    links.drafts.add("下書き");
+    links.embeds.set("下書き", { kind: "resolved", title: "下書き", text: "本文" });
+    const badges = (v: EditorView) =>
+      [...v.dom.querySelectorAll(".cm-embed-page-title .cm-wikilink-draft-badge")].map(
+        (e) => e.textContent,
+      );
+    const resolve = vi.spyOn(links.sources, "resolveWikiLink");
+    const { view, rerender } = controlled("![[下書き]]\n\n後", { links: links.sources });
+    await vi.waitFor(() =>
+      expect(
+        view().dom.querySelector('.cm-embed-page[data-embed-state="resolved"]'),
+      ).not.toBeNull(),
+    );
+    expect(badges(view())).toEqual([]);
+    // 印を付けない間は、解決先を取りに行かない
+    expect(resolve).not.toHaveBeenCalled();
+
+    rerender({ markDraftLinks: true });
+    await vi.waitFor(() => expect(badges(view())).toEqual(["下書き"]));
+    expect(resolve).toHaveBeenCalledWith("下書き");
+
+    rerender({ markDraftLinks: false });
+    await vi.waitFor(() => expect(badges(view())).toEqual([]));
+  });
+
   it("変換中に公開範囲が変わっても、落ち着くまで印を組み直さない", async () => {
     const links = fakeLinks();
     links.drafts.add("下書き");
