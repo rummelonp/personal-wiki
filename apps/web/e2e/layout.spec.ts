@@ -54,6 +54,31 @@ test.describe("owner @widths", () => {
     }
   });
 
+  test("0 件の検索結果の「作成」は、折り返しても開き括弧の空きで右に寄らない", async ({ page }) => {
+    const query = "どこにも無い語句をとても長く書いた検索語".repeat(3);
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto(`/?q=${encodeURIComponent(query)}`);
+    const create = page.getByRole("button", { name: `「${query}」を作成` });
+    await expect(create).toBeVisible();
+    // 結果が届くと描き直される。外れた要素を測ると計算済みの style が空で NaN になるので、測り直す
+    await expect
+      .poll(() =>
+        create.evaluate((element) => {
+          const text = element.firstChild as Text;
+          const range = document.createRange();
+          range.setStart(text, 0);
+          range.setEnd(text, 1);
+          // 開き括弧の幅の、字の大きさに対する割合。詰めると字の半分になり、詰めないと全角の 1 字分（1）を取る。
+          // text-spacing-trim に対応しない描画はインデントで戻すので、この測定の対象にならない
+          return (
+            range.getBoundingClientRect().width /
+            Number.parseFloat(getComputedStyle(element).fontSize)
+          );
+        }),
+      )
+      .toBeLessThan(0.75);
+  });
+
   test("新規作成の画面", async ({ page }) => {
     await page.goto("/?new");
     await expect(page.locator(".title-input .cm-content")).toBeVisible();

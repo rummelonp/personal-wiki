@@ -173,7 +173,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
                 {owner && (
                   <button
                     type="button"
-                    className="button button-primary button-wrap"
+                    className="button button-primary button-wrap button-wrap-quoted"
                     onClick={() => openNewPage({ title: trimmed })}
                   >
                     {`「${trimmed}」を作成`}

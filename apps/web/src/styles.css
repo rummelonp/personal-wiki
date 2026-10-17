@@ -807,13 +807,24 @@ a.segmented-option {
   gap: var(--space-2);
 }
 
-/* 長い文言（検索語を含む作成の導線など）で、行の幅を超えないよう折り返す */
+/*
+ * 長い文言（検索語を含む作成の導線など）で、行の幅を超えないよう折り返す。
+ * 検索語を「」で囲むので、全角の開き括弧の左半分の空きが 1 行目の先頭に残ると、中央寄せの文字が右に寄って見える。
+ * text-spacing-trim に対応しない描画では、空き（半角分）だけインデントを戻す。
+ */
 .button-wrap {
   max-width: 100%;
   padding-block: var(--space-2);
   overflow-wrap: anywhere;
   text-align: center;
+  text-spacing-trim: trim-start;
   white-space: normal;
+}
+
+@supports not (text-spacing-trim: trim-start) {
+  .button-wrap-quoted {
+    text-indent: -0.5em; /* token-ok: 全角の開き括弧の空き（字の大きさの半分）に比例させる */
+  }
 }
 
 /* 主な操作は塗らず、差し色の枠と文字で示す。通知の中では塗らない（塗りの強調は画面の主操作の button-primary） */
