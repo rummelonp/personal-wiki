@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RestoreOutcome } from "./editor-session";
+import { formatTime } from "./format";
 import { setLoadingDelay } from "./Loading";
 import {
   type ApiResult,
@@ -95,9 +96,18 @@ async function mount({
   );
 }
 
+/** 見える文字だけ。読み上げにだけ届く絶対の時刻は stamps で確かめる */
 const entries = () =>
   [...(container?.querySelectorAll(".revision-entry") ?? [])].map((e) =>
-    e.textContent?.replace(/ /g, " "),
+    `${e.querySelector(".revision-time")?.firstChild?.textContent}${e.querySelector(".revision-author")?.textContent}`.replace(
+      /\u00a0/g,
+      " ",
+    ),
+  );
+
+const stamps = () =>
+  [...(container?.querySelectorAll(".revision-time") ?? [])].map(
+    (time) => time.querySelector(".visually-hidden")?.textContent,
   );
 
 describe("authorLabel", () => {
@@ -131,6 +141,28 @@ describe("RevisionHistory の一覧", () => {
   it("先頭の版の後に公開範囲を切り替えていたら、先頭も編集を始めた時刻を出す", async () => {
     await mount({ pageVersion: 6 });
     await vi.waitFor(() => expect(entries()[0]).toBe("30 分前オーナー"));
+  });
+
+  it("時刻の意味を、読み上げにだけ届く絶対の時刻と title に添える。先頭だけが最後の保存の時刻", async () => {
+    await mount();
+    await vi.waitFor(() => expect(entries()).toHaveLength(2));
+    expect(stamps()).toEqual([
+      `（最後に保存した時刻 ${formatTime(NOW - 2 * MINUTE)}）`,
+      `（編集を始めた時刻 ${formatTime(NOW - 120 * MINUTE)}）`,
+    ]);
+    const titles = [...(container?.querySelectorAll(".revision-time") ?? [])].map((t) =>
+      t.getAttribute("title"),
+    );
+    expect(titles).toEqual([
+      `最後に保存した時刻 ${formatTime(NOW - 2 * MINUTE)}`,
+      `編集を始めた時刻 ${formatTime(NOW - 120 * MINUTE)}`,
+    ]);
+  });
+
+  it("先頭の版の後に公開範囲を切り替えていたら、先頭の絶対の時刻も編集を始めた時刻と伝える", async () => {
+    await mount({ pageVersion: 6 });
+    await vi.waitFor(() => expect(entries()).toHaveLength(2));
+    expect(stamps()[0]).toBe(`（編集を始めた時刻 ${formatTime(NOW - 30 * MINUTE)}）`);
   });
 
   it("版が進むと取り直し、その間も前の一覧と先頭の時刻を出したままにする", async () => {
@@ -199,6 +231,8 @@ describe("RevisionHistory の一覧", () => {
   }
 
   const newest = { version: 7, title: "題", createdAt: NOW - MINUTE, author: owner };
+  const moreButton = () =>
+    [...(container?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "さらに表示");
 
   it("「さらに表示」で足した行は、保存で取り直しても残る", async () => {
     const more = await loadedWithMore();
@@ -244,10 +278,133 @@ describe("RevisionHistory の一覧", () => {
     expect(again?.disabled).toBe(false);
   });
 
+  it("「さらに表示」を待つ間に取り直しが終わっても、続きが戻るまで重ねて押せない", async () => {
+    const more = await loadedWithMore();
+    let resolveMore: (value: ApiResult<RevisionList>) => void = () => {};
+    vi.mocked(listRevisions).mockReturnValueOnce(
+      new Promise((r) => {
+        resolveMore = r;
+      }),
+    );
+    await act(async () => more.click());
+    expect(more.disabled).toBe(true);
+
+    vi.mocked(listRevisions).mockResolvedValueOnce(
+      ok({ revisions: [newest, REVISIONS[0] as RevisionSummary], nextCursor: "5" }),
+    );
+    await mount({ pageVersion: 7, updatedAt: NOW });
+    await vi.waitFor(() => expect(entries()[0]).toBe("1 分未満オーナー"));
+    const calls = vi.mocked(listRevisions).mock.calls.length;
+    expect(moreButton()?.disabled).toBe(true);
+    await act(async () => moreButton()?.click());
+    expect(listRevisions).toHaveBeenCalledTimes(calls);
+
+    await act(async () => resolveMore(ok({ revisions: REVISIONS.slice(1), nextCursor: null })));
+    expect(moreButton()?.disabled).toBe(false);
+  });
+
+  it("版がまとめられたと分かった後の取り直しが遅れて届いても、先に届いた新しい一覧に戻さない", async () => {
+    vi.mocked(getRevision).mockResolvedValue({ ok: false, reason: "revision_not_found" });
+    await mount();
+    const entry = await vi.waitFor(() => {
+      const found = container?.querySelector<HTMLButtonElement>(".revision-entry");
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    let resolveStale: (value: ApiResult<RevisionList>) => void = () => {};
+    vi.mocked(listRevisions).mockReturnValueOnce(
+      new Promise((r) => {
+        resolveStale = r;
+      }),
+    );
+    await act(async () => entry.click());
+    expect(listRevisions).toHaveBeenCalledTimes(2);
+
+    // 開いた版の取り直しが終わる前に保存が進み、保存の取り直しが先に終わる
+    vi.mocked(listRevisions).mockResolvedValueOnce(
+      ok({ revisions: [newest, ...REVISIONS], nextCursor: null }),
+    );
+    await mount({ pageVersion: 7, updatedAt: NOW });
+    await vi.waitFor(() => expect(entries()).toHaveLength(3));
+
+    await act(async () => resolveStale(ok({ revisions: REVISIONS, nextCursor: null })));
+    expect(entries()).toEqual([
+      "1 分未満オーナー",
+      "30 分前オーナー",
+      "約 2 時間前token: air-claude",
+    ]);
+  });
+
   it("取得に失敗したら、その旨を出す", async () => {
     vi.mocked(listRevisions).mockResolvedValue({ ok: false, reason: "error", message: "x" });
     await mount();
     await vi.waitFor(() => expect(container?.textContent).toContain("取得できませんでした。"));
+  });
+});
+
+describe("RevisionHistory の取り直しの間引き", () => {
+  const newest = { version: 7, title: "題", createdAt: NOW - MINUTE, author: owner };
+
+  /** 画面の外に出す。IntersectionObserver の結果が届くまで、描画を 2 回待つ */
+  async function moveOffscreen(offscreen: boolean) {
+    if (container === null) throw new Error("mount していない");
+    container.style.cssText = offscreen ? "position: fixed; top: -10000px; left: 0" : "";
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  async function mounted() {
+    await mount();
+    await vi.waitFor(() => expect(entries()).toHaveLength(2));
+  }
+
+  it("列が画面の外にある間は保存で取り直さず、見えたとき、取った後に進んでいれば追いつく", async () => {
+    await mounted();
+    await moveOffscreen(true);
+    vi.mocked(listRevisions).mockResolvedValue(
+      ok({ revisions: [newest, ...REVISIONS], nextCursor: null }),
+    );
+    await mount({ pageVersion: 7, updatedAt: NOW });
+    await mount({ pageVersion: 8, updatedAt: NOW + MINUTE });
+    expect(listRevisions).toHaveBeenCalledTimes(1);
+    expect(entries()).toHaveLength(2);
+
+    await moveOffscreen(false);
+    await vi.waitFor(() => expect(entries()).toHaveLength(3));
+    // 追いつくのは 1 回でよく、見えている間の取り直しは保存のたびに戻る
+    expect(listRevisions).toHaveBeenCalledTimes(2);
+  });
+
+  it("画面の外へ出入りしただけでは、版が進んでいなければ取り直さない", async () => {
+    await mounted();
+    await moveOffscreen(true);
+    await moveOffscreen(false);
+    expect(listRevisions).toHaveBeenCalledTimes(1);
+  });
+
+  it("画面の外にいる間に取得が失敗していたら、見えたときにもう一度取る", async () => {
+    vi.mocked(listRevisions).mockResolvedValueOnce({ ok: false, reason: "error", message: "x" });
+    await mount();
+    await vi.waitFor(() => expect(container?.textContent).toContain("取得できませんでした。"));
+    await moveOffscreen(true);
+    await moveOffscreen(false);
+    await vi.waitFor(() => expect(entries()).toHaveLength(2));
+    expect(listRevisions).toHaveBeenCalledTimes(2);
+  });
+
+  it("版を開いている間は、列が画面の外でも取り直す", async () => {
+    vi.mocked(getRevision).mockResolvedValue(
+      ok({ ...(REVISIONS[1] as RevisionSummary), body: "昔の本文" }),
+    );
+    await mounted();
+    await moveOffscreen(true);
+    const entry = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[1];
+    await act(async () => entry?.click());
+    vi.mocked(listRevisions).mockResolvedValue(
+      ok({ revisions: [newest, ...REVISIONS], nextCursor: null }),
+    );
+    await mount({ pageVersion: 7, updatedAt: NOW });
+    await vi.waitFor(() => expect(entries()).toHaveLength(3));
   });
 });
 
@@ -276,6 +433,9 @@ describe("RevisionHistory の版の表示", () => {
     await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
     expect(dialog.querySelector("h2")?.textContent).toBe("旧題");
     expect(dialog.textContent).toContain("air-claude");
+    expect(dialog.querySelector(".revision-viewer-meta")?.firstElementChild?.textContent).toBe(
+      `編集を始めた時刻 ${formatTime(NOW - 120 * MINUTE)}`,
+    );
     expect(dialog.textContent).toContain("読み取り専用");
     const view = EditorView.findFromDOM(dialog.querySelector(".cm-editor") as HTMLElement);
     expect(view?.state.doc.toString()).toBe("# 見出し\n昔の本文");

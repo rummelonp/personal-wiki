@@ -8,14 +8,14 @@ import {
   failureMessage,
   getRevision,
   LOAD_FAILED,
-  listRevisions,
   type Revision,
   type RevisionAuthor,
-  type RevisionList,
   type RevisionSummary,
 } from "./pages-api";
 import { RailSection } from "./Rail";
+import { useIntersecting } from "./use-intersecting";
 import { useNow } from "./use-now";
+import { type Basis, useRevisionList } from "./use-revision-list";
 
 /**
  * token と接続の名前には種類を前に付ける。接続の名前は接続の側が登録時に名乗ったもので、「オーナー」と
@@ -35,45 +35,26 @@ export function authorLabel(author: RevisionAuthor): string {
   }
 }
 
-/** 一覧を取ったときのページの版と更新の時刻。先頭の版の時刻は、一覧と同じ時点の値と比べて決める */
-interface Basis {
-  pageVersion: number;
-  updatedAt: number;
-}
-
-type ReadyList = {
-  status: "ready";
-  revisions: RevisionSummary[];
-  next: string | null;
-  loadingMore: boolean;
-  basis: Basis;
-};
-
-type ListState = { status: "loading" } | { status: "error" } | ReadyList;
-
 /**
- * 取り直した 1 ページ目に、「さらに表示」で読んであった続きをつなぐ。版の番号はまとめで先頭の行しか
- * 進まないので、新しい 1 ページ目の最後の版が今の一覧にあれば、それより古い行と next はそのまま使える。
- * 無ければ（先頭が 1 ページ分より多く進んだ）つなぎ目が分からないので、1 ページ目だけにする。
- * 版の番号はページごとなので、pageId が変わるときは親が key で作り直す前提にしている。
+ * 版の時刻とその意味。版の時刻は編集を始めた時刻（最初の保存）で、先頭の版だけは、最後に積んだのが
+ * その版なら（間に公開範囲の切り替えが無ければ）ページの更新の時刻、つまり最後の保存の時刻になる。
  */
-function mergeFresh(current: ListState, fresh: RevisionList, basis: Basis): ReadyList {
-  const first: ReadyList = {
-    status: "ready",
-    revisions: fresh.revisions,
-    next: fresh.nextCursor,
-    loadingMore: false,
-    basis,
-  };
-  const last = fresh.revisions.at(-1);
-  if (current.status !== "ready" || fresh.nextCursor === null || last === undefined) return first;
-  if (!current.revisions.some((r) => r.version === last.version)) return first;
-  const older = current.revisions.filter((r) => r.version < last.version);
-  if (older.length === 0) return first;
-  return { ...first, revisions: [...fresh.revisions, ...older], next: current.next };
+interface Stamp {
+  at: number;
+  lastSaved: boolean;
 }
 
-type Viewing = { summary: RevisionSummary; time: number } & (
+/** 何の時刻かを添える。添えないと、版の時刻が保存した時刻と読まれる */
+const stampText = ({ at, lastSaved }: Stamp): string =>
+  `${lastSaved ? "最後に保存した時刻" : "編集を始めた時刻"} ${formatTime(at)}`;
+
+function stampOf(summary: RevisionSummary, index: number, basis: Basis): Stamp {
+  return index === 0 && summary.version === basis.pageVersion
+    ? { at: basis.updatedAt, lastSaved: true }
+    : { at: summary.createdAt, lastSaved: false };
+}
+
+type Viewing = { summary: RevisionSummary; stamp: Stamp } & (
   | { status: "loading" }
   | { status: "ready"; revision: Revision }
   /** ページはあるが、その版が後の保存にまとめられて無くなった */
@@ -144,9 +125,8 @@ type Restoring = { version: number } & (
 );
 
 /**
- * 右の列の「履歴」。版の番号は飛ぶので見せず、時刻と作成者で並べる。
- * 版の時刻は編集を始めた時刻で、先頭の版だけは、最後に積んだのがその版なら（間に公開範囲の切り替えが
- * 無ければ）ページの更新の時刻を出す。まとめて保存している最中の版を、最初の保存の時刻で古く見せない。
+ * 右の列の「履歴」。版の番号は飛ぶので見せず、時刻と作成者で並べる。先頭の版の時刻（Stamp）は、
+ * まとめて保存している最中の版を、最初の保存の時刻で古く見せないために最後の保存の時刻にする。
  */
 export function RevisionHistory({
   pageId,
@@ -157,78 +137,37 @@ export function RevisionHistory({
   onRestore,
   canRestore = true,
 }: RevisionHistoryProps) {
-  const [list, setList] = useState<ListState>({ status: "loading" });
   const [viewing, setViewing] = useState<Viewing | null>(null);
   const [restoring, setRestoring] = useState<Restoring | null>(null);
   const now = useNow();
+  const sectionRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
-  const latest = useRef<Basis>({ pageVersion, updatedAt });
-  latest.current = { pageVersion, updatedAt };
+  // 版を開いている間は、列が画面の外にあっても一覧を最新にしておく（戻した結果が一覧に出る）
+  const visible = useIntersecting(sectionRef) || viewing !== null;
+  const { list, loadingMore, loadMore, refetch } = useRevisionList({
+    pageId,
+    pageVersion,
+    updatedAt,
+    paused,
+    visible,
+  });
 
-  // 保存のたびに取り直すが、取り直す間も前の一覧を出したままにする。帯に戻すと右の列が保存ごとに揺れる
-  useEffect(() => {
-    if (paused) return;
-    let cancelled = false;
-    const basis = { pageVersion, updatedAt };
-    void listRevisions(pageId, null).then((res) => {
-      if (cancelled) return;
-      if (res.ok) {
-        setList((current) => mergeFresh(current, res.value, basis));
-      } else {
-        setList((current) => (current.status === "ready" ? current : { status: "error" }));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [pageId, pageVersion, updatedAt, paused]);
-
-  async function loadMore() {
-    if (list.status !== "ready" || list.next === null) return;
-    const { revisions, next } = list;
-    setList((current) =>
-      current.status === "ready" ? { ...current, loadingMore: true } : current,
-    );
-    const res = await listRevisions(pageId, next);
-    setList((current) => {
-      // 待つ間に取り直した一覧は、読んであった続きを mergeFresh で引き継いでいる
-      if (current.status !== "ready" || current.revisions !== revisions) return current;
-      return res.ok
-        ? {
-            ...current,
-            revisions: [...revisions, ...res.value.revisions],
-            next: res.value.nextCursor,
-            loadingMore: false,
-          }
-        : { ...current, loadingMore: false };
-    });
-  }
-
-  const timeOf = (summary: RevisionSummary, index: number, basis: Basis) =>
-    index === 0 && summary.version === basis.pageVersion ? basis.updatedAt : summary.createdAt;
-
-  async function refetchAfterMerge() {
-    const basis = latest.current;
-    const fresh = await listRevisions(pageId, null);
-    if (fresh.ok) setList((current) => mergeFresh(current, fresh.value, basis));
-  }
-
-  async function open(summary: RevisionSummary, time: number, opener: HTMLElement) {
+  async function open(summary: RevisionSummary, stamp: Stamp, opener: HTMLElement) {
     openerRef.current = opener;
     setRestoring(null);
-    setViewing({ status: "loading", summary, time });
+    setViewing({ status: "loading", summary, stamp });
     const res = await getRevision(pageId, summary.version);
     setViewing((current) => {
       // 待つ間に閉じたか、別の版を開いた
       if (current?.summary.version !== summary.version) return current;
-      if (res.ok) return { status: "ready", summary, time, revision: res.value };
-      if (res.reason === "revision_not_found") return { status: "missing", summary, time };
-      if (res.reason === "not_found") return { status: "gone", summary, time };
-      return { status: "error", summary, time, message: failureMessage(res, LOAD_FAILED) };
+      if (res.ok) return { status: "ready", summary, stamp, revision: res.value };
+      if (res.reason === "revision_not_found") return { status: "missing", summary, stamp };
+      if (res.reason === "not_found") return { status: "gone", summary, stamp };
+      return { status: "error", summary, stamp, message: failureMessage(res, LOAD_FAILED) };
     });
     // 後の保存にまとめられて番号が進んだ版は、一覧も古い
-    if (!res.ok && res.reason === "revision_not_found") await refetchAfterMerge();
+    if (!res.ok && res.reason === "revision_not_found") await refetch();
   }
 
   // 戻せた後の一覧は、ページの版が進むので取り直しの effect が新しくする
@@ -248,7 +187,7 @@ export function RevisionHistory({
         current?.summary.version === version ? { ...current, status } : current,
       );
     }
-    if (outcome.reason === "revision_not_found") await refetchAfterMerge();
+    if (outcome.reason === "revision_not_found") await refetch();
   }
 
   // 開いた行が取り直しで消えていたら（版がまとめられた）、焦点を一覧の先頭に戻す。戻さないと body に落ちる
@@ -262,7 +201,7 @@ export function RevisionHistory({
   }
 
   return (
-    <RailSection title="履歴" className="rail-section-history">
+    <RailSection ref={sectionRef} title="履歴" className="rail-section-history">
       {list.status === "loading" && <PendingRevisions />}
       {list.status === "error" && <p className="muted">取得できませんでした。</p>}
       {list.status === "ready" && list.revisions.length === 0 && (
@@ -271,21 +210,23 @@ export function RevisionHistory({
       {list.status === "ready" && list.revisions.length > 0 && (
         <ol className="revision-list" ref={listRef}>
           {list.revisions.map((summary, index) => {
-            const time = timeOf(summary, index, list.basis);
+            const stamp = stampOf(summary, index, list.basis);
             return (
               <li key={summary.version}>
                 <button
                   type="button"
                   className="revision-entry"
                   aria-haspopup="dialog"
-                  onClick={(event) => void open(summary, time, event.currentTarget)}
+                  onClick={(event) => void open(summary, stamp, event.currentTarget)}
                 >
                   <time
                     className="revision-time"
-                    dateTime={new Date(time).toISOString()}
-                    title={formatTime(time)}
+                    dateTime={new Date(stamp.at).toISOString()}
+                    title={stampText(stamp)}
                   >
-                    {formatRelativeTime(time, now)}
+                    {formatRelativeTime(stamp.at, now)}
+                    {/* 相対表記と title だけでは、タッチと読み上げが絶対の時刻に届かない */}
+                    <span className="visually-hidden">{`（${stampText(stamp)}）`}</span>
                   </time>
                   <span className="revision-author">{authorLabel(summary.author)}</span>
                 </button>
@@ -295,7 +236,12 @@ export function RevisionHistory({
         </ol>
       )}
       {list.status === "ready" && list.next !== null && (
-        <button type="button" className="button" onClick={loadMore} disabled={list.loadingMore}>
+        <button
+          type="button"
+          className="button"
+          onClick={() => void loadMore()}
+          disabled={loadingMore}
+        >
           さらに表示
         </button>
       )}
@@ -386,7 +332,7 @@ function RevisionViewer({
           <header className="revision-viewer-header">
             <div className="revision-viewer-heading">
               <p className="revision-viewer-meta">
-                <span>{formatTime(viewing.time)} の版</span>
+                <span>{stampText(viewing.stamp)}</span>
                 <span>{authorLabel(viewing.summary.author)}</span>
                 <span>読み取り専用</span>
               </p>

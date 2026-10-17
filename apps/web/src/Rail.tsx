@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 interface RailLayoutProps {
   /**
@@ -31,15 +31,21 @@ export function RailLayout({ rail, children }: RailLayoutProps) {
 export function RailSection({
   title,
   className,
+  ref,
   children,
 }: {
   title: string;
   /** 区画を指す印。狭い画面での並べ替えなど、CSS から区画を選ぶのに使う。 */
   className?: string;
+  /** 区画の section 要素を受け取る */
+  ref?: Ref<HTMLElement>;
   children: ReactNode;
 }) {
   return (
-    <section className={className === undefined ? "rail-section" : `rail-section ${className}`}>
+    <section
+      ref={ref}
+      className={className === undefined ? "rail-section" : `rail-section ${className}`}
+    >
       <h2 className="rail-label">{title}</h2>
       {children}
     </section>
