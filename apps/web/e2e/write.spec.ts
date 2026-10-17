@@ -1,5 +1,12 @@
 import type { Page } from "@playwright/test";
-import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
+import {
+  bodyEditor,
+  expect,
+  saveState,
+  test,
+  typeAtBodyEnd,
+  uniqueTitle,
+} from "./support/fixtures";
 
 /*
  * 書き留める流れ: 新規作成 → 本文に入力 → 自動保存 → 再読み込みで残っている。
@@ -54,4 +61,46 @@ test("quick switcher から作り、すぐ書いた本文が再読み込みで�
   await expect(switcher).toBeHidden();
   await typeRightAwayAndSave(page, text);
   await expectKeptAfterReload(page, title, text);
+});
+
+test("本文を編集した直後に「このページを削除」を 1 回押すと、保存の間でも確認が開き、保存の後に削除する", async ({
+  page,
+  api,
+  hasTouch,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "編集直後の削除");
+  const created = await api.createPage({ title, body: "削除の検査に使う本文" });
+  await page.goto(`/p/${created.id}`);
+  await expect(page.locator(".title-input")).toHaveText(title);
+  // 保存を止め、押した時点で本文の blur が始めた保存が終わっていないようにする
+  let releaseSaves: () => void = () => {};
+  const saves = new Promise<void>((resolve) => {
+    releaseSaves = resolve;
+  });
+  let saveRequests = 0;
+  await page.route(`**/api/pages/${created.id}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    saveRequests += 1;
+    await saves;
+    return route.fallback();
+  });
+
+  await typeAtBodyEnd(page, "追記");
+  let confirmMessage = "";
+  page.once("dialog", (dialog) => {
+    confirmMessage = dialog.message();
+    void dialog.accept();
+  });
+  const remove = page.getByRole("button", { name: "このページを削除" });
+  // タッチの端末では、タップから作られる event の順でも届くことを見る
+  if (hasTouch) await remove.tap();
+  else await remove.click();
+  await expect.poll(() => confirmMessage).toContain(`「${title}」を削除しますか？`);
+  await expect(page.getByRole("button", { name: "削除中…" })).toBeDisabled();
+  expect((await page.request.get(`/api/pages/${created.id}`)).status()).toBe(200);
+
+  releaseSaves();
+  await expect(page).toHaveURL(/\/$/);
+  expect(saveRequests).toBe(1);
+  expect((await page.request.get(`/api/pages/${created.id}`)).status()).toBe(404);
 });

@@ -301,6 +301,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // リンクに書けないと知らされた title。保存のレスポンスは、キューに入れたものも飛ばしたものも無ければ書き換えの
   // 数を返さないので、レスポンスではなく保存済みの title と比べて、別の title に変えたら案内を消す
   const [pendingVisibility, setPendingVisibility] = useState<"draft" | "public" | null>(null);
+  const [pendingDelete, setPendingDelete] = useState(false);
   const [unsafeTitle, setUnsafeTitle] = useState<string | null>(null);
   const session = useEditorSession(
     page,
@@ -352,7 +353,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
-  const deleting = state.busy === "deleting";
+  const deleting = state.busy === "deleting" || pendingDelete;
   // 保存中も押せる。本文の編集中に公開の操作を押すと、mousedown の blur が保存を始めるので、保存中を
   // disabled にすると mouseup の時点で押せなくなり、クリックが届かない。session は切り替えを保存の後ろに
   // 並べ、保存で進んだ版に対して送り、保存できなければ切り替えない
@@ -488,7 +489,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   async function handleDelete() {
     const warning = isDirty(state) ? "未保存の変更も含めて、元に戻せません。" : "元に戻せません。";
     if (!window.confirm(`「${state.base.title}」を削除しますか？${warning}`)) return;
-    if (await session.remove()) navigate(homeHref());
+    // 保存中に承認すると、session は削除を保存の後ろに並べる。待つ間も「削除中…」にして押し直せなくする
+    setPendingDelete(true);
+    let removed: boolean;
+    try {
+      removed = await session.remove();
+    } finally {
+      setPendingDelete(false);
+    }
+    if (removed) navigate(homeHref());
   }
 
   // 失敗の後に操作を始めると session は失敗の記録を消すので、通知も消える。保存の状態の表示はページの上端に
@@ -602,8 +611,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           <button
             type="button"
             className="button button-quiet button-danger"
+            // 保存中も押せる。本文の編集中に押すと mousedown の blur が保存を始めるので、保存中を
+            // disabled にすると mouseup の時点で押せなくなり、クリックが届かない
             disabled={
-              !idle ||
+              !(idle || state.busy === "saving") ||
+              pendingDelete ||
               state.gone ||
               state.authLost ||
               state.conflict !== null ||

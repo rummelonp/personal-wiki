@@ -2473,6 +2473,64 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(button("もう一度削除する")).toBeDefined();
   });
 
+  it("本文の blur で始まった保存の間も「このページを削除」で確認を開き、削除は保存で進んだ版に対して送る", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(deletePage).mockResolvedValue(ok(null));
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    const remove = button("このページを削除");
+    expect(remove.disabled).toBe(false);
+
+    act(() => remove.click());
+    expect(window.confirm).toHaveBeenLastCalledWith(
+      `「${PAGE.title}」を削除しますか？未保存の変更も含めて、元に戻せません。`,
+    );
+    await flushAsync();
+    expect(deletePage).not.toHaveBeenCalled();
+    expect(remove.disabled).toBe(true);
+    expect(remove.textContent).toBe("削除中…");
+
+    await act(async () => save.resolve(ok({ ...PAGE, body: "本文追記", version: 2 })));
+    await flushAsync();
+    expect(deletePage).toHaveBeenCalledTimes(1);
+    expect(deletePage).toHaveBeenCalledWith(ID, 2);
+    // 削除の後に、保存中の本文を書き直さない
+    expect(updatePage).toHaveBeenCalledTimes(1);
+  });
+
+  it("保存の間に承認した削除は、保存が衝突したら送らず、衝突の通知を出す", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(getPage).mockResolvedValue(ok({ ...PAGE, body: "別の編集", version: 2 }));
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      save.resolve({ ok: false, reason: "version_conflict", currentVersion: 2 }),
+    );
+    await flushAsync();
+    expect(deletePage).not.toHaveBeenCalled();
+    expect(button("このページを削除").disabled).toBe(true);
+    expect(button("このページを削除").textContent).toBe("このページを削除");
+  });
+
   it("未保存の変更があるときだけ、削除の確認で変更も捨てることを伝える", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const { view, button } = renderPage();
