@@ -1,7 +1,13 @@
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { generateToken, hashToken, issueSql } from "../../../worker/scripts/api-token.mjs";
+import {
+  checkName,
+  generateToken,
+  hashToken,
+  issueSql,
+  resolveScopes,
+} from "../../../worker/scripts/api-token.mjs";
 import { mintSessionValue, SESSION_COOKIE_NAME } from "./session";
 import { OWNER_EMAIL, WORKER_DIR } from "./stack";
 
@@ -35,10 +41,16 @@ function stackEnv(): { origin: string; sessionSecret: string; config: string; st
  * 起動中の wrangler dev の D1 に api_tokens の行を足し、平文の token を返す。
  * 平文は発行時にしか得られないので、api-token.mjs の発行と同じ生成と hash を使う。
  */
-export async function issueApiToken(name: string, scopes: "read" | "read write"): Promise<string> {
+export async function issueApiToken(name: string, scopes: "read" | "read,write"): Promise<string> {
   const { config, state } = stackEnv();
   const token = generateToken();
-  const sql = issueSql({ name, tokenHash: hashToken(token), scopes, now: Date.now() });
+  // name は SQL に埋め込まれるので、発行のスクリプトと同じ検査を通す。scopes も保存の形はスクリプトが組み立てる
+  const sql = issueSql({
+    name: checkName(name),
+    tokenHash: hashToken(token),
+    scopes: resolveScopes(scopes),
+    now: Date.now(),
+  });
   // 動いている workerd と同じ SQLite に別のプロセスから書くので、ほかのテストの保存と重なると
   // SQLITE_BUSY で断られる。断られた INSERT は何も書いていないので、間を空けて同じ文を流し直す
   for (let attempt = 1; ; attempt++) {
@@ -77,6 +89,10 @@ export async function updatePageWithToken(
 
 // 登録できるリダイレクト先の既定（auth/oauth-registration.ts）。コードは受け取るだけで、アクセスしない
 const REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
+
+// 同意画面の binding の cookie の名前は、この接頭辞に画面ごとの hash が続く（OAuth ライブラリの既定）。
+// 画面がほかの cookie を足しても取り違えないよう、名前で選ぶ
+const CONSENT_COOKIE_PREFIX = "__Host-oauth-consent-";
 
 function base64Url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
@@ -130,7 +146,10 @@ export async function connectOAuthClient(clientName: string): Promise<string> {
     200,
     "OAuth の同意画面",
   );
-  const binding = consent.headers.getSetCookie()[0]?.split(";")[0];
+  const binding = consent.headers
+    .getSetCookie()
+    .find((cookie) => cookie.startsWith(CONSENT_COOKIE_PREFIX))
+    ?.split(";")[0];
   const handle = /name="handle" value="([^"]+)"/.exec(await consent.text())?.[1];
   if (binding === undefined || handle === undefined) {
     throw new Error("同意画面に handle か binding の cookie が無い");

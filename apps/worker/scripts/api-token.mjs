@@ -51,11 +51,22 @@ export function hashToken(token) {
  * @param {string | undefined} name
  * @returns {string}
  */
-function checkName(name) {
+export function checkName(name) {
   if (name === undefined || !NAME_PATTERN.test(name)) {
     throw new Error("name must match /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/");
   }
   return name;
+}
+
+/**
+ * --scopes の指定を、D1 に保存する形（空白区切り）にする。
+ * @param {string | undefined} arg
+ * @returns {string}
+ */
+export function resolveScopes(arg) {
+  const scopes = arg === undefined ? undefined : SCOPE_SETS.get(arg);
+  if (scopes === undefined) throw new Error("--scopes must be read or read,write");
+  return scopes;
 }
 
 /**
@@ -90,8 +101,7 @@ export function parseArgs(argv) {
   const [name, ...extra] = rest;
   if (extra.length > 0) throw new Error(`unexpected argument: ${extra.join(" ")}`);
   if (command === "issue") {
-    const scopes = scopesArg === undefined ? undefined : SCOPE_SETS.get(scopesArg);
-    if (scopes === undefined) throw new Error("--scopes must be read or read,write");
+    const scopes = resolveScopes(scopesArg);
     return { command, name: checkName(name), scopes, remote };
   }
   if (command === "revoke") {

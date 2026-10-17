@@ -79,7 +79,7 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
     body: "owner の本文",
     visibility: "public",
   });
-  const token = await issueApiToken(tokenName, "read write");
+  const token = await issueApiToken(tokenName, "read,write");
   await updatePageWithToken(token, created, "token の本文");
   const afterToken = await api.getPage(created.id);
   await updatePageWithOAuth(await connectOAuthClient(clientName), afterToken, "OAuth の接続の本文");

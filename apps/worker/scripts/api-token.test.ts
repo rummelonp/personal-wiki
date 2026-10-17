@@ -2,12 +2,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
+  checkName,
   formatList,
   generateToken,
   hashToken,
   issueSql,
   main,
   parseArgs,
+  resolveScopes,
   revokeSql,
   run,
   wranglerArgs,
@@ -39,6 +41,24 @@ describe("hashToken", () => {
     expect(hashToken("abc")).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
+  });
+});
+
+describe("checkName と resolveScopes", () => {
+  it("name は SQL に埋め込める文字種だけを通す", () => {
+    expect(checkName("e2e-token_1.x")).toBe("e2e-token_1.x");
+    for (const name of [undefined, "", "-a", "a'b", "a b", "a".repeat(65)]) {
+      expect(() => checkName(name)).toThrow("name must match");
+    }
+  });
+
+  it("scopes の指定を、D1 に保存する空白区切りの形にする", () => {
+    expect(resolveScopes("read")).toBe("read");
+    expect(resolveScopes("write")).toBe("read write");
+    expect(resolveScopes("read,write")).toBe("read write");
+    for (const arg of [undefined, "", "read write", "admin"]) {
+      expect(() => resolveScopes(arg)).toThrow("--scopes must be");
+    }
   });
 });
 
