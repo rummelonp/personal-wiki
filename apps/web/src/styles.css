@@ -81,7 +81,8 @@ a {
 }
 
 .brand {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   font-family: var(--font-serif);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-strong);
@@ -89,6 +90,17 @@ a {
   color: var(--color-fg);
   text-decoration: none;
   white-space: nowrap;
+}
+
+/*
+ * 長いサイト名は末尾を省略し、検索と操作を右へ押し出さない。.brand が inline-flex になる
+ * タッチ端末の節でも省略が効くよう、flex コンテナでなく中の block に付ける。
+ */
+.brand-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 検索欄に見えるが、押すと quick switcher を開くボタン */

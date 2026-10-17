@@ -52,7 +52,7 @@ export function Header({ session, loggingOut, onLogout, query, onOpenSearch }: H
   return (
     <header className="header" ref={ref}>
       <Link className="brand" href={homeHref()}>
-        {SITE_NAME}
+        <span className="brand-text">{SITE_NAME}</span>
       </Link>
       {session.status !== "error" && (
         <button
