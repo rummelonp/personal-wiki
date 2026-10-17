@@ -96,6 +96,51 @@ describe("PageView の URL の置き換え", () => {
   });
 });
 
+describe("PageView が伝える開いているページの id", () => {
+  async function renderWith(
+    target: Parameters<typeof PageView>[0]["target"],
+    onOpenPage: (id: string | null) => void,
+  ) {
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    await act(async () =>
+      mounted.render(
+        <PageView target={target} owner={false} attachments={false} onOpenPage={onOpenPage} />,
+      ),
+    );
+  }
+
+  it("表示を伝えられたページの id を伝え、取得中は null のままにする", async () => {
+    history.replaceState(null, "", `/p/${PAGE.id}`);
+    const onOpenPage = vi.fn();
+    await renderWith({ by: "id", id: PAGE.id }, onOpenPage);
+    expect(onOpenPage).toHaveBeenLastCalledWith(null);
+    act(() => shown?.(PAGE));
+    expect(onOpenPage).toHaveBeenLastCalledWith(PAGE.id);
+  });
+
+  it("title が変わっても、同じページの id を伝え続ける", async () => {
+    history.replaceState(null, "", `/p/${PAGE.id}`);
+    const onOpenPage = vi.fn();
+    await renderWith({ by: "id", id: PAGE.id }, onOpenPage);
+    act(() => shown?.(PAGE));
+    act(() => shown?.({ ...PAGE, title: "新しい題" }));
+    expect(onOpenPage).toHaveBeenLastCalledWith(PAGE.id);
+  });
+
+  it("画面を離れたら null を伝える", async () => {
+    history.replaceState(null, "", `/p/${PAGE.id}`);
+    const onOpenPage = vi.fn();
+    await renderWith({ by: "id", id: PAGE.id }, onOpenPage);
+    act(() => shown?.(PAGE));
+    act(() => root?.unmount());
+    root = null;
+    expect(onOpenPage).toHaveBeenLastCalledWith(null);
+  });
+});
+
 describe("PageView の取得中の title", () => {
   const noteTitle = () => container?.querySelector(".note-title")?.textContent;
 

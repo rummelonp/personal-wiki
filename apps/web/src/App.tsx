@@ -21,6 +21,7 @@ export function App() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
   const [loggingOut, setLoggingOut] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [openPageId, setOpenPageId] = useState<string | null>(null);
   const route = useRoute();
   const newPage = useNewPageRequest();
   const searchQuery = route.name === "home" ? route.query.trim() : "";
@@ -197,6 +198,7 @@ export function App() {
                 }
                 owner={isOwner}
                 attachments={session.me.features.attachments}
+                onOpenPage={setOpenPageId}
               />
             </Suspense>
           )}
@@ -210,6 +212,7 @@ export function App() {
             onOpenChange={setSwitcherOpen}
             owner={isOwner}
             initialQuery={searchQuery}
+            openPageId={openPageId}
           />
         )}
       </div>

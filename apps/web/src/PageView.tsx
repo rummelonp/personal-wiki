@@ -64,6 +64,11 @@ interface PageViewProps {
    * 後から変わりうるなら、key に含めて画面ごと作り直させる。
    */
   attachments: boolean;
+  /**
+   * 画面に出しているページの id を伝える。取得し直す間と、ページの画面でなくなったときは null。
+   * 呼び出しごとに変わらない関数を渡す。
+   */
+  onOpenPage?: (id: string | null) => void;
 }
 
 /**
@@ -77,7 +82,7 @@ interface PageViewProps {
  * title 欄に focus するため）。作れたら `/p/<id>` に置き換えるが、上と同じ理由で作り直さず、
  * 作る前の編集の画面をそのまま使い続ける。
  */
-export function PageView({ target, owner, attachments }: PageViewProps) {
+export function PageView({ target, owner, attachments, onOpenPage }: PageViewProps) {
   const [state, setState] = useState<State>(() =>
     target.by === "new"
       ? { status: "new", serial: target.serial, title: target.title }
@@ -112,10 +117,12 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
   useEffect(() => {
     if (target.by === "new") {
       shownPath.current = null;
+      onOpenPage?.(null);
       return;
     }
     if (shownPath.current !== null && shownPath.current === window.location.pathname) return;
     shownPath.current = null;
+    onOpenPage?.(null);
     let cancelled = false;
     setState({ status: "loading" });
     const request = target.by === "id" ? getPage(target.id) : findPageByTitle(target.title);
@@ -130,6 +137,8 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
       cancelled = true;
     };
   }, [targetKey, attempt]);
+
+  useEffect(() => () => onOpenPage?.(null), [onOpenPage]);
 
   // 開く操作で渡された title は使い捨て。受け取ったら空に戻し、同じ title でもう一度作らせない
   const newTargetSerial = target.by === "new" ? target.serial : null;
@@ -150,21 +159,25 @@ export function PageView({ target, owner, attachments }: PageViewProps) {
     );
   }, []);
 
-  const show = useCallback((page: Pick<PageSummary, "id" | "title" | "visibility">) => {
-    // 子が表示を伝える effect は、開いた直後の戻るでアドレスバーが前の画面へ移った後に遅れて届くことがある。
-    // そのまま置き換えると、戻った先の履歴のエントリをこのページの URL で上書きし、前の画面へ戻れなくなる
-    if (window.location.pathname !== shownPath.current && !locationTargets(shownTarget.current)) {
-      return;
-    }
-    rememberTitle(page.id, page.title);
-    const path = pageHrefFor(page);
-    shownPath.current = path;
-    setDocumentTitle(page.title);
-    // 戻るで前の URL に戻れるよう、置き換えにする（同じページの URL を履歴に重ねない）
-    if (window.location.pathname !== path) {
-      navigate(`${path}${window.location.hash}`, { replace: true });
-    }
-  }, []);
+  const show = useCallback(
+    (page: Pick<PageSummary, "id" | "title" | "visibility">) => {
+      // 子が表示を伝える effect は、開いた直後の戻るでアドレスバーが前の画面へ移った後に遅れて届くことがある。
+      // そのまま置き換えると、戻った先の履歴のエントリをこのページの URL で上書きし、前の画面へ戻れなくなる
+      if (window.location.pathname !== shownPath.current && !locationTargets(shownTarget.current)) {
+        return;
+      }
+      rememberTitle(page.id, page.title);
+      onOpenPage?.(page.id);
+      const path = pageHrefFor(page);
+      shownPath.current = path;
+      setDocumentTitle(page.title);
+      // 戻るで前の URL に戻れるよう、置き換えにする（同じページの URL を履歴に重ねない）
+      if (window.location.pathname !== path) {
+        navigate(`${path}${window.location.hash}`, { replace: true });
+      }
+    },
+    [onOpenPage],
+  );
 
   const newSerial = state.status === "new" ? state.serial : null;
   const showCreated = useCallback(

@@ -57,6 +57,11 @@ interface QuickSwitcherProps {
   owner: boolean;
   /** 開いたときに入力欄へ入れて全選択する語。検索結果の画面で、いま検索している語を渡す。 */
   initialQuery?: string;
+  /**
+   * いま画面に出しているページの id。ページの画面でないとき、まだ取得中のときは null。
+   * URL の title は title を変えた保存の直後などに実際のページとずれるので、分かっていれば id で比べる。
+   */
+  openPageId?: string | null;
 }
 
 /**
@@ -69,6 +74,7 @@ export function QuickSwitcher({
   onOpenChange,
   owner,
   initialQuery = "",
+  openPageId = null,
 }: QuickSwitcherProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   // 前に開いたときの候補を残して開いた直後から出し、開くたびに取り直した一覧へ差し替える
@@ -106,6 +112,7 @@ export function QuickSwitcher({
           index={index}
           owner={owner}
           initialQuery={initialQuery}
+          openPageId={openPageId}
           onClose={() => onOpenChange(false)}
           onCreate={(title) => {
             // modal の間は外の要素に focus できないので、新規作成の画面が title 欄に focus する前に、
@@ -146,9 +153,11 @@ function PendingCandidates() {
 /**
  * 候補のページが、いま開いているページか。候補は公開範囲を持たず、正の URL（`/<title>`）を作れない。
  * `/p/<id>` へ移ると、移った先の画面が正の URL へ置き換えるまでに履歴が 2 つ積まれる。
+ * 開いているページの id が分かっていれば id で比べる。取得中などで分からないときだけ URL を見る。
  * title の URL は title の畳み込み（foldTitle）で比べる。サーバーが同じ畳み込みで引くため。
  */
-function isOpenPage(candidate: PageCandidate): boolean {
+function isOpenPage(candidate: PageCandidate, openPageId: string | null): boolean {
+  if (openPageId !== null) return openPageId === candidate.id;
   const path = parsePagePath(window.location.pathname);
   if (path === null) return false;
   return path.kind === "id"
@@ -160,12 +169,14 @@ function SwitcherBody({
   index,
   owner,
   initialQuery,
+  openPageId,
   onClose,
   onCreate,
 }: {
   index: TitleIndex;
   owner: boolean;
   initialQuery: string;
+  openPageId: string | null;
   onClose: () => void;
   /** 「作成」の行を選んだとき。dialog を閉じて、その title で新規作成の画面を開く */
   onCreate: (title: string) => void;
@@ -253,7 +264,7 @@ function SwitcherBody({
     if (row.kind === "page") {
       rememberTitle(row.candidate.id, row.candidate.title);
       onClose();
-      if (!isOpenPage(row.candidate)) navigate(pageHref(row.candidate.id));
+      if (!isOpenPage(row.candidate, openPageId)) navigate(pageHref(row.candidate.id));
     } else if (row.kind === "content-search") {
       onClose();
       // 今の検索結果と同じ語なら移らない。検索は tag で絞らないので、移っても一覧の結果は変わらず、URL の tag を外して履歴を 1 つ積むだけになる

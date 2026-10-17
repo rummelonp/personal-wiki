@@ -54,24 +54,40 @@ afterEach(() => {
   history.replaceState(null, "", startUrl);
 });
 
-function Harness({ owner, initialQuery = "" }: { owner: boolean; initialQuery?: string }) {
+function Harness({
+  owner,
+  initialQuery = "",
+  openPageId = null,
+}: {
+  owner: boolean;
+  initialQuery?: string;
+  openPageId?: string | null;
+}) {
   const [open, setOpen] = useState(true);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}>
         open
       </button>
-      <QuickSwitcher open={open} onOpenChange={setOpen} owner={owner} initialQuery={initialQuery} />
+      <QuickSwitcher
+        open={open}
+        onOpenChange={setOpen}
+        owner={owner}
+        initialQuery={initialQuery}
+        openPageId={openPageId}
+      />
     </>
   );
 }
 
-async function renderSwitcher(owner: boolean, initialQuery = "") {
+async function renderSwitcher(owner: boolean, initialQuery = "", openPageId: string | null = null) {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
   root = mounted;
-  act(() => mounted.render(<Harness owner={owner} initialQuery={initialQuery} />));
+  act(() =>
+    mounted.render(<Harness owner={owner} initialQuery={initialQuery} openPageId={openPageId} />),
+  );
   // 一覧の取得が終わるのを待つ
   await vi.waitFor(() => expect(options().length).toBeGreaterThan(0));
 }
@@ -390,6 +406,30 @@ describe("QuickSwitcher の操作", () => {
     expect(location.pathname + location.search).toBe(path);
     expect(history.length).toBe(before);
     expect(dialog().open).toBe(false);
+  });
+
+  it("URL が旧 title のままでも、開いているページの id と同じ候補なら履歴を積まない", async () => {
+    const path = `/${encodeURIComponent("旧い題")}`;
+    history.replaceState(null, "", path);
+    await renderSwitcher(true, "", RECENT[1]?.id);
+    const before = history.length;
+    typeText("Hono のメモ");
+    expect(selected()).toBe("Hono のメモ");
+    press("Enter");
+    expect(location.pathname).toBe(path);
+    expect(history.length).toBe(before);
+    expect(dialog().open).toBe(false);
+  });
+
+  it("URL の title が別のページの title と同じでも、開いているページの id と違う候補へは移る", async () => {
+    history.replaceState(null, "", `/${encodeURIComponent("メモ")}`);
+    await renderSwitcher(true, "", RECENT[1]?.id);
+    const before = history.length;
+    typeText("メモ");
+    expect(selected()).toBe("メモ");
+    press("Enter");
+    expect(location.pathname).toBe(`/p/${RECENT[2]?.id}`);
+    expect(history.length).toBe(before + 1);
   });
 
   it("別のページを開いている間は、選んだページへ移って履歴を積む", async () => {
