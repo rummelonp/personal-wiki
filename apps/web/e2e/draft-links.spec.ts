@@ -131,6 +131,45 @@ test.describe("owner", () => {
     await expect(confirmPanel(page).locator(".publish-drafts")).toBeEmpty();
     await expect(confirmPanel(page)).not.toContainText("下書きにリンク");
   });
+
+  test("自分への link には、公開した直後も印を出さない", async ({ page, api }, testInfo) => {
+    const title = uniqueTitle(testInfo, "自分にリンクする下書き");
+    const self = await api.createPage({ title, body: `前置き [[${title}]] の後` });
+    await page.goto(`/p/${self.id}`);
+    await expect(link(page, title)).toHaveAttribute("href", `/p/${self.id}`);
+
+    // 公開した後の取り直しが済むまでの間に一瞬だけ出る印も拾うため、件数ではなく DOM への追加を見張る
+    await page.evaluate(() => {
+      const flags = window as unknown as { badgeAppeared: boolean };
+      flags.badgeAppeared = false;
+      // title の欄も CodeMirror なので、本文の側を名前で選ぶ
+      const content = document.querySelector('.cm-content[aria-label="本文"]');
+      if (content === null) throw new Error("本文が無い");
+      // 足して同じ task のうちに外した印は、callback の時点の DOM には残らないので、記録の側を見る
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (
+              node instanceof Element &&
+              (node.matches(".cm-wikilink-draft-badge") ||
+                node.querySelector(".cm-wikilink-draft-badge") !== null)
+            ) {
+              flags.badgeAppeared = true;
+            }
+          }
+        }
+      }).observe(content, { childList: true, subtree: true });
+    });
+    await option(page, "公開").click();
+    await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+    await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
+    // href が title の URL に変われば、公開した後の取り直しは済んでいる
+    await expect(link(page, title)).not.toHaveAttribute("href", /^\/p\//);
+    await expect(link(page, title)).toHaveAttribute("href", /^\//);
+    expect(
+      await page.evaluate(() => (window as unknown as { badgeAppeared: boolean }).badgeAppeared),
+    ).toBe(false);
+  });
 });
 
 test.describe("anonymous", () => {

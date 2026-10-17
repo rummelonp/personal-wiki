@@ -29,7 +29,7 @@ export interface WikiLinkSources {
    */
   hrefFor(link: Pick<WikiLinkClick, "target" | "heading" | "blockId">): string | null;
   /**
-   * 解決先を取得済みで、それが draft か。問い合わせは始めない（`resolveWikiLink` が始める）。
+   * 解決先を取得済みで、それが自分以外の draft か。問い合わせは始めない（`resolveWikiLink` が始める）。
    * 匿名には draft が存在しない link として返るので、常に false になる。
    */
   isDraft(target: string): boolean;
@@ -137,7 +137,11 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
       const page = titles.resolvedPage(link.target);
       return page === null ? null : `${canonicalPagePath(page)}${hash}`;
     },
-    isDraft: (target) => titles.resolvedPage(target)?.visibility === "draft",
+    // 自分への link は除く。解決結果の公開範囲は公開した後の取り直しまで古いままで、その間に印が出る
+    isDraft(target) {
+      const page = titles.resolvedPage(target);
+      return page?.visibility === "draft" && page.id !== options.pageId();
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => {

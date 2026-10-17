@@ -405,8 +405,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   useEffect(() => uploader.bindUnloadGuard(window), [uploader]);
 
   // 自分の title が変わると、その title への link の存在が変わる。公開範囲が変わると、自分への link の
-  // 「下書き」の印が変わる。ほかの page は保存では変わらないので、embed の本文は取り直さない
-  // （autosave のたびに全部取り直すことになる）
+  // href（draft は id の URL、public は title の URL）が変わる。ほかの page は保存では変わらないので、
+  // embed の本文は取り直さない（autosave のたびに全部取り直すことになる）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 保存された title と公開範囲が変わったことを合図に取り直す
   useEffect(() => {
     links.refreshTitles();

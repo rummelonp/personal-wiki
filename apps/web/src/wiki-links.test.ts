@@ -258,6 +258,14 @@ describe("isDraft", () => {
     expect(links.isDraft("公開")).toBe(false);
     expect(links.isDraft("無い")).toBe(false);
   });
+
+  it("自分への link は、解決先が draft でも false にする", async () => {
+    const { links } = setup([pageOf(SELF, "自分", "")]);
+    links.resolveWikiLink("自分");
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    expect(links.hrefFor({ target: "自分", heading: null, blockId: null })).toBe(`/p/${SELF}`);
+    expect(links.isDraft("自分")).toBe(false);
+  });
 });
 
 describe("subscribe と dispose", () => {
