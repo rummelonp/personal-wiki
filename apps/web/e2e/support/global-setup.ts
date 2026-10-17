@@ -12,6 +12,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const ids = await timed("seed", () => seed(ownerApi(stack.origin, stack.sessionSecret)));
     process.env.E2E_ORIGIN = stack.origin;
     process.env.E2E_SESSION_SECRET = stack.sessionSecret;
+    process.env.E2E_STACK_CONFIG = stack.configPath;
+    process.env.E2E_STACK_STATE = stack.persistDir;
     process.env.E2E_SEED_IDS = JSON.stringify(ids);
   } catch (error) {
     await stack.stop();

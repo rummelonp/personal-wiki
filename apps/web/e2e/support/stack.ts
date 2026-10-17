@@ -20,7 +20,7 @@ import {
 const run = promisify(execFile);
 
 const WEB_DIR = resolve(import.meta.dirname, "../..");
-const WORKER_DIR = resolve(WEB_DIR, "../worker");
+export const WORKER_DIR = resolve(WEB_DIR, "../worker");
 
 /**
  * 開発で使う 5173（vite）と 8787（wrangler dev）を避ける。別の worktree の E2E と同時に流すときは
@@ -38,6 +38,9 @@ export { OWNER_EMAIL };
 export interface Stack {
   origin: string;
   sessionSecret: string;
+  /** wrangler dev が使う設定と D1 の保存先。テストが D1 に直接行を足す（principals.ts）のに使う */
+  configPath: string;
+  persistDir: string;
   stop: () => Promise<void>;
 }
 
@@ -98,7 +101,13 @@ export async function timed<T>(label: string, task: () => Promise<T>): Promise<T
 async function launch(
   dir: string,
   build: Promise<void>,
-): Promise<{ child: ChildProcess; sessionSecret: string; log: () => string }> {
+): Promise<{
+  child: ChildProcess;
+  sessionSecret: string;
+  configPath: string;
+  persistDir: string;
+  log: () => string;
+}> {
   const sessionSecret = randomBytes(32).toString("base64");
   const config = writeLocalConfig(dir);
   const envFile = writeLocalSecrets(dir, { sessionSecret, audience: "e2e-audience" });
@@ -149,7 +158,7 @@ async function launch(
   };
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
-  return { child, sessionSecret, log: () => output };
+  return { child, sessionSecret, configPath: config, persistDir: persist, log: () => output };
 }
 
 export async function startStack(): Promise<Stack> {
@@ -169,7 +178,7 @@ export async function startStack(): Promise<Stack> {
   build.catch(() => {});
 
   const dir = mkdtempSync(join(tmpdir(), "personal-wiki-e2e-"));
-  let launched: { child: ChildProcess; sessionSecret: string; log: () => string };
+  let launched: Awaited<ReturnType<typeof launch>>;
   try {
     launched = await launch(dir, build);
   } catch (error) {
@@ -177,7 +186,7 @@ export async function startStack(): Promise<Stack> {
     rmSync(dir, { recursive: true, force: true });
     throw error;
   }
-  const { child, sessionSecret, log } = launched;
+  const { child, sessionSecret, configPath, persistDir, log } = launched;
 
   // wrangler は workerd を子に持つので、プロセスグループ（detached で作った）ごと止める。
   // wrangler だけを止めると workerd が残り、8790 と 9339 を握ったままになることがある
@@ -213,5 +222,5 @@ export async function startStack(): Promise<Stack> {
     await stop();
     throw error;
   }
-  return { origin: E2E_ORIGIN, sessionSecret, stop };
+  return { origin: E2E_ORIGIN, sessionSecret, configPath, persistDir, stop };
 }

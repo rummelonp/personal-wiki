@@ -7,6 +7,12 @@ import {
   typeAtBodyEnd,
   uniqueTitle,
 } from "./support/fixtures";
+import {
+  connectOAuthClient,
+  issueApiToken,
+  updatePageWithOAuth,
+  updatePageWithToken,
+} from "./support/principals";
 import { E2E_ORIGIN } from "./support/stack";
 
 /*
@@ -60,6 +66,40 @@ test("版を時刻と作成者で並べ、押した版の本文を読み取り�
   await expect(bodyEditor(page)).toHaveText("二つ目の本文");
 });
 
+test("token と OAuth の接続が保存した版は、作成者を種類つきの名前で並べる", async ({
+  page,
+  api,
+}, testInfo) => {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const tokenName = `e2e-token-${suffix}`;
+  const clientName = `e2e-client-${suffix}`;
+  // owner の保存は直前の owner の版にまとまるが、AI の書き込みは毎回 1 件の版になる
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "作成者"),
+    body: "owner の本文",
+    visibility: "public",
+  });
+  const token = await issueApiToken(tokenName, "read write");
+  await updatePageWithToken(token, created, "token の本文");
+  const afterToken = await api.getPage(created.id);
+  await updatePageWithOAuth(await connectOAuthClient(clientName), afterToken, "OAuth の接続の本文");
+
+  await page.goto(`/p/${created.id}`);
+  await expect(bodyEditor(page)).toContainText("OAuth の接続の本文");
+  await expect(entries(page)).toHaveCount(3);
+  await expect(entries(page).nth(0)).toContainText(`接続: ${clientName}`);
+  await expect(entries(page).nth(1)).toContainText(`token: ${tokenName}`);
+  await expect(entries(page).nth(2)).toContainText("オーナー");
+
+  await entries(page).nth(1).click();
+  await expect(viewer(page)).toContainText(`token: ${tokenName}`);
+  await expect(viewer(page).locator(".cm-content")).toHaveText("token の本文");
+  await closeViewer(page);
+  await entries(page).nth(0).click();
+  await expect(viewer(page)).toContainText(`接続: ${clientName}`);
+  await expect(viewer(page).locator(".cm-content")).toHaveText("OAuth の接続の本文");
+});
+
 test("保存すると履歴を取り直し、10 分のうちの保存は先頭の版にまとまる", async ({
   page,
   api,
@@ -73,6 +113,8 @@ test("保存すると履歴を取り直し、10 分のうちの保存は先頭�
   );
   await typeAtBodyEnd(page, "を足す");
   await expect(saveState(page)).toHaveText("保存済み");
+  // 右の列が本文の下に回る狭い画面では、列が見えるまで取り直さない
+  await history(page).scrollIntoViewIfNeeded();
   // まとめた版は番号が進むので、取り直した一覧の先頭は今の版の番号になる
   const json = (await (await refetched).json()) as { revisions: { version: number }[] };
   expect(json.revisions.map((r) => r.version)).toEqual([2]);
