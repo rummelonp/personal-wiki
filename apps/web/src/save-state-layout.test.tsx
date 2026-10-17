@@ -2,8 +2,10 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { page as browserPage } from "vitest/browser";
+import { page as browserPage, userEvent } from "vitest/browser";
+import { followVisualViewportTop } from "./header-viewport";
 import { linkRewrites } from "./link-rewrites";
+import { NoticeDockProvider } from "./Notice";
 import { PageEditor } from "./PageEditor";
 import {
   type ApiResult,
@@ -82,12 +84,13 @@ afterEach(() => {
 
 const flushAsync = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
-function mountEditor() {
+function mountEditor({ withDock = false }: { withDock?: boolean } = {}) {
   container = document.createElement("div");
   document.body.append(container);
   const mounted = createRoot(container);
   root = mounted;
-  act(() => mounted.render(<PageEditor page={PAGE} attachments={false} />));
+  const editor = <PageEditor page={PAGE} attachments={false} />;
+  act(() => mounted.render(withDock ? <NoticeDockProvider>{editor}</NoticeDockProvider> : editor));
   const query = (selector: string) => {
     const found = container?.querySelector<HTMLElement>(selector);
     if (!found) throw new Error(`${selector} が無い`);
@@ -100,6 +103,57 @@ function mountEditor() {
   };
   return { query, body };
 }
+
+describe("キーボードで visual viewport がずれたときの保存の状態", () => {
+  const cleanup: Array<() => void> = [];
+  afterEach(() => {
+    for (const run of cleanup.splice(0).reverse()) run();
+  });
+
+  it("文書の流れに残り、ヘッダーだけが見える範囲の上端へ動く", async () => {
+    await browserPage.viewport(375, 800);
+    const viewport = Object.assign(new EventTarget(), {
+      offsetTop: 0,
+      offsetLeft: 0,
+      scale: 1,
+      height: window.innerHeight,
+      width: window.innerWidth,
+    });
+    const original = Object.getOwnPropertyDescriptor(window, "visualViewport");
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    cleanup.push(() => {
+      if (original) Object.defineProperty(window, "visualViewport", original);
+      else Reflect.deleteProperty(window, "visualViewport");
+    });
+    const header = document.createElement("header");
+    header.className = "header";
+    document.body.prepend(header);
+    cleanup.push(() => header.remove());
+    cleanup.push(followVisualViewportTop(header));
+    const { query } = mountEditor();
+    await flushAsync();
+
+    const offsets = () => {
+      const note = query(".note").getBoundingClientRect();
+      const state = query(".save-state").getBoundingClientRect();
+      return { state: state.top - note.top, bottom: note.top - state.bottom };
+    };
+    const before = offsets();
+    const headerHeight = header.getBoundingClientRect().height;
+    expect(header.getBoundingClientRect().top).toBe(0);
+
+    viewport.height = window.innerHeight - 300;
+    viewport.offsetTop = 60;
+    viewport.dispatchEvent(new Event("scroll"));
+    await flushAsync();
+
+    // ヘッダーは見える範囲の上端へ動き、保存の状態は動かない（ヘッダーの裏に回るのは、本文を 60px スクロールしたときと同じ）
+    expect(header.getBoundingClientRect().top).toBe(60);
+    expect(header.getBoundingClientRect().bottom).toBe(60 + headerHeight);
+    expect(offsets().state).toBeCloseTo(before.state, 1);
+    expect(offsets().bottom).toBeCloseTo(before.bottom, 1);
+  });
+});
 
 describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) => {
   it("title を下げる行を取らず、ノートの上の余白に収まる", async () => {
@@ -229,5 +283,119 @@ describe.each([375, 1024])("保存の状態の置き場所（%dpx）", (width) =
     query(".note").append(probe);
     expect(getComputedStyle(state).color).toBe(getComputedStyle(probe).color);
     probe.remove();
+  });
+
+  it("保存の状態の箱は余白の高さに等しく、状態が変わっても title とノートの位置と高さを動かさない", async () => {
+    await browserPage.viewport(width, 800);
+    let finish: (value: ApiResult<Page>) => void = () => {};
+    vi.mocked(updatePage).mockImplementationOnce(
+      () => new Promise<ApiResult<Page>>((resolve) => (finish = resolve)),
+    );
+    const { query, body } = mountEditor({ withDock: true });
+    await flushAsync();
+    const padTop = Number.parseFloat(getComputedStyle(query(".rail-main")).paddingTop);
+
+    const measure = () => {
+      const main = query(".rail-main").getBoundingClientRect();
+      const title = query(".title-input").getBoundingClientRect();
+      const note = query(".note").getBoundingClientRect();
+      const state = query(".save-state").getBoundingClientRect();
+      return {
+        titleOffset: title.top - note.top,
+        titleHeight: title.height,
+        noteOffset: note.top - main.top,
+        stateOffset: state.top - note.top,
+        stateHeight: state.height,
+      };
+    };
+    const saved = measure();
+    // 箱は余白の高さいっぱいに取る。文字の高さに合わせると、状態の入れ替わりで箱が伸び縮みする
+    expect(saved.stateHeight).toBeCloseTo(padTop, 1);
+    expect(saved.stateOffset + saved.stateHeight).toBeCloseTo(0, 1);
+
+    body().focus();
+    const end = body().state.doc.length;
+    body().dispatch({
+      changes: { from: end, insert: "追記" },
+      selection: { anchor: end + 2 },
+      userEvent: "input.type",
+    });
+    await flushAsync();
+    expect(query(".save-state").className).toContain("save-state-unsaved");
+    const unsaved = measure();
+
+    act(() => body().contentDOM.blur());
+    await flushAsync();
+    expect(query(".save-state").className).toContain("save-state-saving");
+    const saving = measure();
+
+    await act(async () => finish({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    expect(query(".save-state").className).toContain("save-state-error");
+    const failed = measure();
+    // 失敗の通知はドックに出て、ノートの流れに行を足さない
+    expect(query(".notice-dock .notice-error")).toBeTruthy();
+
+    // スクロールで画面上の位置は動くので、ノートの上端を基準にした位置で比べる
+    for (const state of [unsaved, saving, failed]) {
+      expect(state.titleOffset).toBeCloseTo(saved.titleOffset, 1);
+      expect(state.titleHeight).toBeCloseTo(saved.titleHeight, 1);
+      expect(state.noteOffset).toBeCloseTo(saved.noteOffset, 1);
+      expect(state.stateOffset).toBeCloseTo(saved.stateOffset, 1);
+      expect(state.stateHeight).toBeCloseTo(saved.stateHeight, 1);
+    }
+  });
+
+  it("title 欄の下線は欄の内側の下端に文字の左端から引かれ、保存の状態の下にあり、欄の高さを動かさない", async () => {
+    await browserPage.viewport(width, 800);
+    const { query } = mountEditor();
+    await flushAsync();
+    const input = query(".title-input");
+    const inset = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--editor-line-inset"),
+    );
+    const borderWidth = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--border-width"),
+    );
+    // 色は token 経由で解決した値と比べる
+    const colorOf = (token: string) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${token})`;
+      input.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const underline = () => getComputedStyle(input, "::after");
+
+    const resting = input.getBoundingClientRect();
+    // 下線の分の高さを padding で取り、下線は欄の内側の下端に収まる。外へはみ出すと CodeMirror が
+    // 欄をスクロールの箱とみなし、ヘッダーを避ける余白を切り落とす
+    expect(Number.parseFloat(getComputedStyle(input).paddingBottom)).toBeCloseTo(borderWidth, 1);
+    expect(underline().position).toBe("absolute");
+    expect(Number.parseFloat(underline().borderBottomWidth)).toBeCloseTo(borderWidth, 1);
+    expect(Number.parseFloat(underline().bottom)).toBe(0);
+    expect(Number.parseFloat(underline().left)).toBeCloseTo(inset, 1);
+    expect(Number.parseFloat(underline().right)).toBe(0);
+    expect(input.scrollHeight).toBeLessThanOrEqual(input.clientHeight);
+    // 文字の左端（列の線）から欄の右端まで引く
+    expect(Number.parseFloat(underline().width)).toBeCloseTo(resting.width - inset, 1);
+    // 下線は、ノートの上の余白にある保存の状態より下にある
+    expect(query(".save-state").getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      resting.bottom - borderWidth + 0.5,
+    );
+
+    // 何もしていない間は見えず、hover と focus で区切り線の色になる。どちらでも欄の高さは変わらない
+    expect(underline().borderBottomColor).toBe("rgba(0, 0, 0, 0)");
+    await userEvent.hover(input);
+    expect(underline().borderBottomColor).toBe(colorOf("--color-border"));
+    expect(input.getBoundingClientRect().height).toBeCloseTo(resting.height, 1);
+    await userEvent.unhover(input);
+    expect(underline().borderBottomColor).toBe("rgba(0, 0, 0, 0)");
+
+    act(() => EditorView.findFromDOM(query(".title-input .cm-editor"))?.focus());
+    expect(underline().borderBottomColor).toBe(colorOf("--color-border"));
+    expect(input.getBoundingClientRect().height).toBeCloseTo(resting.height, 1);
+    expect(input.getBoundingClientRect().top).toBeCloseTo(resting.top, 1);
   });
 });
