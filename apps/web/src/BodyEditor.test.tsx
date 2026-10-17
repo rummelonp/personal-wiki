@@ -839,11 +839,13 @@ function fakeLinks() {
   const missing = new Set<string>();
   const embeds = new Map<string, PageEmbedContent>();
   const hrefs = new Map<string, string>();
+  const drafts = new Set<string>();
   const listeners = new Set<() => void>();
   const sources: WikiLinkSources = {
     resolveWikiLink: (target) => !missing.has(target),
     resolvePageEmbed: (target) => embeds.get(target) ?? { kind: "loading" },
     hrefFor: (link) => hrefs.get(link.target) ?? null,
+    isDraft: (target) => drafts.has(target),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -854,6 +856,7 @@ function fakeLinks() {
     missing,
     embeds,
     hrefs,
+    drafts,
     listeners,
     changed: () => {
       for (const listener of [...listeners]) listener();
@@ -908,6 +911,44 @@ describe("wikilink の存在の印", () => {
 
     v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
     await vi.waitFor(() => expect(unresolvedTargets(v)).toEqual(["無い"]));
+  });
+
+  it("markDraftLinks の間だけ、draft への link に下書きの印を付ける", async () => {
+    const links = fakeLinks();
+    links.drafts.add("下書き");
+    const badges = (v: EditorView) =>
+      [...v.dom.querySelectorAll(".cm-wikilink-draft-badge")].map((e) => e.textContent);
+    const { view, rerender } = controlled("[[下書き]] と [[公開]]", { links: links.sources });
+    expect(badges(view())).toEqual([]);
+
+    rerender({ markDraftLinks: true });
+    await vi.waitFor(() => expect(badges(view())).toEqual(["下書き"]));
+
+    // 取得の結果で draft になった link にも付く
+    links.drafts.add("公開");
+    links.changed();
+    await vi.waitFor(() => expect(badges(view())).toEqual(["下書き", "下書き"]));
+
+    rerender({ markDraftLinks: false });
+    await vi.waitFor(() => expect(badges(view())).toEqual([]));
+  });
+
+  it("変換中に公開範囲が変わっても、落ち着くまで印を組み直さない", async () => {
+    const links = fakeLinks();
+    links.drafts.add("下書き");
+    const { view, rerender } = controlled("[[下書き]] ", { links: links.sources });
+    const v = view();
+    v.dispatch({ selection: { anchor: v.state.doc.length } });
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionstart"));
+    typeAtEnd(v, "か", "input.type.compose");
+
+    const before = v.state;
+    rerender({ markDraftLinks: true });
+    expect(v.state).toBe(before);
+    expect(v.dom.querySelector(".cm-wikilink-draft-badge")).toBeNull();
+
+    v.contentDOM.dispatchEvent(new CompositionEvent("compositionend"));
+    await vi.waitFor(() => expect(v.dom.querySelector(".cm-wikilink-draft-badge")).not.toBeNull());
   });
 
   it("links を渡さなければ印を付けず、ページ embed は展開しない", () => {

@@ -74,6 +74,11 @@ export interface BodyEditorProps {
    */
   links?: WikiLinkSources;
   /**
+   * true の間、解決先が draft の wikilink に「下書き」の印を付ける。public のページの編集で立てる
+   * （匿名にはその link が文字列に見える）。`links` と一緒に渡したときだけ働く。
+   */
+  markDraftLinks?: boolean;
+  /**
    * wikilink と、展開した embed の title のクリック。渡したときだけ素のクリックで呼ぶ（作った時点で
    * 渡されているかを見る）。呼ぶ関数は最新のものを使う。
    */
@@ -164,6 +169,7 @@ export function BodyEditor({
   pageIndex,
   linkTargets,
   links,
+  markDraftLinks = false,
   onWikiLinkClick,
   onTagClick,
   onUploadAttachment,
@@ -187,6 +193,7 @@ export function BodyEditor({
     pageIndex,
     linkTargets,
     links,
+    markDraftLinks,
     onWikiLinkClick,
     onTagClick,
     onUploadAttachment,
@@ -203,6 +210,7 @@ export function BodyEditor({
     pageIndex,
     linkTargets,
     links,
+    markDraftLinks,
     onWikiLinkClick,
     onTagClick,
     onUploadAttachment,
@@ -235,6 +243,8 @@ export function BodyEditor({
             resolvePageEmbed: (target: string) =>
               latest.current.links?.resolvePageEmbed(target) ?? NO_EMBED,
             hrefForWikiLink: (link: WikiLinkClick) => latest.current.links?.hrefFor(link) ?? null,
+            isDraftWikiLink: (target: string) =>
+              latest.current.markDraftLinks && (latest.current.links?.isDraft(target) ?? false),
           }),
       ...(initial.onWikiLinkClick === undefined
         ? {}
@@ -325,6 +335,15 @@ export function BodyEditor({
       if (editor !== null) invalidateDecorations(editor);
     });
   }, [links]);
+
+  // 公開範囲が変わったら印を付け直す。作った時点の値は作るときに読んでいるので、変わったときだけ組み直す
+  const markedDraftLinks = useRef(markDraftLinks);
+  useEffect(() => {
+    if (markedDraftLinks.current === markDraftLinks) return;
+    markedDraftLinks.current = markDraftLinks;
+    const editor = view.current;
+    if (editor !== null) invalidateDecorations(editor);
+  }, [markDraftLinks]);
 
   // useLayoutEffect にするのは、持ち主の状態が変わってから次の入力が届く前に、エディタへ反映するため
   useLayoutEffect(() => {

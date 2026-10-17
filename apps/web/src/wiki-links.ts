@@ -28,6 +28,11 @@ export interface WikiLinkSources {
    * （同じ page の見出しと block）は fragment だけの URL になる。
    */
   hrefFor(link: Pick<WikiLinkClick, "target" | "heading" | "blockId">): string | null;
+  /**
+   * 解決先を取得済みで、それが draft か。問い合わせは始めない（`resolveWikiLink` が始める）。
+   * 匿名には draft が存在しない link として返るので、常に false になる。
+   */
+  isDraft(target: string): boolean;
   /** 印や embed の内容が変わったときに呼ぶ listener を登録する。戻り値で解除する。 */
   subscribe(listener: () => void): () => void;
 }
@@ -132,6 +137,7 @@ export function createWikiLinks(options: WikiLinksOptions): WikiLinks {
       const page = titles.resolvedPage(link.target);
       return page === null ? null : `${canonicalPagePath(page)}${hash}`;
     },
+    isDraft: (target) => titles.resolvedPage(target)?.visibility === "draft",
     subscribe(listener) {
       listeners.add(listener);
       return () => {

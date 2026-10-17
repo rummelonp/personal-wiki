@@ -242,6 +242,24 @@ describe("hrefFor", () => {
   });
 });
 
+describe("isDraft", () => {
+  it("取得済みの解決先が draft のときだけ true にし、自分では問い合わせない", async () => {
+    const { links, resolve } = setup([
+      pageOf("D", "下書き", ""),
+      { ...pageOf("P", "公開", ""), visibility: "public" },
+    ]);
+    expect(links.isDraft("下書き")).toBe(false);
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    expect(resolve).not.toHaveBeenCalled();
+
+    for (const target of ["下書き", "公開", "無い"]) links.resolveWikiLink(target);
+    await vi.advanceTimersByTimeAsync(TITLE_RESOLVE_DEBOUNCE_MS);
+    expect(links.isDraft("下書き")).toBe(true);
+    expect(links.isDraft("公開")).toBe(false);
+    expect(links.isDraft("無い")).toBe(false);
+  });
+});
+
 describe("subscribe と dispose", () => {
   it("解除した listener は呼ばない", async () => {
     const { links, listener } = setup([]);
