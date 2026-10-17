@@ -148,7 +148,14 @@ async function launch(
     ],
     {
       cwd: dir,
-      env: { ...process.env, CI: "1" },
+      // LOAD_DEV_VARS が false だと wrangler は --env-file も読まない。INCLUDE_PROCESS_ENV が
+      // true だと手元の環境変数が Worker の env に入り、乱数の秘密の代わりにシェルの値が使われうる
+      env: {
+        ...process.env,
+        CI: "1",
+        CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "true",
+        CLOUDFLARE_INCLUDE_PROCESS_ENV: "false",
+      },
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     },
