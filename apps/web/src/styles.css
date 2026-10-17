@@ -1922,6 +1922,15 @@ a.segmented-option {
     display: none;
   }
 
+  /*
+   * 一覧のスケルトンが出ている間は、本文の下に回った列も出さない。スケルトンは実際の一覧より短いので、
+   * 列の上の罫線と欄が、一覧の途中の位置に浮いて見える。届いた一覧は列より先に描かれ、
+   * 列はその下に現れるので、本文は動かない
+   */
+  .rail-layout:has(.skeleton-entries) > .rail {
+    display: none;
+  }
+
   /* 本文の下に回る列は固定せず、ページ全体のスクロールに任せる */
   .rail-inner {
     position: static;

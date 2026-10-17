@@ -109,3 +109,33 @@ test.describe("一覧の条件を変える途中", () => {
     await expect(rows.first()).toBeVisible();
   });
 });
+
+test.describe("狭い幅で一覧を読み込む途中", () => {
+  for (const role of ["owner", "anonymous"] as const) {
+    test.describe(role, () => {
+      test.use({ role });
+
+      test("本文の下に回った右の列の上の罫線を、読み込み中の画面の中ほどに出さない", async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: 375, height: 812 });
+        const hold = await holdResponses(page, (url) => url.pathname === "/api/pages/recent");
+        await page.goto("/");
+
+        // owner の公開範囲の欄は取得を待たず、匿名のタグの欄は一覧と別の取得で届く。一覧が済むまでに右の列は DOM にある
+        await expect(page.locator(".rail")).toHaveCount(1);
+        await expect(page.locator(".home .skeleton-entries.skeleton-painted")).toBeVisible();
+        // 一覧が短いので、右の列があると、その上の罫線が本文の下の中ほどに横線として出る
+        await expect(page.locator(".rail")).toBeHidden();
+
+        hold.release();
+        await page.unrouteAll({ behavior: "ignoreErrors" });
+        await expect(page.locator(".home[aria-busy='true']")).toHaveCount(0);
+        // 読み込み後は、本文と右の列を罫線で区切る
+        const rail = page.locator(".rail");
+        await expect(rail).toBeVisible();
+        expect(await rail.evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
+      });
+    });
+  }
+});
