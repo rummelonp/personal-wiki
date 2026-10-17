@@ -132,6 +132,15 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
     expect(dialog().open).toBe(false);
   });
 
+  it("同じ語のまま Enter しても、履歴を積まない", async () => {
+    history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92");
+    await renderSwitcher(true, "ほげ");
+    const before = history.length;
+    press("Enter");
+    expect(location.search).toBe("?q=%E3%81%BB%E3%81%92");
+    expect(history.length).toBe(before);
+  });
+
   it("語を消すと先頭に検索を解除する行が出て、Enter で検索語の無いトップへ戻る", async () => {
     history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92");
     await renderSwitcher(true, "ほげ");
@@ -158,9 +167,43 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
   it("匿名が本文を検索できない短い語は、本文から検索する行を出さずに案内する", async () => {
     await renderSwitcher(false, "メモ");
     expect(container?.querySelector("[data-row-kind='content-search']")).toBeNull();
-    expect(container?.querySelector("[role='status']")?.textContent).toBe(
-      "3\u00a0文字以上で、本文からも検索できます。",
+    // 開いた描画の案内は、frame を空けてから status に入る
+    await vi.waitFor(() =>
+      expect(container?.querySelector("[role='status']")?.textContent).toBe(
+        "3\u00a0文字以上で、本文からも検索できます。",
+      ),
     );
+  });
+
+  it("開いた描画では案内を status の外に見せるだけにし、frame を空けてから status へ入れる", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    act(() => mounted.render(<Harness owner={false} initialQuery="メモ" />));
+    const live = container.querySelector("[role='status']");
+    const guidance = "3\u00a0文字以上で、本文からも検索できます。";
+    expect(live?.textContent).not.toContain("文字以上");
+    // 場所は先に取り、候補の行が後から押し下げられないようにする
+    expect(container.querySelector("[aria-hidden='true'] p")?.textContent).toBe(guidance);
+
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    expect(container.querySelector("[role='status']")).toBe(live);
+    expect(live?.textContent).toBe(guidance);
+    expect(container.querySelector("[aria-hidden='true'] p")).toBeNull();
+  });
+
+  it("開いた後に語を打って出た案内は、待たずに status へ入れる", async () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    act(() => mounted.render(<Harness owner={false} />));
+    typeText("ほげ");
+    expect(container.querySelector("[role='status']")?.textContent).toContain("3\u00a0文字以上");
+    expect(container.querySelector("[aria-hidden='true'] p")).toBeNull();
   });
 });
 

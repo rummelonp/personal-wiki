@@ -164,6 +164,9 @@ function SwitcherBody({
   // マウスが載った行はすでに見えているので、それによる選択の変更ではスクロールしない
   const hoveredRef = useRef(false);
   const listboxId = useId();
+  const framesPassed = useAfterFrames();
+  // status が案内なしで描画された後か。その後に出た案内は、空で置いた status への変化として伝わる
+  const [statusEmptied, setStatusEmptied] = useState(false);
 
   // 取り直しが始まったことを、最初の描画の前に反映する。前の失敗が残った索引で開き直すと、
   // 取り直しの間も失敗の案内が一瞬出てしまう
@@ -270,6 +273,22 @@ function SwitcherBody({
     }
   }
 
+  const note =
+    showFailed || noMatch || contentSearchTooShort ? (
+      <p className={showFailed ? "switcher-heading switcher-alert" : "switcher-heading"}>
+        {showFailed && CANDIDATES_FAILED}
+        {noMatch && "一致するタイトルはありません。"}
+        {contentSearchTooShort &&
+          `${ANONYMOUS_SEARCH_MIN_CHARS}\u00a0文字以上で、本文からも検索できます。`}
+      </p>
+    ) : null;
+  const hasNote = note !== null;
+  useEffect(() => {
+    if (!hasNote) setStatusEmptied(true);
+  }, [hasNote]);
+  // 待つのは、開いた描画から出ている案内だけ。語を打ったら待たない
+  const noteReady = framesPassed || statusEmptied || query !== initialQuery;
+
   return (
     <div className="switcher-body">
       <input
@@ -303,15 +322,11 @@ function SwitcherBody({
           中身を持ったまま挿入した status は多くの読み上げで読まれないので、常に置いて中身だけを入れる */}
       <div role="status" className="switcher-status">
         {(!settled || retrying) && <PendingCandidates />}
-        {(showFailed || noMatch || contentSearchTooShort) && (
-          <p className={showFailed ? "switcher-heading switcher-alert" : "switcher-heading"}>
-            {showFailed && CANDIDATES_FAILED}
-            {noMatch && "一致するタイトルはありません。"}
-            {contentSearchTooShort &&
-              `${ANONYMOUS_SEARCH_MIN_CHARS}\u00a0文字以上で、本文からも検索できます。`}
-          </p>
-        )}
+        {noteReady && note}
       </div>
+      {/* 開いた描画で案内がすでにあると、status へ中身ごと挿入することになり読まれない。見た目は先に出し、
+          支援技術には後の frame で status へ移して伝える */}
+      {!noteReady && hasNote && <div aria-hidden="true">{note}</div>}
       <div
         id={listboxId}
         role="listbox"

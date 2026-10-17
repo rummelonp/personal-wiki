@@ -1705,6 +1705,16 @@ a.segmented-option {
 }
 
 /*
+ * 取得中の行と案内の間を、body の gap と揃える。開いた描画では案内を status の外に置いて後から移すので、
+ * 揃えないと移した瞬間に案内と候補の行が gap の分だけ上がる。
+ */
+.switcher-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/*
  * 案内の status は中身が無い間も DOM に置く（空で置いてから中身を入れないと読み上げられない）。
  * flex の gap を作らないよう、流れから外す。
  */
