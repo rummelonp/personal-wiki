@@ -4,12 +4,12 @@ import { createApp } from "../app";
 import type { Bindings } from "../env";
 import {
   fakeJwks,
-  generateSigningKey,
   ownerCookie,
   ownerEnv,
   ownerEnvWithoutBucket,
   SESSION_SECRET,
   signAccessJwt,
+  signingKey,
   TEAM_DOMAIN,
 } from "../test/owner";
 import { insertToken } from "../test/tokens";
@@ -21,7 +21,7 @@ const ORIGIN = "http://localhost";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function setup() {
-  const key = await generateSigningKey("key-1");
+  const key = await signingKey("key-1");
   const jwks = fakeJwks([key]);
   const clock = { now: T0 };
   const app = createApp({ now: () => clock.now, accessFetch: jwks.fetch, recordWrite: () => {} });

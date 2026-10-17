@@ -50,7 +50,17 @@ export interface SigningKey {
   publicJwk: JsonWebKey & { kid: string };
 }
 
-export async function generateSigningKey(kid: string): Promise<SigningKey> {
+interface KeyPair {
+  privateKey: CryptoKey;
+  n: string;
+  e: string;
+}
+
+// RSA 2048 の鍵の生成は素数探しで、負荷が高いと 1 回に数秒かかる。テストごとに作ると時間切れで
+// 落ちるので、ファイルごとに slot ごとの 1 組を使い回す。kid は組に付ける名札で、組とは別に決める
+const keyPairs = new Map<number, Promise<KeyPair>>();
+
+async function generateKeyPair(): Promise<KeyPair> {
   const pair = (await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -62,12 +72,24 @@ export async function generateSigningKey(kid: string): Promise<SigningKey> {
     ["sign", "verify"],
   )) as CryptoKeyPair;
   const exported = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
+  return { privateKey: pair.privateKey, n: exported.n as string, e: exported.e as string };
+}
+
+/**
+ * 署名の鍵を返す。同じ slot は同じ組の鍵を返すので、別の鍵が要るテスト（別の鍵で署名したものを拒む、
+ * 鍵の入れ替え）は別の slot を渡す。
+ */
+export async function signingKey(kid: string, slot = 0): Promise<SigningKey> {
+  let pair = keyPairs.get(slot);
+  if (pair === undefined) {
+    pair = generateKeyPair();
+    keyPairs.set(slot, pair);
+  }
+  const { privateKey, n, e } = await pair;
   return {
     kid,
-    privateKey: pair.privateKey,
-    publicJwk: { kty: "RSA", n: exported.n, e: exported.e, alg: "RS256", kid } as JsonWebKey & {
-      kid: string;
-    },
+    privateKey,
+    publicJwk: { kty: "RSA", n, e, alg: "RS256", kid } as JsonWebKey & { kid: string },
   };
 }
 

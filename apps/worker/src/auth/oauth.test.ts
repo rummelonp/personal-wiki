@@ -3,7 +3,7 @@ import { AuthorizationError, CimdFetchError } from "@cloudflare/workers-oauth-pr
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { Bindings } from "../env";
-import { fakeJwks, generateSigningKey, ownerCookie, ownerEnv, signAccessJwt } from "../test/owner";
+import { fakeJwks, ownerCookie, ownerEnv, signAccessJwt, signingKey } from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertApiToken, insertToken } from "../test/tokens";
 import { encodeBase64Url } from "./base64url";
@@ -686,7 +686,7 @@ describe("認可と同意画面", () => {
 
 describe("ログインを経由した認可", () => {
   it("owner のセッションが無い認可のリクエストは、Access のログインを経て同意画面に戻る", async () => {
-    const key = await generateSigningKey("key-1");
+    const key = await signingKey("key-1");
     const app = createApp({ now: () => T0, accessFetch: fakeJwks([key]).fetch });
     const bindings = ownerEnv();
     const request: Request = (path, init = {}) => app.request(path, init, bindings);

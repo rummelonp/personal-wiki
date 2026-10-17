@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIENCE,
   fakeJwks,
-  generateSigningKey,
   OWNER_EMAIL,
   type SigningKey,
   signAccessJwt,
+  signingKey,
   TEAM_DOMAIN,
 } from "../test/owner";
 import { createAccessVerifier } from "./access";
@@ -14,7 +14,7 @@ import { encodeBase64Url } from "./base64url";
 const T0 = Date.UTC(2026, 9, 1);
 
 async function setup(keys?: SigningKey[]) {
-  const key = await generateSigningKey("key-1");
+  const key = await signingKey("key-1");
   const jwks = fakeJwks(keys ?? [key]);
   const clock = { now: T0 };
   const verifier = createAccessVerifier({ fetch: jwks.fetch, now: () => clock.now });
@@ -95,7 +95,7 @@ describe("Access の JWT の検証", () => {
 
   it("別の鍵で署名したものと、署名の後に payload を書き換えたものを拒む", async () => {
     const { key, verify } = await setup();
-    const other = await generateSigningKey("key-1");
+    const other = await signingKey("key-1", 1);
     expect(await verify(await signAccessJwt(other, T0))).toEqual({
       ok: false,
       reason: "bad_signature",
@@ -144,7 +144,7 @@ describe("Access の JWT の検証", () => {
   });
 
   it("JWKS の鍵の alg が RS256 でなければ拒む", async () => {
-    const key = await generateSigningKey("key-1");
+    const key = await signingKey("key-1");
     const { verify } = await setup([{ ...key, publicJwk: { ...key.publicJwk, alg: "RS512" } }]);
     expect(await verify(await signAccessJwt(key, T0))).toEqual({
       ok: false,
@@ -171,7 +171,7 @@ describe("Access の JWT の検証", () => {
       const { key, verify, jwks, clock } = await setup();
       await verify(await signAccessJwt(key, T0));
       clock.now = T0 + 30 * 1000;
-      const unknown = await generateSigningKey("key-unknown");
+      const unknown = await signingKey("key-unknown", 1);
       expect(await verify(await signAccessJwt(unknown, clock.now))).toEqual({
         ok: false,
         reason: "unknown_kid",
@@ -182,7 +182,7 @@ describe("Access の JWT の検証", () => {
     it("前回の取得から 30 秒以内は、知らない kid でも取り直さない", async () => {
       const { key, verify, jwks, clock } = await setup();
       await verify(await signAccessJwt(key, T0));
-      const unknown = await generateSigningKey("key-unknown");
+      const unknown = await signingKey("key-unknown", 1);
       for (const elapsed of [0, 1000, 29 * 1000]) {
         clock.now = T0 + elapsed;
         expect(await verify(await signAccessJwt(unknown, clock.now))).toEqual({
@@ -202,7 +202,7 @@ describe("Access の JWT の検証", () => {
     it("鍵が入れ替わったら、取り直した JWKS の新しい鍵で検証する", async () => {
       const { key, verify, jwks, clock } = await setup();
       await verify(await signAccessJwt(key, T0));
-      const rotated = await generateSigningKey("key-2");
+      const rotated = await signingKey("key-2", 1);
       jwks.state.keys = [key, rotated];
       clock.now = T0 + 60 * 1000;
       expect(await verify(await signAccessJwt(rotated, clock.now))).toMatchObject({ ok: true });
