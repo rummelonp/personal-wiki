@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { buildClient, type PageJson, T0 } from "../test/pages";
-import { searchPages } from "./search";
+import { listTagCounts, searchPages } from "./search";
 
 interface Hit {
   id: string;
@@ -319,6 +319,22 @@ describe("searchPages の LIKE（2 文字以下）", () => {
     expect((await searchPages(env.DB, "下書", 20, "all")).map((hit) => hit.id).sort()).toEqual(
       [draft.id, open.id].sort(),
     );
+  });
+});
+
+describe("listTagCounts の公開範囲", () => {
+  // REST は readable が public の draft の指定を DB を引かずに空で返すので、SQL の絞り込みは直接呼んで確かめる
+  it("readable が public なら、draft の指定は空、public の指定は指定なしと同じ", async () => {
+    const client = await buildClient();
+    await client.create("下書きのページ", "#shared #draft-only");
+    const open = await client.create("公開のページ", "#shared #public-only");
+    await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
+      .bind(open.id)
+      .run();
+    expect(await listTagCounts(env.DB, "public", "draft")).toEqual([]);
+    const unfiltered = await listTagCounts(env.DB, "public");
+    expect(unfiltered.map((t) => t.tag).sort()).toEqual(["public-only", "shared"]);
+    expect(await listTagCounts(env.DB, "public", "public")).toEqual(unfiltered);
   });
 });
 

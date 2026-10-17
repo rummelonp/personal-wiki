@@ -533,7 +533,12 @@ describe("匿名向けの応答の総当たり", () => {
         "/api/pages/titles?limit=1",
         "/api/pages/titles?limit=500",
       ],
-      "GET /api/tags": ["/api/tags"],
+      "GET /api/tags": [
+        "/api/tags",
+        "/api/tags?visibility=draft",
+        "/api/tags?visibility=public",
+        "/api/tags?visibility=bogus",
+      ],
       "GET /api/search": [
         search("zebrafish"),
         search("秘蔵"),
@@ -816,6 +821,79 @@ describe("GET /api/pages/recent?visibility=", () => {
         ["owner", asOwner],
       ] as const) {
         const res = await request(`/api/pages/recent?visibility=${value}`);
+        expect(res.status, `${who} ${value}`).toBe(400);
+        expect(await res.json(), `${who} ${value}`).toEqual({
+          error: "invalid_field",
+          field: "visibility",
+        });
+      }
+    }
+  });
+});
+
+describe("GET /api/tags?visibility=", () => {
+  type TagsJson = { tags: { tag: string; count: number }[] };
+  const DRAFT_TAGS = [
+    { tag: "draftonly", count: 1 },
+    { tag: "Shared", count: 1 },
+    { tag: "shared/inner", count: 1 },
+  ];
+  const PUBLIC_TAGS = [
+    { tag: "pub", count: 2 },
+    { tag: "shared", count: 1 },
+  ];
+
+  it("owner は公開範囲で件数と表記を絞り込め、件数は同じ指定の一覧の件数に合う", async () => {
+    const { asOwner } = await seed();
+    const tags = async (query: string) => (await asOwner(`/api/tags${query}`)).json<TagsJson>();
+    expect((await tags("?visibility=draft")).tags).toEqual(DRAFT_TAGS);
+    expect((await tags("?visibility=public")).tags).toEqual(PUBLIC_TAGS);
+    for (const visibility of ["draft", "public"]) {
+      for (const { tag, count } of (await tags(`?visibility=${visibility}`)).tags) {
+        const list = await (
+          await asOwner(`/api/pages/recent?visibility=${visibility}&tag=${encodeURIComponent(tag)}`)
+        ).json<{ pages: Listed[] }>();
+        expect(list.pages.length, `${visibility} ${tag}`).toBe(count);
+      }
+    }
+  });
+
+  it("read と write の token は、owner と同じく draft の指定で draft のタグを見られる", async () => {
+    const { call } = await seed();
+    for (const scopes of ["read", "read write"] as const) {
+      const token = await insertToken({ name: scopes, scopes });
+      const headers = { Authorization: `Bearer ${token}` };
+      const tags = async (query: string) =>
+        (await call(`/api/tags${query}`, { headers })).json<TagsJson>();
+      expect((await tags("?visibility=draft")).tags, scopes).toEqual(DRAFT_TAGS);
+      expect((await tags("?visibility=public")).tags, scopes).toEqual(PUBLIC_TAGS);
+    }
+  });
+
+  it("匿名の draft の指定は、draft のタグの有無に関係なく同じ 200 の空の一覧で、public の指定は指定なしと同じ", async () => {
+    const empty = await setup();
+    const before = await empty.anonymous("/api/tags?visibility=draft");
+    const { anonymous } = await seed();
+    const after = await anonymous("/api/tags?visibility=draft");
+    expect(after.status).toBe(200);
+    expect(await after.json()).toEqual({ tags: [] });
+    expect(await before.json()).toEqual({ tags: [] });
+    // 応答のヘッダーも、指定なしの一覧と同じ形にする
+    const plain = await anonymous("/api/tags");
+    expect([...after.headers]).toEqual([...plain.headers]);
+    expect(await (await anonymous("/api/tags?visibility=public")).json()).toEqual(
+      await plain.json(),
+    );
+  });
+
+  it("公開範囲に無い値は、principal に関係なく 400", async () => {
+    const { anonymous, asOwner } = await seed();
+    for (const value of ["", "bogus", "Draft", "all"]) {
+      for (const [who, request] of [
+        ["anonymous", anonymous],
+        ["owner", asOwner],
+      ] as const) {
+        const res = await request(`/api/tags?visibility=${value}`);
         expect(res.status, `${who} ${value}`).toBe(400);
         expect(await res.json(), `${who} ${value}`).toEqual({
           error: "invalid_field",

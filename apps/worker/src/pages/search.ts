@@ -295,23 +295,29 @@ export interface TagCount {
  * count は listRecentPages の tagKey に同じ表記を渡したときの件数に合わせ、子のタグが付いたページを含む
  * （重複は 1 と数える）。ページに書かれた子のタグ `a/b` から作った親 `a` は、ページに直接書かれていなければ
  * 一覧に出ない。tag は、そのタグが付いたページの表記のうち文字コード順で先頭のもの。
- * tags の削除済みページの行は削除時（と派生データの作り直し）で消える。readable が public のときは、
- * public のページを pages から引く副問い合わせで削除済みも除き、行が消え損ねても匿名には出さない。
- * all のときは pages を読まず、行が消えることに頼る（owner の一覧のたびに全ページを読む副問い合わせを足さない）。
+ * tags の削除済みページの行は削除時（と派生データの作り直し）で消える。readable が public のときと
+ * visibility を指定したときは、ページを pages から引く副問い合わせで削除済みも除き、行が消え損ねても出さない。
+ * readable が all で visibility の指定が無いときは pages を読まず、行が消えることに頼る（owner の一覧のたびに
+ * 全ページを読む副問い合わせを足さない）。
  *
- * readable が public なら、一覧に出すタグ、件数、表記のどれも public のページだけから作る。draft に
- * しか付いていないタグは出さず、draft の表記（`Beta` と `beta` の違いなど）も表に出さない。
+ * 一覧に出すタグ、件数、表記のどれも、readable と visibility の両方に合うページだけから作る。
+ * readable が public なら draft にしか付いていないタグは出さず、draft の表記（`Beta` と `beta` の違いなど）も
+ * 表に出さない。readable が public で visibility が draft なら、必ず空になる。
+ * count は listRecentPages に同じ visibility を渡したときの件数に合う。
  */
 export async function listTagCounts(
   db: D1Database,
   readable: ReadableVisibility,
+  visibility: Visibility | null = null,
 ): Promise<TagCount[]> {
   const { results } = await db
     .prepare(
       `WITH visible AS (
          SELECT page_id, tag_key, tag FROM tags
-         WHERE ?1 = 0 OR page_id IN (
-           SELECT id FROM pages WHERE visibility = 'public' AND deleted_at IS NULL)
+         WHERE (?1 = 0 AND ?2 IS NULL) OR page_id IN (
+           SELECT id FROM pages
+           WHERE deleted_at IS NULL AND (?1 = 0 OR visibility = 'public')
+             AND (?2 IS NULL OR visibility = ?2))
        )
        SELECT min(t.tag) AS tag,
          (SELECT count(DISTINCT c.page_id) FROM visible AS c
@@ -319,7 +325,7 @@ export async function listTagCounts(
              OR (c.tag_key >= t.tag_key || '/' AND c.tag_key < t.tag_key || '0')) AS count
        FROM visible AS t GROUP BY t.tag_key ORDER BY count DESC, t.tag_key`,
     )
-    .bind(publicOnlyFlag(readable))
+    .bind(publicOnlyFlag(readable), visibility)
     .all<TagCount>();
   return results;
 }

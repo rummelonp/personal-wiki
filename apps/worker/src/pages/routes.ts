@@ -381,8 +381,16 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         });
         return c.json({ pages, nextCursor });
       })
+      // visibility の扱いと、draft を読めない主体の draft の指定を DB を引かずに空で返す理由は
+      // /api/pages/recent と同じ
       .get("/api/tags", allowAnonymousRead(), async (c) => {
-        const tags = await listTagCounts(c.env.DB, readableVisibilityOf(c.get("principal")));
+        const visibility = c.req.query("visibility");
+        if (visibility !== undefined && !isVisibility(visibility)) {
+          return errorResponse(c, 400, "invalid_field", { field: "visibility" });
+        }
+        const readable = readableVisibilityOf(c.get("principal"));
+        if (readable === "public" && visibility === "draft") return c.json({ tags: [] });
+        const tags = await listTagCounts(c.env.DB, readable, visibility ?? null);
         return c.json({ tags });
       })
       .get("/api/search", allowAnonymousRead(), async (c) => {
