@@ -302,6 +302,21 @@ h1 {
   color: var(--color-fg-muted);
 }
 
+/*
+ * タッチ端末では、リンクの箱を 44px にして、字の位置は変えない。足した高さは負の margin で戻すので、
+ * 箱は上下に --inset だけ食い込む。上には接続の取り消しのボタンや「続きを見る」のリンクが来るので、
+ * --inset は .sheet の gap（--space-4）より小さく保ち、これらの箱と重ならないようにする。
+ */
+@media (pointer: coarse) {
+  .back a {
+    --inset: calc((var(--tap-size) - var(--font-size-sm) * var(--line-height)) / 2);
+
+    display: inline-block;
+    padding-block: var(--inset);
+    margin-block: calc(-1 * var(--inset));
+  }
+}
+
 .lead {
   color: var(--color-fg-muted);
 }
