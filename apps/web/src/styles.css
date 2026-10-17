@@ -1369,13 +1369,17 @@ a.segmented-option {
 .title-input {
   position: relative;
   margin: 0 0 var(--space-4) calc(-1 * var(--editor-line-inset));
-  border-bottom: var(--border-width) solid transparent; /* 下線の分の高さを常に取り、hover で動かさない */
+  padding-bottom: var(--border-width); /* 下線の分の高さを常に取り、hover で動かさない */
 }
 
-/* 下線は文字の左端（列の線）から引く。要素は行の padding の分だけ左に出ているので、その分を除く */
+/*
+ * 下線は文字の左端（列の線）から引く。要素は行の padding の分だけ左に出ているので、その分を除く。
+ * 下線は要素の内側（padding の分）に収める。外にはみ出すと scrollHeight が clientHeight を超え、
+ * CodeMirror が .title-input をスクロールする箱とみなして、ヘッダーを避ける余白を切り落とす
+ */
 .title-input::after {
   position: absolute;
-  inset: auto 0 calc(-1 * var(--border-width)) var(--editor-line-inset);
+  inset: auto 0 0 var(--editor-line-inset);
   content: "";
   border-bottom: var(--border-width) solid transparent;
 }

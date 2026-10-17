@@ -41,17 +41,23 @@ const markScrolling = EditorView.scrollHandler.of((view) => {
  * 補完の窓が見えることを優先した。
  * 箱の上端が画面の外にあるとき、上側は header を返すので窓を隠す判定には足りない。
  * 上側の正しさは tooltipSpaceBelowChrome の top に頼っている。
+ *
+ * CodeMirror は、scrollHeight か scrollWidth が client の大きさを超える祖先を overflow の指定によらず
+ * スクロールする箱とみなし、余白を足した矩形をその箱の内側に切り詰める。エディタの祖先の要素が
+ * 1px でも外へはみ出すと、ここで返す余白が効かなくなる。
  */
-const scrollMargins = EditorView.scrollMargins.of((view) => {
-  const header = stickyHeaderBottom();
-  const dock = noticeDockRect();
-  if (scrolling.delete(view)) return { top: header, bottom: dock?.height ?? 0 };
-  const box = view.scrollDOM.getBoundingClientRect();
-  return {
-    top: Math.min(Math.max(header - box.top, 0), header),
-    bottom: dock === null ? 0 : Math.min(Math.max(box.bottom - dock.top, 0), dock.height),
-  };
-});
+function scrollMarginsBelow(extraTop: (view: EditorView) => number) {
+  return EditorView.scrollMargins.of((view) => {
+    const header = stickyHeaderBottom();
+    const dock = noticeDockRect();
+    if (scrolling.delete(view)) return { top: header + extraTop(view), bottom: dock?.height ?? 0 };
+    const box = view.scrollDOM.getBoundingClientRect();
+    return {
+      top: Math.min(Math.max(header - box.top, 0), header),
+      bottom: dock === null ? 0 : Math.min(Math.max(box.bottom - dock.top, 0), dock.height),
+    };
+  });
+}
 
 /**
  * 補完の窓を置ける範囲から、ヘッダーと通知の台を除く。台の位置は高さからでなく rect で読む。
@@ -82,9 +88,17 @@ const repositionOnDockChange = ViewPlugin.define((view) => {
   return { destroy: () => doc.removeEventListener(NOTICE_DOCK_RESIZE, reposition) };
 });
 
-export const scrollBelowStickyHeader = [
-  markScrolling,
-  scrollMargins,
-  tooltipSpaceBelowChrome,
-  repositionOnDockChange,
-];
+/**
+ * `extraTop` は、スクロールの対象をヘッダーの下からさらに離す高さ。ヘッダーと対象の間に、対象に付いて
+ * 見せたい要素があるときに使う（title 欄の上の保存の状態）。補完の窓の範囲には足さない。
+ */
+export function scrollBelowStickyHeaderWith(extraTop: (view: EditorView) => number) {
+  return [
+    markScrolling,
+    scrollMarginsBelow(extraTop),
+    tooltipSpaceBelowChrome,
+    repositionOnDockChange,
+  ];
+}
+
+export const scrollBelowStickyHeader = scrollBelowStickyHeaderWith(() => 0);

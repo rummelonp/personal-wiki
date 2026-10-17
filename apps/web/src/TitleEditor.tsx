@@ -10,6 +10,18 @@ import {
 } from "@personal-wiki/editor";
 import { type Ref, useId, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
+import { scrollBelowStickyHeaderWith } from "./sticky-header";
+
+/**
+ * title の行を打つときのスクロールは、行の上に出る保存の状態（.save-state）の上端まで、ヘッダーの下から
+ * 離す。行だけをヘッダーの下に寄せると、保存の状態がヘッダーに隠れたまま、失敗が title の上で見えない。
+ * 保存の状態の高さではなく行までの距離で測り、間に要素が入っても隠れないようにする。
+ */
+const scrollBelowHeaderAndSaveState = scrollBelowStickyHeaderWith((view) => {
+  const saveState = view.dom.closest(".note")?.querySelector(":scope > .save-state");
+  if (!saveState) return 0;
+  return Math.max(0, view.documentTop - saveState.getBoundingClientRect().top);
+});
 
 export interface TitleEditorHandle {
   /**
@@ -99,6 +111,7 @@ export function TitleEditor({
       // 保存で拒まれる制御文字は、貼った時点で取り除く。見えない文字を後から探させない
       normalizeInput: titleInputText,
       extensions: [
+        scrollBelowHeaderAndSaveState,
         EditorView.domEventHandlers({
           blur: () => {
             latest.current.onBlur();

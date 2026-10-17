@@ -261,3 +261,40 @@ test("長い title を空にしても、帯は前の title だけを省略して
     (await rightEdge(status)) + 0.5,
   );
 });
+
+test("上限を超えて保存を止めている間に、スクロールしたまま長い title を空にしても、保存の状態はヘッダーの下に見える", async ({
+  page,
+  api,
+}, testInfo) => {
+  const { puts } = await openNearLimit(
+    page,
+    api,
+    uniqueTitle(testInfo, "とても長い題名".repeat(8)),
+    2,
+  );
+  await typeAtBodyEnd(page, "cccc");
+  await expect(saveState(page)).toHaveText("保存できません");
+
+  // title が一部だけ見える位置までスクロールして、スクロールを動かさずに title へ入る
+  await page.evaluate(() => window.scrollTo(0, 100));
+  await titleEditor(page).evaluate((element) =>
+    (element as HTMLElement).focus({ preventScroll: true }),
+  );
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Backspace");
+  await expect(page.locator(".title-hint")).toContainText("空のタイトルは保存しません。");
+
+  // 打った title の行と、その上の保存の状態が、ヘッダーに隠れない位置まで戻る
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const header = document.querySelector(".header")?.getBoundingClientRect().bottom ?? 0;
+        const top = (selector: string) =>
+          document.querySelector(selector)?.getBoundingClientRect().top ?? Number.NEGATIVE_INFINITY;
+        return Math.min(top(".save-state"), top(".title-input .cm-line")) - header;
+      }),
+    )
+    .toBeGreaterThanOrEqual(0);
+  await expect(saveState(page)).toHaveText("保存できません");
+  expect(puts()).toBe(0);
+});
