@@ -1353,7 +1353,7 @@ a.segmented-option {
 }
 
 /*
- * 抜粋 2 行でタグの無い行の高さに合わせる（タグの行を持つ行は、その分だけ本物のほうが高い）。
+ * 抜粋 2 行の高さに合わせる。タグの有る行が多い一覧の後は、チップの帯（.skeleton-entry-chips）を足して合わせる。
  * grid にして、積んだ行の上下の margin を相殺させない（相殺すると 2 行の高さが本物より縮む）。
  */
 .skeleton-entry-excerpt {
@@ -1367,6 +1367,27 @@ a.segmented-option {
 
 .skeleton-entry-excerpt .skeleton-text:last-child {
   width: 55%;
+}
+
+/*
+ * チップの帯。高さは本物の .chips の 1 段と同じにする（狭い幅では、タップの箱の高さ）。
+ * 本物の段は、チップの高さでなく、チップを入れる li の行の高さ（行の文字の大きさ × 行高）になる。
+ */
+.skeleton-entry-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: calc(var(--line-height) * 1em); /* token-ok: 行の文字の大きさに比例させる */
+}
+
+.skeleton-chip {
+  width: 4.5em; /* token-ok: スケルトンの幅は、タグの字数（短い語）に比例させる */
+  height: calc(var(--font-size-chip) * var(--line-height));
+  border-radius: var(--radius-pill);
+}
+
+.skeleton-chip:last-child {
+  width: 3em; /* token-ok: 同上 */
 }
 
 .skeleton-title {
@@ -2132,6 +2153,19 @@ a.segmented-option {
 
   .skeleton-entry-excerpt:last-child {
     margin-bottom: var(--space-2);
+  }
+
+  /* チップの帯も、本物の .chips と同じ高さと詰め方にする（箱は 44px で、抜粋の下に食い込む） */
+  .skeleton-entry-chips {
+    --pill-height: calc(2 * var(--space-1) + var(--font-size-chip) * var(--line-height));
+    --pill-inset: calc((var(--tap-size) - var(--pill-height)) / 2);
+
+    height: var(--tap-size);
+    margin-top: calc(-1 * var(--pill-inset));
+  }
+
+  .skeleton-chip {
+    height: var(--pill-height);
   }
 
   .entry-head {

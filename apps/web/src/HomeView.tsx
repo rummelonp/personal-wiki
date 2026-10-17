@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList } from "./EntryRow";
+import { rememberEntryShape } from "./entry-shape";
 import { Link } from "./Link";
 import { LoadingMoreRows, LoadingStatus, SkeletonEntries, useSkeletonPainted } from "./Loading";
 import { listHeading, listTitleClass, VISIBILITY_FILTER_NOUNS } from "./list-heading";
@@ -83,6 +85,10 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
     tagsSettled,
   );
   const now = useNow();
+  const receivedEntries = state.status === "ready" ? state.entries : undefined;
+  useEffect(() => {
+    if (receivedEntries !== undefined) rememberEntryShape(receivedEntries);
+  }, [receivedEntries]);
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 

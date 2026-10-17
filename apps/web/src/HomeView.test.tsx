@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetEntryShape } from "./entry-shape";
 import { HomeView } from "./HomeView";
 import { setLoadingDelay } from "./Loading";
 import { openNewPage } from "./new-page";
@@ -47,6 +48,7 @@ afterEach(() => {
   root = null;
   container = null;
   vi.clearAllMocks();
+  forgetEntryShape();
 });
 
 async function mountHome(
@@ -272,10 +274,40 @@ describe("条件を変えて取り直している間の一覧", () => {
         2,
       );
       expect(container?.querySelectorAll(".entries .entry").length).toBe(1);
+      expect(container?.querySelector(".skeleton-entry-chips")).toBeNull();
       // 一覧の取り直しと区別できるよう、読み足していることを伝える
       await vi.waitFor(() =>
         expect(container?.querySelector("[role='status']")?.textContent).toBe("続きを読み込み中…"),
       );
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("HomeView のスケルトンの行の形", () => {
+  const tagged = (id: string, title: string) => ({ ...summary(id, title), tags: ["タグ"] });
+
+  it("受け取った一覧でタグの有る行が多ければ、「さらに表示」のスケルトンの行にチップの帯を足す", async () => {
+    const restore = setLoadingDelay(0);
+    try {
+      vi.mocked(listRecent).mockResolvedValueOnce(
+        ok({
+          pages: [
+            tagged("AAAAAAAAAAAAAAAAAAAAAA", "一"),
+            tagged("BBBBBBBBBBBBBBBBBBBBBB", "二"),
+            summary("CCCCCCCCCCCCCCCCCCCCCC", "三"),
+          ] as never,
+          nextCursor: "c1",
+        }),
+      );
+      vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+      await mountHome("", true);
+      await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+      await act(async () => container?.querySelector<HTMLButtonElement>("button.button")?.click());
+      const rows = container?.querySelectorAll(".entries .skeleton-entry") ?? [];
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+      for (const row of rows) expect(row.querySelector(".skeleton-entry-chips")).not.toBeNull();
     } finally {
       restore();
     }

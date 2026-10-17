@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { expectTaggedRows } from "./entry-shape";
 import { listHeading, listTitleClass } from "./list-heading";
 import { loadingTitleFor, recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
@@ -151,6 +152,7 @@ export function SkeletonEntryRows({
   count: number;
   painted?: boolean;
 }) {
+  const tagged = expectTaggedRows();
   return Array.from({ length: count }, (_, i) => (
     <li
       className={painted ? "skeleton-entry skeleton-painted" : "skeleton-entry"}
@@ -166,6 +168,12 @@ export function SkeletonEntryRows({
         <span className="skeleton skeleton-text" />
         <span className="skeleton skeleton-text" />
       </div>
+      {tagged && (
+        <div className="skeleton-entry-chips">
+          <span className="skeleton skeleton-chip" />
+          <span className="skeleton skeleton-chip" />
+        </div>
+      )}
     </li>
   ));
 }
