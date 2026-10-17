@@ -75,7 +75,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
     visibility: effectiveVisibility,
     owner,
   });
-  const { tags, settled: tagsSettled } = useTags();
+  const { tags, settled: tagsSettled } = useTags(effectiveVisibility);
   // 狭い画面ではタグが一覧の下に続き、描かれる前は戻す位置に届かないので、タグが済むまで待つ
   useRestoreScroll(
     state.status === "ready",

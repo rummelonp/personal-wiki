@@ -458,10 +458,16 @@ describe("一覧と検索", () => {
 
   it("タグの一覧を読む", async () => {
     const { calls, fetchFn } = recorder(() => Response.json({ tags: [{ tag: "a", count: 2 }] }));
-    expect(await listTags(fetchFn)).toEqual({ ok: true, value: [{ tag: "a", count: 2 }] });
-    expect(calls[0]?.path).toBe("/api/tags");
+    expect(await listTags({}, fetchFn)).toEqual({ ok: true, value: [{ tag: "a", count: 2 }] });
+    await listTags({ visibility: "" }, fetchFn);
+    await listTags({ visibility: "draft" }, fetchFn);
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/tags",
+      "/api/tags",
+      "/api/tags?visibility=draft",
+    ]);
     const missing = recorder(() => new Response("{}", { status: 404 }));
-    expect(await listTags(missing.fetchFn)).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await listTags({}, missing.fetchFn)).toMatchObject({ ok: false, reason: "not_found" });
   });
 
   it("検索結果は excerpt と tags が必須", async () => {

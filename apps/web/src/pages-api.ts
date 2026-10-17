@@ -577,8 +577,16 @@ export async function listPageTitles(
   return listResult(await request(fetchFn, `/api/pages/titles?${params}`), isSummary);
 }
 
-export async function listTags(fetchFn: Fetch = fetch): Promise<ApiResult<TagCount[]>> {
-  const res = await request(fetchFn, "/api/tags");
+/** visibility を渡すと、件数と表記をその公開範囲のページだけから数える（`listRecent` と同じ指定）。 */
+export async function listTags(
+  options: { visibility?: Visibility | "" } = {},
+  fetchFn: Fetch = fetch,
+): Promise<ApiResult<TagCount[]>> {
+  const query =
+    options.visibility === undefined || options.visibility === ""
+      ? ""
+      : `?${new URLSearchParams({ visibility: options.visibility })}`;
+  const res = await request(fetchFn, `/api/tags${query}`);
   if (isFailure(res)) return res;
   if (!res.ok) return failureOf(res);
   const tags = recordOf(await readJson(res)).tags;

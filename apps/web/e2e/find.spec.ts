@@ -353,20 +353,25 @@ test("owner は公開範囲で絞り込め、タグと組み合わせられ、�
   await page.goto(`/?tag=${tag}`);
   const entries = page.locator(".entries .entry");
   const filter = page.getByRole("navigation", { name: "公開範囲で絞り込む" });
+  // 右の列のタグの件数も、公開範囲の絞り込みに合わせて数え直す
+  const tagCount = page.locator(".rail .chip-link[aria-current='page'] .chip-count");
   await expect(entries).toHaveCount(2);
   await expect(filter.locator("[aria-current='page']")).toHaveText("すべて");
+  await expect(tagCount).toHaveText("2");
 
   await filter.getByRole("link", { name: "下書き", exact: true }).click();
   await expect(page).toHaveURL(`/?tag=${tag}&visibility=draft`);
   await expect(page.getByRole("heading", { name: `タグ「${tag}」の下書き` })).toBeVisible();
   await expect(entries).toHaveCount(1);
   await expect(entries.getByRole("link", entryLink(draftTitle))).toBeVisible();
+  await expect(tagCount).toHaveText("1");
 
   await filter.getByRole("link", { name: "公開", exact: true }).click();
   await expect(page).toHaveURL(`/?tag=${tag}&visibility=public`);
   await expect(page.getByRole("heading", { name: `タグ「${tag}」の公開ページ` })).toBeVisible();
   await expect(entries).toHaveCount(1);
   await expect(entries.getByRole("link", entryLink(publicTitle))).toBeVisible();
+  await expect(tagCount).toHaveText("1");
   // 絞り込み中も公開の印は出したままにする
   await expect(entries.locator(".entry-visibility")).toHaveText("●公開");
 
