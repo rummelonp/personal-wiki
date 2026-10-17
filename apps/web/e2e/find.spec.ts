@@ -82,6 +82,17 @@ test("検索した先では header のボタンに検索語が出て、押すと
   ).toBeVisible();
 });
 
+test("検索結果の窓で同じ語のまま Enter しても、履歴は増えない", async ({ page }) => {
+  await page.goto(`/?q=${encodeURIComponent("無料枠")}`);
+  await expect(page.getByRole("heading", { name: "「無料枠」の検索結果" })).toBeVisible();
+  const before = await page.evaluate(() => history.length);
+  await page.getByRole("button", { name: "ページを検索: 無料枠", exact: true }).click();
+  const switcher = page.getByRole("dialog", { name: "ページを検索" });
+  await switcher.getByRole("combobox", { name: "検索語" }).press("Enter");
+  await expect(switcher).toBeHidden();
+  expect(await page.evaluate(() => history.length)).toBe(before);
+});
+
 test("検索結果の窓で語を消して Enter すると、検索を解除してトップへ戻る", async ({ page }) => {
   await page.goto(`/?q=${encodeURIComponent("無料枠")}`);
   await page.getByRole("button", { name: "ページを検索: 無料枠", exact: true }).click();

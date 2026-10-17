@@ -102,10 +102,11 @@ const NAVIGATE_EVENT = "personal-wiki:navigate";
  * hash が指す位置へは、移った先が描画された後に use-fragment-jump が動かす。
  */
 export function navigate(href: string, options: { replace?: boolean } = {}): void {
-  if (options.replace === true) {
+  const next = new URL(href, window.location.href);
+  // 今と同じ URL へは、ブラウザのリンクと同じく履歴を積まない。戻る操作が同じ画面に留まらないようにする
+  if (options.replace === true || next.href === window.location.href) {
     history.replaceState(stateForReplace(href), "", href);
   } else {
-    const next = new URL(href, window.location.href);
     const moves =
       next.pathname !== window.location.pathname || next.search !== window.location.search;
     rememberScroll();

@@ -194,6 +194,20 @@ describe("navigate のスクロール", () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
+  it("同じ URL への遷移は、履歴を積まずに置き換えて通知する", () => {
+    const { dispatchEvent } = stubBrowser("/?q=a#h");
+    navigate("/?q=a#h");
+    expect(history.pushState).not.toHaveBeenCalled();
+    expect(history.replaceState).toHaveBeenCalledOnce();
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+  });
+
+  it("hash だけが違う遷移は、履歴を積む", () => {
+    stubBrowser("/A#a");
+    navigate("/A#b");
+    expect(history.pushState).toHaveBeenCalledOnce();
+  });
+
   it("置き換えでは、パスが変わっても戻さず、履歴を積まない", () => {
     const { scrollTo, dispatchEvent } = stubBrowser(`/p/${ID}`);
     navigate("/%E9%A1%8C", { replace: true });
