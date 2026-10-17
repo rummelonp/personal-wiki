@@ -62,6 +62,17 @@ http
       res.end();
       return;
     }
+    if (req.url === "/__env") {
+      // dev-owner が wrangler に渡した環境変数を、テストが確かめる
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          loadDevVars: process.env.CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV,
+          includeProcessEnv: process.env.CLOUDFLARE_INCLUDE_PROCESS_ENV,
+        }),
+      );
+      return;
+    }
     if (req.url === "/api/me") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ kind: isOwner(req.headers.cookie) ? "owner" : "anonymous" }));

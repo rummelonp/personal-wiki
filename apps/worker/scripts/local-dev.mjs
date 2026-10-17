@@ -19,6 +19,22 @@ export const OWNER_EMAIL = "owner@example.test";
 export const INSPECTOR_OFFSET = 549;
 
 /**
+ * wrangler dev に渡す環境変数。base（既定はこの process の環境）に、--env-file の読み込みと
+ * 手元の環境変数の扱いを固定する 2 つを重ねる。
+ * LOAD_DEV_VARS が false だと wrangler は --env-file も読まない。INCLUDE_PROCESS_ENV が true だと
+ * 手元の環境変数が Worker の env に入り、乱数の秘密の代わりにシェルの値が使われうる。
+ * @param {NodeJS.ProcessEnv} [base]
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function localWranglerEnv(base = process.env) {
+  return {
+    ...base,
+    CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "true",
+    CLOUDFLARE_INCLUDE_PROCESS_ENV: "false",
+  };
+}
+
+/**
  * binding の設定に remote があるか。あると wrangler dev はその binding だけ Cloudflare 上の本物の
  * 資源につなぐので、ローカル専用の秘密で owner になった画面から本番のデータを書き換えうる。
  * binding は配列の要素（d1_databases など）か、単独のオブジェクト（ai など）として置かれる。

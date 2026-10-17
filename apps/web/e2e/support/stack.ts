@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
   INSPECTOR_OFFSET,
+  localWranglerEnv,
   OWNER_EMAIL,
   writeLocalConfig,
   writeLocalSecrets,
@@ -148,14 +149,7 @@ async function launch(
     ],
     {
       cwd: dir,
-      // LOAD_DEV_VARS が false だと wrangler は --env-file も読まない。INCLUDE_PROCESS_ENV が
-      // true だと手元の環境変数が Worker の env に入り、乱数の秘密の代わりにシェルの値が使われうる
-      env: {
-        ...process.env,
-        CI: "1",
-        CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "true",
-        CLOUDFLARE_INCLUDE_PROCESS_ENV: "false",
-      },
+      env: { ...localWranglerEnv(), CI: "1" },
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     },

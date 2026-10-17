@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   INSPECTOR_OFFSET,
+  localWranglerEnv,
   OWNER_EMAIL,
   writeLocalConfig,
   writeLocalSecrets,
@@ -352,13 +353,7 @@ async function run(argv) {
       ],
       {
         cwd: dir,
-        // LOAD_DEV_VARS が false だと wrangler は --env-file も読まない。INCLUDE_PROCESS_ENV が
-        // true だと手元の環境変数が Worker の env に入り、乱数の秘密の代わりにシェルの値が使われうる
-        env: {
-          ...process.env,
-          CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "true",
-          CLOUDFLARE_INCLUDE_PROCESS_ENV: "false",
-        },
+        env: localWranglerEnv(),
         stdio: ["ignore", "inherit", "inherit"],
         detached: true,
       },

@@ -151,6 +151,18 @@ describe("dev-owner の後片付け", { timeout: 20_000 }, () => {
     await expectNothingLeft(run);
   });
 
+  it("手元の環境変数がどちらに設定されていても、wrangler dev には固定した値を渡す", async () => {
+    const run = await startDevOwner({
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false",
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: "true",
+    });
+    await ready(run);
+    const upstream = await fetch(`http://127.0.0.1:${run.port + 1}/__env`);
+    expect(await upstream.json()).toEqual({ loadDevVars: "true", includeProcessEnv: "false" });
+    run.child.kill("SIGHUP");
+    await run.exited;
+  });
+
   it("起動を待つ間の SIGINT でも残さない", async () => {
     const run = await startDevOwner({ FAKE_WRANGLER_NEVER_READY: "1" });
     await spawned(run);

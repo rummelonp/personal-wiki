@@ -6,7 +6,13 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProxyHandler, isLoopbackHost, parseArgs } from "./dev-owner.mjs";
-import { OWNER_EMAIL, toLocalConfig, writeLocalConfig, writeLocalSecrets } from "./local-dev.mjs";
+import {
+  localWranglerEnv,
+  OWNER_EMAIL,
+  toLocalConfig,
+  writeLocalConfig,
+  writeLocalSecrets,
+} from "./local-dev.mjs";
 import { mintSessionValue, SESSION_COOKIE_NAME } from "./session-cookie.mjs";
 
 describe("parseArgs", () => {
@@ -89,6 +95,28 @@ describe("local-dev の設定と秘密", () => {
     const secrets = readFileSync(secretsPath, "utf8");
     expect(secrets).toContain(`SESSION_SECRET=${"s".repeat(44)}`);
     expect(secrets).toContain("ACCESS_AUD=aud");
+  });
+
+  it("wrangler dev の環境変数は、手元の値に関わらず .env の読み込みを有効に、process.env の取り込みを無効にする", () => {
+    const base = {
+      PATH: "/usr/bin",
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false",
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: "true",
+    };
+    expect(localWranglerEnv(base)).toEqual({
+      PATH: "/usr/bin",
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "true",
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: "false",
+    });
+    expect(base.CLOUDFLARE_INCLUDE_PROCESS_ENV).toBe("true");
+    expect(localWranglerEnv({}).CLOUDFLARE_INCLUDE_PROCESS_ENV).toBe("false");
+  });
+
+  // E2E は CI で流れないので、stack.ts が上書きを自前で持ち直したり、外したりしたときはここで落とす
+  it("E2E のスタックは、wrangler dev の環境変数を localWranglerEnv から取る", () => {
+    const stack = readFileSync(new URL("../../web/e2e/support/stack.ts", import.meta.url), "utf8");
+    expect(stack).toMatch(/env:\s*\{\s*\.\.\.localWranglerEnv\(\)/);
+    expect(stack).not.toContain("CLOUDFLARE_");
   });
 
   it("Cloudflare 上の資源につなぐ remote の binding があれば拒む", () => {
