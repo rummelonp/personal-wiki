@@ -273,8 +273,9 @@ test.describe("同意の送信", () => {
 });
 
 test.describe("接続の取り消し", () => {
-  test("取り消した後の一覧に、取り消した接続の名前と許可の日時を出す", async ({
+  test("取り消すと一覧へ移り、取り消した接続の名前と許可の日時を 1 回だけ出す", async ({
     page,
+    browserName,
   }, testInfo) => {
     // ほかの環境の同じテストも同じ KV に接続を足すので、名前を環境ごとに分け、件数ではなく grant の id で確かめる
     const name = `Claude ${testInfo.project.name}`;
@@ -292,10 +293,29 @@ test.describe("接続の取り消し", () => {
     expect(granted).toBeDefined();
     await target.getByRole("button", { name: /^取り消す/ }).click();
 
-    await expect(page.locator(".done")).toHaveText(
-      `${name}（${granted} に許可）の接続を取り消しました。`,
-    );
+    const grantsUrl = /\/_auth\/oauth\/grants$/;
+    await expect(page).toHaveURL(grantsUrl);
     await expect(page.locator(`input[name="grant"][value="${grant}"]`)).toHaveCount(0);
+    if (browserName === "webkit") {
+      // 知らせは Secure の cookie で渡し、WebKit は http://localhost で Secure の Set-Cookie を受け付けない
+      await expect(page.locator(".done")).toHaveCount(0);
+    } else {
+      await expect(page.locator(".done")).toHaveText(
+        `${name}（${granted} に許可）の接続を取り消しました。`,
+      );
+    }
+
+    await page.reload();
+    await expect(page).toHaveURL(grantsUrl);
+    await expect(page.locator("h1")).toHaveText("許可した接続");
+    await expect(page.locator(".done")).toHaveCount(0);
+
+    await page.getByRole("link", { name: "wiki に戻る" }).click();
+    await expect(page).not.toHaveURL(grantsUrl);
+    await page.goBack();
+    await expect(page).toHaveURL(grantsUrl);
+    await expect(page.locator("h1")).toHaveText("許可した接続");
+    await expect(page.locator(".done")).toHaveCount(0);
   });
 });
 

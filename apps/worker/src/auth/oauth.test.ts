@@ -6,7 +6,7 @@ import type { Bindings } from "../env";
 import { fakeJwks, ownerCookie, ownerEnv, signAccessJwt, signingKey } from "../test/owner";
 import { T0 } from "../test/pages";
 import { insertApiToken, insertToken } from "../test/tokens";
-import { encodeBase64Url } from "./base64url";
+import { decodeBase64Url, encodeBase64Url } from "./base64url";
 import {
   authorizationFailure,
   breakableUriHtml,
@@ -966,12 +966,50 @@ describe("OAuth のトークンでの /mcp", () => {
 });
 
 describe("許可した接続の一覧と取り消し", () => {
-  async function openGrants(request: Request) {
+  const NOTICE_COOKIE = "__Host-wiki_oauth_notice";
+
+  /** notice は知らせの cookie の値。付ければ owner の cookie と並べて送る */
+  async function openGrants(request: Request, notice?: string) {
+    const session = await ownerCookie(T0);
     const res = await request("/_auth/oauth/grants", {
-      headers: { Cookie: await ownerCookie(T0) },
+      headers: {
+        Cookie: notice === undefined ? session : `${session}; ${NOTICE_COOKIE}=${notice}`,
+      },
     });
     expect(res.status).toBe(200);
     return { res, html: await res.text() };
+  }
+
+  /** 取り消しの応答が一覧へ送り、知らせの cookie を付けたことを確かめて、その値を返す */
+  function expectRedirectWithNotice(res: Response): string {
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toBe("/_auth/oauth/grants");
+    const setCookie = res.headers.get("Set-Cookie") ?? "";
+    const match = new RegExp(`^${NOTICE_COOKIE}=([^;]+);`).exec(setCookie);
+    expect(match, setCookie).not.toBeNull();
+    const attributes = setCookie.split("; ").slice(1);
+    expect(attributes).toEqual(
+      expect.arrayContaining(["Max-Age=60", "Path=/", "HttpOnly", "Secure", "SameSite=Lax"]),
+    );
+    expect(attributes.some((attribute) => attribute.startsWith("Domain="))).toBe(false);
+    return match?.[1] ?? "";
+  }
+
+  /** 一覧の応答が、知らせの cookie を消す Set-Cookie を付けたこと */
+  function expectNoticeCleared(res: Response) {
+    const setCookie = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toMatch(new RegExp(`^${NOTICE_COOKIE}=;`));
+    expect(setCookie.split("; ")).toEqual(
+      expect.arrayContaining(["Max-Age=0", "Path=/", "HttpOnly", "Secure", "SameSite=Lax"]),
+    );
+  }
+
+  /** 取り消して、ブラウザと同じく一覧へ移り、知らせの cookie を送って開く */
+  async function revokeAndOpen(request: Request, grant: string) {
+    const notice = expectRedirectWithNotice(await revoke(request, grant));
+    const opened = await openGrants(request, notice);
+    expectNoticeCleared(opened.res);
+    return { ...opened, notice };
   }
 
   function grantIdsOf(html: string): string[] {
@@ -1046,8 +1084,7 @@ describe("許可した接続の一覧と取り消し", () => {
       items.map((item) => item.id).sort(),
     );
 
-    const res = await revoke(request, grant);
-    expect(res.status).toBe(200);
+    expectRedirectWithNotice(await revoke(request, grant));
     expect((await postMcp(request, tokens.access_token, "tools/list")).status).toBe(401);
     const refreshed = await postToken(request, {
       grant_type: "refresh_token",
@@ -1085,19 +1122,30 @@ describe("許可した接続の一覧と取り消し", () => {
         Date.UTC(2026, 9, 1, 9, 0),
         Date.UTC(2026, 9, 2, 18, 30),
       );
-      const res = await revoke(request, olderGrant);
-      expect(res.status).toBe(200);
-      expect(res.headers.get("Location")).toBeNull();
+      const { res, html } = await revokeAndOpen(request, olderGrant);
       expect(res.headers.get("Cache-Control")).toBe("private, no-store");
       expect(res.headers.get("X-Frame-Options")).toBe("DENY");
       expect(res.headers.get("Content-Security-Policy")).toContain("form-action 'self'");
-      const html = await res.text();
       expect(html).toContain(
         '<h1>許可した接続</h1>\n<p class="done">Claude（2026/10/01 09:00 UTC に許可）の接続を取り消しました。</p>',
       );
       expect(html).not.toContain("2026/10/02 18:30 UTC に許可）の接続を取り消しました");
       expect(grantIdsOf(html)).toEqual([newerGrant]);
       expect((await postMcp(request, newer.tokens.access_token, "tools/list")).status).toBe(200);
+    });
+
+    it("知らせは cookie を送った 1 回だけ出し、開き直した一覧には出さない", async () => {
+      const { request } = setup();
+      const { newerGrant, olderGrant } = await connectTwinsAt(
+        request,
+        Date.UTC(2026, 9, 1, 9, 0),
+        Date.UTC(2026, 9, 2, 18, 30),
+      );
+      expect((await revokeAndOpen(request, olderGrant)).html).toContain("取り消しました");
+      const { res, html } = await openGrants(request);
+      expect(html).not.toContain('class="done"');
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+      expect(grantIdsOf(html)).toEqual([newerGrant]);
     });
 
     it("同じ grant をもう一度送っても、取り消したとは出さない", async () => {
@@ -1107,10 +1155,8 @@ describe("許可した接続の一覧と取り消し", () => {
         Date.UTC(2026, 9, 1, 9, 0),
         Date.UTC(2026, 9, 2, 18, 30),
       );
-      expect((await revoke(request, olderGrant)).status).toBe(200);
-      const again = await revoke(request, olderGrant);
-      expect(again.status).toBe(200);
-      const html = await again.text();
+      await revokeAndOpen(request, olderGrant);
+      const { html } = await revokeAndOpen(request, olderGrant);
       expect(html).toContain('<p class="done">取り消す接続は、すでにありませんでした。</p>');
       expect(html).not.toContain("取り消しました");
       expect(grantIdsOf(html)).toEqual([newerGrant]);
@@ -1122,11 +1168,73 @@ describe("許可した接続の一覧と取り消し", () => {
       const name = `<img src=x>${"あ".repeat(50)}`;
       await connect(request, "read", { client: await register(request, { client_name: name }) });
       const [grant = ""] = grantIdsOf((await openGrants(request)).html);
-      const html = await (await revoke(request, grant)).text();
+      const { html } = await revokeAndOpen(request, grant);
       const shown = /<p class="done">(.*?)（/.exec(html)?.[1];
       expect(shown).toBe(`&#60;img src=x&#62;${"あ".repeat(29)}…`);
       expect(html).not.toContain("<img");
     });
+  });
+
+  describe("知らせの cookie を検証できないとき", () => {
+    /** 知らせを出さず、cookie を消して、一覧だけを返すこと */
+    async function expectNoNotice(request: Request, notice: string) {
+      const { res, html } = await openGrants(request, notice);
+      expect(html).not.toContain('class="done"');
+      expect(html).not.toContain("<img");
+      expectNoticeCleared(res);
+    }
+
+    function payloadOf(notice: string) {
+      const [payload = "", signature = ""] = notice.split(".");
+      return {
+        signature,
+        json: JSON.parse(new TextDecoder().decode(decodeBase64Url(payload) ?? new Uint8Array())),
+      };
+    }
+
+    function encodePayload(json: unknown): string {
+      return encodeBase64Url(new TextEncoder().encode(JSON.stringify(json)));
+    }
+
+    it("署名の無い値、書き換えた値、owner のセッションの値では知らせを出さない", async () => {
+      const { request } = setup();
+      await connect(request, "read");
+      const [grant = ""] = grantIdsOf((await openGrants(request)).html);
+      const notice = expectRedirectWithNotice(await revoke(request, grant));
+      const { json, signature } = payloadOf(notice);
+      const forged = { ...json, c: "<img src=x>" };
+      const session = (await ownerCookie(T0)).split("=")[1] ?? "";
+      for (const value of [
+        "x",
+        encodePayload(forged),
+        `${encodePayload(forged)}.${signature}`,
+        session,
+      ]) {
+        await expectNoNotice(request, value);
+      }
+    });
+
+    it("期限を過ぎた値では知らせを出さない", async () => {
+      let current = T0;
+      const { request } = setup({ now: () => current });
+      await connect(request, "read");
+      const [grant = ""] = grantIdsOf((await openGrants(request)).html);
+      const notice = expectRedirectWithNotice(await revoke(request, grant));
+      current = T0 + 61_000;
+      await expectNoNotice(request, notice);
+    });
+  });
+
+  it("owner でなければ、知らせの cookie があってもログインへ送る", async () => {
+    const { request } = setup();
+    await connect(request, "read");
+    const [grant = ""] = grantIdsOf((await openGrants(request)).html);
+    const notice = expectRedirectWithNotice(await revoke(request, grant));
+    const res = await request("/_auth/oauth/grants", {
+      headers: { Cookie: `${NOTICE_COOKIE}=${notice}` },
+    });
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("Location") ?? "", ORIGIN).pathname).toBe("/_auth/login");
   });
 
   it("別のオリジンからの送信、owner でない送信、読めない grant の id は受け付けない", async () => {

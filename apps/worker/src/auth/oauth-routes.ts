@@ -6,6 +6,7 @@ import {
   type GrantSummary,
 } from "@cloudflare/workers-oauth-provider";
 import type { Context, Hono } from "hono";
+import { generateCookie, getCookie, setCookie } from "hono/cookie";
 import themeCss from "../../../web/src/theme.css";
 import type { AppEnv } from "../env";
 import { siteNameOf } from "../site-name";
@@ -26,7 +27,9 @@ import {
   oauthServerFor,
   PROTECTED_RESOURCE_METADATA_PATH,
 } from "./oauth-server";
+import { readOwnerAuthConfig } from "./owner-config";
 import type { Scope } from "./principal";
+import { signJson, verifyJson } from "./signed-value";
 
 /**
  * OAuth の認可サーバーのルートを登録する。OAuth を閉じた環境（isOAuthEnabled）ではどれも 404 にする。
@@ -69,8 +72,8 @@ export function registerOAuthRoutes(app: Hono<AppEnv>, { now }: { now: () => num
     })
     .get(OAUTH_AUTHORIZE_PATH, allowAnonymous(), (c) => showConsent(c, now))
     .post(OAUTH_AUTHORIZE_PATH, requireOwner(), decideConsent)
-    .get(OAUTH_GRANTS_PATH, allowAnonymous(), showGrants)
-    .post(OAUTH_GRANTS_REVOKE_PATH, requireOwner(), revokeGrantFromForm);
+    .get(OAUTH_GRANTS_PATH, allowAnonymous(), (c) => showGrants(c, now))
+    .post(OAUTH_GRANTS_REVOKE_PATH, requireOwner(), (c) => revokeGrantFromForm(c, now));
 }
 
 function redirectToLogin(c: Context<AppEnv>): Response {
@@ -339,7 +342,7 @@ const GRANT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
  * owner が許可した接続（grant）の一覧。grant を取り消すと、その grant のアクセストークンと更新トークンが
  * すべて失効する。client の登録は残るが、使われなければ期限で消える。
  */
-async function showGrants(c: Context<AppEnv>): Promise<Response> {
+async function showGrants(c: Context<AppEnv>, now: () => number): Promise<Response> {
   if (!isOAuthEnabled(c.env)) return c.notFound();
   if (c.get("principal").kind !== "owner") return redirectToLogin(c);
   const cursor = c.req.query("cursor");
@@ -352,7 +355,19 @@ async function showGrants(c: Context<AppEnv>): Promise<Response> {
       "許可した接続の一覧を開けません",
     );
   }
-  return grantsResponse(c, { cursor });
+  const notice = getCookie(c, NOTICE_COOKIE_NAME);
+  if (notice === undefined) return grantsResponse(c, { cursor });
+  const res = await grantsResponse(c, { cursor, noticeHtml: await noticeHtmlOf(c, notice, now) });
+  // 検証できない値も消す。読んだ後に残すと、開き直した一覧に同じ知らせが出る
+  res.headers.append(
+    "Set-Cookie",
+    generateCookie(NOTICE_COOKIE_NAME, "", {
+      ...NOTICE_COOKIE_ATTRIBUTES,
+      maxAge: 0,
+      expires: new Date(0),
+    }),
+  );
+  return res;
 }
 
 async function grantsResponse(
@@ -381,7 +396,7 @@ async function grantsResponse(
   });
 }
 
-async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
+async function revokeGrantFromForm(c: Context<AppEnv>, now: () => number): Promise<Response> {
   if (!isOAuthEnabled(c.env)) return c.notFound();
   const grantId = await c.req
     .formData()
@@ -399,14 +414,64 @@ async function revokeGrantFromForm(c: Context<AppEnv>): Promise<Response> {
   const oauth = helpersOf(c);
   const revoked = await findGrant(oauth, grantId);
   await oauth.revokeGrant(grantId, OAUTH_USER_ID);
-  // 取り消した接続の知らせは、この要求で見つけて取り消した grant から作り、一覧へのリダイレクトにしない。
-  // 名前や日時を URL で渡すと、書き換えた URL で任意の文や、取り消していない接続を取り消したと出せる。
-  // 再読み込みで送り直されても、2 回目は grant が見つからないので取り消したとは出ない
-  const noticeHtml =
-    revoked === undefined
-      ? `<p class="done">取り消す接続は、すでにありませんでした。</p>`
-      : `<p class="done">${clientLabelHtml((await oauth.lookupClient(revoked.clientId))?.clientName)}（${formatEpochSeconds(revoked.createdAt)} に許可）の接続を取り消しました。</p>`;
-  return grantsResponse(c, { noticeHtml });
+  const secret = readOwnerAuthConfig(c.env)?.sessionSecret;
+  if (secret !== undefined) {
+    const notice: RevokeNotice =
+      revoked === undefined
+        ? { k: "absent" }
+        : { k: "revoked", c: revoked.clientId, t: revoked.createdAt };
+    const value = await signJson(secret, NOTICE_SIGNING_CONTEXT, {
+      ...notice,
+      exp: Math.floor(now() / 1000) + NOTICE_TTL_SECONDS,
+    });
+    setCookie(c, NOTICE_COOKIE_NAME, value, {
+      ...NOTICE_COOKIE_ATTRIBUTES,
+      maxAge: NOTICE_TTL_SECONDS,
+    });
+  }
+  return c.redirect(OAUTH_GRANTS_PATH, 303);
+}
+
+/*
+ * 取り消しの結果の知らせは、一覧へのリダイレクトの先へ cookie で渡す。取り消しの応答を一覧の HTML にすると、
+ * 戻る、再読み込みで送信をやり直させ、アドレス欄に GET では開けない取り消しの URL が残る。
+ * 名前や日時を URL で渡すと、書き換えた URL で任意の文や、取り消していない接続を取り消したと出せる。
+ * cookie にも文は載せず、知らせの種類と、取り消した grant の client_id と許可の日時だけを載せ、名前は
+ * 一覧を開くときに引く。owner のセッションと同じ秘密に、用途を分けて署名する。
+ * http の localhost の WebKit のように Secure の cookie を受け付けないブラウザでは、知らせが出ないだけで、
+ * 取り消しと一覧への遷移は変わらない。
+ */
+const NOTICE_COOKIE_NAME = "__Host-wiki_oauth_notice";
+const NOTICE_SIGNING_CONTEXT = "personal-wiki/oauth-revoke-notice/v1.";
+/** リダイレクトの直後に読むだけなので短くする */
+const NOTICE_TTL_SECONDS = 60;
+/** 発行と削除で揃えないと、ブラウザが削除を別の cookie として扱う */
+const NOTICE_COOKIE_ATTRIBUTES = {
+  path: "/",
+  secure: true,
+  httpOnly: true,
+  sameSite: "Lax",
+} as const;
+
+/** t は grant を許可した時刻（epoch 秒） */
+type RevokeNotice = { k: "absent" } | { k: "revoked"; c: string; t: number };
+
+/** 署名と期限を検証できなければ、知らせを出さない */
+async function noticeHtmlOf(c: Context<AppEnv>, value: string, now: () => number): Promise<string> {
+  const secret = readOwnerAuthConfig(c.env)?.sessionSecret;
+  if (secret === undefined) return "";
+  const payload = await verifyJson(secret, NOTICE_SIGNING_CONTEXT, value);
+  if (payload === null || typeof payload.exp !== "number" || payload.exp * 1000 <= now()) {
+    return "";
+  }
+  if (payload.k === "absent") {
+    return `<p class="done">取り消す接続は、すでにありませんでした。</p>`;
+  }
+  if (payload.k !== "revoked" || typeof payload.c !== "string" || typeof payload.t !== "number") {
+    return "";
+  }
+  const name = (await helpersOf(c).lookupClient(payload.c))?.clientName;
+  return `<p class="done">${clientLabelHtml(name)}（${formatEpochSeconds(payload.t)} に許可）の接続を取り消しました。</p>`;
 }
 
 async function findGrant(
