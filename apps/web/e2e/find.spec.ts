@@ -403,6 +403,21 @@ test("owner は公開範囲で絞り込め、タグと組み合わせられ、�
   await expect(page.getByRole("heading", { name: `タグ「${tag}」の公開ページ` })).toBeVisible();
 });
 
+test("ネストタグの親を URL で選ぶと、子のページを出し、親のチップに 0 と出さない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const parent = `nest${Math.random().toString(36).slice(2, 8)}`;
+  const title = uniqueTitle(testInfo, "ネストタグの子");
+  await api.createPage({ title, body: `#${parent}/child` });
+
+  await page.goto(`/?tag=${parent}`);
+  await expect(page.locator(".entries .entry").getByRole("link", entryLink(title))).toBeVisible();
+  const chip = page.locator(".rail .chip-link[aria-current='page']");
+  await expect(chip).toHaveText(parent);
+  await expect(chip.locator(".chip-count")).toHaveCount(0);
+});
+
 test("backlink から参照元へ移れる", async ({ page, seedIds }) => {
   await page.goto(`/p/${seedIds[SEED.database]}`);
   const links = page.locator(".rail-section-links");

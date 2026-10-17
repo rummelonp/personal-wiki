@@ -45,13 +45,25 @@ export function TagsPanel({
 }) {
   // 一覧は大文字小文字と全角半角を畳んだ値でタグを照合し、API は畳んだ値ごとに代表の表記を 1 つ返す。
   // URL のタグと表記が違うだけのチップが選択中になるよう、比較も畳んだ値で行う。
-  // 畳んだ値で一致するタグが結果に無い（範囲の中に 0 件の）ときは、チップごと消えると絞り込みを外す
-  // 入口も消えるので、件数 0 で補う。一覧の見出しや空の案内は、この範囲で 0 件であることを既に伝えている
+  // 畳んだ値で一致するタグが結果に無いときは、チップごと消えると絞り込みを外す入口も消えるので補う。
+  // API はページに直接書かれたタグしか返さず、子のタグ `a/b` だけが書かれた親 `a` は返さないが、
+  // 一覧は親で子のページも拾う。結果に子のタグがあるなら親の件数は 0 でなく、子の件数から重複を除いた
+  // 値は出せないので、件数を付けずに補う。子も無ければ範囲の中に 0 件で、一覧の見出しや空の案内が
+  // 0 件であることを既に伝えているので、件数 0 で補う
   const activeKey = foldKeepingUnderscore(active);
-  const shown =
+  const childPrefix = `${activeKey}/`;
+  const shown: { tag: string; count: number | null }[] =
     active === "" || tags.some(({ tag }) => foldKeepingUnderscore(tag) === activeKey)
       ? tags
-      : [...tags, { tag: active, count: 0 }];
+      : [
+          ...tags,
+          {
+            tag: active,
+            count: tags.some(({ tag }) => foldKeepingUnderscore(tag).startsWith(childPrefix))
+              ? null
+              : 0,
+          },
+        ];
   return (
     <RailSection title="タグ">
       {shown.length === 0 ? (
@@ -77,7 +89,7 @@ export function TagsPanel({
                   title={selected ? "タグの絞り込みを外す" : undefined}
                 >
                   {tag}
-                  <span className="chip-count">{count}</span>
+                  {count !== null && <span className="chip-count">{count}</span>}
                 </Link>
               </li>
             );

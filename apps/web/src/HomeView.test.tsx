@@ -708,6 +708,36 @@ describe("HomeView の公開範囲の絞り込み", () => {
     }
   });
 
+  it("選んだタグが子のタグしか結果に無いときは、件数 0 と出さず件数を付けずにチップを補う", async () => {
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: null }),
+    );
+    // 「A」は畳んだ値で `a` に当たり、`ab/c` は前置きが同じだけの別のタグなので子に数えない
+    vi.mocked(listTags).mockResolvedValue(
+      ok([
+        { tag: "a/b", count: 1 },
+        { tag: "ab/c", count: 1 },
+      ]),
+    );
+    await mountHome("", true, "A");
+    await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+    const chips = [...(container?.querySelectorAll(".rail .chip-link") ?? [])];
+    expect(chips.map((c) => [c.textContent, c.getAttribute("aria-current")])).toEqual([
+      ["a/b1", null],
+      ["ab/c1", null],
+      ["A", "page"],
+    ]);
+
+    act(() => root?.unmount());
+    container?.remove();
+    vi.mocked(listTags).mockResolvedValue(ok([{ tag: "ab/c", count: 1 }]));
+    await mountHome("", true, "A");
+    await vi.waitFor(() => expect(container?.querySelector(".entries .entry")).not.toBeNull());
+    expect(
+      [...(container?.querySelectorAll(".rail .chip-link") ?? [])].map((c) => c.textContent),
+    ).toEqual(["ab/c1", "A0"]);
+  });
+
   it("選んだタグと表記が違うだけのタグは、0 件のチップを足さずにそのチップを選択中にする", async () => {
     vi.mocked(listRecent).mockResolvedValue(ok({ pages: [], nextCursor: null }));
     vi.mocked(listTags).mockResolvedValue(ok([{ tag: "Beta", count: 2 }]));
