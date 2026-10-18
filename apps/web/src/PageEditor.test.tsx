@@ -495,6 +495,70 @@ describe("PageEditor と本文のエディタ", () => {
     );
   });
 
+  describe("再送のボタンへ focus を戻す印", () => {
+    // キーボードで再送したように、focus を持った「もう一度保存する」が応答待ちの間に消えた状態にする
+    async function pressRetryAndWait() {
+      vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
+      const { view, button } = renderPage();
+      view().focus();
+      typeAtEnd(view(), "を書き足す");
+      act(() => view().contentDOM.blur());
+      await flushAsync();
+
+      let reply: (value: ApiResult<Page>) => void = () => {};
+      vi.mocked(updatePage).mockReturnValueOnce(
+        new Promise((resolve) => {
+          reply = resolve;
+        }),
+      );
+      act(() => button("もう一度保存する").focus());
+      act(() => button("もう一度保存する").click());
+      await flushAsync();
+      expect(container?.querySelector("button.button-main")).toBeNull();
+      expect(document.activeElement).toBe(document.body);
+      return { button, reply: (value: ApiResult<Page>) => act(async () => reply(value)) };
+    }
+
+    it("再び失敗して通知のボタンが作り直されたら、そこへ戻す", async () => {
+      const { button, reply } = await pressRetryAndWait();
+      await reply({ ok: false, reason: "error", message: "また失敗" });
+      await flushAsync();
+      expect(document.activeElement).toBe(button("もう一度保存する"));
+    });
+
+    it("待つ間に何も無い所を押して focus を外したら、作り直されたボタンへ戻さない", async () => {
+      const { button, reply } = await pressRetryAndWait();
+      act(() => {
+        document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      });
+      await reply({ ok: false, reason: "error", message: "また失敗" });
+      await flushAsync();
+      expect(button("もう一度保存する").disabled).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    it("再送が題名の重複で止まったら印を捨て、後から現れる別の失敗のボタンへ移さない", async () => {
+      const { button, reply } = await pressRetryAndWait();
+      await reply({ ok: false, reason: "title_conflict", message: "重複" });
+      await flushAsync();
+      expect(container?.querySelector("button.button-main")).toBeNull();
+
+      // 重複の通知が残ったまま削除を試み、それが失敗して、別の再送のボタンが現れる
+      vi.mocked(deletePage).mockResolvedValueOnce({
+        ok: false,
+        reason: "error",
+        message: "削除できない",
+      });
+      act(() => button("このページを削除").click());
+      await flushAsync();
+      const retry = [...(container?.querySelectorAll("button.button-main") ?? [])].find((b) =>
+        b.textContent?.includes("もう一度削除する"),
+      );
+      expect(retry).toBeDefined();
+      expect(document.activeElement).toBe(document.body);
+    });
+  });
+
   it("もう一度保存してまた失敗すると、失敗の通知を alert として出し直す", async () => {
     vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
     const { view, button } = renderPage();

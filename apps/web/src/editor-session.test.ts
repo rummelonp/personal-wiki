@@ -1654,6 +1654,88 @@ describe("公開設定と削除の失敗", () => {
   });
 });
 
+describe("処理が始まると失敗の記録を消す", () => {
+  // 画面の再送のボタンは、処理が始まって失敗の通知ごと外れることに頼って、押したボタンへ focus を戻す。
+  // busy が立つのと同じ更新で error と failedOp が消えないと、ボタンは disabled になるだけで外れず、
+  // ref callback が呼ばれないので戻す印が付かない
+  const FAIL: ApiResult<never> = { ok: false, reason: "error", message: "落ちた" };
+  const pending = <T>() => {
+    let resolve: (value: T) => void = () => {};
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+
+  it.each([
+    {
+      name: "保存",
+      busy: "saving",
+      fail: async (api: EditorApi, session: EditorSession) => {
+        api.updatePage = async () => FAIL;
+        session.edit({ title: "題", body: "手元" });
+        await session.flush();
+      },
+      hold: (api: EditorApi, gate: Promise<ApiResult<never>>) => {
+        api.updatePage = () => gate;
+      },
+      start: (session: EditorSession) => session.flush(),
+    },
+    {
+      name: "公開範囲の変更",
+      busy: "visibility",
+      fail: async (api: EditorApi, session: EditorSession) => {
+        api.setVisibility = async () => FAIL;
+        await session.changeVisibility("public");
+      },
+      hold: (api: EditorApi, gate: Promise<ApiResult<never>>) => {
+        api.setVisibility = () => gate;
+      },
+      start: (session: EditorSession) => session.changeVisibility("public"),
+    },
+    {
+      name: "削除",
+      busy: "deleting",
+      fail: async (api: EditorApi, session: EditorSession) => {
+        api.deletePage = async () => FAIL;
+        await session.remove();
+      },
+      hold: (api: EditorApi, gate: Promise<ApiResult<never>>) => {
+        api.deletePage = () => gate;
+      },
+      start: (session: EditorSession) => session.remove(),
+    },
+    {
+      name: "版を戻す",
+      busy: "restoring",
+      fail: async (api: EditorApi, session: EditorSession) => {
+        api.deletePage = async () => FAIL;
+        await session.remove();
+      },
+      hold: (api: EditorApi, gate: Promise<ApiResult<never>>) => {
+        api.restoreRevision = () => gate;
+      },
+      start: (session: EditorSession) => session.restoreRevision(1),
+    },
+  ])("$name", async ({ busy, fail, hold, start }) => {
+    const { session, api } = setup();
+    await fail(api, session);
+    expect(session.getState().error).not.toBeNull();
+    expect(session.getState().failedOp).not.toBeNull();
+
+    const gate = pending<ApiResult<never>>();
+    hold(api, gate.promise);
+    const running = start(session);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.getState().busy).toBe(busy);
+    expect(session.getState().error).toBeNull();
+    expect(session.getState().failedOp).toBeNull();
+
+    gate.resolve(FAIL);
+    await running;
+  });
+});
+
 describe("title の確定", () => {
   it("打っている途中の title は保存せず、本文の自動保存も保存済みの title を送る", async () => {
     const { session, api } = setup();

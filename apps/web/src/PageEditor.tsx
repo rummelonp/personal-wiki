@@ -534,7 +534,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // 本文の blur が保存を始めるのは mousedown の途中で、ボタンに focus が着く前に消えることがあるので、
   // focus を持っていたかだけでなく、押す操作が始まっていたか（ボタンの上の pointerdown）も見る。
   // ボタンへ向かう focusout は、届く時点でボタンがもう外れているので手がかりにならない。
-  // 待つ間に focus が別の要素（打ち始めた本文など）へ移っていたら、戻さない
+  // 待つ間に focus が別の要素（打ち始めた本文など）へ移っていたら、戻さない。何も無い所を押して
+  // focus を body に落とした場合も、利用者が外したのだから戻さない。ボタンが消えた時点の
+  // pointerdown はボタンの上のものなので、消えた後の pointerdown だけが外す操作になる。
+  // この仕組みは ref callback の呼び出しに頼る。disabled の切り替えでは呼ばれないので、session が
+  // busy を立てるときは、同じ更新で error と failedOp を消す（ボタンが外れる）前提に立つ。
+  // この前提は editor-session.test.ts の「処理が始まると失敗の記録を消す」が押さえる
   const retryButtonEl = useRef<HTMLButtonElement | null>(null);
   const restoreRetryFocus = useRef(false);
   const aimingAtRetry = useRef(false);
@@ -550,11 +555,13 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   useEffect(() => {
     const onDown = (event: Event) => {
       const button = retryButtonEl.current;
-      if (button === null) return;
-      aimingAtRetry.current =
+      const onButton =
         event.type === "pointerdown" &&
+        button !== null &&
         event.target instanceof Node &&
         button.contains(event.target);
+      if (event.type === "pointerdown" && !onButton) restoreRetryFocus.current = false;
+      if (button !== null) aimingAtRetry.current = onButton;
     };
     const types = ["pointerdown", "focusin", "click"];
     for (const type of types) document.addEventListener(type, onDown, true);
@@ -564,13 +571,16 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   }, []);
   useEffect(() => {
     if (!restoreRetryFocus.current) return;
-    // 失敗の通知が戻らずに操作が終わったとき（成功、衝突など）に、次の失敗の通知へ持ち越さない
+    // 失敗の通知が戻らずに操作が終わったとき（成功、衝突、再試行できない失敗など）に、
+    // 次の失敗の通知へ持ち越さない。操作の途中は通知にボタンが無いので、busy の間は待つ
     const active = document.activeElement;
     const lost = active === null || active === document.body;
-    if (!afterFailure || !lost) restoreRetryFocus.current = false;
-    else if (retryButtonEl.current?.disabled === false) {
+    const button = retryButtonEl.current;
+    if (!afterFailure || !lost || (button === null && state.busy === null))
       restoreRetryFocus.current = false;
-      focusAfterInput(retryButtonEl.current, { preventScroll: true });
+    else if (button?.disabled === false) {
+      restoreRetryFocus.current = false;
+      focusAfterInput(button, { preventScroll: true });
     }
   });
   // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
