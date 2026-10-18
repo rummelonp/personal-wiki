@@ -1970,6 +1970,28 @@ describe("検索と一覧の tool", () => {
       expect(keysOf(await call("list_unresolved_links", {}))).toEqual(["other"]);
     });
 
+    it("改題の直後は旧 title が出て、rewrite_links で remaining が 0 になると消える", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      const { json: a } = await call("create_page", { title: "Old Name", body: "" });
+      const { json: b } = await call("create_page", { title: "B", body: "[[Old Name]]" });
+      expect(keysOf(await call("list_unresolved_links", {}))).toEqual([]);
+
+      await call("update_page", { id: a.id, version: 1, title: "New Name", body: "" });
+      const renamed = await call("list_unresolved_links", {});
+      expect(renamed.json.links).toEqual([
+        {
+          titleKey: "old name",
+          sourceCount: 1,
+          sources: [expect.objectContaining({ id: b.id, title: "B" })],
+        },
+      ]);
+
+      const stepped = await call("rewrite_links", {});
+      expect(stepped.json).toMatchObject({ processed: { id: b.id }, remaining: 0 });
+      expect(keysOf(await call("list_unresolved_links", {}))).toEqual([]);
+      expect((await call("read_page", { id: b.id })).json.body).toBe("[[New Name]]");
+    });
+
     it("削除したページへのリンクは出て、削除したページが書いたリンクは出ない", async () => {
       const { call, request } = await mcpClient({ name: "writer" });
       const { json: target } = await call("create_page", { title: "Target", body: "" });
