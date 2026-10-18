@@ -301,6 +301,8 @@ describe("tools/list", () => {
     });
     expect(byName.list_recent?.inputSchema.required ?? []).toEqual([]);
     expect(byName.list_recent?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
+    expect(byName.list_recent?.inputSchema.properties.tag).toMatchObject({ type: "string" });
+    expect(byName.list_recent?.description).toContain("子のタグ");
     expect(byName.list_backlinks?.inputSchema.required ?? []).toEqual([]);
     expect(Object.keys(byName.list_backlinks?.inputSchema.properties ?? {})).toEqual(
       expect.arrayContaining(["id", "title"]),
@@ -1616,6 +1618,76 @@ describe("検索と一覧の tool", () => {
     expect(await call("list_recent", { limit: 101 })).toEqual({
       isError: true,
       json: { error: "invalid_field", field: "limit", max: 100, message: "100 以下で渡す" },
+    });
+  });
+
+  it("list_recent の tag は親で子も拾い、表記を畳み、cursor で続きを取れる", async () => {
+    const { call, clock } = await mcpClient();
+    const ids: Record<string, string> = {};
+    for (const [title, body] of [
+      ["parent", "#Work"],
+      ["child", "#work/Project"],
+      ["grandchild", "#work/project/deep #other"],
+      ["lookalike", "#workshop"],
+      ["none", ""],
+    ] as const) {
+      clock.now += 1000;
+      ids[title] = (await call("create_page", { title, body })).json.id as string;
+    }
+    const titlesOf = async (args: Record<string, unknown>) =>
+      ((await call("list_recent", args)).json.pages as { title: string }[]).map((p) => p.title);
+
+    expect(await titlesOf({ tag: "work" })).toEqual(["grandchild", "child", "parent"]);
+    for (const tag of ["#work", "WORK", "Ｗork", " #Work "]) {
+      expect(await titlesOf({ tag }), tag).toEqual(["grandchild", "child", "parent"]);
+    }
+    expect(await titlesOf({ tag: "work/project" })).toEqual(["grandchild", "child"]);
+    expect(await titlesOf({ tag: "other" })).toEqual(["grandchild"]);
+    expect(await titlesOf({ tag: "none" })).toEqual([]);
+    expect(await titlesOf({})).toHaveLength(5);
+
+    const first = await call("list_recent", { tag: "work", limit: 2 });
+    expect((first.json.pages as { id: string }[]).map((p) => p.id)).toEqual([
+      ids.grandchild,
+      ids.child,
+    ]);
+    expect(first.json.nextCursor).toEqual(expect.any(String));
+    const rest = await call("list_recent", {
+      tag: "work",
+      limit: 2,
+      cursor: first.json.nextCursor,
+    });
+    expect((rest.json.pages as { id: string }[]).map((p) => p.id)).toEqual([ids.parent]);
+    expect(rest.json.nextCursor).toBeNull();
+  });
+
+  it("list_recent の tag が空か長すぎると invalid_field", async () => {
+    const { call } = await mcpClient();
+    for (const tag of ["", "#", " ＃ "]) {
+      expect(await call("list_recent", { tag }), tag).toEqual({
+        isError: true,
+        json: {
+          error: "invalid_field",
+          field: "tag",
+          reason: "empty",
+          message: expect.any(String),
+        },
+      });
+    }
+    expect(await call("list_recent", { tag: "a".repeat(201) })).toEqual({
+      isError: true,
+      json: {
+        error: "invalid_field",
+        field: "tag",
+        reason: "too_long",
+        max: 200,
+        message: expect.any(String),
+      },
+    });
+    expect((await call("list_recent", { tag: "a".repeat(200) })).isError).toBe(false);
+    expect(await call("list_recent", { tag: 1 })).toMatchObject({
+      isError: true,
+      json: { error: "invalid_field", field: "tag" },
     });
   });
 

@@ -160,7 +160,7 @@ export type TagFilter = { ok: true; key: string } | { ok: false; reason: "empty"
  * 判定は畳んだ後の key で行う。照合に使うのは畳んだ値で、抑えたいのはその長さだから。
  * 畳む前に 200 字でも、NFKC で伸びる文字（`㌀` は 4 文字）を含めば 400 になる。
  */
-const TAG_MAX_LENGTH = 200;
+export const TAG_MAX_LENGTH = 200;
 
 /**
  * 表記を tags.tag_key と同じ畳み方（foldKeepingUnderscore）にする。ページをまたぐ照合はこの値で行う。

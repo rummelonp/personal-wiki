@@ -14,10 +14,13 @@ import {
   type PageList,
   type PageSummary,
   parseCursor,
+  prepareTagFilter,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
   searchPages,
   searchQueryErrorFields,
+  TAG_MAX_LENGTH,
+  tagFilterErrorFields,
   UNRESOLVED_SOURCES_PER_TITLE,
 } from "../pages/search";
 import { findPageById, findPageByTitle } from "../pages/store";
@@ -96,18 +99,33 @@ export const listRecentTool = defineTool({
   description: [
     "ページを更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
     "各件に tags（ページに付いたタグの表記）と、本文の先頭の excerpt を付ける。本文が空のページと、抜粋を作り直す前のページには excerpt が無い。",
+    "tag を渡すと、そのタグが付いたページだけに絞る。親のタグには子のタグのページも含まれる（`work` は `work/project` が付いたページにも一致する）。全角半角と大文字小文字は区別せず、先頭の `#` はあってもなくてもよい。タグでまとめたページを見渡すのに使う。cursor を渡すときは、前の呼び出しと同じ tag を渡す。",
+    `tag は表記をそろえた後で ${TAG_MAX_LENGTH} 文字まで。`,
   ].join("\n"),
   inputSchema: z.strictObject({
+    tag: z
+      .string()
+      .optional()
+      .describe("このタグ（子のタグを含む）が付いたページに絞る。例 `work`、`work/project`"),
     limit: limitSchema(LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT),
     cursor: cursorSchema,
   }),
   annotations: READ_ONLY,
-  async run({ limit, cursor }, ctx) {
+  async run({ tag, limit, cursor }, ctx) {
+    const filter = tag === undefined ? null : prepareTagFilter(tag);
+    if (filter?.ok === false) {
+      return toolError({
+        error: "invalid_field",
+        field: "tag",
+        ...tagFilterErrorFields(filter.reason),
+      });
+    }
     const paging = readCursor(cursor);
     if (!paging.ok) return invalidCursor();
     const list = await listRecentPages(ctx.db, {
       limit: limit ?? LIST_DEFAULT_LIMIT,
       cursor: paging.cursor,
+      tagKey: filter?.key ?? null,
       readable: readableVisibilityOf(ctx.principal),
     });
     return listResult(list, ctx.origin);
