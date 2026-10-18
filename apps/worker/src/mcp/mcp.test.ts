@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
 import { parseActor } from "../pages/revision-history";
-import { buildClient, snapshotDb, T0 } from "../test/pages";
+import { buildClient, linksFrom, snapshotDb, T0, tagsOf } from "../test/pages";
 import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";
 import type { WikiToolContext } from "./tool";
@@ -21,6 +21,7 @@ const TOOL_NAMES = [
   "list_revisions",
   "create_page",
   "update_page",
+  "edit_page",
   "rewrite_links",
   "append_to_page",
 ];
@@ -123,6 +124,7 @@ describe("/mcp の認可", () => {
     });
     for (const [name, args] of [
       ["update_page", { id: created.json.id, version: 1, title: "x", body: "" }],
+      ["edit_page", { id: created.json.id, version: 1, edits: [{ old: "本文", new: "x" }] }],
       ["rewrite_links", {}],
       ["append_to_page", { id: created.json.id, text: "x" }],
     ] as const) {
@@ -135,8 +137,8 @@ describe("/mcp の認可", () => {
     expect(reader.metrics).toEqual([]);
   });
 
-  // 同意画面の読み書きの説明（auth/oauth-routes.ts）はこの 4 つでできることだけを書いているので、範囲が変わったら説明も直す
-  it("write の scope を要る tool は create_page、update_page、rewrite_links、append_to_page だけ", async () => {
+  // 同意画面の読み書きの説明（auth/oauth-routes.ts）はこの 5 つでできることだけを書いているので、範囲が変わったら説明も直す
+  it("write の scope を要る tool は create_page、update_page、edit_page、rewrite_links、append_to_page だけ", async () => {
     const reader = await mcpClient({ name: "reader", scopes: "read" });
     const { result } = await reader.rpc("tools/list");
     const tools = (result?.tools ?? []) as { name: string }[];
@@ -152,6 +154,7 @@ describe("/mcp の認可", () => {
     expect(writeOnly.toSorted()).toEqual([
       "append_to_page",
       "create_page",
+      "edit_page",
       "rewrite_links",
       "update_page",
     ]);
@@ -256,7 +259,7 @@ describe("/mcp の認可", () => {
 });
 
 describe("tools/list", () => {
-  it("8 つの tool を、知らないキーを拒む入力の schema で返す", async () => {
+  it("10 個の tool を、知らないキーを拒む入力の schema で返す", async () => {
     const { rpc } = await mcpClient({ scopes: "read" });
     const { result } = await rpc("tools/list");
     const tools = result?.tools as {
@@ -278,6 +281,13 @@ describe("tools/list", () => {
     expect(byName.read_page?.inputSchema.required ?? []).toEqual([]);
     expect(byName.create_page?.inputSchema.required).toEqual(["title", "body"]);
     expect(byName.update_page?.inputSchema.required).toEqual(["id", "version", "title", "body"]);
+    expect(byName.edit_page?.inputSchema.required).toEqual(["id", "version", "edits"]);
+    expect(byName.edit_page?.inputSchema.properties.edits).toMatchObject({
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: { required: ["old", "new"], additionalProperties: false },
+    });
     expect(byName.append_to_page?.inputSchema.required).toEqual(["id", "text"]);
     expect(byName.search?.inputSchema.required).toEqual(["query"]);
     expect(byName.search?.inputSchema.properties.limit).toMatchObject({
@@ -295,7 +305,9 @@ describe("tools/list", () => {
     expect(byName.list_revisions?.inputSchema.required ?? []).toEqual([]);
     expect(byName.list_revisions?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
     expect(byName.list_revisions?.description).toContain("版の番号は連続しない");
-    expect(byName.read_page?.description).toContain("update_page には上の階層の version を渡す");
+    expect(byName.read_page?.description).toContain(
+      "update_page と edit_page には上の階層の version を渡す",
+    );
     for (const name of ["search", "list_recent", "list_backlinks", "read_page", "list_revisions"]) {
       expect(byName[name]?.annotations.readOnlyHint).toBe(true);
     }
@@ -318,8 +330,12 @@ describe("tools/list", () => {
     for (const rule of ["remaining が 0 になるまで", "conflict が true なら", "failed は"]) {
       expect(byName.rewrite_links?.description).toContain(rule);
     }
+    expect(byName.update_page?.description).toContain("edit_page");
+    for (const rule of ["version が必須", "適用する前の本文", "何も保存せずに edit_failed"]) {
+      expect(byName.edit_page?.description).toContain(rule);
+    }
     expect(byName.append_to_page?.description).toContain("そのまま送り直してよい");
-    for (const name of ["create_page", "update_page", "append_to_page"]) {
+    for (const name of ["create_page", "update_page", "edit_page", "append_to_page"]) {
       expect(byName[name]?.description).toContain("秘密を書かない");
     }
   });
@@ -703,11 +719,13 @@ describe("ページの tool", () => {
     expect(await snapshotDb()).toEqual(before);
   });
 
-  it("update_page と append_to_page は存在しないページに not_found を返す", async () => {
+  it("update_page と edit_page と append_to_page は存在しないページに not_found を返す", async () => {
     const { call } = await mcpClient();
     const missing = "A".repeat(22);
     for (const [name, args] of [
       ["update_page", { id: missing, version: 1, title: "x", body: "" }],
+      ["edit_page", { id: missing, version: 1, edits: [{ old: "a", new: "b" }] }],
+      ["edit_page", { id: "not-an-id", version: 1, edits: [{ old: "a", new: "b" }] }],
       ["append_to_page", { id: missing, text: "x" }],
       ["append_to_page", { id: "not-an-id", text: "x" }],
     ] as const) {
@@ -904,6 +922,9 @@ describe("ページの tool", () => {
       await call("update_page", { id: created.id, version: 1, title: "Gone", body: "y" }),
     ).toEqual(notFound);
     expect(await call("append_to_page", { id: created.id, text: "y" })).toEqual(notFound);
+    expect(
+      await call("edit_page", { id: created.id, version: 1, edits: [{ old: "x", new: "y" }] }),
+    ).toEqual(notFound);
     expect(await call("list_backlinks", { id: created.id })).toEqual(notFound);
     expect(await snapshotDb()).toEqual(before);
   });
@@ -939,6 +960,291 @@ describe("ページの tool", () => {
       body: "x",
     });
     expect(largest).toMatchObject({ isError: true, json: { error: "version_conflict" } });
+  });
+});
+
+describe("edit_page", () => {
+  async function created(body: string, title = "Doc") {
+    const client = await mcpClient();
+    const { json } = await client.call("create_page", { title, body });
+    return { ...client, id: json.id as string };
+  }
+
+  it("一意に一致する文字列を置き換え、title と visibility を変えずに版を 1 つ積む", async () => {
+    const { call, metrics, actor, id } = await created("# 見出し\n\n- 古い項目\n- 残す項目\n");
+    const edited = await call("edit_page", {
+      id,
+      version: 1,
+      edits: [{ old: "古い項目", new: "新しい項目" }],
+    });
+    expect(edited).toEqual({
+      isError: false,
+      json: {
+        id,
+        title: "Doc",
+        visibility: "draft",
+        version: 2,
+        updatedAt: expect.any(Number),
+        url: expect.stringContaining(`/p/${id}`),
+        titleUrl: null,
+        changed: true,
+        applied: 1,
+      },
+    });
+    expect((await call("read_page", { id })).json.body).toBe(
+      "# 見出し\n\n- 新しい項目\n- 残す項目\n",
+    );
+    expect(metrics.at(-1)).toEqual({
+      op: "update",
+      actor,
+      pageId: id,
+      rowsWritten: expect.any(Number),
+    });
+    const revisions = (await call("list_revisions", { id })).json.revisions as {
+      version: number;
+    }[];
+    expect(revisions.map((r) => r.version)).toEqual([2, 1]);
+  });
+
+  it("複数の edit は適用する前の本文に対して数え、順序が違っても同じ結果になる", async () => {
+    const body = "alpha\nbeta\ngamma\n";
+    const edits = [
+      { old: "alpha", new: "beta" },
+      { old: "gamma", new: "" },
+      { old: "beta\n", new: "BETA\n" },
+    ];
+    const forward = await created(body, "Forward");
+    expect(await forward.call("edit_page", { id: forward.id, version: 1, edits })).toMatchObject({
+      isError: false,
+      json: { version: 2, applied: 3 },
+    });
+    // 1 件目の new に現れた "beta" は、3 件目の old には一致しない
+    expect((await forward.call("read_page", { id: forward.id })).json.body).toBe("beta\nBETA\n\n");
+
+    const reversed = await created(body, "Reversed");
+    await reversed.call("edit_page", { id: reversed.id, version: 1, edits: edits.toReversed() });
+    expect((await reversed.call("read_page", { id: reversed.id })).json.body).toBe(
+      "beta\nBETA\n\n",
+    );
+  });
+
+  it("0 件の一致と 2 件以上の一致は、失敗した edit の index と件数を返して、ほかの edit も保存しない", async () => {
+    const { call, metrics, id } = await created("aaa bbb ccc bbb");
+    const before = await snapshotDb();
+    const metricsBefore = metrics.length;
+    const failed = await call("edit_page", {
+      id,
+      version: 1,
+      edits: [
+        { old: "ccc", new: "CCC" },
+        { old: "zzz", new: "x" },
+        { old: "bbb", new: "x" },
+        { old: "aa", new: "x" },
+      ],
+    });
+    expect(failed).toEqual({
+      isError: true,
+      json: {
+        error: "edit_failed",
+        message: expect.any(String),
+        failures: [
+          { index: 1, reason: "not_found", message: expect.any(String) },
+          { index: 2, reason: "ambiguous", matches: 2, message: expect.any(String) },
+          // 重なる一致も数えるので、"aa" は "aaa" の中の 2 か所に一致する
+          { index: 3, reason: "ambiguous", matches: 2, message: expect.any(String) },
+        ],
+      },
+    });
+    expect(await snapshotDb()).toEqual(before);
+    expect(metrics).toHaveLength(metricsBefore);
+  });
+
+  it("本文の同じ範囲で重なる edit は overlap で拒み、隣り合うだけなら通す", async () => {
+    const { call, id } = await created("0123456789");
+    const before = await snapshotDb();
+    expect(
+      await call("edit_page", {
+        id,
+        version: 1,
+        edits: [
+          { old: "23456", new: "x" },
+          { old: "01234", new: "y" },
+          { old: "9", new: "z" },
+        ],
+      }),
+    ).toEqual({
+      isError: true,
+      json: {
+        error: "edit_failed",
+        message: expect.any(String),
+        failures: [{ index: 0, reason: "overlap", with: 1, message: expect.any(String) }],
+      },
+    });
+    expect(await snapshotDb()).toEqual(before);
+    expect(
+      await call("edit_page", {
+        id,
+        version: 1,
+        edits: [
+          { old: "01234", new: "a" },
+          { old: "56789", new: "b" },
+        ],
+      }),
+    ).toMatchObject({ isError: false });
+    expect((await call("read_page", { id })).json.body).toBe("ab");
+  });
+
+  it("空の old、空の edits、101 件以上、知らないキーは schema の検証で拒み、何も保存しない", async () => {
+    const { call, id } = await created("abc");
+    const before = await snapshotDb();
+    expect(await call("edit_page", { id, version: 1, edits: [{ old: "", new: "x" }] })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "edits.0.old", message: "1 文字以上で渡す" },
+    });
+    expect(await call("edit_page", { id, version: 1, edits: [] })).toMatchObject({
+      isError: true,
+      json: { error: "invalid_field", field: "edits" },
+    });
+    const tooMany = Array.from({ length: 101 }, () => ({ old: "a", new: "b" }));
+    expect(await call("edit_page", { id, version: 1, edits: tooMany })).toMatchObject({
+      isError: true,
+      json: { error: "invalid_field", field: "edits", max: 100 },
+    });
+    expect(await call("edit_page", { id, version: 1 })).toMatchObject({
+      isError: true,
+      json: { error: "missing_field", field: "edits" },
+    });
+    expect(
+      await call("edit_page", { id, version: 1, edits: [{ old: "a", new: "b", extra: 1 }] }),
+    ).toMatchObject({ isError: true });
+    expect(await call("edit_page", { id, version: 1, title: "x", edits: [] })).toMatchObject({
+      isError: true,
+      json: { error: "unknown_field", field: "title" },
+    });
+    expect(await snapshotDb()).toEqual(before);
+  });
+
+  it("版が古ければ update_page と同じ version_conflict と最新の本文を返し、edit を適用しない", async () => {
+    const { call, metrics, id } = await created("v1 本文");
+    await call("update_page", { id, version: 1, title: "Doc", body: "v2 本文" });
+    const before = await snapshotDb();
+    const metricsBefore = metrics.length;
+    const edit = { old: "本文", new: "BODY" };
+    const stale = await call("edit_page", { id, version: 1, edits: [edit] });
+    expect(stale).toEqual({
+      isError: true,
+      json: {
+        error: "version_conflict",
+        message:
+          "version が合わない。最新の title と body を読み直し、変更を載せ直してから保存し直す",
+        currentVersion: 2,
+        current: { title: "Doc", body: "v2 本文", version: 2 },
+      },
+    });
+    // 古い版では、一致しない edit も version_conflict が先になる
+    expect(
+      await call("edit_page", { id, version: 1, edits: [{ old: "存在しない", new: "x" }] }),
+    ).toEqual(stale);
+    expect(await snapshotDb()).toEqual(before);
+    expect(metrics).toHaveLength(metricsBefore);
+
+    expect(await call("edit_page", { id, version: 2, edits: [edit] })).toMatchObject({
+      isError: false,
+      json: { version: 3 },
+    });
+  });
+
+  it("置き換えた結果が今の本文と同じなら、何も書かずに今の版を返す", async () => {
+    const { call, metrics, id } = await created("same");
+    const before = await snapshotDb();
+    const metricsBefore = metrics.length;
+    expect(
+      await call("edit_page", { id, version: 1, edits: [{ old: "same", new: "same" }] }),
+    ).toMatchObject({ isError: false, json: { version: 1, changed: false, applied: 1 } });
+    expect(await snapshotDb()).toEqual(before);
+    expect(metrics).toHaveLength(metricsBefore);
+  });
+
+  it("タグとリンクの派生データは、置き換えた本文から作り直す", async () => {
+    const { call, id } = await created("[[Other]] #old\n");
+    expect(
+      await call("edit_page", {
+        id,
+        version: 1,
+        edits: [
+          { old: "[[Other]]", new: "[[Another]]" },
+          { old: "#old", new: "#fresh" },
+        ],
+      }),
+    ).toMatchObject({ isError: false });
+    expect((await tagsOf(id)).map((t) => t.tag)).toEqual(["fresh"]);
+    expect((await linksFrom(id)).map((l) => l.key)).toEqual(["another"]);
+  });
+
+  it("frontmatter の visibility を置き換えても、update_page と同じく公開範囲は変わらない", async () => {
+    for (const [from, to] of [
+      ["draft", "public"],
+      ["public", "draft"],
+    ] as const) {
+      const viaEdit = await created(`---\nvisibility: ${from}\n---\n本文\n`, `Edit ${from}`);
+      const viaUpdate = await created(`---\nvisibility: ${from}\n---\n本文\n`, `Update ${from}`);
+      await setVisibility(viaEdit.id, from);
+      await setVisibility(viaUpdate.id, from);
+      const edited = await viaEdit.call("edit_page", {
+        id: viaEdit.id,
+        version: 1,
+        edits: [{ old: `visibility: ${from}`, new: `visibility: ${to}` }],
+      });
+      const updated = await viaUpdate.call("update_page", {
+        id: viaUpdate.id,
+        version: 1,
+        title: `Update ${from}`,
+        body: `---\nvisibility: ${to}\n---\n本文\n`,
+      });
+      expect(edited).toMatchObject({ isError: false, json: { visibility: from, version: 2 } });
+      expect(updated).toMatchObject({ isError: false, json: { visibility: from, version: 2 } });
+      expect((await viaEdit.call("read_page", { id: viaEdit.id })).json).toMatchObject({
+        visibility: from,
+        body: `---\nvisibility: ${to}\n---\n本文\n`,
+      });
+    }
+  });
+
+  it("保存後の本文が上限を超えるか NUL を含むときは、update_page と同じエラーで何も書かない", async () => {
+    const { call, id } = await created("元の本文");
+    const before = await snapshotDb();
+    const largeBody = "あ".repeat(Math.floor(MAX_BODY_BYTES / 3) + 1);
+    expect(
+      await call("edit_page", { id, version: 1, edits: [{ old: "元の本文", new: largeBody }] }),
+    ).toEqual({
+      isError: true,
+      json: {
+        error: "body_too_large",
+        field: "body",
+        max: MAX_BODY_BYTES,
+        actual: largeBody.length * 3,
+        unit: "utf8_bytes",
+        message: expect.any(String),
+      },
+    });
+    expect(
+      await call("edit_page", { id, version: 1, edits: [{ old: "元の", new: "\u0000" }] }),
+    ).toMatchObject({
+      isError: true,
+      json: { error: "invalid_field", field: "body", reason: "control_char", line: 1, column: 1 },
+    });
+    expect(await snapshotDb()).toEqual(before);
+  });
+
+  it("上限の件数の edit を、上限近い本文に対しても処理する", async () => {
+    const letters = Array.from({ length: 100 }, (_, i) => String.fromCharCode(0x3041 + i));
+    const body = letters.join("").padEnd(Math.floor(MAX_BODY_BYTES / 3) - 10, "\n");
+    const { call, id } = await created(body);
+    const edits = letters.map((old) => ({ old, new: "x" }));
+    expect(await call("edit_page", { id, version: 1, edits })).toMatchObject({
+      isError: false,
+      json: { applied: 100 },
+    });
   });
 });
 
@@ -1376,11 +1682,11 @@ describe("リクエストをまたいだ状態", () => {
     expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
-  it("tools/call のあとの tools/list は 9 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {
+  it("tools/call のあとの tools/list は 10 個の tool を返し、知らない tool は JSON-RPC のエラー", async () => {
     const { rpc, create } = await sharedApp();
     await create("alice", "First");
     const listed = await rpc("bob", "tools/list");
-    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(9);
+    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(10);
 
     const unknown = await rpc("alice", "tools/call", { name: "no_such_tool", arguments: {} });
     expect(unknown.error).toEqual({ code: -32602, message: "Tool no_such_tool not found" });

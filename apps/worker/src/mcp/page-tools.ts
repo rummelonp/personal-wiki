@@ -2,11 +2,13 @@
 import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import * as z from "zod/v4";
 import { readableVisibilityOf } from "../auth/principal";
+import type { BodyEditFailure } from "../pages/body-edits";
 import { isPageId } from "../pages/id";
 import {
   appendToPageAs,
   createPageAs,
   describeWriteError,
+  editPageAs,
   findPageByInputId,
   linkRewritesField,
   stepLinkRewritesAs,
@@ -48,6 +50,9 @@ export const pageIdSchema = z.string().describe("ページの id（read_page な
 /** REST の If-Match が受け付ける 15 桁と同じ上限。Number で誤差なく表せる範囲に収まる */
 const MAX_VERSION = 999_999_999_999_999;
 
+/** 1 回の edit_page で受ける edits の件数。本文の上限（64KB）に対して十分で、一致の検索を数える回数を抑える */
+const MAX_EDITS = 100;
+
 const versionSchema = z.number().int().positive().max(MAX_VERSION);
 
 /** 版の番号が飛ぶことと、まとめで番号が進むこと。list_revisions と read_page の両方の説明に載せる */
@@ -62,7 +67,7 @@ export const readPageTool = defineTool({
     "ページを id か title で 1 件読み、本文（Markdown）、version、visibility、URL を返す。",
     "id と title はどちらか一方だけを指定する。本文の `[[title]]` のリンクは title を渡して辿る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "titleUrl は public のページで、title が予約語と重ならないときだけ返る。",
-    "revision に list_revisions の各件の version を渡すと、上の階層は今のページの値（id、title、version、visibility、createdAt、updatedAt、URL）だけで body を含まず、読んだ版の中身は revision（version、title、body、createdAt、author）に入る。update_page には上の階層の version を渡す。",
+    "revision に list_revisions の各件の version を渡すと、上の階層は今のページの値（id、title、version、visibility、createdAt、updatedAt、URL）だけで body を含まず、読んだ版の中身は revision（version、title、body、createdAt、author）に入る。update_page と edit_page には上の階層の version を渡す。",
     `その版が無ければ revision_not_found になる。${REVISION_NUMBERS}少し前に見た番号が無くなっていたら、list_revisions を呼び直す。`,
   ].join("\n"),
   inputSchema: z.strictObject({
@@ -208,7 +213,7 @@ export const updatePageTool = defineTool({
   scope: "write",
   title: "ページを書き換える",
   description: [
-    "ページの title と body を丸ごと置き換える。構成を直すときだけ使い、メモや調べた結果は append_to_page で足す。",
+    "ページの title と body を丸ごと置き換える。構成を直すときだけ使う。メモや調べた結果は append_to_page で足し、本文の一部の修正は body 全体を送り直さず edit_page で置き換える。",
     "read_page で取った version が必須。title を変えないときも読んだ title を渡す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して変更を載せ直し、current.version で保存し直す。上書きで押し切らない。",
     "title を変えても、他のページの `[[旧 title]]` はこの呼び出しでは書き換わらず、リンク元は旧 title のリンクのままで、新しい title の list_backlinks にも出ない。linkRewrites.queued は書き換えを待つページの数で、rewrite_links をこのページの id（targetPageId）で remaining が 0 になるまで呼ぶと、新しい title に書き換わる。リンク元の本文を自分で置換して update_page で上書きしない（rewrite_links は同じ規則で書き換え、版の履歴にも残る）。",
@@ -234,6 +239,92 @@ export const updatePageTool = defineTool({
     const result = await updatePageAs(ctx, { id, expectedVersion: version, title, body });
     if (result.ok) {
       return toolResult({ ...pageSummary(result.page, ctx.origin), ...linkRewritesField(result) });
+    }
+    if (result.reason !== "version_conflict") return writeError(result);
+    return versionConflict(ctx, id, result);
+  },
+});
+
+/** edit_page の失敗 1 件ぶんの説明。位置は edits の中の番号（0 始まり）で言う */
+function describeEditFailure(failure: BodyEditFailure): BodyEditFailure & { message: string } {
+  switch (failure.reason) {
+    case "empty_old":
+      return { ...failure, message: "old が空文字。置き換える文字列を 1 文字以上で渡す" };
+    case "not_found":
+      return {
+        ...failure,
+        message:
+          "old が本文に無い。read_page で読み直し、空白、改行、記号まで本文と同じ文字列で渡す",
+      };
+    case "ambiguous":
+      return {
+        ...failure,
+        message: `old が本文の ${failure.matches} か所に一致する。前後の文字を足して 1 か所だけに一致する文字列にする`,
+      };
+    case "overlap":
+      return {
+        ...failure,
+        message: `old が edits[${failure.with}] の old と本文の同じ範囲で重なる。1 つの edit にまとめる`,
+      };
+  }
+}
+
+export const editPageTool = defineTool({
+  name: "edit_page",
+  scope: "write",
+  title: "ページの本文を部分的に直す",
+  description: [
+    "ページの本文のうち、一意に決まる文字列を置き換える。数行の修正で body 全体を送り直さずに済む。title は変わらない。メモや調べた結果の追加は append_to_page、構成を直すときは update_page を使う。",
+    "read_page で取った version が必須。edits の各件は、本文にちょうど 1 か所だけ現れる文字列 old と、置き換え後の new。new を空文字にすると old を消す。",
+    `edits は ${MAX_EDITS} 件まで。old は edits を適用する前の本文に対して数え、完全一致（大文字小文字、全角半角、空白、改行を区別する）で探す。ある edit の new に別の edit の old が現れても、その new には一致しない。edits の順序で結果は変わらない。`,
+    "old が本文に無い、2 か所以上に一致する、ほかの edit の old と本文の同じ範囲で重なるときは、1 件も適用せず何も保存せずに edit_failed を返す。failures に、失敗した edit の index（0 始まり）、reason（not_found、ambiguous、overlap）、ambiguous の matches（一致した数）、overlap の with（重なる相手の index）、message が入る。old を直して送り直す。",
+    "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して edits を作り直し、current.version で保存し直す。上書きで押し切らない。",
+    "置き換えた結果が今の本文と同じなら何も保存せず、changed が false で今の version を返す。",
+    "frontmatter の中も置き換えられる。保存は update_page と同じ規則で、公開範囲は変わらない（frontmatter に書いても反映されない）。",
+    "保存後の本文が上限を超えると body_too_large、NUL を含むと invalid_field（位置は置き換えた後の本文で数える）になる。",
+    LIMITS,
+    NO_SECRETS,
+  ].join("\n"),
+  inputSchema: z.strictObject({
+    id: pageIdSchema,
+    version: versionSchema.describe("read_page で読んだときの version"),
+    edits: z
+      .array(
+        z.strictObject({
+          old: z
+            .string()
+            .min(1)
+            .describe(
+              "置き換える文字列。本文にちょうど 1 か所だけ現れるように、前後の文字を含める",
+            ),
+          new: z.string().describe("置き換え後の文字列。空文字で old を消す"),
+        }),
+      )
+      .min(1)
+      .max(MAX_EDITS)
+      .describe("置き換えの一覧。old はすべて、適用する前の本文に対して探す"),
+  }),
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  async run({ id, version, edits }, ctx) {
+    const result = await editPageAs(ctx, { id, expectedVersion: version, edits });
+    if (result.ok) {
+      return toolResult({
+        ...pageSummary(result.page, ctx.origin),
+        changed: result.rowsWritten > 0,
+        applied: edits.length,
+      });
+    }
+    if (result.reason === "edit_failed") {
+      return toolError({
+        error: "edit_failed",
+        message: "1 件も適用せず、何も保存していない。failures の edit を直して送り直す",
+        failures: result.failures.map(describeEditFailure),
+      });
     }
     if (result.reason !== "version_conflict") return writeError(result);
     return versionConflict(ctx, id, result);
@@ -339,6 +430,7 @@ export const PAGE_TOOLS = [
   listRevisionsTool,
   createPageTool,
   updatePageTool,
+  editPageTool,
   rewriteLinksTool,
   appendToPageTool,
 ];

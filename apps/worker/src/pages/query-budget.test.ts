@@ -229,6 +229,58 @@ describe("1 invocation のクエリ数", () => {
     expectWithinBudget(racing.counter);
   });
 
+  it("MCP の edit_page は、版の競合で最新の本文を読み直すところまで収まる", async () => {
+    const client = await buildClient();
+    const page = await client.create("Page", "[[Other]] #tag 古い");
+    const call = (db: D1Database) =>
+      requestWith(db, "/mcp", {
+        method: "POST",
+        headers: { Accept: "application/json, text/event-stream" },
+        json: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "edit_page",
+            arguments: { id: page.id, version: 1, edits: [{ old: "古い", new: "新しい" }] },
+          },
+        },
+      });
+    const outcome = async (res: Response) => {
+      const text = await res.text();
+      const data = text.startsWith("{")
+        ? text
+        : (text.split("\n").find((line) => line.startsWith("data: ")) ?? "").slice(6);
+      const rpc = JSON.parse(data) as { result: { content: { text: string }[] } };
+      return JSON.parse(rpc.result.content[0]?.text ?? "") as { error?: string; version?: number };
+    };
+
+    const racing = instrumentedDb(() => page.id);
+    expect((await outcome(await call(racing.db))).error).toBe("version_conflict");
+    // 認証 2、ページの読み 1、batch 15、版の読み分け 1、最新の本文の読み直し 1
+    expect(racing.counter.queries).toBe(20);
+    expectWithinBudget(racing.counter);
+
+    // 競合した呼び出しがページの版を進めたので、成功する呼び出しは新しい版に合わせる
+    const success = instrumentedDb();
+    const res = await requestWith(success.db, "/mcp", {
+      method: "POST",
+      headers: { Accept: "application/json, text/event-stream" },
+      json: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "edit_page",
+          arguments: { id: page.id, version: 2, edits: [{ old: "古い", new: "新しい" }] },
+        },
+      },
+    });
+    expect((await outcome(res)).version).toBe(3);
+    // 認証 2、ページの読み 1、batch 15
+    expect(success.counter.queries).toBe(18);
+  });
+
   it("owner の cookie で呼ぶ step は、認証に D1 のクエリを使わない", async () => {
     const client = await buildClient();
     const target = await client.create("Old");

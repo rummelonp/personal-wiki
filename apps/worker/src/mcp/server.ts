@@ -35,7 +35,7 @@ const INSTRUCTIONS = [
   "オーナー一人の Markdown wiki。",
   "- 作業の始めに主題の語で search し、関連するページを read_page で読む。",
   "- 新しく作る前に search で同じ主題を探し、あれば作らずに追記か更新する。",
-  "- メモや調べた結果は append_to_page で末尾に足す。update_page での本文全体の書き換えは構成を直すときだけ。",
+  "- メモや調べた結果は append_to_page で末尾に足し、既存の本文の一部の修正は edit_page で置き換える。update_page での本文全体の書き換えは構成を直すときだけ。",
   "- 作るページは draft。draft も URL を知っていれば誰でも読めるので、パスワード、API キー、トークン、個人情報などの秘密を書かない。",
   "- 公開範囲は tool から変えられない。公開はオーナーがブラウザで行うので、頼まれたらオーナーに伝える。frontmatter に書いても反映されない。",
   "- 本文の `[[title]]` は別のページへのリンク。参照元は list_backlinks（id か title で引く。まだ無いページの title でもよい）、最近の動きは list_recent で見る。",

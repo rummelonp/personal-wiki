@@ -5,6 +5,7 @@ import {
   singleLineTitle,
 } from "@personal-wiki/domain";
 import { type Principal, readableVisibilityOf } from "../auth/principal";
+import { applyBodyEdits, type BodyEdit, type BodyEditFailure } from "./body-edits";
 import { isPageId } from "./id";
 import {
   type LinkRewriteStepInput,
@@ -154,6 +155,38 @@ export async function updatePageAs(
     return result;
   }
   return withExisting(ctx, input.title, result, input.id);
+}
+
+export type EditPageError =
+  | WriteError
+  | { ok: false; reason: "edit_failed"; failures: BodyEditFailure[] };
+
+/**
+ * 本文の一部だけを置き換える。保存は updatePageAs に任せ、title は読んだままにする。
+ * 版の照合は edit を数える前に行い、古い版を見て組んだ edit を成功にしない。書く場合の照合は guard が担う。
+ *
+ * 置き換えた結果が今の本文と同じなら書かずに今のページを返す（同じ本文の revision を積まない）。
+ */
+export async function editPageAs(
+  ctx: PageWriteContext,
+  input: { id: string; expectedVersion: number; edits: readonly BodyEdit[] },
+): Promise<UpdateSuccess | EditPageError> {
+  const page = await findPageByInputId(ctx.db, input.id);
+  if (page === null) return { ok: false, reason: "not_found" };
+  if (page.version !== input.expectedVersion) {
+    return { ok: false, reason: "version_conflict", currentVersion: page.version };
+  }
+  const applied = applyBodyEdits(page.body, input.edits);
+  if (!applied.ok) return { ok: false, reason: "edit_failed", failures: applied.failures };
+  if (applied.body === page.body) {
+    return { ok: true, page, rowsWritten: 0, linkRewrites: { queued: 0 } };
+  }
+  return updatePageAs(ctx, {
+    id: input.id,
+    expectedVersion: input.expectedVersion,
+    title: page.title,
+    body: applied.body,
+  });
 }
 
 export type RestoreError = WriteError | { ok: false; reason: "revision_not_found" };
