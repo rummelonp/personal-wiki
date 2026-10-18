@@ -160,6 +160,37 @@ describe("通知が出たときの focus", () => {
     });
   });
 
+  describe("操作の前（再読み込みや直接開いたとき）の focus の枠", () => {
+    const heading = () => noticeOf("操作が要ります").querySelector("h2") as HTMLElement;
+
+    function withPointer(coarse: boolean) {
+      const spy = vi.spyOn(window, "matchMedia").mockImplementation(
+        (query) =>
+          ({
+            matches: coarse && query === "(pointer: coarse)",
+            media: query,
+            addEventListener() {},
+            removeEventListener() {},
+          }) as unknown as MediaQueryList,
+      );
+      restore.push(() => spy.mockRestore());
+    }
+
+    it("タッチ端末（粗い pointer）なら、枠を出さない", () => {
+      withPointer(true);
+      mountClaiming();
+      expect(document.activeElement).toBe(heading());
+      expect(heading().matches(":focus-visible")).toBe(false);
+    });
+
+    it("細かい pointer なら、枠で移り先を示す", () => {
+      withPointer(false);
+      mountClaiming();
+      expect(document.activeElement).toBe(heading());
+      expect(heading().matches(":focus-visible")).toBe(true);
+    });
+  });
+
   it("本文や title を打っている最中（contenteditable、input）は奪わない", () => {
     const editable = document.createElement("div");
     editable.contentEditable = "true";
