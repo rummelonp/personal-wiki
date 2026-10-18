@@ -204,6 +204,102 @@ test("短いページに通知のドックが出ても、横スクロールは�
   );
 });
 
+/** 保存に失敗させて、通知のドックを出す。 */
+async function showSaveFailureDock(
+  page: Page,
+  pageId: string,
+  size: { width: number; height: number },
+): Promise<void> {
+  await page.setViewportSize(size);
+  await page.goto(`/p/${pageId}`);
+  await expect(bodyEditor(page)).toHaveText("短い本文");
+  await page.route(`**/api/pages/${pageId}`, (route) =>
+    route.request().method() === "PUT"
+      ? route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "internal" }),
+        })
+      : route.fallback(),
+  );
+  await typeAtBodyEnd(page, "、打った");
+  await expect(page.locator(".notice-dock").getByRole("alert")).toBeVisible();
+}
+
+/**
+ * ドックの右端が右の欄の中に入っているか、その場合に欄の文字を切っているか。
+ * 右端が画面の右端に届くか、欄の左端より左なら、欄の文字は切られない。
+ */
+async function dockCutsRail(page: Page): Promise<string | null> {
+  // 幅を変えた直後でも、変えた後の配置で測る
+  return page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const dock = (document.querySelector(".notice-dock") as HTMLElement).getBoundingClientRect();
+    const rail = document.querySelector(".rail")?.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    if (rail === undefined || rail.width === 0) return null;
+    // 右の欄が本文の下に回る幅（rail が本文の右に並ばない）では、欄の文字を切る線は無い
+    if (rail.left <= 0) return null;
+    const reachesEdge = dock.right >= width - 0.5;
+    const clearOfRail = dock.right <= rail.left + 0.5;
+    return reachesEdge || clearOfRail
+      ? null
+      : `ドックの右端 ${Math.round(dock.right)} が、欄（左端 ${Math.round(rail.left)}、画面の幅 ${width}）の中で止まっている`;
+  });
+}
+
+test("横向きの iPhone で通知のドックが出ても、右の欄の文字がドックの右端で切れない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "横向き"),
+    body: "短い本文",
+  });
+  await showSaveFailureDock(page, created.id, { width: 667, height: 375 });
+  expect(await dockCutsRail(page)).toBeNull();
+  // 欄の文字（履歴の「オーナー」など）が、ドックの右の縁をまたいでいない
+  const straddling = await page.evaluate(() => {
+    const dock = (document.querySelector(".notice-dock") as HTMLElement).getBoundingClientRect();
+    const found: string[] = [];
+    const walker = document.createTreeWalker(
+      document.querySelector(".rail") as Element,
+      NodeFilter.SHOW_TEXT,
+    );
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const box of range.getClientRects()) {
+        if (box.top < dock.bottom && box.bottom > dock.top && box.left < dock.right) {
+          if (box.right > dock.right) found.push((node as Text).data.trim());
+        }
+      }
+    }
+    return found;
+  });
+  expect(straddling, "ドックの右の縁をまたぐ欄の文字がある").toEqual([]);
+});
+
+test("通知のドックの右端は、右の欄の文字を切る位置で止まらない @widths", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "幅の掃引"),
+    body: "短い本文",
+  });
+  await showSaveFailureDock(page, created.id, { width: 641, height: 600 });
+  // 境目（ドックの最大幅が欄に届く 882px 前後）と、本文の下に欄が回る幅の直前を含める
+  const widths = [641, 667, 700, 768, 800, 850, 880, 881, 882, 883, 884, 900, 960, 1000, 1280];
+  const cut: string[] = [];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 600 });
+    const problem = await dockCutsRail(page);
+    if (problem !== null) cut.push(`幅 ${width}: ${problem}`);
+  }
+  expect(cut).toEqual([]);
+});
+
 test.describe("匿名の本文の左端 @widths", () => {
   test.use({ role: "anonymous" });
 
