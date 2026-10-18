@@ -609,17 +609,17 @@ export function breakableUriHtml(uri: string): string {
     .join("<wbr>");
 }
 
-/** 「3 分前（2026/10/01 00:00 UTC）」の形。時計のずれで未来になった場合も 1 分以内に丸める */
+/** 「3分前（2026/10/01 00:00 UTC）」の形。時計のずれで未来になった場合も「1分以内」に丸める */
 export function describeRegistration(registeredAt: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - registeredAt) / 60_000));
   const age =
     minutes < 1
-      ? "1 分以内"
+      ? "1分以内"
       : minutes < 60
-        ? `${minutes} 分前`
+        ? `${minutes}分前`
         : minutes < 24 * 60
-          ? `${Math.floor(minutes / 60)} 時間前`
-          : `${Math.floor(minutes / (24 * 60))} 日前`;
+          ? `${Math.floor(minutes / 60)}時間前`
+          : `${Math.floor(minutes / (24 * 60))}日前`;
   return `${age}（${formatUtcMinutes(registeredAt)}）`;
 }
 

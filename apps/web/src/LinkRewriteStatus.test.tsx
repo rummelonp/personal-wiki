@@ -360,13 +360,13 @@ describe("終わったあとの一覧", () => {
       stepOk({ processed: { ...processed("b"), visibility: "public" }, remaining: 0 }),
     ]);
     expect(container?.querySelector("summary")?.textContent).toBe(
-      "書き換えたページ（2\u00a0件、うち公開 1\u00a0件）",
+      "書き換えたページ（2件、うち公開1件）",
     );
   });
 
   it("公開ページが無ければ、件数だけを出す", async () => {
     await report([stepOk({ processed: processed("a"), remaining: 0 })]);
-    expect(container?.querySelector("summary")?.textContent).toBe("書き換えたページ（1\u00a0件）");
+    expect(container?.querySelector("summary")?.textContent).toBe("書き換えたページ（1件）");
   });
 
   it("書き換えられなかったページは title で出し、title が無ければその旨を出す", async () => {

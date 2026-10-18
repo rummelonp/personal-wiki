@@ -135,7 +135,7 @@ function LinkRewriteNotice({
         title={RUNNING_ANNOUNCEMENT}
       >
         <p>
-          {done}/{total}{" "}
+          {done}/{total}
           ページを書き換えました。この画面を閉じても、残りは次に開いたときに続きから進みます。
         </p>
       </Notice>
@@ -181,8 +181,8 @@ function LinkRewriteNotice({
         <details onToggle={(event) => onListToggle(event.currentTarget.open)}>
           <summary>
             {publicCount > 0
-              ? `書き換えたページ（${rewritten.length}\u00a0件、うち公開 ${publicCount}\u00a0件）`
-              : `書き換えたページ（${rewritten.length}\u00a0件）`}
+              ? `書き換えたページ（${rewritten.length}件、うち公開${publicCount}件）`
+              : `書き換えたページ（${rewritten.length}件）`}
           </summary>
           <ul className="link-rewrites-pages">
             {rewritten.map((page) => (

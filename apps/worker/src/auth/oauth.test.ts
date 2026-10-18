@@ -1447,13 +1447,13 @@ describe("describeRegistration", () => {
   it("経過時間を分、時間、日で表し、UTC の日時を添える", () => {
     const utc = "（2026/10/01 12:34 UTC）";
     for (const [elapsed, label] of [
-      [10_000, "1 分以内"],
-      [3 * minute, "3 分前"],
-      [59 * minute, "59 分前"],
-      [60 * minute, "1 時間前"],
-      [23 * 60 * minute, "23 時間前"],
-      [24 * 60 * minute, "1 日前"],
-      [40 * 24 * 60 * minute, "40 日前"],
+      [10_000, "1分以内"],
+      [3 * minute, "3分前"],
+      [59 * minute, "59分前"],
+      [60 * minute, "1時間前"],
+      [23 * 60 * minute, "23時間前"],
+      [24 * 60 * minute, "1日前"],
+      [40 * 24 * 60 * minute, "40日前"],
     ] as const) {
       expect(describeRegistration(registeredAt, registeredAt + elapsed), label).toBe(
         `${label}${utc}`,
@@ -1461,9 +1461,9 @@ describe("describeRegistration", () => {
     }
   });
 
-  it("時計のずれで登録が未来になっても 1 分以内に丸める", () => {
+  it("時計のずれで登録が未来になっても「1分以内」に丸める", () => {
     expect(describeRegistration(registeredAt, registeredAt - 5 * minute)).toBe(
-      "1 分以内（2026/10/01 12:34 UTC）",
+      "1分以内（2026/10/01 12:34 UTC）",
     );
   });
 });
@@ -1520,7 +1520,7 @@ describe("同意画面の登録の行", () => {
       siteName: "wiki",
     });
     expect(withRow).toContain("<dt>登録</dt>");
-    expect(withRow).toContain("35 日前");
+    expect(withRow).toContain("35日前");
     expect(withRow).toContain("つなぎ直した接続では、以前に登録した日時が出ることがあります。");
     expect(withRow).toContain("日時だけでは、自分が始めた接続かは判断できません。");
   });

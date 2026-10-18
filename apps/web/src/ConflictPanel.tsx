@@ -222,7 +222,7 @@ export function ConflictPanel({
                   row.kind === "skip" ? (
                     // biome-ignore lint/suspicious/noArrayIndexKey: 差分の行に安定した id は無い
                     <div key={index} className="diff-skip muted">
-                      … {row.count} 行は同じ …
+                      … {row.count}行は同じ …
                     </div>
                   ) : (
                     // biome-ignore lint/suspicious/noArrayIndexKey: 同上
@@ -248,7 +248,7 @@ export function ConflictPanel({
       }
     >
       <p>
-        {`${formatTime(server.updatedAt)} に別の場所で保存された内容と、この画面の内容のどちらを残すか選んでください。`}
+        {`${formatTime(server.updatedAt)}に別の場所で保存された内容と、この画面の内容のどちらを残すか選んでください。`}
       </p>
       {/* 欄の先頭の title の比較は、最初の変更を見せるために送ると外へ流れる。上書きはサーバーの title も
           消すので、選ぶ前に読む位置にサーバーの title を置く。末尾だけ違う title も見分けられるよう 1 行で省略せずに

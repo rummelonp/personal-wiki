@@ -206,7 +206,7 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
     // 開いた描画の案内は、frame を空けてから status に入る
     await vi.waitFor(() =>
       expect(container?.querySelector("[role='status']")?.textContent).toBe(
-        "3\u00a0文字以上で、本文からも検索できます。",
+        "3文字以上で、本文からも検索できます。",
       ),
     );
   });
@@ -218,7 +218,7 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
     root = mounted;
     act(() => mounted.render(<Harness owner={false} initialQuery="メモ" />));
     const live = container.querySelector("[role='status']");
-    const guidance = "3\u00a0文字以上で、本文からも検索できます。";
+    const guidance = "3文字以上で、本文からも検索できます。";
     expect(live?.textContent).not.toContain("文字以上");
     // 場所は先に取り、候補の行が後から押し下げられないようにする
     expect(container.querySelector("[aria-hidden='true'] p")?.textContent).toBe(guidance);
@@ -238,7 +238,7 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
     root = mounted;
     act(() => mounted.render(<Harness owner={false} />));
     typeText("ほげ");
-    expect(container.querySelector("[role='status']")?.textContent).toContain("3\u00a0文字以上");
+    expect(container.querySelector("[role='status']")?.textContent).toContain("3文字以上");
     expect(container.querySelector("[aria-hidden='true'] p")).toBeNull();
   });
 });
@@ -318,13 +318,13 @@ describe("QuickSwitcher の候補", () => {
     typeText("ほげ");
     expect(options()).toEqual([]);
     expect(container?.querySelector("[role='status']")?.textContent).toBe(
-      "一致するタイトルはありません。3\u00a0文字以上で、本文からも検索できます。",
+      "一致するタイトルはありません。3文字以上で、本文からも検索できます。",
     );
     // 候補があっても本文検索の行は出さない
     typeText("買");
     expect(options()).toEqual(["買い物"]);
     expect(container?.querySelector("[role='status']")?.textContent).toBe(
-      "3\u00a0文字以上で、本文からも検索できます。",
+      "3文字以上で、本文からも検索できます。",
     );
     press("Enter");
     expect(location.pathname).toBe(`/p/${RECENT[3]?.id}`);
@@ -641,7 +641,7 @@ describe("QuickSwitcher の候補の取得中", () => {
   it("匿名が取得中に 3 文字未満を打っても、案内の status は 1 つにまとまる", async () => {
     await openPending(false);
     typeText("ほげ");
-    expect(status()).toEqual([expect.stringMatching(/候補を読み込み中…[\s\S]*3\u00a0文字以上/)]);
+    expect(status()).toEqual([expect.stringMatching(/候補を読み込み中…[\s\S]*3文字以上/)]);
   });
 
   const failure = { ok: false, reason: "error", message: "失敗" } as unknown as ApiResult<never>;

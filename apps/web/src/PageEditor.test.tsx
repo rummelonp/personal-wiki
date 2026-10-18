@@ -1086,7 +1086,7 @@ describe("保存の前の検査の表示", () => {
       "本文が長すぎて保存できません",
     );
     expect(alertNotice()?.textContent).toContain(
-      `本文が上限を ${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")}\u00a0バイト超えています。`,
+      `本文が上限を${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")}バイト超えています。`,
     );
     // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わず、書く時機を添える
     expect(alertNotice()?.textContent).toContain(
@@ -1098,7 +1098,7 @@ describe("保存の前の検査の表示", () => {
     const meter = container?.querySelector(".body-meter .input-meter");
     expect(meter?.classList).toContain("input-meter-over");
     expect(meter?.textContent).toContain(
-      `${bytes.toLocaleString("ja-JP")} / ${MAX_BODY_BYTES.toLocaleString("ja-JP")} バイト`,
+      `${bytes.toLocaleString("ja-JP")} / ${MAX_BODY_BYTES.toLocaleString("ja-JP")}バイト`,
     );
     act(() => view().contentDOM.blur());
     await flushAsync();
@@ -1129,7 +1129,7 @@ describe("保存の前の検査の表示", () => {
     view().focus();
     act(() => typeAtEnd(view(), "\n二行目\u0000"));
     await flushAsync();
-    expect(alertNotice()?.textContent).toContain("本文の 2\u00a0行目に見えない文字（NUL）");
+    expect(alertNotice()?.textContent).toContain("本文の2行目に見えない文字（NUL）");
     act(() => view().contentDOM.blur());
     act(() => button("その文字を選択する").click());
     await vi.waitFor(() => expect(view().hasFocus).toBe(true));
@@ -1191,7 +1191,7 @@ describe("保存の前の検査の表示", () => {
     expect(meter()).toBeNull();
     typeTitle("a".repeat(MAX_TITLE_BYTES + 1));
     expect(meter()?.classList).toContain("input-meter-over");
-    expect(meter()?.textContent).toContain("1,025 / 1,024 バイト");
+    expect(meter()?.textContent).toContain("1,025 / 1,024バイト");
     // 読み上げでは、欄の説明として長さを伝える
     const describedBy = titleView().contentDOM.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy ?? "")?.textContent).toContain("1,025");

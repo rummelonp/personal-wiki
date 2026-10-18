@@ -144,7 +144,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
         {state.status === "query_too_short" && (
           <EmptyState
             role="status"
-            title={`${state.min}\u00a0文字以上で検索してください`}
+            title={`${state.min}文字以上で検索してください`}
             actions={backToRecent}
           />
         )}

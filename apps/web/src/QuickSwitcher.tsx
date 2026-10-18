@@ -306,7 +306,7 @@ function SwitcherBody({
         {showFailed && CANDIDATES_FAILED}
         {noMatch && "一致するタイトルはありません。"}
         {contentSearchTooShort &&
-          `${ANONYMOUS_SEARCH_MIN_CHARS}\u00a0文字以上で、本文からも検索できます。`}
+          `${ANONYMOUS_SEARCH_MIN_CHARS}文字以上で、本文からも検索できます。`}
       </p>
     ) : null;
   const hasNote = note !== null;

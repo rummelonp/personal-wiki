@@ -52,7 +52,7 @@ describe("frontmatter block", () => {
   it("tags と aliases を chip で見せ、他のキーは件数だけ出す", () => {
     const v = mount(doc);
     expect(box(v)).not.toBeNull();
-    expect(chipTexts(v)).toEqual(["#仕事", "#読書", "別名", "別名", "ほか 1 項目"]);
+    expect(chipTexts(v)).toEqual(["#仕事", "#読書", "別名", "別名", "ほか1項目"]);
   });
 
   it("キーが 1 つも無ければ枠だけを見せる", () => {

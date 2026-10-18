@@ -1281,9 +1281,7 @@ describe("App のリンクの書き換えの再開", () => {
       });
     serve("owner", [PUBLIC, DRAFT]);
     await renderAt("/");
-    await vi.waitFor(() =>
-      expect(screenText()).toContain("書き換えたページ（1\u00a0件、うち公開 1\u00a0件）"),
-    );
+    await vi.waitFor(() => expect(screenText()).toContain("書き換えたページ（1件、うち公開1件）"));
     expect(stepLinkRewrites).toHaveBeenCalledTimes(2);
   });
 

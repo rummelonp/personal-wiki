@@ -131,7 +131,7 @@ describe("RevisionHistory の一覧", () => {
   it("版の番号を出さず、時刻と作成者を新しい順に並べる。先頭が今の版なら更新の時刻を出す", async () => {
     await mount();
     await vi.waitFor(() =>
-      expect(entries()).toEqual(["2 分前オーナー", "約 2 時間前token: air-claude"]),
+      expect(entries()).toEqual(["2分前オーナー", "約2時間前token: air-claude"]),
     );
     expect(container?.querySelector(".rail-label")?.textContent).toBe("履歴");
     expect(container?.textContent).not.toMatch(/[25]\s*版|v[25]/);
@@ -140,7 +140,7 @@ describe("RevisionHistory の一覧", () => {
 
   it("先頭の版の後に公開範囲を切り替えていたら、先頭も編集を始めた時刻を出す", async () => {
     await mount({ pageVersion: 6 });
-    await vi.waitFor(() => expect(entries()[0]).toBe("30 分前オーナー"));
+    await vi.waitFor(() => expect(entries()[0]).toBe("30分前オーナー"));
   });
 
   it("時刻の意味を、読み上げにだけ届く絶対の時刻と title に添える。先頭だけが最後の保存の時刻", async () => {
@@ -183,11 +183,7 @@ describe("RevisionHistory の一覧", () => {
     expect(container?.querySelector(".skeleton-links")).toBeNull();
     const newest = { version: 7, title: "題", createdAt: NOW - MINUTE, author: owner };
     await act(async () => resolve(ok({ revisions: [newest, ...REVISIONS], nextCursor: null })));
-    expect(entries()).toEqual([
-      "1 分未満オーナー",
-      "30 分前オーナー",
-      "約 2 時間前token: air-claude",
-    ]);
+    expect(entries()).toEqual(["1分未満オーナー", "30分前オーナー", "約2時間前token: air-claude"]);
   });
 
   it("paused の間は取りに行かない", async () => {
@@ -247,11 +243,7 @@ describe("RevisionHistory の一覧", () => {
     );
     await mount({ pageVersion: 7, updatedAt: NOW });
     await vi.waitFor(() => expect(entries()).toHaveLength(3));
-    expect(entries()).toEqual([
-      "1 分未満オーナー",
-      "30 分前オーナー",
-      "約 2 時間前token: air-claude",
-    ]);
+    expect(entries()).toEqual(["1分未満オーナー", "30分前オーナー", "約2時間前token: air-claude"]);
     expect(container?.textContent).not.toContain("さらに表示");
   });
 
@@ -269,9 +261,9 @@ describe("RevisionHistory の一覧", () => {
       ok({ revisions: [newest, REVISIONS[0] as RevisionSummary], nextCursor: "5" }),
     );
     await mount({ pageVersion: 7, updatedAt: NOW });
-    await vi.waitFor(() => expect(entries()[0]).toBe("1 分未満オーナー"));
+    await vi.waitFor(() => expect(entries()[0]).toBe("1分未満オーナー"));
     await act(async () => resolveMore(ok({ revisions: REVISIONS.slice(1), nextCursor: null })));
-    expect(entries()).toEqual(["1 分未満オーナー", "30 分前オーナー"]);
+    expect(entries()).toEqual(["1分未満オーナー", "30分前オーナー"]);
     const again = [...(container?.querySelectorAll("button") ?? [])].find(
       (b) => b.textContent === "さらに表示",
     );
@@ -293,7 +285,7 @@ describe("RevisionHistory の一覧", () => {
       ok({ revisions: [newest, REVISIONS[0] as RevisionSummary], nextCursor: "5" }),
     );
     await mount({ pageVersion: 7, updatedAt: NOW });
-    await vi.waitFor(() => expect(entries()[0]).toBe("1 分未満オーナー"));
+    await vi.waitFor(() => expect(entries()[0]).toBe("1分未満オーナー"));
     const calls = vi.mocked(listRevisions).mock.calls.length;
     expect(moreButton()?.disabled).toBe(true);
     await act(async () => moreButton()?.click());
@@ -328,11 +320,7 @@ describe("RevisionHistory の一覧", () => {
     await vi.waitFor(() => expect(entries()).toHaveLength(3));
 
     await act(async () => resolveStale(ok({ revisions: REVISIONS, nextCursor: null })));
-    expect(entries()).toEqual([
-      "1 分未満オーナー",
-      "30 分前オーナー",
-      "約 2 時間前token: air-claude",
-    ]);
+    expect(entries()).toEqual(["1分未満オーナー", "30分前オーナー", "約2時間前token: air-claude"]);
   });
 
   it("取得に失敗したら、その旨を出す", async () => {

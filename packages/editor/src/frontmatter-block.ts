@@ -83,7 +83,7 @@ class FrontmatterWidget extends WidgetType {
     if (aliases.length > 0) box.append(chip("cm-frontmatter-label", "別名"));
     for (const alias of aliases) box.append(chip("cm-frontmatter-chip", alias));
     if (otherKeys.length > 0) {
-      box.append(chip("cm-frontmatter-label", `ほか ${otherKeys.length} 項目`));
+      box.append(chip("cm-frontmatter-label", `ほか${otherKeys.length}項目`));
     } else if (tags.length === 0 && aliases.length === 0) {
       box.append(chip("cm-frontmatter-label", "プロパティ"));
     }

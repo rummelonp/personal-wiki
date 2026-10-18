@@ -205,7 +205,7 @@ test("匿名の 2 文字では本文の検索を出さず、3 文字以上と案
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
   const input = switcher.getByRole("combobox", { name: "検索語" });
   await input.fill("ほげ");
-  await expect(switcher.getByRole("status")).toContainText("3 文字以上");
+  await expect(switcher.getByRole("status")).toContainText("3文字以上");
   await expect(switcher.getByRole("option", { name: /本文から検索/ })).toHaveCount(0);
   await input.press("Enter");
   await expect(page).toHaveURL("/");
@@ -236,14 +236,13 @@ test("匿名が短い語の検索結果から窓を開くと、案内は中身�
   await page.goto(`/?q=${encodeURIComponent("ほげ")}`);
   await page.getByRole("button", { name: "ページを検索: ほげ", exact: true }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
-  await expect(switcher.getByRole("status")).toContainText("3 文字以上");
+  await expect(switcher.getByRole("status")).toContainText("3文字以上");
   await expect(switcher.getByRole("option", { name: /本文から検索/ })).toHaveCount(0);
   const inserted = await page.evaluate(
     () => (window as unknown as { statusAtInsert: string[] }).statusAtInsert,
   );
   expect(inserted).toHaveLength(1);
-  // 文言の「3」と「文字」の間は改行しない空白（\s は U+00A0 も含む）
-  expect(inserted[0]).not.toMatch(/3\s文字以上/);
+  expect(inserted[0]).not.toContain("文字以上");
 });
 
 test("匿名の 0 件の検索結果には作成の導線が出ない", async ({ page }) => {

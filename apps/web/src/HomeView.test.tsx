@@ -394,7 +394,7 @@ describe("HomeView の空の状態", () => {
   it("匿名の短い検索語は、文字数の案内と一覧へ戻る導線を出し、補足は出さない", async () => {
     await mountHome("ab", false);
     expect(empty()?.getAttribute("role")).toBe("status");
-    expect(title()).toBe("3\u00a0文字以上で検索してください");
+    expect(title()).toBe("3文字以上で検索してください");
     expect(empty()?.querySelector(".empty-text")).toBeNull();
     expect(backLink()?.getAttribute("href")).toBe("/");
   });
@@ -441,8 +441,8 @@ describe("HomeView の更新日", () => {
     await renderHome("");
     const rows = [...(container?.querySelectorAll(".entry-time") ?? [])];
     expect(rows.map((t) => t.firstChild?.textContent)).toEqual([
-      "1 分未満",
-      "5 日前",
+      "1分未満",
+      "5日前",
       expect.stringMatching(/年.*前$/),
     ]);
     // 読み上げには絶対の日時も届ける（hover の title はタッチ端末と読み上げに届かない）。
@@ -460,7 +460,7 @@ describe("HomeView の短い検索語", () => {
   it("匿名の 1〜2 文字（NFKC と前後の空白を畳んだ後）は検索を送らず、文字数を案内する", async () => {
     for (const query of ["a", "ab", " ab　", "ｶﾞｷ"]) {
       await mountHome(query, false);
-      expect(guidance(), query).toBe("3\u00a0文字以上で検索してください");
+      expect(guidance(), query).toBe("3文字以上で検索してください");
       expect(container?.querySelector(".notice-error"), query).toBeNull();
       act(() => root?.unmount());
       container?.remove();

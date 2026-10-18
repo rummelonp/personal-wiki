@@ -9,7 +9,7 @@ import { expect, test } from "./support/fixtures";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
-// 最も長い表記（2 桁の時間の「約 20 時間前」）と、1 桁の時間、年を含める
+// 最も長い表記（2 桁の時間の「約20時間前」）と、1 桁の時間、年を含める
 const AGES = [
   20_000,
   7 * MINUTE,
@@ -80,7 +80,7 @@ test("更新日は相対の表記だけを本文に持ち、絶対の日時は�
   release();
   const time = page.locator(".entries .entry-time").nth(2);
   await expect(time).toBeVisible();
-  await expect(time).toHaveText("約 3 時間前");
+  await expect(time).toHaveText("約3時間前");
   await expect(time).toHaveAttribute("title", /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/);
   await expect(time).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
 
@@ -95,7 +95,7 @@ test("更新日は相対の表記だけを本文に持ち、絶対の日時は�
 
   // 読み上げ（アクセシビリティツリー）には、相対の表記に続けて絶対の日時が届く
   const absolute = (await time.getAttribute("title")) ?? "";
-  expect(await time.ariaSnapshot()).toBe(`- time: 約 3 時間前 （${absolute}）`);
+  expect(await time.ariaSnapshot()).toBe(`- time: 約3時間前 （${absolute}）`);
 });
 
 test("読み込みが終わっても、各行の上端は動かない", async ({ page, isMobile }) => {

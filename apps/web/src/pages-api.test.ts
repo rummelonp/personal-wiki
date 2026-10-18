@@ -185,7 +185,7 @@ describe("失敗の分類", () => {
       ok: false,
       reason: "invalid_input",
       problem: { reason: "title_too_long", bytes: 1530, max: 1024 },
-      message: "タイトルが上限を 506\u00a0バイト超えています。短くしてください。",
+      message: "タイトルが上限を506バイト超えています。短くしてください。",
     });
     const body = failing(413, {
       error: "body_too_large",
@@ -196,7 +196,7 @@ describe("失敗の分類", () => {
     expect(await createPage({ title: "a", body: "" }, body.fetchFn)).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "body_too_large", bytes: 65612, max: 65536 },
-      message: expect.stringContaining("本文が上限を 76\u00a0バイト超えています。"),
+      message: expect.stringContaining("本文が上限を76バイト超えています。"),
     });
   });
 
@@ -230,14 +230,14 @@ describe("失敗の分類", () => {
     expect(title).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "control_char", field: "title", at: { index: 2, column: 3 } },
-      message: expect.stringContaining("タイトルの 3 文字目"),
+      message: expect.stringContaining("タイトルの3文字目"),
     });
     const nul = failing(400, { error: "invalid_field", field: "body", reason: "control_char" });
     const body = await createPage({ title: "a", body: "1\n2\u0000" }, nul.fetchFn);
     expect(body).toMatchObject({
       reason: "invalid_input",
       problem: { reason: "control_char", field: "body", at: { index: 3, line: 2 } },
-      message: expect.stringContaining("本文の 2 行目"),
+      message: expect.stringContaining("本文の2行目"),
     });
     for (const res of [title, body]) expect(JSON.stringify(res)).not.toContain("再読み込み");
   });
@@ -274,7 +274,7 @@ describe("失敗の分類", () => {
     expect(await listRecent(null, { tag: "x" }, long.fetchFn)).toEqual({
       ok: false,
       reason: "error",
-      message: "タグが長すぎます（200 文字まで）。タグを選び直してください。",
+      message: "タグが長すぎます（200文字まで）。タグを選び直してください。",
     });
     const empty = failing(400, { error: "invalid_field", field: "tag", reason: "empty" });
     const res = await listRecent(null, { tag: "#" }, empty.fetchFn);
@@ -339,7 +339,7 @@ describe("失敗の分類", () => {
     expect(await searchPages("a", tooLong.fetchFn)).toEqual({
       ok: false,
       reason: "invalid_query",
-      message: "検索語が長すぎます。200\u00a0文字以内にしてください。",
+      message: "検索語が長すぎます。200文字以内にしてください。",
     });
     const unknown = failing(400, { error: "invalid_field", field: "q" });
     expect(await searchPages("a", unknown.fetchFn)).toMatchObject({
@@ -349,7 +349,7 @@ describe("失敗の分類", () => {
     const short = failing(400, { error: "query_too_short", field: "q", min: 3 });
     expect(await searchPages("a", short.fetchFn)).toMatchObject({
       reason: "invalid_query",
-      message: "検索語が短すぎます。3\u00a0文字以上にしてください。",
+      message: "検索語が短すぎます。3文字以上にしてください。",
     });
     const noMin = failing(400, { error: "query_too_short", field: "q" });
     expect(await searchPages("a", noMin.fetchFn)).toMatchObject({

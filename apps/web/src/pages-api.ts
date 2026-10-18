@@ -212,7 +212,7 @@ function tagFailureOf(code: string, body: Record<string, unknown>): ApiFailure |
   const max = numberOf(body.max);
   const message =
     body.reason === "too_long"
-      ? `タグが長すぎます${max === null ? "" : `（${formatCount(max)} 文字まで）`}。タグを選び直してください。`
+      ? `タグが長すぎます${max === null ? "" : `（${formatCount(max)}文字まで）`}。タグを選び直してください。`
       : "タグが空か、「#」だけです。タグを選び直してください。";
   return { ok: false, reason: "error", message };
 }
@@ -755,7 +755,7 @@ export type InvalidQuery = { ok: false; reason: "invalid_query"; message: string
 
 const QUERY_MESSAGES: Record<string, string> = {
   empty: "検索語が空か、空白だけになっています。語を入力してください。",
-  too_long: `検索語が長すぎます。${SEARCH_MAX_QUERY_CHARS}\u00a0文字以内にしてください。`,
+  too_long: `検索語が長すぎます。${SEARCH_MAX_QUERY_CHARS}文字以内にしてください。`,
   control_char: "検索語にタブや改行など、目に見えない文字が入っています。取り除いてください。",
 };
 
@@ -768,7 +768,7 @@ function invalidQueryOf(body: Record<string, unknown>): InvalidQuery | null {
       reason: "invalid_query",
       message:
         typeof body.min === "number"
-          ? `検索語が短すぎます。${body.min}\u00a0文字以上にしてください。`
+          ? `検索語が短すぎます。${body.min}文字以上にしてください。`
           : "検索語が短すぎます。語を足してください。",
     };
   }
