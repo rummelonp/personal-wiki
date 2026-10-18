@@ -138,6 +138,19 @@ function typeAtEnd(view: EditorView, text: string, userEvent = "input.type"): vo
 /** 再送のボタンが消えている間、focus を預ける要素。 */
 const waitAnchor = () => container?.querySelector("span.visually-hidden[tabindex='-1']") ?? null;
 
+/** 指のタッチ端末（pointer: coarse）にする。戻すには返り値の mockRestore を呼ぶ */
+function mockCoarse() {
+  return vi.spyOn(window, "matchMedia").mockImplementation(
+    (query) =>
+      ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        addEventListener() {},
+        removeEventListener() {},
+      }) as unknown as MediaQueryList,
+  );
+}
+
 /** React の再描画（useSyncExternalStore の通知は microtask で描く）と、保存の Promise を待つ */
 const flushAsync = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
@@ -557,11 +570,13 @@ describe("PageEditor と本文のエディタ", () => {
       expect(document.activeElement).toBe(document.body);
     });
 
-    it("再送が題名の重複で止まったら印を捨て、後から現れる別の失敗のボタンへ移さない", async () => {
-      const { view, button, reply } = await pressRetryAndWait();
+    it("再送が題名の重複で止まったら印を捨て、title の欄へ移し、後から現れる別の失敗のボタンへ移さない", async () => {
+      const { button, reply } = await pressRetryAndWait();
       await reply({ ok: false, reason: "title_conflict", message: "重複" });
       await flushAsync();
       expect(container?.querySelector("button.button-main")).toBeNull();
+      // 次に直すのは title なので、本文でなく title の欄へ移る
+      expect(document.activeElement).toBe(titleView().contentDOM);
 
       // 重複の通知が残ったまま削除を試み、それが失敗して、別の再送のボタンが現れる
       vi.mocked(deletePage).mockResolvedValueOnce({
@@ -576,6 +591,31 @@ describe("PageEditor と本文のエディタ", () => {
       );
       expect(retry).toBeDefined();
       // 重複で止まったときに置き場から移した先のまま、新しいボタンへは移さない
+      expect(document.activeElement).toBe(titleView().contentDOM);
+    });
+
+    it("タッチ端末では、再送が題名の重複で止まっても title の欄でなくページの枠へ移す", async () => {
+      const coarse = mockCoarse();
+      try {
+        const { reply } = await pressRetryAndWait();
+        await reply({ ok: false, reason: "title_conflict", message: "重複" });
+        await flushAsync();
+        expect(document.activeElement).toBe(container?.querySelector("article"));
+        expect(document.activeElement).not.toBe(titleView().contentDOM);
+      } finally {
+        coarse.mockRestore();
+      }
+    });
+
+    it("再送で保存先のページが消えていたと分かったら、置き場から本文へ focus を移す", async () => {
+      vi.mocked(getPage).mockResolvedValueOnce({ ok: false, reason: "not_found" });
+      const { view, reply } = await pressRetryAndWait();
+      await reply({ ok: false, reason: "version_conflict", currentVersion: 2 });
+      await flushAsync();
+      expect(container?.querySelector(".notice-title")?.textContent).toBe(
+        "このページは削除されました",
+      );
+      expect(waitAnchor()).toBeNull();
       expect(document.activeElement).toBe(view().contentDOM);
     });
   });
@@ -869,18 +909,6 @@ describe("PageEditor と本文のエディタ", () => {
       localStorage.setItem(
         BACKUP_KEY,
         JSON.stringify({ title: "題", body: "退避した本文", baseVersion: 1, savedAt: 0 }),
-      );
-    }
-
-    function mockCoarse() {
-      return vi.spyOn(window, "matchMedia").mockImplementation(
-        (query) =>
-          ({
-            matches: query === "(pointer: coarse)",
-            media: query,
-            addEventListener() {},
-            removeEventListener() {},
-          }) as unknown as MediaQueryList,
       );
     }
 
@@ -1781,6 +1809,7 @@ describe("まだ作っていないページ（page が null）", () => {
       await reply({ ok: false, reason: "title_conflict", message: "重複" });
       await flushAsync();
       expect(retryButton()).toBeUndefined();
+      expect(document.activeElement).toBe(titleView().contentDOM);
 
       // 題名を変えて欄を離れると作り直され、通信の失敗で再送のボタンが現れる
       let fail: (value: ApiResult<Page>) => void = () => {};

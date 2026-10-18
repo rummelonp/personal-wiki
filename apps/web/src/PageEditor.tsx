@@ -621,8 +621,17 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         return;
       }
     }
-    // 預けた先が、再送のボタンに戻らずに消えたとき（成功、衝突など）は、focus を body に落とさない
-    if (parked && anchor === null && lost && !restoreRetryFocus.current) focusBodyOrFrame();
+    // 預けた先が、再送のボタンに戻らずに消えたとき（成功、衝突など）は、focus を body に落とさない。
+    // title の重複で終わったときは、次に直すのが title なので、title の欄へ移す。
+    // タッチ端末は、本文と同じくキーボードを開かないよう、枠へ移す
+    if (parked && anchor === null && lost && !restoreRetryFocus.current) {
+      const titleTaken =
+        (shownFailure?.kind === "create" || shownFailure?.kind === "save") &&
+        shownFailure.titleTaken !== undefined;
+      if (titleTaken && !window.matchMedia("(pointer: coarse)").matches)
+        titleEditor.current?.focus();
+      else focusBodyOrFrame();
+    }
   });
   // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
   const inProgress =
