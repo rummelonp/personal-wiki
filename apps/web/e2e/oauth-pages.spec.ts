@@ -8,6 +8,9 @@ import { connectOAuthClient } from "./support/principals";
  * 行の折れ目は座標で測る。`word-break: auto-phrase` は WebKit に無いので、測るのは Chromium だけにする（@widths）。
  */
 
+/** Worker が取り消しの知らせを渡す cookie。Secure なので、ブラウザによっては http://localhost で受け付けない */
+const NOTICE_COOKIE_NAME = "__Host-wiki_oauth_notice";
+
 const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 
 // 文節の途中で切れないことを見る語。画面の警告文（.warn）に含まれる
@@ -293,18 +296,32 @@ test.describe("接続の取り消し", () => {
       (await target.locator(".meta").textContent()) ?? "",
     )?.[1];
     expect(granted).toBeDefined();
-    await target.getByRole("button", { name: /^取り消す/ }).click();
-
     const grantsUrl = /\/_auth\/oauth\/grants$/;
+    // 知らせの cookie は一覧を開く応答で消えるので、一覧への遷移の要求に付いたかで、ブラウザが受け入れたかを見る。
+    // WebKit は拒んだ Set-Cookie を応答の headers にも出さないので、Worker が出したかは取り消しの応答からは見えない
+    const grantsRequest = page.waitForRequest(
+      (request) => grantsUrl.test(request.url()) && request.redirectedFrom() !== null,
+    );
+    await target.getByRole("button", { name: /^取り消す/ }).click();
+    const noticeSent = ((await (await grantsRequest).allHeaders()).cookie ?? "").includes(
+      NOTICE_COOKIE_NAME,
+    );
+    testInfo.annotations.push({
+      type: "知らせの cookie",
+      description: noticeSent ? "入った" : "入らなかった",
+    });
+    // Chromium は localhost を安全な文脈として Secure の cookie を受け付ける。
+    // ここで入らなければ Worker が知らせを出していないので、入らなかった経路で黙って通さない
+    if (browserName === "chromium") expect(noticeSent).toBe(true);
     await expect(page).toHaveURL(grantsUrl);
     await expect(page.locator(`input[name="grant"][value="${grant}"]`)).toHaveCount(0);
-    if (browserName === "webkit") {
-      // 知らせは Secure の cookie で渡し、WebKit は http://localhost で Secure の Set-Cookie を受け付けない
-      await expect(page.locator(".done")).toHaveCount(0);
-    } else {
+    // cookie が入らないブラウザ（http://localhost の WebKit など）でも、取り消しと一覧への遷移は変わらない
+    if (noticeSent) {
       await expect(page.locator(".done")).toHaveText(
         `${name}（${granted} に許可）の接続を取り消しました。`,
       );
+    } else {
+      await expect(page.locator(".done")).toHaveCount(0);
     }
 
     await page.reload();
