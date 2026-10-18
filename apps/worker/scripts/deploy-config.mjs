@@ -199,7 +199,7 @@ export function readDeployValues(envText) {
   const oauthKvNamespaceId = get("OAUTH_KV_NAMESPACE_ID");
   if (oauthKvNamespaceId === undefined) {
     warnings.push(
-      "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai などのカスタムコネクタからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）",
+      "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai や Claude Desktop のカスタムコネクタ、Claude Code や Codex などのコーディングエージェントからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）",
     );
   } else if (!KV_NAMESPACE_ID_PATTERN.test(oauthKvNamespaceId)) {
     problems.push(

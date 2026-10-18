@@ -36,7 +36,7 @@ const OWNER_AUTH_ENV = `ACCESS_TEAM_DOMAIN=team.cloudflareaccess.com\nACCESS_AUD
 const NO_OWNER_AUTH_WARNING =
   "ACCESS_TEAM_DOMAIN、ACCESS_AUD、OWNER_EMAILS が無いので、owner のログインは使えません（token の API と MCP は使えます）";
 const NO_OAUTH_WARNING =
-  "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai などのカスタムコネクタからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）";
+  "OAUTH_KV_NAMESPACE_ID が無いので、OAuth（claude.ai や Claude Desktop のカスタムコネクタ、Claude Code や Codex などのコーディングエージェントからの MCP 接続）は使えません（Bearer トークンの MCP は使えます）";
 const OAUTH_WITHOUT_OWNER_WARNING =
   "OAUTH_KV_NAMESPACE_ID はありますが、owner のログインが無いので OAuth は使えません（同意画面に owner のログインが要ります）";
 

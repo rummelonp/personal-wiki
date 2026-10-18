@@ -22,7 +22,8 @@ export const HELP = `usage:
        pnpm exec wrangler d1 create personal-wiki --update-config=false
      R2 は添付で使う。ダッシュボードで R2 を有効にしてから作る（有効化前は省略してよい）
        pnpm exec wrangler r2 bucket create personal-wiki --update-config=false
-     claude.ai や Claude Desktop のカスタムコネクタ（OAuth）から MCP に接続するときだけ、KV を作る
+     claude.ai や Claude Desktop のカスタムコネクタ、Claude Code や Codex などのコーディングエージェント（OAuth）から
+     MCP に接続するときだけ、KV を作る
        pnpm exec wrangler kv namespace create personal-wiki-oauth --update-config=false
   3. cp deploy.env.example deploy.env を実行し、ホスト名と database_id を書く
        R2 を作ったときだけ R2_BUCKET_NAME を書く。空のままなら R2 の binding を付けずにデプロイする
@@ -47,12 +48,15 @@ export const HELP = `usage:
   8. MCP 接続（API token で接続する場合）
        claude mcp add --transport http personal-wiki https://<ホスト名>/mcp \\
          --header "Authorization: Bearer <トークン>"
-  9. claude.ai や Claude Desktop のカスタムコネクタ（手順 2 の KV と手順 4 の owner のログインが要る）:
-       コネクタの URL に https://<ホスト名>/mcp を入れて接続する。ブラウザで同意画面が開くので、
+  9. claude.ai や Claude Desktop のカスタムコネクタ、Claude Code や Codex などのコーディングエージェント
+     （手順 2 の KV と手順 4 の owner のログインが要る）:
+       コネクタかエージェントの MCP の URL に https://<ホスト名>/mcp を入れて接続する。ブラウザで同意画面が開くので、
        「接続するアプリ」の名前と「トークンの送り先」を確かめ、「読み取り」か「読み書き」を選んで許可する
        （ログインしていなければ /_auth/login を経由してから同意画面に戻る）
        client の登録は、redirect URI が claude.ai の戻り先か deploy.env の OAUTH_REDIRECT_URIS に
        あるものだけを受け付け、1 日（UTC）に 20 件までにする。上限に達した日は新しい接続だけが止まる
+       コーディングエージェントの callback は OAUTH_REDIRECT_URIS に足す
+       （足し方は docs/deploy.md の「コーディングエージェントから接続する」にある）
        許可した接続は https://<ホスト名>/_auth/oauth/grants で見て、取り消せる（取り消すとその接続の
        トークンはすぐに使えなくなる）。同意画面と一覧に出る client_id が同じアプリを許可し直すと、
        以前の許可とトークンは自動で取り消される。client_id が変わると以前の許可は残るので、一覧から取り消す

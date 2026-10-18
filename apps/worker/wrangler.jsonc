@@ -26,7 +26,7 @@
     }
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "personal-wiki" }],
-  // OAuth（claude.ai などのカスタムコネクタ）の client とトークンの置き場。id はローカルでは不要で、
+  // OAuth（カスタムコネクタ、コーディングエージェント）の client とトークンの置き場。id はローカルでは不要で、
   // デプロイ先の ID は deploy.env に置く。deploy.env に無ければ binding を外してデプロイし、OAuth は閉じる
   "kv_namespaces": [{ "binding": "OAUTH_KV" }],
   // apps/web のビルド出力。deploy.mjs が wrangler deploy の前にビルドする。
