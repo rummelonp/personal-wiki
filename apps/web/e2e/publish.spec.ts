@@ -335,6 +335,7 @@ test("版の本文に戻している間も、ダイアログを閉じて「公�
   await typeAtBodyEnd(page, "を足した");
   await entries.last().click();
   const viewer = page.getByRole("dialog");
+  await viewer.getByRole("button", { name: "全文" }).click();
   await expect(viewer.locator(".cm-content")).toHaveText("最初の本文");
   await viewer.getByRole("button", { name: "この版の本文に戻す" }).click();
   await expect(viewer.getByRole("button", { name: "戻し中…" })).toBeDisabled();

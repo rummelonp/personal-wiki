@@ -27,6 +27,7 @@ vi.mock("./scroll-restore", async (importOriginal) => {
 
 const ID = "AAAAAAAAAAAAAAAAAAAAAA";
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const NOW = Date.UTC(2026, 9, 17, 12, 0);
 
 const ok = <T,>(value: T): ApiResult<T> => ({ ok: true, value });
@@ -388,6 +389,21 @@ describe("RevisionHistory の取り直しの間引き", () => {
   });
 });
 
+const buttonNamed = (root: ParentNode, name: string) =>
+  [...root.querySelectorAll("button")].find((b) => b.textContent === name);
+
+/** 版のダイアログは差分から始まる。全文（読み取り専用のエディタ）は切り替えて見る */
+async function showFull(dialog: HTMLDialogElement) {
+  await vi.waitFor(() => expect(buttonNamed(dialog, "全文")).toBeDefined());
+  await act(async () => buttonNamed(dialog, "全文")?.click());
+}
+
+const diffRows = (dialog: HTMLDialogElement) =>
+  [...dialog.querySelectorAll(".revision-diff .diff-row")].map(
+    (row) =>
+      `${row.querySelector(".diff-mark")?.textContent}${row.querySelector(".diff-text")?.textContent}`,
+  );
+
 const bodyStatus = (dialog: HTMLDialogElement) =>
   dialog.querySelector(".revision-viewer-body [role=status]")?.textContent;
 
@@ -410,6 +426,7 @@ describe("RevisionHistory の版の表示", () => {
     const dialog = await openEntry(1);
     expect(getRevision).toHaveBeenCalledWith(ID, 2);
     expect(dialog.open).toBe(true);
+    await showFull(dialog);
     await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
     expect(dialog.querySelector("h2")?.textContent).toBe("旧題");
     expect(dialog.textContent).toContain("air-claude");
@@ -463,6 +480,239 @@ describe("RevisionHistory の版の表示", () => {
   });
 });
 
+describe("RevisionHistory の版の差分", () => {
+  const rev = (version: number, title: string, body: string) => ({
+    version,
+    title,
+    createdAt: NOW - version * MINUTE,
+    author: owner,
+    body,
+  });
+  const NEW = rev(5, "題", "共通\n新しい行\n末尾");
+  const OLD = rev(2, "題", "共通\n古い行\n末尾");
+
+  /** 版の番号で引く。取り違えると本文が合わず落ちる */
+  function serve(...revisions: ReturnType<typeof rev>[]) {
+    vi.mocked(getRevision).mockImplementation(async (_id, version) => {
+      const found = revisions.find((r) => r.version === version);
+      return found === undefined ? { ok: false, reason: "revision_not_found" } : ok(found);
+    });
+  }
+
+  async function open(index: number) {
+    await mount();
+    const entry = await vi.waitFor(() => {
+      const found = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[index];
+      expect(found).toBeDefined();
+      return found as HTMLButtonElement;
+    });
+    await act(async () => entry.click());
+    return container?.querySelector("dialog") as HTMLDialogElement;
+  }
+
+  const close = async (dialog: HTMLDialogElement) => {
+    await act(async () => buttonNamed(dialog, "閉じる")?.click());
+  };
+
+  it("既定は 1 つ古い版との差分で、番号から 1 を引かず一覧の次の行の版を取る", async () => {
+    serve(NEW, OLD);
+    const dialog = await open(0);
+    await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(4));
+    expect(getRevision).toHaveBeenCalledWith(ID, 5);
+    expect(getRevision).toHaveBeenCalledWith(ID, 2);
+    expect(diffRows(dialog)).toEqual([" 共通", "−古い行", "＋新しい行", " 末尾"]);
+    expect(dialog.querySelector(".diff-legend")?.textContent).toContain("前の版だけにある行");
+    expect(dialog.querySelector(".cm-content")).toBeNull();
+    expect(buttonNamed(dialog, "差分")?.getAttribute("aria-pressed")).toBe("true");
+    expect(buttonNamed(dialog, "全文")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("離れた同じ行は件数に畳む", async () => {
+    const lines = Array.from({ length: 12 }, (_, i) => `行${i}`);
+    serve(
+      rev(5, "題", [...lines, "変更後"].join("\n")),
+      rev(2, "題", [...lines, "変更前"].join("\n")),
+    );
+    const dialog = await open(0);
+    await vi.waitFor(() => expect(diffRows(dialog).length).toBeGreaterThan(0));
+    expect(dialog.querySelector(".diff-skip")?.textContent).toContain("10行は同じ");
+    expect(diffRows(dialog)).toEqual([" 行10", " 行11", "−変更前", "＋変更後"]);
+  });
+
+  it("全文に切り替えるとエディタを出し、差分へ戻しても前の版を取り直さない", async () => {
+    serve(NEW, OLD);
+    const dialog = await open(0);
+    await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(4));
+    expect(getRevision).toHaveBeenCalledTimes(2);
+
+    await act(async () => buttonNamed(dialog, "全文")?.click());
+    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    expect(dialog.querySelector(".revision-diff")?.hasAttribute("hidden")).toBe(true);
+    expect(buttonNamed(dialog, "全文")?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => buttonNamed(dialog, "差分")?.click());
+    expect(dialog.querySelector(".cm-content")).toBeNull();
+    expect(dialog.querySelector(".revision-diff")?.hasAttribute("hidden")).toBe(false);
+    expect(diffRows(dialog)).toHaveLength(4);
+    expect(getRevision).toHaveBeenCalledTimes(2);
+  });
+
+  it("開き直すと、全文を見ていても差分から始める", async () => {
+    serve(NEW, OLD);
+    const dialog = await open(0);
+    await showFull(dialog);
+    await close(dialog);
+    const entry = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[0];
+    await vi.waitFor(() => expect(document.activeElement).toBe(entry));
+    await act(async () => entry?.click());
+    await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(4));
+    expect(dialog.querySelector(".cm-content")).toBeNull();
+  });
+
+  it("title が前の版と違えば、差分の上に両方を出す", async () => {
+    serve(rev(5, "新題", "本文"), rev(2, "旧題", "本文"));
+    const dialog = await open(0);
+    await vi.waitFor(() => expect(dialog.querySelector(".revision-diff-titles")).not.toBeNull());
+    expect(dialog.querySelector(".revision-diff-titles")?.textContent).toBe(
+      "前の版のタイトル旧題この版のタイトル新題",
+    );
+    expect(dialog.querySelector(".revision-diff")?.textContent).toContain(
+      "本文は前の版と同じです。",
+    );
+    expect(diffRows(dialog)).toEqual([]);
+  });
+
+  it("title も本文も同じなら、差分が無いと伝える", async () => {
+    serve(rev(5, "題", "本文"), rev(2, "題", "本文"));
+    const dialog = await open(0);
+    await vi.waitFor(() =>
+      expect(dialog.querySelector(".revision-diff")?.textContent).toContain(
+        "前の版との差分はありません。",
+      ),
+    );
+    expect(dialog.querySelector(".revision-diff-titles")).toBeNull();
+  });
+
+  it("最初の版は前が無いので、通信せずに本文の全行を足した行として出す", async () => {
+    serve(NEW, rev(2, "旧題", "一行目\n\n三行目"));
+    const dialog = await open(1);
+    await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(3));
+    expect(diffRows(dialog)).toEqual(["＋一行目", "＋ ", "＋三行目"]);
+    expect(dialog.querySelector(".diff-legend")?.textContent).toContain("最初の版です");
+    expect(getRevision).toHaveBeenCalledTimes(1);
+    expect(listRevisions).toHaveBeenCalledTimes(1);
+  });
+
+  it("一覧の末尾の版は、続きの cursor で 1 つ古い版を探す", async () => {
+    vi.mocked(listRevisions)
+      .mockResolvedValueOnce(ok({ revisions: REVISIONS, nextCursor: "2" }))
+      .mockResolvedValueOnce(
+        ok({
+          revisions: [{ version: 1, title: "題", createdAt: NOW - 3 * HOUR, author: owner }],
+          nextCursor: null,
+        }),
+      );
+    serve(NEW, OLD, rev(1, "題", "共通\n古い行\n最初"));
+    const dialog = await open(1);
+    await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(4));
+    expect(listRevisions).toHaveBeenLastCalledWith(ID, "2");
+    expect(getRevision).toHaveBeenLastCalledWith(ID, 1);
+    expect(diffRows(dialog)).toEqual([" 共通", " 古い行", "−最初", "＋末尾"]);
+  });
+
+  it("続きの先が空なら最初の版として扱う", async () => {
+    vi.mocked(listRevisions)
+      .mockResolvedValueOnce(ok({ revisions: REVISIONS, nextCursor: "2" }))
+      .mockResolvedValueOnce(ok({ revisions: [], nextCursor: null }));
+    serve(NEW, OLD);
+    const dialog = await open(1);
+    await vi.waitFor(() =>
+      expect(dialog.querySelector(".diff-legend")?.textContent).toContain("最初の版"),
+    );
+  });
+
+  it("前の版が無くなっていたら、その旨を出して一覧を取り直す。全文は読める", async () => {
+    serve(NEW);
+    const dialog = await open(0);
+    await vi.waitFor(() =>
+      expect(dialog.querySelector(".revision-diff")?.textContent).toContain(
+        "前の版が後の保存にまとめられたため、差分を表示できません。",
+      ),
+    );
+    await vi.waitFor(() => expect(listRevisions).toHaveBeenCalledTimes(2));
+    await showFull(dialog);
+    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+  });
+
+  it("前の版の取得に失敗したら、理由を出して再試行できる", async () => {
+    let attempts = 0;
+    vi.mocked(getRevision).mockImplementation(async (_id, version) => {
+      if (version === 5) return ok(NEW);
+      attempts++;
+      return attempts === 1
+        ? { ok: false, reason: "error", message: "通信に失敗しました。" }
+        : ok(OLD);
+    });
+    const dialog = await open(0);
+    await vi.waitFor(() =>
+      expect(dialog.querySelector(".revision-diff")?.textContent).toContain(
+        "前の版を取得できませんでした。通信に失敗しました。",
+      ),
+    );
+    await act(async () => buttonNamed(dialog, "再試行")?.click());
+    await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(4));
+    expect(dialog.querySelector(".revision-diff")?.textContent).not.toContain(
+      "取得できませんでした",
+    );
+  });
+
+  it("ページが消えていたら、版がまとめられたとは言わず、一覧も取り直さない", async () => {
+    vi.mocked(getRevision).mockImplementation(async (_id, version) =>
+      version === 5 ? ok(NEW) : { ok: false, reason: "not_found" },
+    );
+    const dialog = await open(0);
+    await vi.waitFor(() =>
+      expect(dialog.querySelector(".revision-diff")?.textContent).toContain(
+        "このページは削除されたため、前の版を表示できません。",
+      ),
+    );
+    expect(listRevisions).toHaveBeenCalledTimes(1);
+  });
+
+  it("閉じた後に届いた前の版は捨て、別の版を開いていれば、その版の差分だけを出す", async () => {
+    let resolvePrevious: (value: ApiResult<typeof OLD>) => void = () => {};
+    vi.mocked(getRevision).mockImplementation((_id, version) =>
+      version === 2
+        ? new Promise((r) => {
+            resolvePrevious = r;
+          })
+        : Promise.resolve(ok(NEW)),
+    );
+    const dialog = await open(0);
+    await vi.waitFor(() => expect(getRevision).toHaveBeenCalledWith(ID, 2));
+    await close(dialog);
+    const entries = container?.querySelectorAll<HTMLButtonElement>(".revision-entry");
+    await vi.waitFor(() => expect(document.activeElement).toBe(entries?.[0]));
+    vi.mocked(getRevision).mockImplementation(async () => ok(OLD));
+    await act(async () => entries?.[1]?.click());
+    await vi.waitFor(() =>
+      expect(dialog.querySelector(".diff-legend")?.textContent).toContain("最初の版"),
+    );
+    const rows = diffRows(dialog);
+
+    await act(async () => resolvePrevious(ok(OLD)));
+    expect(diffRows(dialog)).toEqual(rows);
+    expect(dialog.querySelector(".diff-legend")?.textContent).toContain("最初の版");
+  });
+
+  it("一覧を開いただけでは、版も前の版も取らない", async () => {
+    serve(NEW, OLD);
+    await mount();
+    await vi.waitFor(() => expect(entries()).toHaveLength(2));
+    expect(getRevision).not.toHaveBeenCalled();
+  });
+});
+
 describe("RevisionHistory の版を戻す操作", () => {
   const OLD = { ...(REVISIONS[1] as RevisionSummary), body: "昔の本文" };
 
@@ -476,7 +726,7 @@ describe("RevisionHistory の版を戻す操作", () => {
     });
     await act(async () => entry.click());
     const dialog = container?.querySelector("dialog") as HTMLDialogElement;
-    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    await vi.waitFor(() => expect(buttonNamed(dialog, "全文")).toBeDefined());
     return dialog;
   }
 
@@ -497,7 +747,7 @@ describe("RevisionHistory の版を戻す操作", () => {
     });
     await act(async () => head.click());
     const dialog = container?.querySelector("dialog") as HTMLDialogElement;
-    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    await vi.waitFor(() => expect(buttonNamed(dialog, "全文")).toBeDefined());
     expect(restoreButton(dialog)).toBeUndefined();
     act(() => root?.unmount());
     root = null;
@@ -600,7 +850,7 @@ describe("RevisionHistory の版を戻す操作", () => {
     // 待たずに開き直すと、遅れて届いたイベントが開き直したばかりの版を閉じてしまう
     await vi.waitFor(() => expect(document.activeElement).toBe(entry));
     await act(async () => entry?.click());
-    await vi.waitFor(() => expect(dialog.querySelector(".cm-content")).not.toBeNull());
+    await vi.waitFor(() => expect(buttonNamed(dialog, "全文")).toBeDefined());
     expect(note(dialog)).toBe("");
   });
 });

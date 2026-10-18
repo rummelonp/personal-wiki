@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { setLoadingDelay } from "./Loading";
-import { type ApiResult, listRevisions, type RevisionSummary } from "./pages-api";
+import { type ApiResult, getRevision, listRevisions, type RevisionSummary } from "./pages-api";
 import { RevisionHistory } from "./RevisionHistory";
 import "./theme.css";
 import "./styles.css";
@@ -170,5 +170,46 @@ describe("履歴の行の並び", () => {
     expect(rounded(authorLefts()).size).toBe(1);
     const long = all(".revision-author")[1] as HTMLElement;
     expect(long.scrollWidth).toBeGreaterThan(long.clientWidth);
+  });
+});
+
+describe("版の差分の並び", () => {
+  const LONG_WORD = `https://example.com/${"a".repeat(200)}`;
+  const LONG_TEXT = "長い日本語の行がダイアログの幅を超えても折り返して全部を読めること。".repeat(
+    8,
+  );
+
+  async function openDiff(width: string) {
+    const body = (text: string) => `共通\n${text}\n末尾`;
+    vi.mocked(getRevision).mockImplementation(async (_id, version) => ({
+      ok: true,
+      value: {
+        ...(REVISIONS.find((r) => r.version === version) as RevisionSummary),
+        body: version === 4 ? body(`${LONG_WORD} ${LONG_TEXT}`) : body(LONG_TEXT),
+      },
+    }));
+    await mount(width, REVISIONS);
+    await act(async () => (all(".revision-entry")[0] as HTMLElement).click());
+    await vi.waitFor(() => expect(all(".revision-viewer .diff-row").length).toBeGreaterThan(0));
+    const dialog = document.querySelector<HTMLElement>(".revision-viewer");
+    if (!dialog) throw new Error("ダイアログが無い");
+    return dialog;
+  }
+
+  it("長い行は折り返し、横のスクロールを出さずダイアログの幅に収まる", async () => {
+    const dialog = await openDiff("var(--rail-width)");
+    const body = dialog.querySelector<HTMLElement>(".revision-viewer-body");
+    if (!body) throw new Error("本文が無い");
+    expect(body.scrollWidth).toBeLessThanOrEqual(body.clientWidth);
+    const frame = dialog.getBoundingClientRect();
+    for (const row of dialog.querySelectorAll(".diff-row")) {
+      const box = row.getBoundingClientRect();
+      expect(box.right).toBeLessThanOrEqual(frame.right);
+      expect(box.left).toBeGreaterThanOrEqual(frame.left);
+    }
+    // 折り返して 1 行より高くなる
+    const changed = dialog.querySelector<HTMLElement>(".diff-insert");
+    const line = Number.parseFloat(getComputedStyle(changed as HTMLElement).lineHeight);
+    expect((changed as HTMLElement).getBoundingClientRect().height).toBeGreaterThan(line * 2);
   });
 });

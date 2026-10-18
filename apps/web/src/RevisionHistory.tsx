@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { BodyEditor } from "./BodyEditor";
 import type { RestoreOutcome } from "./editor-session";
 import { formatRelativeTime, formatTime } from "./format";
-import { useSkeletonPainted } from "./Loading";
+import { PendingBody, useSkeletonPainted } from "./Loading";
 import {
   failureMessage,
   getRevision,
@@ -13,6 +13,7 @@ import {
   type RevisionSummary,
 } from "./pages-api";
 import { RailSection } from "./Rail";
+import { type PreviousRef, previousOf, RevisionDiff } from "./RevisionDiff";
 import { useIntersecting } from "./use-intersecting";
 import { useNow } from "./use-now";
 import { type Basis, useRevisionList } from "./use-revision-list";
@@ -54,7 +55,12 @@ function stampOf(summary: RevisionSummary, index: number, basis: Basis): Stamp {
     : { at: summary.createdAt, lastSaved: false };
 }
 
-type Viewing = { summary: RevisionSummary; stamp: Stamp } & (
+type Viewing = {
+  summary: RevisionSummary;
+  stamp: Stamp;
+  /** 開いた時点の一覧で決めた 1 つ古い版。後で一覧が取り直されても、開いた版の前は変わらない */
+  previous: PreviousRef;
+} & (
   | { status: "loading" }
   | { status: "ready"; revision: Revision }
   /** ページはあるが、その版が後の保存にまとめられて無くなった */
@@ -153,18 +159,30 @@ export function RevisionHistory({
     visible,
   });
 
-  async function open(summary: RevisionSummary, stamp: Stamp, opener: HTMLElement) {
+  async function open(
+    summary: RevisionSummary,
+    stamp: Stamp,
+    previous: PreviousRef,
+    opener: HTMLElement,
+  ) {
     openerRef.current = opener;
     setRestoring(null);
-    setViewing({ status: "loading", summary, stamp });
+    setViewing({ status: "loading", summary, stamp, previous });
     const res = await getRevision(pageId, summary.version);
     setViewing((current) => {
       // 待つ間に閉じたか、別の版を開いた
       if (current?.summary.version !== summary.version) return current;
-      if (res.ok) return { status: "ready", summary, stamp, revision: res.value };
-      if (res.reason === "revision_not_found") return { status: "missing", summary, stamp };
-      if (res.reason === "not_found") return { status: "gone", summary, stamp };
-      return { status: "error", summary, stamp, message: failureMessage(res, LOAD_FAILED) };
+      if (res.ok) return { status: "ready", summary, stamp, previous, revision: res.value };
+      if (res.reason === "revision_not_found")
+        return { status: "missing", summary, stamp, previous };
+      if (res.reason === "not_found") return { status: "gone", summary, stamp, previous };
+      return {
+        status: "error",
+        summary,
+        stamp,
+        previous,
+        message: failureMessage(res, LOAD_FAILED),
+      };
     });
     // 後の保存にまとめられて番号が進んだ版は、一覧も古い
     if (!res.ok && res.reason === "revision_not_found") await refetch();
@@ -218,7 +236,14 @@ export function RevisionHistory({
                   type="button"
                   className="revision-entry"
                   aria-haspopup="dialog"
-                  onClick={(event) => void open(summary, stamp, event.currentTarget)}
+                  onClick={(event) =>
+                    void open(
+                      summary,
+                      stamp,
+                      previousOf(list.revisions, index, list.next),
+                      event.currentTarget,
+                    )
+                  }
                 >
                   <time
                     className="revision-time"
@@ -249,7 +274,9 @@ export function RevisionHistory({
         </button>
       )}
       <RevisionViewer
+        pageId={pageId}
         viewing={viewing}
+        onPreviousMissing={() => void refetch()}
         onClose={() => {
           setViewing(null);
           setRestoring(null);
@@ -275,13 +302,17 @@ export function RevisionHistory({
 }
 
 function RevisionViewer({
+  pageId,
   viewing,
+  onPreviousMissing,
   onClose,
   onClosed,
   resolveAttachmentUrl,
   restore,
 }: {
+  pageId: string;
   viewing: Viewing | null;
+  onPreviousMissing: () => void;
   onClose: () => void;
   /** ダイアログが閉じた後。焦点を戻すのに使う */
   onClosed: () => void;
@@ -387,15 +418,15 @@ function RevisionViewer({
               </p>
             )}
             {viewing.status === "ready" && (
-              <div className="revision-viewer-prose">
-                <BodyEditor
-                  key={viewing.revision.version}
-                  value={viewing.revision.body}
-                  readOnly
-                  scrollAnchor={false}
-                  {...(resolveAttachmentUrl === undefined ? {} : { resolveAttachmentUrl })}
-                />
-              </div>
+              <RevisionContent
+                // 版を開き直すたびに、既定の差分から始める
+                key={viewing.revision.version}
+                pageId={pageId}
+                revision={viewing.revision}
+                previous={viewing.previous}
+                onPreviousMissing={onPreviousMissing}
+                resolveAttachmentUrl={resolveAttachmentUrl}
+              />
             )}
           </div>
         </>
@@ -404,21 +435,64 @@ function RevisionViewer({
   );
 }
 
-function PendingBody() {
-  const painted = useSkeletonPainted();
+type Mode = "diff" | "full";
+
+const MODES: { value: Mode; label: string }[] = [
+  { value: "diff", label: "差分" },
+  { value: "full", label: "全文" },
+];
+
+/**
+ * 開いた版の中身。既定は前の版との差分で、全文は読み取り専用のエディタで出す。
+ * エディタは全文に切り替えたときに作る。読み取り専用で IME の対象にならないので、作り直してよい。
+ */
+function RevisionContent({
+  pageId,
+  revision,
+  previous,
+  onPreviousMissing,
+  resolveAttachmentUrl,
+}: {
+  pageId: string;
+  revision: Revision;
+  previous: PreviousRef;
+  onPreviousMissing: () => void;
+  resolveAttachmentUrl: AttachmentUrlResolver | undefined;
+}) {
+  const [mode, setMode] = useState<Mode>("diff");
   return (
     <>
-      <span className="visually-hidden" role="status">
-        読み込み中…
-      </span>
-      <div
-        className={painted ? "skeleton-body skeleton-painted" : "skeleton-body"}
-        aria-busy="true"
-      >
-        {[0, 1, 2].map((i) => (
-          <span className="skeleton skeleton-text" key={i} aria-hidden="true" />
+      <fieldset className="segmented revision-viewer-modes">
+        <legend className="visually-hidden">表示</legend>
+        {MODES.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            className="segmented-option"
+            aria-pressed={mode === value}
+            onClick={() => setMode(value)}
+          >
+            {label}
+          </button>
         ))}
-      </div>
+      </fieldset>
+      <RevisionDiff
+        pageId={pageId}
+        revision={revision}
+        previous={previous}
+        hidden={mode !== "diff"}
+        onPreviousMissing={onPreviousMissing}
+      />
+      {mode === "full" && (
+        <div className="revision-viewer-prose">
+          <BodyEditor
+            value={revision.body}
+            readOnly
+            scrollAnchor={false}
+            {...(resolveAttachmentUrl === undefined ? {} : { resolveAttachmentUrl })}
+          />
+        </div>
+      )}
     </>
   );
 }

@@ -24,6 +24,11 @@ const history = (page: Page) => page.locator(".rail-section-history");
 const entries = (page: Page) => history(page).locator(".revision-entry");
 const viewer = (page: Page) => page.getByRole("dialog");
 
+/** 版のダイアログは差分から始まる。全文は読み取り専用のエディタで、切り替えて見る */
+async function showFull(page: Page) {
+  await viewer(page).getByRole("button", { name: "全文" }).click();
+}
+
 /** 閉じた後も close の event が届くまでは、ダイアログの本文が画面の本文と同じ名前で DOM に残る */
 async function closeViewer(page: Page) {
   await page.keyboard.press("Escape");
@@ -70,6 +75,7 @@ test("版を時刻と作成者で並べ、押した版の本文を読み取り�
   await expect(viewer(page)).toBeVisible();
   await expect(viewer(page).getByRole("heading", { name: title })).toBeVisible();
   await expect(viewer(page)).toContainText("読み取り専用");
+  await showFull(page);
   const oldBody = viewer(page).locator(".cm-content");
   await expect(oldBody).toHaveText("最初の本文");
   await oldBody.click();
@@ -109,10 +115,12 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
 
   await entries(page).nth(1).click();
   await expect(viewer(page)).toContainText(tokenName);
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("token の本文");
   await closeViewer(page);
   await entries(page).nth(0).click();
   await expect(viewer(page)).toContainText(clientName);
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("OAuth の接続の本文");
 });
 
@@ -170,6 +178,7 @@ test("保存すると履歴を取り直し、10 分のうちの保存は先頭�
   await expect(entries(page)).toHaveCount(1);
 
   await entries(page).first().click();
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("本文を足す");
 });
 
@@ -186,11 +195,13 @@ test("古い版に戻すと本文だけが戻り、title は今のまま、履�
   await expect(entries(page)).toHaveCount(2);
   // 先頭の版は今の本文そのものなので、戻す操作を出さない
   await entries(page).first().click();
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("二つ目の本文");
   await expect(viewer(page).getByRole("button", { name: "この版の本文に戻す" })).toHaveCount(0);
   await closeViewer(page);
 
   await entries(page).nth(1).click();
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("最初の本文");
   await viewer(page).getByRole("button", { name: "この版の本文に戻す" }).click();
   await expect(viewer(page).locator(".revision-viewer-status")).toHaveText(
@@ -234,6 +245,7 @@ test("未保存の入力は先に保存してから戻し、戻す前の内容�
   });
   await typeAtBodyEnd(page, "を足した");
   await entries(page).nth(1).click();
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("最初の本文");
   await viewer(page).getByRole("button", { name: "この版の本文に戻す" }).click();
   await expect(viewer(page).getByRole("button", { name: "戻し中…" })).toBeDisabled();
@@ -249,7 +261,121 @@ test("未保存の入力は先に保存してから戻し、戻す前の内容�
   // owner の保存は直前の owner の版にまとまり、戻した版はまとめずに先頭に積む
   await expect(entries(page)).toHaveCount(3);
   await entries(page).nth(1).click();
+  await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("二つ目の本文を足した");
+});
+
+test("版を開くと 1 つ古い版との差分を出し、title の変化も添え、全文と切り替えられる", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "差分");
+  const created = await api.createPage({
+    title,
+    body: "共通の行\n消える行\n末尾",
+    visibility: "public",
+  });
+  const renamed = `${title} 改`;
+  await api.updatePage(created, { title: renamed, body: "共通の行\n加わる行\n末尾" });
+
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+
+  await entries(page).first().click();
+  const rows = viewer(page).locator(".diff-row .diff-text");
+  await expect(rows).toHaveText(["共通の行", "消える行", "加わる行", "末尾"]);
+  await expect(viewer(page).locator(".diff-delete .diff-text")).toHaveText("消える行");
+  await expect(viewer(page).locator(".diff-insert .diff-text")).toHaveText("加わる行");
+  await expect(viewer(page).locator(".revision-diff-titles")).toContainText(title);
+  await expect(viewer(page).locator(".revision-diff-titles")).toContainText(renamed);
+  await expect(viewer(page).locator(".cm-content")).toHaveCount(0);
+
+  await showFull(page);
+  await expect(viewer(page).locator(".cm-content")).toHaveText("共通の行加わる行末尾");
+  await expect(viewer(page).locator(".revision-diff")).toBeHidden();
+  await viewer(page).getByRole("button", { name: "差分" }).click();
+  await expect(rows).toHaveCount(4);
+  await closeViewer(page);
+
+  // 最初の版は前が無いので、本文の全行を加わった行として出す
+  await entries(page).nth(1).click();
+  await expect(viewer(page)).toContainText("最初の版です");
+  await expect(viewer(page).locator(".diff-insert .diff-text")).toHaveText([
+    "共通の行",
+    "消える行",
+    "末尾",
+  ]);
+  await expect(viewer(page).locator(".diff-delete")).toHaveCount(0);
+});
+
+test("長い行は折り返して全部を読め、ダイアログも画面も横にあふれない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const longWord = `https://example.com/${"a".repeat(240)}`;
+  const longText = "長い日本語の行が画面の幅を超えても、折り返して最後まで読めること。".repeat(6);
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "長い行の差分"),
+    body: `共通\n${longText}\n末尾`,
+    visibility: "public",
+  });
+  await api.updatePage(created, { body: `共通\n${longWord} ${longText}\n末尾` });
+
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+  await entries(page).first().click();
+  await expect(viewer(page).locator(".diff-insert .diff-text")).toContainText("長い日本語の行");
+
+  const fit = await page.evaluate(() => {
+    const dialog = document.querySelector<HTMLElement>(".revision-viewer");
+    const body = document.querySelector<HTMLElement>(".revision-viewer-body");
+    if (!dialog || !body) throw new Error("ダイアログが無い");
+    const frame = dialog.getBoundingClientRect();
+    const rows = [...dialog.querySelectorAll(".diff-row")].map((row) =>
+      row.getBoundingClientRect(),
+    );
+    return {
+      pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      bodyOverflows: body.scrollWidth > body.clientWidth,
+      rowsInside: rows.every((box) => box.left >= frame.left && box.right <= frame.right),
+      insertHeight: document.querySelector(".diff-insert")?.getBoundingClientRect().height ?? 0,
+      lineHeight: Number.parseFloat(
+        getComputedStyle(document.querySelector(".diff-insert") as Element).lineHeight,
+      ),
+    };
+  });
+  expect(fit.pageOverflows).toBe(false);
+  expect(fit.bodyOverflows).toBe(false);
+  expect(fit.rowsInside).toBe(true);
+  expect(fit.insertHeight).toBeGreaterThan(fit.lineHeight * 2);
+});
+
+test("前の版の取得に失敗したら理由を出し、再試行で差分を出す。全文は読める", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "差分の失敗"),
+    body: "古い本文",
+    visibility: "public",
+  });
+  await api.updatePage(created, { body: "新しい本文" });
+
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+  const previous = `**/api/pages/${created.id}/revisions/1`;
+  await page.route(previous, (route) => route.abort());
+  await entries(page).first().click();
+  await expect(viewer(page)).toContainText("前の版を取得できませんでした。");
+  await expect(viewer(page).locator(".diff-row")).toHaveCount(0);
+  await showFull(page);
+  await expect(viewer(page).locator(".cm-content")).toHaveText("新しい本文");
+  await viewer(page).getByRole("button", { name: "差分" }).click();
+
+  await page.unroute(previous);
+  await viewer(page).getByRole("button", { name: "再試行" }).click();
+  await expect(viewer(page).locator(".diff-delete .diff-text")).toHaveText("古い本文");
+  await expect(viewer(page).locator(".diff-insert .diff-text")).toHaveText("新しい本文");
 });
 
 test.describe("匿名", () => {

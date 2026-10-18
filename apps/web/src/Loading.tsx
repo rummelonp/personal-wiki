@@ -303,3 +303,23 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
       return <ListSkeleton status="読み込み中…" />;
   }
 }
+
+/** ダイアログの本文が読み込み中の 3 行のスケルトン */
+export function PendingBody() {
+  const painted = useSkeletonPainted();
+  return (
+    <>
+      <span className="visually-hidden" role="status">
+        読み込み中…
+      </span>
+      <div
+        className={painted ? "skeleton-body skeleton-painted" : "skeleton-body"}
+        aria-busy="true"
+      >
+        {[0, 1, 2].map((i) => (
+          <span className="skeleton skeleton-text" key={i} aria-hidden="true" />
+        ))}
+      </div>
+    </>
+  );
+}
