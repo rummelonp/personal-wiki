@@ -49,16 +49,29 @@ for (const owner of [true, false]) {
       const labelBox = await label.boundingBox();
       expect(labelBox?.y ?? 0).toBeGreaterThanOrEqual((await headerBottom(page)) - 1);
 
-      // 目次は右の列の中でスクロールできる。見出しは 40 個あり、列の目次の高さに収まらない
+      // 見出しは 40 個あり、右の列の高さに収まらない。列の中でスクロールして押す
       await rail.getByRole("button", { name: TARGET, exact: true }).click();
       await expectHeadingBelowHeader(page, TARGET);
-      await expect(label).toBeInViewport();
     });
 
-    test("目次が長くても、下の区画に届く", async ({ page, seedIds }) => {
+    test("目次は高さの上限を持たず、列のスクロールで下の区画に届く", async ({ page, seedIds }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await openLongPage(page, seedIds, owner);
       await page.evaluate(() => window.scrollTo(0, 3000));
+      const outline = page.locator(".rail-section-outline .outline");
+      // 目次の中ではスクロールせず、全部の項目が目次の高さに収まる
+      const { scrollHeight, clientHeight } = await outline.evaluate((element) => ({
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      }));
+      expect(scrollHeight).toBe(clientHeight);
+      // 列が画面より高くなり、列の中でスクロールする
+      const rail = page.locator(".rail-inner");
+      const railMetrics = await rail.evaluate((element) => ({
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      }));
+      expect(railMetrics.scrollHeight).toBeGreaterThan(railMetrics.clientHeight);
       const info = page.locator(".rail").getByRole("heading", { name: "情報" });
       await info.scrollIntoViewIfNeeded();
       await expect(info).toBeInViewport();

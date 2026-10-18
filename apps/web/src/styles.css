@@ -329,16 +329,10 @@ a {
   }
 }
 
-/* 目次は overflow で切れる欄の中にあるので、focus の輪は外へはみ出さず内側に引く */
+/* 目次は overflow で切れる欄（右の列の中身、畳んだ目次の .outline）の中にあるので、focus の輪は外へはみ出さず内側に引く */
 .outline-link:focus-visible,
 .toc > summary:focus-visible {
   outline-offset: calc(-2 * var(--border-width));
-}
-
-/* 長い目次が右の列を占めて、下の区画（リンク元、公開設定）を押し出さないよう、目次の中でスクロールする */
-.rail-section-outline .outline {
-  max-height: var(--outline-max-height);
-  overflow-y: auto;
 }
 
 /* 狭い画面の畳んだ目次。広い画面では隠し、右の列の目次を使う（下の狭い画面の節で切り替える） */
