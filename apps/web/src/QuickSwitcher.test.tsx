@@ -181,8 +181,8 @@ describe("QuickSwitcher を検索結果の画面から開く", () => {
     history.replaceState(null, "", "/?q=%E3%81%BB%E3%81%92");
     await renderSwitcher(true, "ほげ");
     typeText("");
-    await vi.waitFor(() => expect(options()[0]).toBe("検索を解除して最近の更新へ戻る"));
-    expect(selected()).toBe("検索を解除して最近の更新へ戻る");
+    await vi.waitFor(() => expect(options()[0]).toBe("検索を解除して一覧へ戻る"));
+    expect(selected()).toBe("検索を解除して一覧へ戻る");
     // 最近のページの行と取り違えないよう、操作の行と同じく、アイコンを付ける
     expect(container?.querySelector("[data-row-kind='clear-search'] svg.icon")).not.toBeNull();
     expect(container?.querySelector("[role='listbox']")?.getAttribute("aria-label")).toBe(

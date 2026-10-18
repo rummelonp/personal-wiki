@@ -655,6 +655,7 @@ describe("PageEditor と本文のエディタ", () => {
       expect(container?.querySelector(".notice-title")?.textContent).toBe(
         "このページは削除されました",
       );
+      expect(container?.querySelector(".notice a.button")?.textContent).toBe("一覧へ戻る");
       expect(waitAnchor()).toBeNull();
       expect(document.activeElement).toBe(view().contentDOM);
     });

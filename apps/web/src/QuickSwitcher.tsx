@@ -394,7 +394,7 @@ function SwitcherBody({
             {row.kind === "clear-search" && (
               <>
                 <CloseIcon />
-                <span className="switcher-option-label">検索を解除して最近の更新へ戻る</span>
+                <span className="switcher-option-label">検索を解除して一覧へ戻る</span>
               </>
             )}
             {row.kind === "content-search" && (

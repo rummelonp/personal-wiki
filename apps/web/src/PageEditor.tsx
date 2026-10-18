@@ -897,7 +897,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                     navigate(homeHref());
                   }}
                 >
-                  最近の更新へ戻る
+                  一覧へ戻る
                 </a>
               </>
             }

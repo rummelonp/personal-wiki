@@ -100,7 +100,7 @@ test("検索結果の窓で語を消して Enter すると、検索を解除し�
   const input = switcher.getByRole("combobox", { name: "検索語" });
   await input.fill("");
   await expect(switcher.getByRole("option", { selected: true })).toHaveText(
-    "検索を解除して最近の更新へ戻る",
+    "検索を解除して一覧へ戻る",
   );
   await input.press("Enter");
   await expect(page).toHaveURL(/\/$/);

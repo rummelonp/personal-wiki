@@ -398,6 +398,7 @@ describe("HomeView の空の状態", () => {
     expect(title()).toBe("一致するページがありません");
     expect(empty()?.querySelector(".empty-text")).toBeNull();
     expect(backLink()?.getAttribute("href")).toBe("/");
+    expect(backLink()?.textContent).toBe("一覧へ戻る");
   });
 
   it("匿名の短い検索語は、文字数の案内と一覧へ戻る導線を出し、補足は出さない", async () => {

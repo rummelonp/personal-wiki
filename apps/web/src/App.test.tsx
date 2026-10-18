@@ -373,6 +373,7 @@ describe("App の匿名の画面", () => {
     serve("anonymous", [PUBLIC, DRAFT]);
     await renderAt("/p/ZZZZZZZZZZZZZZZZZZZZZZ");
     await vi.waitFor(() => expect(main()?.textContent).toContain("ページが見つかりません"));
+    expect(main()?.querySelector(".empty a.button")?.textContent).toBe("一覧へ戻る");
     expect(document.title).toBe("personal-wiki");
     expect(listBacklinksByTitle).not.toHaveBeenCalled();
   });

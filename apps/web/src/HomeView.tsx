@@ -103,9 +103,9 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 
-  const backToRecent = (
+  const backToList = (
     <Link className="button" href={homeHref()}>
-      最近の更新へ戻る
+      一覧へ戻る
     </Link>
   );
 
@@ -159,7 +159,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
           <EmptyState
             role="status"
             title={`${state.min}文字以上で検索してください`}
-            actions={backToRecent}
+            actions={backToList}
           />
         )}
         {state.status === "invalid_query" && (
@@ -167,7 +167,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
             role="status"
             title="この検索語では検索できません"
             text={state.message}
-            actions={backToRecent}
+            actions={backToList}
           />
         )}
         {state.status === "error" && (
@@ -199,7 +199,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
                     {`「${trimmed}」を作成`}
                   </button>
                 )}
-                {backToRecent}
+                {backToList}
               </>
             }
           />
@@ -207,7 +207,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
         {state.status === "ready" && state.entries.length === 0 && filtered && (
           <EmptyState
             title={filteredEmptyTitle(effectiveTag, effectiveVisibility)}
-            actions={backToRecent}
+            actions={backToList}
           />
         )}
         {state.status === "ready" && state.entries.length === 0 && !searching && !filtered && (

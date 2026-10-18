@@ -22,7 +22,7 @@ export function NotFound() {
         text="URL を確かめるか、一覧から探してください。"
         actions={
           <Link className="button" href={homeHref()}>
-            最近の更新へ戻る
+            一覧へ戻る
           </Link>
         }
       />
