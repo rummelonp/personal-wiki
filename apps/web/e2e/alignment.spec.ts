@@ -278,7 +278,7 @@ test("横向きの iPhone で通知のドックが出ても、右の欄の文字
   });
   await showSaveFailureDock(page, created.id, { width: 667, height: 375 });
   expect(await dockCutsRail(page)).toBeNull();
-  // 欄の文字（履歴の「オーナー」など）が、ドックの右の縁をまたいでいない
+  // 欄の文字（履歴の「Web」など）が、ドックの右の縁をまたいでいない
   const straddling = await page.evaluate(() => {
     const dock = (document.querySelector(".notice-dock") as HTMLElement).getBoundingClientRect();
     const found: string[] = [];

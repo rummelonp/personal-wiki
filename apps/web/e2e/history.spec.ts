@@ -44,7 +44,7 @@ test("版を時刻と作成者で並べ、押した版の本文を読み取り�
   await expect(history(page).getByRole("heading", { name: "履歴" })).toBeVisible();
   await expect(entries(page)).toHaveCount(2);
   await expect(entries(page).first()).toContainText("1分未満");
-  await expect(entries(page).first()).toContainText("オーナー");
+  await expect(entries(page).first()).toContainText("Web");
   // 版の番号は飛ぶので見せない
   await expect(history(page)).not.toContainText("版");
 
@@ -103,16 +103,16 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
   await page.goto(`/p/${created.id}`);
   await expect(bodyEditor(page)).toContainText("OAuth の接続の本文");
   await expect(entries(page)).toHaveCount(3);
-  await expect(entries(page).nth(0)).toContainText(`接続: ${clientName}`);
-  await expect(entries(page).nth(1)).toContainText(`token: ${tokenName}`);
-  await expect(entries(page).nth(2)).toContainText("オーナー");
+  await expect(entries(page).nth(0)).toContainText(clientName);
+  await expect(entries(page).nth(1)).toContainText(tokenName);
+  await expect(entries(page).nth(2)).toContainText("Web");
 
   await entries(page).nth(1).click();
-  await expect(viewer(page)).toContainText(`token: ${tokenName}`);
+  await expect(viewer(page)).toContainText(tokenName);
   await expect(viewer(page).locator(".cm-content")).toHaveText("token の本文");
   await closeViewer(page);
   await entries(page).nth(0).click();
-  await expect(viewer(page)).toContainText(`接続: ${clientName}`);
+  await expect(viewer(page)).toContainText(clientName);
   await expect(viewer(page).locator(".cm-content")).toHaveText("OAuth の接続の本文");
 });
 

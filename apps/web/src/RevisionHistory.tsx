@@ -18,18 +18,18 @@ import { useNow } from "./use-now";
 import { type Basis, useRevisionList } from "./use-revision-list";
 
 /**
- * token と接続の名前には種類を前に付ける。接続の名前は接続の側が登録時に名乗ったもので、「オーナー」と
- * 名乗られても owner と同じ表示にしない。接続の登録が消えると（使われないまま期限が切れた、OAuth を閉じた）
- * 名前を引けない。
+ * 作者は何を通して書いたかで表す。owner は「Web」、token と接続は名前だけを出す。token も接続も
+ * オーナーが自分で発行、許可するので、「Web」と重なる名前は付かない前提で、種類は付けない。
+ * 接続の登録が消えると（使われないまま期限が切れた、OAuth を閉じた）名前を引けない。
  */
 export function authorLabel(author: RevisionAuthor): string {
   switch (author.kind) {
     case "owner":
-      return "オーナー";
+      return "Web";
     case "token":
-      return `token: ${author.name}`;
+      return author.name;
     case "oauth":
-      return author.name === null ? "登録が消えた接続" : `接続: ${author.name}`;
+      return author.name === null ? "登録が消えた接続" : author.name;
     case "other":
       return author.actor;
   }
