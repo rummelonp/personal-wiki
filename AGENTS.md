@@ -27,7 +27,7 @@ pnpm workspace の構成で、アプリは `apps/*`、共有パッケージは `
 
 ## コマンド
 
-Node は 22 系、パッケージマネージャーは pnpm（バージョンは `package.json` の `packageManager`）。
+Node は 24 系、パッケージマネージャーは pnpm（バージョンは `package.json` の `packageManager`）。
 
 ```sh
 pnpm install

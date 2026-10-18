@@ -10,7 +10,7 @@ Cloudflare アカウントへのデプロイと、任意の機能の設定、更
 
 - Cloudflare アカウント
 - 公開するホスト名のゾーン。デプロイ先と同じ Cloudflare アカウントの DNS にあること
-- Node 22 系（`>=22.13 <23`）
+- Node 24 系（`>=24.22 <25`）
 - pnpm（バージョンは `package.json` の `packageManager`）
 - git、openssl（`SESSION_SECRET` を作るとき）
 

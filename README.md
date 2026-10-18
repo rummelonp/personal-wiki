@@ -49,7 +49,7 @@ pnpm workspace で、アプリは `apps/*`、共有パッケージは `packages/
 
 ## ローカルで動かす
 
-Node 22 系（`>=22.13 <23`）と pnpm（バージョンは `package.json` の `packageManager`）が要る。
+Node 24 系（`>=24.22 <25`）と pnpm（バージョンは `package.json` の `packageManager`）が要る。
 
 ```sh
 pnpm install
