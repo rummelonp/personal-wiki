@@ -84,7 +84,9 @@ describe("SPA の配信", () => {
     );
     const csp = res.headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("script-src 'self';");
+    expect(csp).toContain(
+      "script-src 'self' https://static.cloudflareinsights.com/beacon.min.js/;",
+    );
     expect(csp).toContain("frame-ancestors 'none'");
     expect(res.headers.get("Cache-Control")).toBe("no-cache");
     expect(res.headers.get("X-Robots-Tag")).toBe("noindex");

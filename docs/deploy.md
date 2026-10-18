@@ -231,6 +231,17 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
 - `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続したリクエストも当たる。
   当たると `server returned 429` で止まるので、少し待ってから [operations.md](./operations.md) の手順で続きから再開する
 
+## Web Analytics
+
+Cloudflare Web Analytics を使うときは、ダッシュボードの自動の設定（proxied のホストの HTML に Cloudflare が beacon を差し込む）を使う。
+画面の CSP は差し込まれる beacon（`https://static.cloudflareinsights.com/beacon.min.js/` の下）を許してあり、beacon の送り先は自分のドメインの `/cdn-cgi/rum` なので、`deploy.env` などに足す設定は無い。
+HTML に beacon のタグを手で書くと、自動の挿入と合わせて 1 ページに 2 つになるので書かない。
+自動の設定は、絞らなければゾーンのすべてのホストに差し込む。
+同じゾーンに別のサイトがあるなら、wiki のホストだけに絞る。
+OAuth の同意画面などの認証の画面は CSP が beacon を止めるので、計測に出ない。
+計測にはページの path が残るので、draft のページの title もダッシュボードに出る。
+計測が急に 0 になったら、ブラウザのコンソールで beacon が CSP に止められていないかを見る（beacon の src の形が変わると、今の許可に当たらなくなる）。
+
 ## 更新
 
 新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で毎回次の 3 つを順に実行する。

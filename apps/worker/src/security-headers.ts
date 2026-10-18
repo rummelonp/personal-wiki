@@ -27,12 +27,16 @@ export const securityHeaders = defineBaseMiddleware(
 );
 
 /**
- * SPA の HTML に付ける CSP。vite のビルドは inline の script を出さないので script-src は 'self' だけにする。
+ * SPA の HTML に付ける CSP。vite のビルドは inline の script を出さないので script-src は 'self' を基本にする。
+ * script-src の static.cloudflareinsights.com は、本番のゾーンで Cloudflare Web Analytics が HTML に差し込む
+ * beacon のため。src の `beacon.min.js/` の後ろは beacon の版で変わるので、末尾を `/` にして前方一致で許す
+ * （`/` で終わらない source は完全一致で比べられる）。beacon は自分のドメインの /cdn-cgi/rum に送るので
+ * connect-src は 'self' のままで足りる。
  * style-src の 'unsafe-inline' は、編集画面のエディタ（CodeMirror）が実行時に style 要素を差し込むため。
  */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' https://static.cloudflareinsights.com/beacon.min.js/",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "connect-src 'self'",
