@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createEditor } from "./create-editor";
 
 /*
- * markdown link と `==ハイライト==` の日本語は、wikilink と同じく字の間（「公｜開」）で折り返さず、
- * 行に収まるものは丸ごと次の行へ送る。行の幅より長いものは、はみ出さずに中で折り返す。
+ * markdown link と `==ハイライト==` の日本語は、wikilink と同じく地の文と同じ禁則で折り返し、
+ * 字の間（「公｜開」）でも折り返す。行の幅より長いものも、はみ出さずに中で折り返す。
  */
 
 let view: EditorView | null = null;
@@ -41,21 +41,33 @@ describe.each(TARGETS)("$name の折り返し", ({ selector, wrap }) => {
   it.each([
     ["日本語", "公開設定"],
     ["長めの日本語", "図書館の公開設定"],
-  ])("行に収まる%sは、字の間で折り返さず丸ごと次の行へ送る", (_, text) => {
-    const v = mount(`今日は図書館で調べた内容をまとめて、${wrap(text)}の記事に書き足した。\n\n後`);
+  ])("%sは、字の間を含め地の文と同じ位置で折り返す", (_, text) => {
+    const lead = "今日は図書館で調べた内容をまとめて、";
+    const tail = "の記事に書き足した。\n\n後";
+    const v = mount(`${lead}${wrap(text)}${tail}`);
     const target = v.contentDOM.querySelector(selector);
     if (!target || !host) throw new Error(`${selector} is not rendered`);
+    // 幅を 1px ずつ広げ、本文の高さ（折り返しの行数）と、対象が複数の行にまたがる幅の数を集める
+    const sweep = (editor: EditorView, element: Element | null) => {
+      const heights: number[] = [];
+      let splitWidths = 0;
+      for (let width = 120; width <= 400; width++) {
+        if (!host) throw new Error("host is not mounted");
+        host.style.width = `${width}px`;
+        heights.push(editor.contentDOM.getBoundingClientRect().height);
+        if (element && element.getClientRects().length > 1) splitWidths++;
+      }
+      return { heights, splitWidths };
+    };
+    const decorated = sweep(v, target);
+    view?.destroy();
+    host.remove();
 
-    host.style.width = "3000px";
-    const natural = target.getBoundingClientRect().width;
-    const failures: string[] = [];
-    // 行の幅が対象の幅に近い所から先は、対象が 1 行に収まるので、その幅の間は折り返してはならない
-    for (let width = Math.ceil(natural) + 20; width <= 400; width++) {
-      host.style.width = `${width}px`;
-      if (target.getClientRects().length > 1) failures.push(`${width}px`);
-    }
+    const plain = mount(`${lead}${text}${tail}`);
 
-    expect(failures).toEqual([]);
+    expect(decorated.heights).toEqual(sweep(plain, null).heights);
+    // 字の間で折り返す幅を通っていないと、地の文と同じ折り返しを確かめたことにならない
+    expect(decorated.splitWidths).toBeGreaterThan(0);
   });
 
   it("行の幅より長いものは、はみ出さずに中で折り返す", () => {

@@ -517,33 +517,40 @@ describe("WikiLink and line wrapping", () => {
   });
 
   it.each([
-    ["日本語の target", "今日は図書館で調べた内容をまとめて、[[公開設定]]の記事に書き足した。"],
-    [
-      "日本語の label",
-      "今日は図書館で調べた内容をまとめて、[[Amazon Web Services|公開設定]]の記事に書き足した。",
-    ],
-    [
-      "解決できない target",
-      "今日は図書館で調べた内容をまとめて、[[存在しない記事]]の記事に書き足した。",
-    ],
+    ["日本語の target", "[[公開設定]]", "公開設定"],
+    ["日本語の label", "[[Amazon Web Services|公開設定]]", "公開設定"],
+    ["解決できない target", "[[存在しない記事]]", "存在しない記事"],
   ])(
-    "moves a link that fits on a line to the next line whole instead of wrapping inside it: %s",
-    (_, doc) => {
-      const v = mount(`${doc}\n\n後`);
+    "wraps a link at the same places as plain text, including between characters: %s",
+    (_, link, text) => {
+      const lead = "今日は図書館で調べた内容をまとめて、";
+      const tail = "の記事に書き足した。\n\n後";
+      const v = mount(`${lead}${link}${tail}`);
       placeCursor(v, v.state.doc.length);
-      const link = v.contentDOM.querySelector(".cm-wikilink");
-      if (!link || !host) throw new Error("wikilink is not rendered");
-
-      host.style.width = "3000px";
-      const natural = link.getBoundingClientRect().width;
-      const failures: string[] = [];
-      // 行の幅が link の幅に近い所から先は、link が 1 行に収まるので、その幅の間は折り返してはならない
-      for (let width = Math.ceil(natural) + 20; width <= 400; width++) {
+      const target = v.contentDOM.querySelector(".cm-wikilink");
+      if (!target || !host) throw new Error("wikilink is not rendered");
+      const linkedHeights: number[] = [];
+      let splitWidths = 0;
+      for (let width = 120; width <= 400; width++) {
         host.style.width = `${width}px`;
-        if (link.getClientRects().length > 1) failures.push(`${width}px`);
+        linkedHeights.push(v.contentDOM.getBoundingClientRect().height);
+        if (target.getClientRects().length > 1) splitWidths++;
+      }
+      view?.destroy();
+      host.remove();
+
+      const plain = mount(`${lead}${text}${tail}`);
+      placeCursor(plain, plain.state.doc.length);
+      const plainHeights: number[] = [];
+      for (let width = 120; width <= 400; width++) {
+        if (!host) throw new Error("host is not mounted");
+        host.style.width = `${width}px`;
+        plainHeights.push(plain.contentDOM.getBoundingClientRect().height);
       }
 
-      expect(failures).toEqual([]);
+      expect(linkedHeights).toEqual(plainHeights);
+      // 字の間で折り返す幅を通っていないと、地の文と同じ折り返しを確かめたことにならない
+      expect(splitWidths).toBeGreaterThan(0);
     },
   );
 

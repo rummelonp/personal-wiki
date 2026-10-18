@@ -383,8 +383,6 @@ export const livePreviewTheme = EditorView.baseTheme({
       "color-mix(in srgb, #ffd000 40%, transparent)",
       "color-mix(in srgb, #ffd000 26%, transparent)",
     ),
-    // 字の間で折り返さない理由は `.cm-wikilink` と同じ。markdown link（`.cm-md-link`）にも同じ指定がある
-    wordBreak: "keep-all",
   },
   // 背景は code block の行と同じ surface 色。文字色は変えないので、code block と同じ組み合わせで読める。
   // 等幅は構文 highlight の `t.monospace` も当てるが、mark 自身にも持たせる。記号を隠した
@@ -454,11 +452,6 @@ export const livePreviewTheme = EditorView.baseTheme({
     color: "var(--ui-color-accent)",
     textDecoration: "underline",
     cursor: "pointer",
-    // 日本語の title を「公｜開」のように字の間で折り返さず、link ごと次の行へ送る。
-    // `auto-phrase` は WebKit が解釈せず、Chromium でも link の中だけに指定すると効かない。
-    // `keep-all` は WebKit でも効き、inline のままなので、行の幅より長い link だけを
-    // 行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。
-    wordBreak: "keep-all",
   },
   // 未解決のリンクは補助の文字色にして、accent の破線でリンクであることだけを残す
   ".cm-wikilink-unresolved": {
@@ -473,7 +466,6 @@ export const livePreviewTheme = EditorView.baseTheme({
     color: "var(--ui-color-accent)",
     textDecoration: "underline",
     cursor: "pointer",
-    wordBreak: "keep-all",
   },
   // autolink は URL 自体が可視テキストなので、色は syntax highlight（`t.url`）に残し、
   // `<a>` にしたことで乗るブラウザ既定のリンク色だけを打ち消す
@@ -496,9 +488,8 @@ export const livePreviewTheme = EditorView.baseTheme({
     cursor: "pointer",
     // href を渡されると `<a>` で描かれる。ブラウザ既定の下線だけを打ち消す
     textDecoration: "none",
-    // tag を 1 塊で次の行へ送る。inline のままだと、`#` と日本語の名前の間（`word-break: keep-all` でも
-    // 消えない）や名前の字の間で折り返す。inline-block なら塊の中は、行の幅より長いときだけ
-    // 行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。
+    // tag を 1 塊で次の行へ送る。inline のままだと、`#` と日本語の名前の間や名前の字の間で折り返す。
+    // inline-block なら塊の中は、行の幅より長いときだけ行側の `overflow-wrap: anywhere`（CodeMirror の既定）が切る。
     // 100% は行の content 幅。リスト行は左に `--cm-lp-list-indent` の余白を取って折り返すので、
     // その分を引かないと、長い tag が右へ余白の分はみ出す。
     display: "inline-block",
