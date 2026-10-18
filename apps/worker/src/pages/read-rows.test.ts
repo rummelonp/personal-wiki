@@ -1,7 +1,13 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { T0 } from "../test/pages";
-import { type Cursor, listPageTitles, listRecentPages, parseCursor } from "./search";
+import {
+  type Cursor,
+  type ListOrder,
+  listPageTitles,
+  listRecentPages,
+  parseCursor,
+} from "./search";
 
 /*
  * 匿名にも開いた一覧の、1 回の D1 の読み取り行数（meta.rows_read）がページ数に比例しないこと。
@@ -11,15 +17,18 @@ import { type Cursor, listPageTitles, listRecentPages, parseCursor } from "./sea
 
 const PAGES = 2000;
 
-/** 半分を public にした PAGES 件のページを、updated_at を 1 ずつずらして入れる。 */
+/**
+ * 半分を public にした PAGES 件のページを、updated_at を 1 ずつ進め、created_at を 1 ずつ戻して入れる。
+ * created_at の順が updated_at の順と逆なので、どちらかのインデックスで別の並びを代用すると読み取り行数が増える。
+ */
 async function seed() {
   await env.DB.prepare(
     `INSERT INTO pages (id, title, title_key, body, visibility, version, created_at, updated_at)
      SELECT printf('%022d', value), 'bulk ' || value, 'bulk ' || value, '',
-            CASE WHEN value % 2 = 0 THEN 'public' ELSE 'draft' END, 1, ?2, ?2 + value
+            CASE WHEN value % 2 = 0 THEN 'public' ELSE 'draft' END, 1, ?2 + ?3 - value, ?2 + value
      FROM json_each(?1)`,
   )
-    .bind(JSON.stringify(Array.from({ length: PAGES }, (_, i) => i)), T0)
+    .bind(JSON.stringify(Array.from({ length: PAGES }, (_, i) => i)), T0, PAGES - 1)
     .run();
 }
 
@@ -91,4 +100,44 @@ describe("一覧の読み取り行数", () => {
     // 先頭から読み飛ばすと 1,000 行を超え、インデックスを使わなければ全ページを読んで並べ替える
     expect(next.counter.rowsRead).toBeLessThan(800);
   });
+
+  // 作成日時の順と title の順は、既定の更新日時の順とは別のインデックス（pages_alive_created、pages_title_key_alive）を使う
+  it.each([
+    {
+      sort: "created",
+      // 作成日時の降順で deep 番目の次は、value の昇順で 1 つ先（public は 2 つ先）になる
+      cursor: { createdAt: T0 + PAGES - 1 - PAGES / 2, id: String(PAGES / 2).padStart(22, "0") },
+      next: { all: `bulk ${PAGES / 2 + 1}`, public: `bulk ${PAGES / 2 + 2}` },
+    },
+    {
+      sort: "title",
+      // 'bulk 510' は title_key の昇順で 1,400 番目より後ろで、先頭から読み飛ばすと読み取り行数が増える
+      cursor: { titleKey: "bulk 510" },
+      next: { all: "bulk 511", public: "bulk 512" },
+    },
+  ] as const)(
+    "$sort の順は、cursor の有無にかかわらず limit の数倍で止まる",
+    async ({ sort, cursor, next }) => {
+      await seed();
+      for (const readable of ["all", "public"] as const) {
+        const first = meteredDb();
+        const page = await listRecentPages(first.db, {
+          limit: 20,
+          readable,
+          ...({ sort, cursor: null } as ListOrder),
+        });
+        expect(page.pages, `${sort} ${readable}`).toHaveLength(20);
+        expect(first.counter.rowsRead, `${sort} ${readable}`).toBeLessThan(300);
+
+        const later = meteredDb();
+        const deeper = await listRecentPages(later.db, {
+          limit: 20,
+          readable,
+          ...({ sort, cursor } as ListOrder),
+        });
+        expect(deeper.pages[0]?.title, `${sort} ${readable}`).toBe(next[readable]);
+        expect(later.counter.rowsRead, `${sort} ${readable}`).toBeLessThan(300);
+      }
+    },
+  );
 });
