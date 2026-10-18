@@ -224,6 +224,8 @@ test.describe("同意の送信", () => {
   });
 
   // 戻るは確かめない。ここの client への遷移は同意画面と同じ URL に留まり、Firefox は履歴を置き換えるので戻れない
+  // これは「再読み込み後に押せる状態で開く」ことだけを見る smoke で、pageshow の対策の回帰は拾わない。
+  // Playwright ではどのエンジンでも、再読み込みでフォームの状態が復元されず、bfcache からの復帰も起きないため
   test("送信が届かずに再読み込みすると、ボタンを押せる @smoke", async ({ page }) => {
     await openConsent(page);
     await page.route(
