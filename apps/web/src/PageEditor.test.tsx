@@ -138,6 +138,22 @@ function typeAtEnd(view: EditorView, text: string, userEvent = "input.type"): vo
 /** React の再描画（useSyncExternalStore の通知は microtask で描く）と、保存の Promise を待つ */
 const flushAsync = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
+/**
+ * 本文を打ち、自動保存の間隔（2 秒）より十分先まで時計を進める。自動保存のタイマーは打った時点で
+ * 作られるので、打つ前から setTimeout を偽物にする。他の待ち（flushAsync）が止まらないよう、終えたら戻す。
+ */
+async function typeAndPassAutosaveInterval(view: () => EditorView, text: string): Promise<void> {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    act(() => typeAtEnd(view(), text));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe("PageEditor と本文のエディタ", () => {
   it("リンク元が無いときも、owner には「このページへのリンク」の節と「ありません」を出す", async () => {
     renderPage();
@@ -2589,7 +2605,33 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(updatePage).toHaveBeenCalledTimes(1);
   });
 
-  it("保存の間に承認した削除は、保存が衝突したら送らず、衝突の通知を出す", async () => {
+  it("保存の間に承認した削除の後に打った本文は、保存が通って削除が済んでも書き戻さない", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(deletePage).mockResolvedValue(ok(null));
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    await typeAndPassAutosaveInterval(view, "待つ間の入力");
+    // 自動保存は削除の後ろに並ぶので、保存が終わるまで何も送らない
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    expect(deletePage).not.toHaveBeenCalled();
+
+    await act(async () => save.resolve(ok({ ...PAGE, body: "本文追記", version: 2 })));
+    await flushAsync();
+    expect(deletePage).toHaveBeenCalledTimes(1);
+    expect(deletePage).toHaveBeenCalledWith(ID, 2);
+    expect(updatePage).toHaveBeenCalledTimes(1);
+  });
+
+  it("保存の間に承認した削除は、保存が衝突したら送らず、待つ間の入力でも送らず、衝突の通知を出す", async () => {
     restoreDelay = setLoadingDelay(0);
     const save = deferred<ApiResult<Page>>();
     vi.mocked(updatePage).mockReturnValueOnce(save.promise);
@@ -2604,14 +2646,68 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => button("このページを削除").click());
     await flushAsync();
     expect(window.confirm).toHaveBeenCalledTimes(1);
+    // 保存の結果を待つ間は、押し直せない「削除中…」にする
+    expect(button("削除中…").disabled).toBe(true);
+    expect(container?.textContent).not.toContain("別の場所でも更新されています");
 
+    await typeAndPassAutosaveInterval(view, "待つ間の入力");
     await act(async () =>
       save.resolve({ ok: false, reason: "version_conflict", currentVersion: 2 }),
     );
     await flushAsync();
+    expect(container?.textContent).toContain("別の場所でも更新されています");
     expect(deletePage).not.toHaveBeenCalled();
+    expect(updatePage).toHaveBeenCalledTimes(1);
     expect(button("このページを削除").disabled).toBe(true);
     expect(button("このページを削除").textContent).toBe("このページを削除");
+  });
+
+  it("保存の間に承認した削除は、保存が 401（ログアウト）で終わったら送らず、元の表示で押せなくする", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    expect(button("削除中…").disabled).toBe(true);
+
+    await act(async () => save.resolve({ ok: false, reason: "unauthorized" }));
+    await flushAsync();
+    expect(deletePage).not.toHaveBeenCalled();
+    expect(updatePage).toHaveBeenCalledTimes(1);
+    expect(container?.textContent).toContain("ログインの期限が切れました");
+    expect(button("このページを削除").disabled).toBe(true);
+    expect(button("このページを削除").textContent).toBe("このページを削除");
+  });
+
+  it("保存の間に承認した削除は、保存が通信の失敗で終わっても、保存せずに削除を送る", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(deletePage).mockResolvedValue(ok(null));
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    expect(deletePage).not.toHaveBeenCalled();
+
+    await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
+    await flushAsync();
+    // 承認した確認文が「未保存の変更も含めて」なので、保存できなくても削除する
+    expect(deletePage).toHaveBeenCalledTimes(1);
+    expect(deletePage).toHaveBeenCalledWith(ID, PAGE.version);
+    expect(updatePage).toHaveBeenCalledTimes(1);
   });
 
   it("未保存の変更があるときだけ、削除の確認で変更も捨てることを伝える", async () => {
