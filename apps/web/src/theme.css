@@ -63,7 +63,7 @@
   --font-weight-strong: 700; /* 明朝の見出し */
   --font-weight-medium: 500; /* ラベル */
   --line-height: 1.7; /* 操作と補助の行間 */
-  --line-height-prose: 1.95; /* 本文の行間 */
+  --line-height-prose: 1.8; /* 本文の行間。エディタ（packages/editor の typographyTheme）と同じ値 */
   --line-height-tight: 1.35; /* 見出し、ボタン */
   --letter-spacing-brand: 0.14em; /* wiki 名 */
   --letter-spacing-heading: 0.02em; /* 明朝の見出し */
@@ -92,15 +92,15 @@
   --z-popover: 8; /* 公開範囲のメニュー。本文の前に出し、通知のドックとヘッダーの後ろに回る */
 
   /* 寸法 */
-  --prose-width: 40em; /* 本文の幅 */
-  --list-width: 42.5rem; /* トップの一覧の幅 */
+  --prose-width: 44.5rem; /* 本文の幅。エディタの 16px で、行の左右の padding（8px）を除いて全角 44 字。em にすると .note の 15px で測られて 37 字になる */
+  --list-width: 42.5rem; /* トップの一覧の幅。本文の幅（--prose-width）以下 */
   --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
   --header-brand-min-width: 3rem; /* 検索語を出す狭い幅で、ロゴが縮む下限。語に幅を譲りつつ、ロゴだと分かる長さを残す */
   --header-skeleton-width: 5rem; /* ログイン状態が分かるまでヘッダーの右に空ける場所の、操作 1 つ分の幅。広い画面で 3 つ並べた幅が owner の操作の列（新規作成、接続、ログアウト）に近い */
   --switcher-width: 34rem; /* quick switcher の幅 */
   --switcher-top: 12vh; /* quick switcher を画面の上端から離す距離 */
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
-  --revision-viewer-width: 46rem; /* 履歴の版を開くダイアログの幅。本文の幅（--prose-width）が収まる */
+  --revision-viewer-width: 47rem; /* 履歴の版を開くダイアログの幅。左右の padding と枠を除いて本文の幅（--prose-width）が収まる */
   --publish-dialog-width: 30rem; /* 公開の確認のダイアログの幅。確認の文が 3 行ほどに収まる */
   --visibility-menu-width: 14.5rem; /* 公開範囲のメニューの幅。選択肢の説明が 1〜2 行に収まる */
   --visibility-pill-height: 1.625rem; /* title の右の公開範囲の印の見た目の高さ。タッチ端末では当たり判定だけを --tap-size に広げる */
@@ -114,7 +114,7 @@
     5vw,
     var(--space-6)
   ); /* 本文の列の左右の余白。ヘッダーのロゴ、一覧、ページ、読み込み中、空の状態の左端はこの余白で決まる */
-  --column-width: calc(var(--list-width) + 2 * var(--gutter)); /* 本文の列の幅（余白を含む） */
+  --column-width: calc(var(--prose-width) + 2 * var(--gutter)); /* 本文の列の幅（余白を含む） */
   --frame-width: calc(
     var(--column-width) +
     var(--rail-width)

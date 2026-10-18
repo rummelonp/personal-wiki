@@ -488,7 +488,7 @@ a {
   /* 上端を固定する。中央寄せだと、差分と全文で高さが違うときに切り替えの位置が動く */
   margin: var(--space-5) auto auto;
 
-  /* top layer に出ても右の列（.rail）の小さい文字を継ぐので、画面の本文と同じ大きさ（と em で決まる本文の幅）にそろえる */
+  /* top layer に出ても右の列（.rail）の小さい文字を継ぐので、画面の本文と同じ大きさにそろえる */
   font-size: var(--font-size-base);
 }
 
@@ -1267,8 +1267,8 @@ a.segmented-option {
  * 本文の列が右の欄（.rail）の分だけ縮む幅では、ドックの右端が欄の中に入り、欄の文字を縦の線で切る
  * （地の色の端から、はみ出した「ー」だけが残る）。この幅ではドックを画面の右端まで伸ばし、欄の下を覆いきる。
  * 通知の幅と左右の位置は変えず、ドックの max-width の代わりに通知に上限を付ける。
- * 幅の境目は、ドックの右端が欄の左端に届く画面の幅で、ドックの最大幅（--prose-width を --font-size-base で測った幅と
- * 左右の padding）、ドックの左の余白、--rail-width、--gutter の上限の和で決まる。これらの token を変えたら計算し直す。
+ * 幅の境目は、ドックの右端が欄の左端に届く画面の幅で、ドックの最大幅（--prose-width と左右の padding）、
+ * ドックの左の余白、--rail-width、--gutter の上限の和で決まる。これらの token を変えたら計算し直す。
  * media query は var() を使えないので数値で持つ。E2E の幅の掃引は、境目が小さすぎる方へのずれだけを拾う。
  * 欄が本文の下に回る狭い幅にも当たるが、そこではドックが元から画面の幅に収まるので、通知の幅と位置は変わらない。
  *
@@ -1280,7 +1280,7 @@ a.segmented-option {
  * 変えるので使えない。実害が無いので、直さずこの制約を受け入れる。
  * E2E の headless はスクロールバーを隠すので、この食い込みは E2E に現れない。
  */
-@media (max-width: 55.125rem) {
+@media (max-width: 62.125rem) {
   .notice-dock {
     max-width: none;
     margin-right: 0;
@@ -1769,6 +1769,7 @@ a.segmented-option {
   --skeleton-leading: var(--line-height-prose);
 
   display: grid;
+  font-size: var(--font-size-md); /* 1 行の刻みをエディタの本文（16px、行間 1.8）にそろえる */
 }
 
 .skeleton-body .skeleton-text {

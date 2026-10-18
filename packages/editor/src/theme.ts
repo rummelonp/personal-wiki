@@ -118,13 +118,13 @@ export const codeHighlighting: Extension = [
  * `codeHighlightStyle` の `t.monospace` が span に直接 font-family を当てる（子孫要素への
  * 直接の宣言は祖先からの継承に常に勝つので、この rule との宣言順には依存しない）。
  *
- * 16px と行の高さ 1.75 は本文用。`rem` にせず固定 px にしているのは、ホストの
+ * 16px と行の高さ 1.8 は本文用。`rem` にせず固定 px にしているのは、ホストの
  * root の font-size が変わっても本文の大きさを固定するため（Editor はホストの
  * spacing のように rem で揃える対象ではなく、可読性の基準そのものである）。
  */
 export const typographyTheme = EditorView.theme({
   "&": { fontFamily: "var(--ui-font-body)" },
-  ".cm-scroller": { fontFamily: "var(--ui-font-body)", fontSize: "16px", lineHeight: "1.75" },
+  ".cm-scroller": { fontFamily: "var(--ui-font-body)", fontSize: "16px", lineHeight: "1.8" },
 });
 
 const TOUCH_ROW_HEIGHT = "44px";
@@ -348,7 +348,7 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-line.cm-lp-code:not(.cm-lp-callout)": {
     backgroundColor: SURFACE_SHADE,
   },
-  // 行間は本文（1.75）より詰める。見出しは短く、本文の行間のままだと文字の上下に余白が付きすぎる
+  // 行間は本文（1.8）より詰める。見出しは短く、本文の行間のままだと文字の上下に余白が付きすぎる
   ".cm-lp-heading": { fontWeight: "700", lineHeight: "1.4" },
   // title（28px 固定、title-editor.ts）より必ず小さくし、本文の 1 行目のように続けて見える
   // title を見出しの頂点に保つ。h4〜h6 は本文と同じ大きさのまま太さだけで区別する。

@@ -111,7 +111,7 @@ describe("image embed", () => {
     await vi.waitFor(() =>
       expect(embedOf(v, "image.png")?.hasAttribute("data-embed-compact")).toBe(true),
     );
-    // 行は文字の 1 行（28px）のまま。余白（12px ずつ）を足すと 52px になる
+    // 行は文字の 1 行（約 29px）のまま。余白（12px ずつ）を足すと 52px になる
     expect(img.closest(".cm-line")?.getBoundingClientRect().height).toBeLessThan(40);
   });
 

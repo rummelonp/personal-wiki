@@ -238,7 +238,7 @@ async function dockCutsRail(page: Page): Promise<string | null> {
 /**
  * 通知の左端がロゴの左端にそろい、幅が本文の幅と、右の余白を除いた残りの小さい方になっているか。
  * ドックを画面の右端まで伸ばす幅でも、通知の幅と左右の位置は変わらない。
- * 期待する幅は、通知の中に置いた probe で CSS の token を px にして求める（em は通知の文字の大きさで測る）。
+ * 期待する幅は、通知の中に置いた probe で CSS の token を px にして求める。
  */
 async function noticeProblem(page: Page): Promise<string | null> {
   const brand = await brandLeft(page);
@@ -309,8 +309,8 @@ test("通知のドックの右端は、右の欄の文字を切る位置で止�
     body: "短い本文",
   });
   await showSaveFailureDock(page, created.id, { width: 641, height: 600 });
-  // 境目（ドックの最大幅が欄に届く 882px 前後）と、本文の下に欄が回る幅の直前を含める
-  const widths = [641, 667, 700, 768, 800, 850, 880, 881, 882, 883, 884, 900, 960, 1000, 1280];
+  // 境目（ドックの最大幅が欄に届く 994px 前後）と、本文の下に欄が回る幅の直前を含める
+  const widths = [641, 667, 700, 768, 800, 850, 900, 960, 992, 993, 994, 995, 996, 1000, 1280];
   const cut: string[] = [];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 600 });

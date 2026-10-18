@@ -63,14 +63,14 @@ function lineByClass(view: EditorView, className: string): HTMLElement {
 }
 
 describe("本文の書体", () => {
-  it("本文は等幅でなく --ui-font-body、16px、行の高さ 1.75", () => {
+  it("本文は等幅でなく --ui-font-body、16px、行の高さ 1.8", () => {
     const view = mount((parent) => createEditor(parent, { doc: DOC }));
     const style = getComputedStyle(view.contentDOM);
     expect(style.fontFamily).toContain(BODY_FONT);
     expect(style.fontFamily).not.toContain(MONO_FONT);
     expect(style.fontSize).toBe("16px");
-    // line-height は px に解決される（16 * 1.75 = 28）
-    expect(style.lineHeight).toBe("28px");
+    // line-height は px に解決される（16 * 1.8 = 28.8）
+    expect(style.lineHeight).toBe("28.8px");
   });
 
   it("見出しは下線が無く、大きさと太さで本文と区別する", () => {

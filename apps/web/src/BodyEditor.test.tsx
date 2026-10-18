@@ -744,7 +744,7 @@ describe("jumpToFragment", () => {
           });
           // ドックが出れば覆う位置（ドックの上端より下）に窓が開くよう、カーソルの行を画面の下寄りに置く
           const caretTop = v.coordsAtPos(at + 4)?.top ?? Number.NaN;
-          window.scrollBy(0, caretTop - (window.innerHeight - DOCK_HEIGHT - 60));
+          window.scrollBy(0, caretTop - (window.innerHeight - DOCK_HEIGHT - 40));
           await vi.waitFor(() => {
             const rect = tooltipRect();
             expect(rect.top).toBeGreaterThanOrEqual(HEADER_HEIGHT);

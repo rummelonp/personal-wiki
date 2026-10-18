@@ -404,7 +404,7 @@ test.describe("公開範囲の印の配置 @widths", () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     // 印の横では折り返し、印が無ければ 1 行に収まる長さ。読み込んだ後に、この前提が崩れていないかも確かめる
-    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}`;
+    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}の長い題`;
     await api.createPage({ title, body: "上端をそろえる本文", visibility: "public" });
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
