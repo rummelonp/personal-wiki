@@ -1641,6 +1641,80 @@ describe("edit button", () => {
     expect(checked).toBeGreaterThan(0);
   });
 
+  // hover したまま前に文字を打つか、幅が変わると、折り返しの位置が動く。見せている間は測り直す。
+  describe("while the pointer stays on a text-only embed", () => {
+    const name = "あ".repeat(12);
+    const settled = (v: EditorView) =>
+      new Promise<void>((resolve) => v.requestMeasure({ read: () => null, write: resolve }));
+    const hoverSetup = (prefix: string) => {
+      const doc = `${prefix}![[${name}]]\n\n最後`;
+      // 毎回新しい object を返すと、打つたびに widget が作り直される
+      const unresolved = { kind: "unresolved" } as const;
+      const v = mount(doc, { resolvePageEmbed: () => unresolved });
+      if (host) host.style.width = "300px";
+      placeCursor(v, v.state.doc.length);
+      const embed = embedOf(v, name);
+      const button = editButtonOf(v, name);
+      if (!embed || !button) throw new Error("embed is not drawn");
+      // 名前の最後の行の左端か、editor の右端に収まる位置のうち左の方
+      const expectedLeft = () => {
+        const lastLine = [...(embed.firstElementChild?.getClientRects() ?? [])].at(-1);
+        if (!lastLine) throw new Error("name is not drawn");
+        return Math.min(
+          lastLine.left,
+          v.contentDOM.getBoundingClientRect().right - button.getBoundingClientRect().width,
+        );
+      };
+      return { v, embed, button, expectedLeft };
+    };
+
+    it("follows the last line when text typed before it moves the wrap", async () => {
+      const { v, embed, button, expectedLeft } = hoverSetup("あ");
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      const shifts = new Set<number>();
+      // 1 文字ずつ足すと、名前が行の途中から入り、右端に寄り、折り返す
+      for (let i = 0; i < 24; i += 1) {
+        v.dispatch({ changes: { from: 0, insert: "あ" } });
+        await settled(v);
+        expect(button.getBoundingClientRect().left, `after ${i + 1} chars`).toBeCloseTo(
+          expectedLeft(),
+          0,
+        );
+        shifts.add(Math.round(Number.parseFloat(button.style.left) || 0));
+      }
+      // 位置合わせが何も要らない場面だけでは、この test は何も見張らない
+      expect(shifts.size).toBeGreaterThan(1);
+    });
+
+    it("follows the last line when the editor width changes", async () => {
+      const { embed, button, expectedLeft } = hoverSetup("前の文です。");
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      const shifts = new Set<number>();
+      for (const width of [300, 220, 160, 260, 340]) {
+        if (host) host.style.width = `${width}px`;
+        await vi.waitFor(() =>
+          expect(button.getBoundingClientRect().left, `${width}px`).toBeCloseTo(expectedLeft(), 0),
+        );
+        shifts.add(Math.round(Number.parseFloat(button.style.left) || 0));
+      }
+      expect(shifts.size).toBeGreaterThan(1);
+    });
+
+    it("stops measuring once the pointer leaves", async () => {
+      const { v, embed, button, expectedLeft } = hoverSetup("あ");
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      embed.dispatchEvent(new PointerEvent("pointerleave"));
+      const before = button.style.left;
+      v.dispatch({ changes: { from: 0, insert: "あ".repeat(6) } });
+      await settled(v);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await settled(v);
+      // 測り直していれば動く場面で、動いていない
+      expect(Math.abs(button.getBoundingClientRect().left - expectedLeft())).toBeGreaterThan(5);
+      expect(button.style.left).toBe(before);
+    });
+  });
+
   it.each([
     ["image", "![[a.png]]", {}],
     ["unresolved page", "![[a]]", { resolvePageEmbed: () => ({ kind: "unresolved" as const }) }],

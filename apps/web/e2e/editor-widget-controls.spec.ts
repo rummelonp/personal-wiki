@@ -205,6 +205,47 @@ test("折り返した名前の embed では、「記法を編集」が名前の�
   expect(box.y).toBeCloseTo(lastLine.bottom, 0);
 });
 
+test("折り返した名前の embed に hover したまま前に文字を打っても、「記法を編集」は最後の行の左端の下に出続ける", async ({
+  page,
+  api,
+}, testInfo) => {
+  const name = "存在しないページの名前をとても長くして折り返す確認".repeat(3);
+  await openWithBody(
+    page,
+    api,
+    uniqueTitle(testInfo, "hover 中の打鍵"),
+    `前の文です。![[${name}]] 後\n\n最後`,
+  );
+  test.skip(!(await canHover(page)), "hover できない端末では出さない");
+  const editor = bodyEditor(page);
+  // caret を embed から離して先頭に置く（隣り合うと記法が source で出る）
+  await editor.locator(".cm-line", { hasText: "最後" }).click();
+  await page.keyboard.press("ControlOrMeta+Home");
+  const embed = editor.locator(".cm-embed-unresolved").locator("xpath=..");
+  const lastLineOf = () =>
+    embed.evaluate((el) => {
+      const last = [...(el.firstElementChild?.getClientRects() ?? [])].at(-1);
+      return { x: last?.left ?? 0, y: last?.top ?? 0, bottom: last?.bottom ?? 0 };
+    });
+  const first = await lastLineOf();
+  await page.mouse.move(first.x + 10, first.y + 4);
+  const button = embed.locator(".cm-embed-edit");
+  await expect(button).toBeVisible();
+  // 打つたびに最初の行の左端が右へ動き、最後の行の左端との差が変わる
+  for (let i = 0; i < 6; i += 1) {
+    await page.keyboard.type("あいうえ");
+    await expect
+      .poll(async () => {
+        const lastLine = await lastLineOf();
+        const box = await button.boundingBox();
+        return box
+          ? Math.abs(box.x - lastLine.x) + Math.abs(box.y - lastLine.bottom)
+          : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThan(1);
+  }
+});
+
 test("embed の「記法を編集」は Tab で止まらず、callout の開閉と tag の chip は止まる", async ({
   page,
   api,

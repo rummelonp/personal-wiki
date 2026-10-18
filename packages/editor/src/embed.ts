@@ -639,6 +639,9 @@ function editEmbedSource(view: EditorView, wrapper: HTMLElement): void {
   view.focus();
 }
 
+/** hover 中の文字だけの embed が、view の更新のあとに位置を測り直すために登録する関数 */
+const hoveredEmbeds = new WeakMap<EditorView, Set<() => void>>();
+
 /**
  * embed の widget の右上に「記法を編集」ボタンを足す。押すと source を反転表示させ、閉じ括弧の
  * 直前へカーソルを置く（「本体のクリックは遷移だけ」という規則は変えず、直接編集の入口を
@@ -683,15 +686,19 @@ function appendEditButton(
   //   最後の行の左端へ寄せる。
   // - 行の右端に近い名前では editor の外へ切れるので、収まる分だけ左へ寄せる。
   // 画像と動画のボタンは右端に付くので、left を入れると横に伸びる
-  root.addEventListener("pointerenter", () => {
-    const name = TEXT_ONLY_NAMES.map((selector) => root.querySelector(`:scope > ${selector}`)).find(
+  const textName = () =>
+    TEXT_ONLY_NAMES.map((selector) => root.querySelector(`:scope > ${selector}`)).find(
       (element) => element !== null,
     );
-    if (!name) return;
-    button.style.removeProperty("left");
+  // 読むだけで、style には触れない。いまの left を差し引いて `left: 0` のときの位置に戻すので、
+  // 位置を合わせ終えたあとにも測り直せる
+  const measureShift = (): number => {
+    const name = textName();
+    if (!name) return 0;
+    const current = Number.parseFloat(button.style.left) || 0;
+    const rect = button.getBoundingClientRect();
     const lastLine = [...name.getClientRects()].at(-1);
-    const natural = button.getBoundingClientRect();
-    let shift = lastLine ? lastLine.left - natural.left : 0;
+    let shift = lastLine ? lastLine.left - (rect.left - current) : 0;
     // 最後の行が「下書き」の印だけのとき、行の断片の左端は印の margin を含む。印の枠の左端へ寄せる
     const badge = name.querySelector(".cm-wikilink-draft-badge");
     if (lastLine && badge) {
@@ -704,9 +711,47 @@ function appendEditButton(
         shift += badgeRect.left - lastLine.left;
       }
     }
-    shift -= Math.max(0, natural.right + shift - view.contentDOM.getBoundingClientRect().right);
-    if (shift !== 0) button.style.left = `${shift}px`;
+    return (
+      shift -
+      Math.max(0, rect.right - current + shift - view.contentDOM.getBoundingClientRect().right)
+    );
+  };
+  const applyShift = (shift: number): void => {
+    if (shift === 0) button.style.removeProperty("left");
+    else button.style.left = `${shift}px`;
+  };
+
+  // hover している間に、同じ行の前へ文字を打つ、窓の幅を変える、といった理由で折り返しの位置が
+  // 動くと、見せている位置がずれる。その間だけ測り直す。hover していない embed は何も測らないので、
+  // 打鍵の速さには響かない。CodeMirror も幅の変化を拾うが、間引いたうえ
+  // 直前に更新があると見送るので、遅れずに拾うため ResizeObserver で自分で見る。
+  // widget の DOM の style は CodeMirror が見ない（readMutation が widget を捨てる）ので、
+  // 変換中に書いてもよい。
+  let stopHover: (() => void) | null = null;
+  const remeasure = (): void => {
+    // widget が作り直されて外れると pointerleave が来ない
+    if (!root.isConnected) {
+      stopHover?.();
+      return;
+    }
+    view.requestMeasure({ key: button, read: measureShift, write: applyShift });
+  };
+  root.addEventListener("pointerenter", () => {
+    stopHover?.();
+    if (!textName()) return;
+    applyShift(measureShift());
+    const hovered = hoveredEmbeds.get(view) ?? new Set<() => void>();
+    hoveredEmbeds.set(view, hovered);
+    hovered.add(remeasure);
+    const observer = new ResizeObserver(remeasure);
+    observer.observe(view.contentDOM);
+    stopHover = () => {
+      hovered.delete(remeasure);
+      observer.disconnect();
+      stopHover = null;
+    };
   });
+  root.addEventListener("pointerleave", () => stopHover?.());
   container.append(button);
 }
 
@@ -965,7 +1010,7 @@ const embedTheme = EditorView.baseTheme({
   // 幅を確保すると文の中に空白が残り、inline-block にすると長い名前が行の途中で折り返せなくなる。
   // そこで widget は inline のまま、ボタンを名前の下の左端から出して、次の行の文字に重ねる。
   // 見せるのは hover の間だけで、名前は読めたまま残る。幅は名前に縛られず、文字の分だけ取る。
-  // 折り返した名前と行の右端に近い名前の位置合わせは、appendEditButton の pointerenter で行う。
+  // 折り返した名前と行の右端に近い名前の位置合わせは、appendEditButton が hover の間に行う。
   [TEXT_ONLY_NAMES.map((name) => `.cm-embed:has(> ${name}) > .cm-embed-edit`).join(", ")]: {
     top: "100%",
     right: "auto",
@@ -1096,6 +1141,13 @@ export function embeds(resolveUrl?: AttachmentUrlResolver, page?: PageEmbedOptio
       rebuildWhen: uploadsChanged,
     }),
     embedTheme,
+    EditorView.updateListener.of((update) => {
+      const hovered = hoveredEmbeds.get(update.view);
+      if (!hovered) return;
+      if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+        for (const remeasure of [...hovered]) remeasure();
+      }
+    }),
     page?.isDraft ? draftBadgeTheme : [],
     resolveUrl ? attachmentUrlResolver.of(resolveUrl) : [],
   ];
