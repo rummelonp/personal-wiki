@@ -158,4 +158,27 @@ describe("読み込み中のスケルトン", () => {
       bar: false,
     });
   });
+
+  it("一覧のスケルトンは端末に残した並びで見出しを出し、検索でなければ並び順のボタンの幅を空ける", () => {
+    restoreDelay = setLoadingDelay(0);
+    localStorage.setItem("personal-wiki:list-sort", "created");
+    try {
+      const shown = (search: string) => {
+        mount(<RouteSkeleton route={parseRoute("/", search)} owner />);
+        const result = {
+          text: container?.querySelector("h1")?.textContent ?? null,
+          placeholder:
+            container?.querySelector(".list-head .list-sort-placeholder")?.textContent ?? null,
+        };
+        act(() => root?.unmount());
+        container?.remove();
+        return result;
+      };
+      expect(shown("")).toEqual({ text: "すべてのページ", placeholder: "作成日時" });
+      expect(shown("?tag=x")).toEqual({ text: "タグ「x」", placeholder: "作成日時" });
+      expect(shown("?q=abc")).toEqual({ text: "「abc」の検索結果", placeholder: null });
+    } finally {
+      localStorage.clear();
+    }
+  });
 });

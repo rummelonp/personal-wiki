@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { expectTaggedRows } from "./entry-shape";
+import { ListSortButtonFace } from "./ListSortMenu";
 import { listHeading, listTitleClass } from "./list-heading";
+import { type ListSort, readStoredListSort } from "./list-sort";
 import { loadingTitleFor, recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
@@ -189,26 +191,38 @@ export function LoadingMoreRows({ count = 3 }: { count?: number }) {
 /**
  * 一覧の画面全体のスケルトン。heading が分かっていれば文字で出す。
  * 行き先が一覧と決まっていない（知らない URL）ときは、status の文を status で差し替える。
+ * sort を渡すと見出しの右に並び順のボタンの幅を空けておき、読み込み後に見出しが折り返し直さないようにする。
  */
 export function ListSkeleton({
   heading,
   status = "一覧を読み込み中…",
+  sort,
 }: {
   heading?: string | undefined;
   status?: string;
+  sort?: ListSort | undefined;
 }) {
   const painted = useSkeletonPainted();
   return (
     <RailLayout rail={null}>
       <LoadingStatus text={status} />
       <div className={`home ${paintedClass(painted) ?? ""}`} aria-busy="true">
-        {heading === undefined ? (
-          <div className="list-title" aria-hidden="true">
-            <span className="skeleton skeleton-text skeleton-heading" />
-          </div>
-        ) : (
-          <h1 className={listTitleClass(heading)}>{heading}</h1>
-        )}
+        <div className="list-head">
+          {heading === undefined ? (
+            <div className="list-title" aria-hidden="true">
+              <span className="skeleton skeleton-text skeleton-heading" />
+            </div>
+          ) : (
+            <h1 className={listTitleClass(heading)}>{heading}</h1>
+          )}
+          {sort !== undefined && (
+            <div className="list-sort list-sort-placeholder" aria-hidden="true">
+              <span className="list-sort-button">
+                <ListSortButtonFace sort={sort} />
+              </span>
+            </div>
+          )}
+        </div>
         <ul className="skeleton-entries" aria-hidden="true">
           <SkeletonEntryRows count={5} />
         </ul>
@@ -283,15 +297,16 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
       // 見出しは URL だけから作り、データは出さない。公開範囲で絞る見出しは owner だけのものなので、
       // owner か分からない起動時（undefined）に owner と匿名で見出しが分かれるなら、文字にせずスケルトンにする。
       // owner の見出しで出すと匿名に一瞬「下書き」と見せ、匿名の見出しで出すと owner で見出しが変わる
-      const ownerHeading = listHeading(route.query, route.tag, route.visibility);
-      const anonymousHeading = listHeading(route.query, route.tag);
+      const sort = readStoredListSort();
+      const ownerHeading = listHeading(route.query, route.tag, route.visibility, sort);
+      const anonymousHeading = listHeading(route.query, route.tag, "", sort);
       const heading =
         owner === true
           ? ownerHeading
           : owner === false || ownerHeading === anonymousHeading
             ? anonymousHeading
             : undefined;
-      return <ListSkeleton heading={heading} />;
+      return <ListSkeleton heading={heading} sort={route.query.trim() === "" ? sort : undefined} />;
     }
     case "title":
       return <PageSkeleton title={loadingTitleFor(route.title)} visibilityPill={owner} />;

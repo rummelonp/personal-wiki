@@ -6,11 +6,14 @@ import { rememberTitle } from "./page-titles";
 import type { ListedPage } from "./pages-api";
 import { listHref, pageHrefFor, type VisibilityFilter } from "./route";
 
+export type EntryTime = "updated" | "created";
+
 /**
  * 一覧の 1 行（タイトル、抜粋、更新日、タグ）。配置は持たず、並べ方は呼び出し側が決める。
  * highlight は検索語で、title と抜粋のうち、検索 API が一致とみなす箇所（語全体の部分一致）を強調する。
  * showVisibility は公開範囲の印（公開、下書き）を出すか。匿名の一覧は全行が公開なので出さない。
  * visibility は一覧の公開範囲の絞り込みで、行のタグを押しても外さずに保つ。
+ * time は日時の欄に出す値で、作成日時の順の一覧だけが created にする。
  */
 export function EntryRow({
   entry,
@@ -18,13 +21,16 @@ export function EntryRow({
   highlight = "",
   showVisibility = false,
   visibility = "",
+  time = "updated",
 }: {
   entry: ListedPage;
   now: number;
   highlight?: string;
   showVisibility?: boolean;
   visibility?: VisibilityFilter;
+  time?: EntryTime;
 }) {
+  const at = time === "created" ? (entry.createdAt ?? entry.updatedAt) : entry.updatedAt;
   // API は語の空白を畳まずに探すが、返す抜粋は空白の並びを 1 つの空白にしてあるので、抜粋の側だけ語も畳む
   const excerptNeedles = [highlight.replace(/\s+/g, " ")];
   const titleNeedles = [highlight];
@@ -41,12 +47,12 @@ export function EntryRow({
         {showVisibility && <VisibilityMark visibility={entry.visibility} />}
         <time
           className="entry-time"
-          dateTime={new Date(entry.updatedAt).toISOString()}
-          title={formatTime(entry.updatedAt)}
+          dateTime={new Date(at).toISOString()}
+          title={formatTime(at)}
           // 読み上げにだけ届ける絶対の日時。出すのは styles.css の .entry-time::after
-          data-absolute={`（${formatTime(entry.updatedAt)}）`}
+          data-absolute={`（${formatTime(at)}）`}
         >
-          {formatRelativeTime(entry.updatedAt, now)}
+          {formatRelativeTime(at, now)}
         </time>
       </div>
       {entry.excerpt !== undefined && entry.excerpt !== "" && (
@@ -84,6 +90,7 @@ export function EntryList({
   highlight = "",
   showVisibility = false,
   visibility = "",
+  time = "updated",
   className,
   children,
 }: {
@@ -92,6 +99,7 @@ export function EntryList({
   highlight?: string;
   showVisibility?: boolean;
   visibility?: VisibilityFilter;
+  time?: EntryTime;
   className?: string | undefined;
   /** 行の後ろに足す要素（読み込み中のスケルトンの行など） */
   children?: ReactNode;
@@ -106,6 +114,7 @@ export function EntryList({
           highlight={highlight}
           showVisibility={showVisibility}
           visibility={visibility}
+          time={time}
         />
       ))}
       {children}

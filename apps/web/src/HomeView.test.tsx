@@ -48,7 +48,9 @@ afterEach(() => {
   root = null;
   container = null;
   vi.clearAllMocks();
+  vi.restoreAllMocks();
   forgetEntryShape();
+  localStorage.clear();
 });
 
 async function mountHome(
@@ -163,7 +165,8 @@ describe("useEntryList の条件の切り替え", () => {
     function Probe({ tag }: { tag: string }) {
       seen.push({
         tag,
-        status: useEntryList({ query: "", tag, visibility: "", owner: true }).state.status,
+        status: useEntryList({ query: "", tag, visibility: "", sort: "updated", owner: true }).state
+          .status,
       });
       return null;
     }
@@ -183,7 +186,13 @@ describe("条件を変えて取り直している間の一覧", () => {
   async function mountProbe() {
     const seen: { tag: string; status: string; previous: string[] | undefined }[] = [];
     function Probe({ tag }: { tag: string }) {
-      const { state } = useEntryList({ query: "", tag, visibility: "", owner: true });
+      const { state } = useEntryList({
+        query: "",
+        tag,
+        visibility: "",
+        sort: "updated",
+        owner: true,
+      });
       seen.push({
         tag,
         status: state.status,
@@ -803,5 +812,192 @@ describe("HomeView の公開範囲の絞り込み", () => {
       act(() => root?.unmount());
       container?.remove();
     }
+  });
+});
+
+describe("HomeView の並び順", () => {
+  const sortButton = () =>
+    container?.querySelector<HTMLButtonElement>("button[aria-haspopup='menu']") ?? null;
+  const heading = () => container?.querySelector("h1")?.textContent;
+  const sortOf = (call: number) =>
+    (vi.mocked(listRecent).mock.calls[call]?.[1] as { sort?: string } | undefined)?.sort;
+
+  async function choose(label: string) {
+    await act(async () => sortButton()?.click());
+    const option = [
+      ...(container?.querySelectorAll<HTMLButtonElement>("[role='menuitemradio']") ?? []),
+    ].find((item) => item.textContent?.includes(label));
+    await act(async () => option?.click());
+  }
+
+  beforeEach(() => {
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: null }),
+    );
+  });
+
+  it("見出しの右に今の並びの名前を出し、選び直すとその並びで取り直して見出しも変える", async () => {
+    await renderHome("");
+    expect(heading()).toBe("最近の更新");
+    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順：更新日時");
+    expect(sortButton()?.closest(".list-head")?.querySelector("h1")).not.toBeNull();
+    expect(sortOf(0)).toBe("updated");
+
+    await act(async () => sortButton()?.click());
+    const menu = container?.querySelector("[role='menu']");
+    expect(menu?.getAttribute("aria-label")).toBe("並び順");
+    const items = [...(menu?.querySelectorAll("[role='menuitemradio']") ?? [])];
+    expect(items.map((item) => [item.textContent, item.getAttribute("aria-checked")])).toEqual([
+      ["✓更新日時", "true"],
+      ["作成日時", "false"],
+      ["タイトル", "false"],
+    ]);
+    expect(document.activeElement).toBe(items[0]);
+
+    await act(async () => (items[2] as HTMLButtonElement).click());
+    expect(container?.querySelector("[role='menu']")).toBeNull();
+    expect(document.activeElement).toBe(sortButton());
+    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順：タイトル");
+    expect(heading()).toBe("すべてのページ");
+    await vi.waitFor(() => expect(sortOf(1)).toBe("title"));
+  });
+
+  it("選んだ並びは端末に残り、次に開いた一覧（タグや公開範囲で絞った一覧を含む）も同じ並びで取る", async () => {
+    await renderHome("");
+    await choose("作成日時");
+    act(() => root?.unmount());
+    container?.remove();
+    vi.mocked(listRecent).mockClear();
+
+    await mountHome("", true, "x", "public");
+    await vi.waitFor(() => expect(container?.querySelector(".entries")).not.toBeNull());
+    expect(sortOf(0)).toBe("created");
+    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順：作成日時");
+    expect(heading()).toBe("タグ「x」の公開ページ");
+    // URL には載せない
+    expect(window.location.search).not.toContain("sort");
+  });
+
+  it("作成日時の順では行に作成日時を出し、ほかの並びでは更新日時を出す", async () => {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    vi.mocked(listRecent).mockResolvedValue(
+      ok({
+        pages: [
+          {
+            ...summary("AAAAAAAAAAAAAAAAAAAAAA", "行"),
+            createdAt: now - 5 * DAY,
+            updatedAt: now,
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    const time = () => container?.querySelector(".entry-time");
+    await renderHome("");
+    expect(time()?.getAttribute("datetime")).toBe(new Date(now).toISOString());
+    await choose("作成日時");
+    await vi.waitFor(() =>
+      expect(time()?.getAttribute("datetime")).toBe(new Date(now - 5 * DAY).toISOString()),
+    );
+    expect(time()?.firstChild?.textContent).toBe("5日前");
+  });
+
+  it("並びを変えて取り直している間は、薄く残す前の行に前の並びの日時を出し、届いてから行と日時を一緒に変える", async () => {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    const page = {
+      ...summary("AAAAAAAAAAAAAAAAAAAAAA", "行"),
+      createdAt: now - 5 * DAY,
+      updatedAt: now,
+    };
+    vi.mocked(listRecent).mockResolvedValueOnce(ok({ pages: [page], nextCursor: null }));
+    let deliver = () => {};
+    vi.mocked(listRecent).mockReturnValueOnce(
+      new Promise((resolve) => {
+        deliver = () => resolve(ok({ pages: [page], nextCursor: null }));
+      }),
+    );
+    const time = () => container?.querySelector(".entry-time")?.getAttribute("datetime");
+    await renderHome("");
+    expect(time()).toBe(new Date(now).toISOString());
+
+    await choose("作成日時");
+    expect(container?.querySelector(".entries-stale")).not.toBeNull();
+    expect(time()).toBe(new Date(now).toISOString());
+
+    await act(async () => deliver());
+    expect(container?.querySelector(".entries-stale")).toBeNull();
+    expect(time()).toBe(new Date(now - 5 * DAY).toISOString());
+  });
+
+  it("「さらに表示」も選んだ並びで読み足す（並びの違う cursor は API が受け付けない）", async () => {
+    localStorage.setItem("personal-wiki:list-sort", "title");
+    vi.mocked(listRecent).mockResolvedValueOnce(
+      ok({ pages: [summary("AAAAAAAAAAAAAAAAAAAAAA", "行")], nextCursor: "tYQ" }),
+    );
+    vi.mocked(listRecent).mockReturnValueOnce(new Promise(() => {}));
+    await renderHome("");
+    await act(async () =>
+      [...(container?.querySelectorAll<HTMLButtonElement>("button.button") ?? [])]
+        .find((button) => button.textContent === "さらに表示")
+        ?.click(),
+    );
+    expect(vi.mocked(listRecent).mock.calls[1]).toMatchObject(["tYQ", { sort: "title" }]);
+  });
+
+  it("検索中は並び順のメニューを出さず、残した並びを検索に使わない", async () => {
+    localStorage.setItem("personal-wiki:list-sort", "title");
+    vi.mocked(searchPages).mockResolvedValue(ok([]));
+    await mountHome("hono", true);
+    await vi.waitFor(() => expect(searchPages).toHaveBeenCalled());
+    expect(sortButton()).toBeNull();
+    expect(listRecent).not.toHaveBeenCalled();
+  });
+
+  it("端末の保存を読めないときと知らない値のときは、既定の並びにする", async () => {
+    localStorage.setItem("personal-wiki:list-sort", "popular");
+    await renderHome("");
+    expect(sortOf(0)).toBe("updated");
+    act(() => root?.unmount());
+    container?.remove();
+    vi.mocked(listRecent).mockClear();
+
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    await renderHome("");
+    expect(sortOf(0)).toBe("updated");
+    expect(heading()).toBe("最近の更新");
+    // 書けなくても、開いている間は選んだ並びにする
+    await choose("タイトル");
+    expect(heading()).toBe("すべてのページ");
+    await vi.waitFor(() => expect(sortOf(1)).toBe("title"));
+  });
+
+  it("Escape でメニューを閉じてボタンに焦点を戻し、矢印キーで項目を移る", async () => {
+    await renderHome("");
+    await act(async () => sortButton()?.click());
+    const items = () => [
+      ...(container?.querySelectorAll<HTMLElement>("[role='menuitemradio']") ?? []),
+    ];
+    const key = (k: string) =>
+      act(async () => {
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: k, bubbles: true }),
+        );
+      });
+    await key("ArrowDown");
+    expect(document.activeElement).toBe(items()[1]);
+    await key("ArrowUp");
+    await key("ArrowUp");
+    expect(document.activeElement).toBe(items()[2]);
+    await key("Escape");
+    expect(container?.querySelector("[role='menu']")).toBeNull();
+    expect(document.activeElement).toBe(sortButton());
+    expect(sortOf(1)).toBeUndefined();
   });
 });

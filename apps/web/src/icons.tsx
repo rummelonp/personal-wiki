@@ -53,6 +53,14 @@ export function ConnectionIcon() {
   );
 }
 
+export function ChevronDownIcon() {
+  return (
+    <Icon>
+      <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
+    </Icon>
+  );
+}
+
 export function CloseIcon() {
   return (
     <Icon>

@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { EmptyState } from "./EmptyState";
-import { EntryList } from "./EntryRow";
+import { EntryList, type EntryTime } from "./EntryRow";
 import { rememberEntryShape } from "./entry-shape";
 import { Link } from "./Link";
+import { ListSortMenu } from "./ListSortMenu";
 import { LoadingMoreRows, LoadingStatus, SkeletonEntries, useSkeletonPainted } from "./Loading";
 import { listHeading, listTitleClass, VISIBILITY_FILTER_NOUNS } from "./list-heading";
+import { type ListSort, useListSort } from "./list-sort";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";
@@ -31,8 +33,14 @@ function filteredEmptyTitle(tag: string, visibility: VisibilityFilter): string {
 }
 
 /**
+ * 行の日時の欄に出す値。行を取ったときの並びで決め、作成日時の順では並びの鍵に合わせる。
+ * 検索結果は既定の並びとして取るので、更新日時になる。
+ */
+const entryTimeOf = (sort: ListSort): EntryTime => (sort === "created" ? "created" : "updated");
+
+/**
  * 条件を変えて取り直している間の、前の一覧。縮めずに残し、取得が遅いときだけ薄くする。
- * 前の条件の結果なので、新しい検索語での強調はしない。
+ * 前の条件の結果なので、新しい検索語での強調はしない。行の日時も前の並びに合わせ、行の順と食い違わせない。
  */
 function PreviousEntries({
   previous,
@@ -52,6 +60,7 @@ function PreviousEntries({
       now={now}
       showVisibility={showVisibility}
       visibility={visibility}
+      time={entryTimeOf(previous.sort)}
       className={painted ? "entries-stale skeleton-painted" : "entries-stale"}
     />
   );
@@ -71,10 +80,12 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
   const ownerVisibility = owner ? visibility : "";
   const effectiveVisibility = searching ? "" : ownerVisibility;
   const filtered = effectiveTag !== "" || effectiveVisibility !== "";
+  const [sort, setSort] = useListSort();
   const { state, loadMore, reload } = useEntryList({
     query: trimmed,
     tag: effectiveTag,
     visibility: effectiveVisibility,
+    sort,
     owner,
   });
   const { tags, settled: tagsSettled } = useTags(effectiveVisibility);
@@ -98,7 +109,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
     </Link>
   );
 
-  const heading = listHeading(trimmed, tag, ownerVisibility);
+  const heading = listHeading(trimmed, tag, ownerVisibility, sort);
   // 検索中は公開範囲で絞れず、欄のリンクを押すと検索語も落ちるので出さない
   const showVisibilityFilter = owner && !searching;
   const busy = state.status === "loading" || (state.status === "ready" && state.loadingMore);
@@ -125,7 +136,10 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
         />
       )}
       <div className="home" aria-busy={busy || undefined}>
-        <h1 className={listTitleClass(heading)}>{heading}</h1>
+        <div className="list-head">
+          <h1 className={listTitleClass(heading)}>{heading}</h1>
+          {!searching && <ListSortMenu sort={sort} onChange={setSort} />}
+        </div>
         {searching && tag !== "" && (
           <p className="muted">
             検索はタグで絞り込めないので、全ページから探しています。{" "}
@@ -210,6 +224,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
               highlight={searching ? trimmed : ""}
               showVisibility={owner}
               visibility={effectiveVisibility}
+              time={entryTimeOf(state.sort)}
             >
               {state.loadingMore && <LoadingMoreRows />}
             </EntryList>

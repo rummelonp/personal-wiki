@@ -9,6 +9,7 @@ import {
 import { SEARCH_MAX_QUERY_CHARS } from "@personal-wiki/domain/search";
 import { singleLineTitle } from "@personal-wiki/domain/title";
 import { formatCount, inputProblemMessage } from "./input-messages";
+import { DEFAULT_LIST_SORT, type ListSort } from "./list-sort";
 
 export type Visibility = "public" | "draft";
 
@@ -31,6 +32,8 @@ export interface PageSummary {
 
 /** 最近の更新の 1 件。 */
 export interface ListedPage extends PageSummary {
+  /** 一覧の API は常に返す。検索結果（SearchHit）には無い */
+  createdAt?: number;
   /**
    * 本文の先頭 120 文字の抜粋。保存時に作る派生データで、それ以前に作ったページと本文が空のページには無い。
    */
@@ -289,7 +292,10 @@ const isTags = (value: unknown): value is string[] =>
 function isListedPage(value: unknown): value is ListedPage {
   const v = recordOf(value);
   return (
-    isSummary(value) && isTags(v.tags) && (v.excerpt === undefined || typeof v.excerpt === "string")
+    isSummary(value) &&
+    isTags(v.tags) &&
+    (v.excerpt === undefined || typeof v.excerpt === "string") &&
+    (v.createdAt === undefined || typeof v.createdAt === "number")
   );
 }
 
@@ -551,10 +557,13 @@ async function listResult<T extends PageSummary>(
 
 export async function listRecent(
   cursor: string | null,
-  options: { tag?: string; visibility?: Visibility | ""; limit?: number } = {},
+  options: { tag?: string; visibility?: Visibility | ""; sort?: ListSort; limit?: number } = {},
   fetchFn: Fetch = fetch,
 ): Promise<ApiResult<PageList<ListedPage>>> {
   const params = new URLSearchParams();
+  if (options.sort !== undefined && options.sort !== DEFAULT_LIST_SORT) {
+    params.set("sort", options.sort);
+  }
   if (cursor !== null) params.set("cursor", cursor);
   if (options.tag !== undefined && options.tag !== "") params.set("tag", options.tag);
   if (options.visibility !== undefined && options.visibility !== "") {
@@ -568,7 +577,7 @@ export async function listRecent(
 /** Worker の `TITLES_MAX_LIMIT`。一覧の上限より大きいのは、抜粋とタグを引かないため */
 export const PAGE_TITLES_LIMIT = 500;
 
-/** id と title だけの一覧。並びと cursor は `listRecent` と同じ。 */
+/** id と title だけの一覧。並びと cursor は、sort を渡さない `listRecent` と同じ。 */
 export async function listPageTitles(
   cursor: string | null,
   fetchFn: Fetch = fetch,

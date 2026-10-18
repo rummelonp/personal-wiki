@@ -1,3 +1,4 @@
+import { DEFAULT_LIST_SORT, type ListSort } from "./list-sort";
 import type { VisibilityFilter } from "./route";
 
 /** 公開範囲の絞り込みを、見出しと空の状態で呼ぶ名前。 */
@@ -9,11 +10,20 @@ export const VISIBILITY_FILTER_NOUNS: Record<Exclude<VisibilityFilter, "">, stri
 /**
  * 一覧の見出し。検索中は tag と visibility を使わない（検索 API にどちらの絞り込みも無いため）。
  * 狭い画面では絞り込みの欄が一覧の下に回るので、公開範囲の絞り込みも見出しで伝える。
+ * 絞らない一覧は、更新日時の順でなければ「最近の更新」と読めないので「すべてのページ」と呼ぶ。
  */
-export function listHeading(query: string, tag: string, visibility: VisibilityFilter = ""): string {
+export function listHeading(
+  query: string,
+  tag: string,
+  visibility: VisibilityFilter = "",
+  sort: ListSort = DEFAULT_LIST_SORT,
+): string {
   const trimmed = query.trim();
   if (trimmed !== "") return `「${trimmed}」の検索結果`;
-  if (visibility === "") return tag !== "" ? `タグ「${tag}」` : "最近の更新";
+  if (visibility === "") {
+    if (tag !== "") return `タグ「${tag}」`;
+    return sort === DEFAULT_LIST_SORT ? "最近の更新" : "すべてのページ";
+  }
   const noun = VISIBILITY_FILTER_NOUNS[visibility];
   return tag !== "" ? `タグ「${tag}」の${noun}` : noun;
 }

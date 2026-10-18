@@ -1,5 +1,6 @@
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_LIST_SORT, type ListSort } from "./list-sort";
 import { failureMessage, type ListedPage, LOAD_FAILED, listRecent, searchPages } from "./pages-api";
 import type { VisibilityFilter } from "./route";
 import { restoreCount } from "./scroll-restore";
@@ -8,6 +9,8 @@ import { restoreCount } from "./scroll-restore";
 export interface PreviousList {
   entries: ListedPage[];
   next: string | null;
+  /** 前の一覧を取ったときの並び。行の日時は、新しい並びでなくこの並びに合わせて出す */
+  sort: ListSort;
 }
 
 export type ListState =
@@ -16,7 +19,14 @@ export type ListState =
    * 戻るの復元が「前の画面が残っている」と取り違えて位置を戻さなくなるため。
    */
   | { status: "loading"; previous?: PreviousList | undefined }
-  | { status: "ready"; entries: ListedPage[]; next: string | null; loadingMore: boolean }
+  | {
+      status: "ready";
+      entries: ListedPage[];
+      next: string | null;
+      loadingMore: boolean;
+      /** 取ったときの並び。検索結果は関連度の順だが、既定の並びとして持つ */
+      sort: ListSort;
+    }
   | { status: "unauthorized" }
   | { status: "error"; message: string }
   /** 匿名の検索語が API の受け付ける長さに満たない。リクエストは送っていない。 */
@@ -31,6 +41,8 @@ export interface EntryListSource {
   tag: string;
   /** query が空のとき、この公開範囲で絞った最近の更新。tag と AND で絞る。 */
   visibility: VisibilityFilter;
+  /** query が空のときの並び。検索結果は関連度の順のまま */
+  sort: ListSort;
   /** false（匿名）なら、API が 400 で拒む短い検索語を送らない。 */
   owner: boolean;
 }
@@ -49,14 +61,18 @@ function restoreLimit(): { limit?: number } {
 
 function previousOf(state: ListState): PreviousList | undefined {
   if (state.status === "ready") {
-    return state.entries.length > 0 ? { entries: state.entries, next: state.next } : undefined;
+    return state.entries.length > 0
+      ? { entries: state.entries, next: state.next, sort: state.sort }
+      : undefined;
   }
   return state.status === "loading" ? state.previous : undefined;
 }
 
 /** 一覧のデータだけを扱う。見せ方（行、配置）は持たない。 */
-export function useEntryList({ query, tag, visibility, owner }: EntryListSource) {
-  const key = `${owner}\n${tag}\n${visibility}\n${query}`;
+export function useEntryList({ query, tag, visibility, sort, owner }: EntryListSource) {
+  // 検索中は並びを使わないので、並びを変えても取り直さない
+  const listSort = query === "" ? sort : DEFAULT_LIST_SORT;
+  const key = `${owner}\n${tag}\n${visibility}\n${listSort}\n${query}`;
   const [held, setHeld] = useState<{ key: string; state: ListState }>({
     key,
     state: { status: "loading" },
@@ -88,27 +104,27 @@ export function useEntryList({ query, tag, visibility, owner }: EntryListSource)
         ? searchPages(query).then((res) =>
             res.ok ? { ...res, value: { entries: res.value, next: null } } : res,
           )
-        : listRecent(null, { tag, visibility, ...restoreLimit() }).then((res) =>
+        : listRecent(null, { tag, visibility, sort: listSort, ...restoreLimit() }).then((res) =>
             res.ok
               ? { ...res, value: { entries: res.value.pages, next: res.value.nextCursor } }
               : res,
           );
     void load.then((res) => {
       if (generation.current !== mine) return;
-      if (res.ok) setState({ status: "ready", ...res.value, loadingMore: false });
+      if (res.ok) setState({ status: "ready", ...res.value, loadingMore: false, sort: listSort });
       else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
       else if (res.reason === "invalid_query")
         setState({ status: "invalid_query", message: res.message });
       else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
     });
-  }, [query, tag, visibility, owner, key, setState, attempt]);
+  }, [query, tag, visibility, listSort, owner, key, setState, attempt]);
 
   const loadMore = useCallback(async () => {
     if (state.status !== "ready" || state.next === null || state.loadingMore) return;
     const mine = generation.current;
     const { entries, next } = state;
     setState({ ...state, loadingMore: true });
-    const res = await listRecent(next, { tag, visibility });
+    const res = await listRecent(next, { tag, visibility, sort: listSort });
     if (generation.current !== mine) return;
     if (res.ok) {
       setState({
@@ -116,11 +132,12 @@ export function useEntryList({ query, tag, visibility, owner }: EntryListSource)
         entries: [...entries, ...res.value.pages],
         next: res.value.nextCursor,
         loadingMore: false,
+        sort: listSort,
       });
     } else {
-      setState({ status: "ready", entries, next, loadingMore: false });
+      setState({ status: "ready", entries, next, loadingMore: false, sort: listSort });
     }
-  }, [state, tag, visibility, setState]);
+  }, [state, tag, visibility, listSort, setState]);
 
   return { state, loadMore, reload };
 }

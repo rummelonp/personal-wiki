@@ -1435,6 +1435,131 @@ a.segmented-option {
   max-width: var(--list-width);
 }
 
+/* 見出しが折り返しても、並び順のボタンは見出しの 1 行目の右に置く */
+.list-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.list-head > .list-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* 高さを見出しの 1 行に固定する。タッチ端末でボタンの箱が広がっても、行の高さと一覧の位置を変えない */
+.list-sort {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: calc(var(--font-size-lg) * var(--line-height-tight));
+}
+
+/* 地は ::before に描き、ボタンの箱は当たり判定に回す（公開範囲の印と同じ作り） */
+.list-sort-button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  min-height: var(--list-sort-height);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.list-sort-button::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* token-ok: ボタンの中（isolation で閉じた重なり）で、地を文字の後ろに置くだけの値 */
+  content: "";
+  border-radius: var(--radius-sm);
+}
+
+.list-sort-button[aria-expanded="true"]::before {
+  background: var(--color-selected);
+}
+
+@media (hover: hover) {
+  .list-sort-button:hover::before {
+    background: var(--color-selected);
+  }
+}
+
+.list-sort-button:focus-visible {
+  outline: none;
+}
+
+.list-sort-button:focus-visible::before {
+  outline: calc(var(--border-width) * 2) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+/* 読み込みの間に、ボタンの幅だけを空けておく */
+.list-sort-placeholder {
+  visibility: hidden;
+}
+
+.list-sort-menu {
+  position: absolute;
+  top: calc(50% + var(--list-sort-height) / 2 + var(--space-1));
+  right: 0;
+  z-index: var(--z-popover);
+  display: grid;
+  width: var(--list-sort-menu-width);
+  padding: var(--space-1);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.list-sort-option {
+  display: grid;
+  grid-template-columns: var(--space-4) 1fr;
+  gap: var(--space-1);
+  align-items: baseline;
+  padding: var(--space-2);
+  font: inherit;
+  line-height: var(--line-height-tight);
+  color: var(--color-fg);
+  text-align: start;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.list-sort-option:focus-visible {
+  outline-offset: calc(-2 * var(--border-width));
+}
+
+.list-sort-option[aria-checked="true"] {
+  background: var(--color-selected);
+}
+
+@media (hover: hover) {
+  .list-sort-option:hover {
+    background: var(--color-selected);
+  }
+}
+
+.list-sort-option-check {
+  color: var(--color-accent);
+}
+
 /* skeleton-* は読み込み中のスケルトン。実際の一覧の行（.entries .entry）と取り違えられないよう別の名前にして、見た目だけ揃える */
 .entries,
 .skeleton-entries {
@@ -2524,6 +2649,20 @@ a.segmented-option {
   .visibility-option {
     min-height: var(--tap-size);
     padding-block: var(--space-2);
+  }
+
+  .list-sort-button {
+    min-height: var(--tap-size);
+  }
+
+  .list-sort-button::before {
+    inset-block: calc((var(--tap-size) - var(--list-sort-height)) / 2);
+  }
+
+  .list-sort-option {
+    align-items: center;
+    min-height: var(--tap-size);
+    padding-block: 0;
   }
 }
 

@@ -381,6 +381,18 @@ describe("一覧と検索", () => {
     expect(calls[0]?.path).toBe("/api/pages/recent?tag=%E6%97%A5%E8%A8%98+a");
   });
 
+  it("並びは既定（更新日時）と違うときだけ sort をクエリに載せる", async () => {
+    const { calls, fetchFn } = recorder(() => Response.json({ pages: [], nextCursor: null }));
+    await listRecent(null, { sort: "updated" }, fetchFn);
+    await listRecent(null, { sort: "created" }, fetchFn);
+    await listRecent("tYQ", { tag: "x", sort: "title" }, fetchFn);
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/pages/recent",
+      "/api/pages/recent?sort=created",
+      "/api/pages/recent?sort=title&cursor=tYQ&tag=x",
+    ]);
+  });
+
   it("件数を指定するときは limit をクエリに載せる", async () => {
     const { calls, fetchFn } = recorder(() => Response.json({ pages: [], nextCursor: null }));
     await listRecent(`1.${ID}`, { limit: 100 }, fetchFn);
@@ -417,6 +429,12 @@ describe("一覧と検索", () => {
       ok: false,
       reason: "error",
     });
+    expect(
+      await listRecent(null, {}, respond([{ ...entry, tags: [], createdAt: 1 }])),
+    ).toMatchObject({ ok: true });
+    expect(
+      await listRecent(null, {}, respond([{ ...entry, tags: [], createdAt: "1" }])),
+    ).toMatchObject({ ok: false });
     expect(await listRecent(null, {}, respond([{ ...entry, tags: [1] }]))).toMatchObject({
       ok: false,
     });

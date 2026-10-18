@@ -18,4 +18,13 @@ describe("listHeading", () => {
     expect(listHeading("", "設計", "")).toBe("タグ「設計」");
     expect(listHeading("メモ", "設計", "draft")).toBe("「メモ」の検索結果");
   });
+
+  it("絞らない一覧は、更新日時の順だけを「最近の更新」と呼び、ほかの並びでは「すべてのページ」と呼ぶ", () => {
+    expect(listHeading("", "", "", "updated")).toBe("最近の更新");
+    expect(listHeading("", "", "", "created")).toBe("すべてのページ");
+    expect(listHeading("", "", "", "title")).toBe("すべてのページ");
+    expect(listHeading("", "設計", "", "title")).toBe("タグ「設計」");
+    expect(listHeading("", "", "draft", "created")).toBe("下書き");
+    expect(listHeading("メモ", "", "", "title")).toBe("「メモ」の検索結果");
+  });
 });
