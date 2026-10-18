@@ -86,7 +86,8 @@ pnpm link-rewrites [--remote] [--url <base>] [--target <page id>]
   同じページで 5xx が 3 回続くと、そのページは飛ばす
 - 書き換え先のページが保存され続けて版の競合が 5 回続くと、スクリプトは止まる
 
-Cron が飛ばしたページ（D1 の一時的な失敗が 3 発火続いた分を含む）は、Worker のログ（`wrangler tail` の `link_rewrites.failed`）にしか出ない。
+Cron が飛ばしたページ（D1 の一時的な失敗が 3 発火続いた分を含む）は、Worker のログの `link_rewrites.failed` にしか出ない。
+ログは `wrangler tail` で流れるほか、ダッシュボードの Worker の Observability で、保存期間（Free は数日）の分を遡って検索できる。
 `link-rewrites` でも拾えないので、気づいたら手で直す。
 `link_rewrites.scheduled_error` の `sourcePageId` は、その発火で選んだリンク元である。
 書き換えが済んでいることもある。
