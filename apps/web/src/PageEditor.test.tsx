@@ -135,6 +135,9 @@ function typeAtEnd(view: EditorView, text: string, userEvent = "input.type"): vo
   });
 }
 
+/** 再送のボタンが消えている間、focus を預ける要素。 */
+const waitAnchor = () => container?.querySelector("span.visually-hidden[tabindex='-1']") ?? null;
+
 /** React の再描画（useSyncExternalStore の通知は microtask で描く）と、保存の Promise を待つ */
 const flushAsync = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
 
@@ -515,8 +518,8 @@ describe("PageEditor と本文のエディタ", () => {
       act(() => button("もう一度保存する").click());
       await flushAsync();
       expect(container?.querySelector("button.button-main")).toBeNull();
-      expect(document.activeElement).toBe(document.body);
-      return { button, reply: (value: ApiResult<Page>) => act(async () => reply(value)) };
+      expect(document.activeElement).toBe(waitAnchor());
+      return { button, view, reply: (value: ApiResult<Page>) => act(async () => reply(value)) };
     }
 
     it("再び失敗して通知のボタンが作り直されたら、そこへ戻す", async () => {
@@ -524,6 +527,23 @@ describe("PageEditor と本文のエディタ", () => {
       await reply({ ok: false, reason: "error", message: "また失敗" });
       await flushAsync();
       expect(document.activeElement).toBe(button("もう一度保存する"));
+    });
+
+    it("再送が成功したら、待つ間の置き場から本文へ focus を移し、body に落とさない", async () => {
+      const { view, reply } = await pressRetryAndWait();
+      await reply(ok({ ...PAGE, body: "を書き足す", version: 2 }));
+      await flushAsync();
+      expect(waitAnchor()).toBeNull();
+      expect(document.activeElement).toBe(view().contentDOM);
+    });
+
+    it("待つ間に本文へ移した focus は、再送が失敗しても奪わない", async () => {
+      const { view, button, reply } = await pressRetryAndWait();
+      act(() => view().focus());
+      await reply({ ok: false, reason: "error", message: "また失敗" });
+      await flushAsync();
+      expect(button("もう一度保存する").disabled).toBe(false);
+      expect(document.activeElement).toBe(view().contentDOM);
     });
 
     it("待つ間に何も無い所を押して focus を外したら、作り直されたボタンへ戻さない", async () => {
@@ -538,7 +558,7 @@ describe("PageEditor と本文のエディタ", () => {
     });
 
     it("再送が題名の重複で止まったら印を捨て、後から現れる別の失敗のボタンへ移さない", async () => {
-      const { button, reply } = await pressRetryAndWait();
+      const { view, button, reply } = await pressRetryAndWait();
       await reply({ ok: false, reason: "title_conflict", message: "重複" });
       await flushAsync();
       expect(container?.querySelector("button.button-main")).toBeNull();
@@ -555,7 +575,8 @@ describe("PageEditor と本文のエディタ", () => {
         b.textContent?.includes("もう一度削除する"),
       );
       expect(retry).toBeDefined();
-      expect(document.activeElement).toBe(document.body);
+      // 重複で止まったときに置き場から移した先のまま、新しいボタンへは移さない
+      expect(document.activeElement).toBe(view().contentDOM);
     });
   });
 
@@ -1660,7 +1681,7 @@ describe("まだ作っていないページ（page が null）", () => {
       act(() => retryButton()?.click());
       await flushAsync();
       expect(retryButton()).toBeUndefined();
-      expect(document.activeElement).toBe(document.body);
+      expect(document.activeElement).toBe(waitAnchor());
       return { reply: (value: ApiResult<Page>) => act(async () => reply(value)) };
     }
 

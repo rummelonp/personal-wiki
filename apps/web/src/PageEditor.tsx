@@ -341,20 +341,23 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (!uncreated) onShown?.({ id: pageId, title: savedTitle, visibility: savedVisibility });
   }, [onShown, uncreated, pageId, savedTitle, savedVisibility]);
   const { goTo } = useFragmentJump(editor);
-  // 押したボタンは解決で消えるので、focus が body に落ちないよう移す。解決の間にサーバーの版がまた進むと
-  // 衝突の通知が残るので、そのときは動かさない。移す先は本文だが、タッチ端末では本文に移すと、確認の操作で閉じたキーボードが
+  // 押したボタンが消えた後、focus が body に落ちないよう移す先。タッチ端末で本文に移すと、閉じたキーボードが
   // 開き直り、カーソルの行へスクロールして title が見える範囲から外れる。そこではキーボードを開かない
   // ページの枠に移し、スクロールの位置も動かさない。枠に tabindex を付けるのは focus を持つ間だけにする。
   // 付けたままだと、本文の編集中に枠の余白を押しただけで枠が focus を取り、本文の入力が途切れる
-  async function resolveConflict(resolve: () => void | Promise<void>) {
-    await resolve();
-    if (session.getState().conflict !== null) return;
+  function focusBodyOrFrame() {
     const frame = article.current;
     if (frame !== null && window.matchMedia("(pointer: coarse)").matches) {
       frame.tabIndex = -1;
       frame.addEventListener("blur", () => frame.removeAttribute("tabindex"), { once: true });
       frame.focus({ preventScroll: true });
     } else editor.current?.view()?.focus();
+  }
+  // 解決の間にサーバーの版がまた進むと衝突の通知が残るので、そのときは動かさない
+  async function resolveConflict(resolve: () => void | Promise<void>) {
+    await resolve();
+    if (session.getState().conflict !== null) return;
+    focusBodyOrFrame();
   }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
@@ -541,6 +544,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const retryButtonEl = useRef<HTMLButtonElement | null>(null);
   const restoreRetryFocus = useRef(false);
   const aimingAtRetry = useRef(false);
+  // 再送のボタンが消えている間、focus を預ける目に見えない要素と、預けたかどうか
+  const waitAnchorEl = useRef<HTMLSpanElement | null>(null);
+  const parkedOnAnchor = useRef(false);
   const retryButtonRef = useCallback((element: HTMLButtonElement | null) => {
     const button = retryButtonEl.current;
     if (element === null && button !== null) {
@@ -559,6 +565,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         event.target instanceof Node &&
         button.contains(event.target);
       if (event.type === "pointerdown" && !onButton) restoreRetryFocus.current = false;
+      if (
+        (event.type === "pointerdown" && !onButton) ||
+        (event.type === "focusin" && event.target !== waitAnchorEl.current)
+      )
+        parkedOnAnchor.current = false;
       if (button !== null) aimingAtRetry.current = onButton;
     };
     const types = ["pointerdown", "focusin", "click"];
@@ -568,18 +579,35 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     };
   }, []);
   useEffect(() => {
-    if (!restoreRetryFocus.current) return;
-    // 失敗の通知が戻らずに操作が終わったとき（成功、衝突、再試行できない失敗など）に、
-    // 次の失敗の通知へ持ち越さない。操作の途中は通知にボタンが無いので、busy の間は待つ
+    const anchor = waitAnchorEl.current;
     const active = document.activeElement;
     const lost = active === null || active === document.body;
-    const button = retryButtonEl.current;
-    if (!afterFailure || !lost || (button === null && state.busy === null))
-      restoreRetryFocus.current = false;
-    else if (button?.disabled === false) {
-      restoreRetryFocus.current = false;
-      focusAfterInput(button, { preventScroll: true });
+    const parked = parkedOnAnchor.current;
+    if (anchor === null) parkedOnAnchor.current = false;
+    if (restoreRetryFocus.current) {
+      // 失敗の通知が戻らずに操作が終わったとき（成功、衝突、再試行できない失敗など）に、
+      // 次の失敗の通知へ持ち越さない。操作の途中は通知にボタンが無いので、busy の間は待つ
+      const button = retryButtonEl.current;
+      if (!afterFailure || !(lost || active === anchor) || (button === null && state.busy === null))
+        restoreRetryFocus.current = false;
+      else if (button?.disabled === false) {
+        restoreRetryFocus.current = false;
+        focusAfterInput(button, { preventScroll: true });
+        return;
+      } else if (anchor !== null && lost) {
+        // 押したボタンが消えると、WebKit は本文の選択が残っていれば focus を本文へ移し、
+        // 応答を待つ間の Enter が本文に改行として入る。消えない要素に預けても、選択が本文に残っている間は
+        // 打鍵の既定の動作がそこへ届くので、選択も外す。本文の view は focus を受けるときに選択を描き直す
+        focusAfterInput(anchor, { preventScroll: true });
+        const selection = window.getSelection();
+        if (selection?.anchorNode?.parentElement?.closest('[contenteditable="true"]'))
+          selection.removeAllRanges();
+        parkedOnAnchor.current = true;
+        return;
+      }
     }
+    // 預けた先が、再送のボタンに戻らずに消えたとき（成功、衝突など）は、focus を body に落とさない
+    if (parked && anchor === null && lost && !restoreRetryFocus.current) focusBodyOrFrame();
   });
   // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
   const inProgress =
@@ -847,6 +875,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           </Notice>
         )}
 
+        {/* 再送を待つ間の focus の置き場。進行の通知は上端の保存の状態が見えていると出ず、再び失敗した後も
+            ボタンが押せるようになるまで置き場が要るので、通知とは別に置く。中身を空にするのは、保存の状態や
+            削除の表示が読み上げる内容を、focus で重ねて読ませないため */}
+        {afterFailure && state.busy !== null && (
+          <span ref={waitAnchorEl} className="visually-hidden" tabIndex={-1} />
+        )}
         {progress !== null ? (
           // 進行は上端の保存の状態や公開と削除の表示がすでに読み上げるので、ここでは読み上げない。
           // key を失敗の通知と分け、再び失敗したときに alert を新しく挿入して確実に読み上げさせる

@@ -161,6 +161,91 @@ test("もう一度保存するを Enter で押して再び失敗しても、focu
   }
 });
 
+test("もう一度保存するを Enter で押して応答を待つ間にもう一度 Enter を押しても、本文は変わらない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await openFreshPage(page, api, uniqueTitle(testInfo, "待つ間の Enter"));
+  const saves = await failSaves(page, created.id);
+  const typed = "、待つ間に押す";
+  await typeAtBodyEnd(page, typed);
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
+  await expect(alert).toBeVisible();
+  const retry = alert.getByRole("button", { name: "もう一度保存する" });
+  const first = saves.puts();
+  await retry.focus();
+  await expect.poll(saves.puts, "blur の保存が送られない").toBeGreaterThan(first);
+  await expect(saveState(page)).toHaveText("保存に失敗");
+  await expect(retry).toBeFocused();
+
+  // 押したボタンは待つ間に消える。WebKit は本文の選択が残っていると、focus を本文へ移すか、
+  // 打鍵の既定の動作を本文へ届けるので、2 回目の Enter が改行として入らないよう、待つ間の focus の置き場を持つ。
+  // toHaveText は空白を畳むので、改行は innerText で見る
+  const release = saves.hold();
+  const before = saves.puts();
+  await page.keyboard.press("Enter");
+  await expect.poll(saves.puts, "再送が送られない").toBeGreaterThan(before);
+  await expect(retry).toBeHidden();
+  await page.keyboard.press("Enter");
+  release();
+  await expect(retry).toBeFocused();
+  await expect(retry).toBeEnabled();
+  const bodyText = () => bodyEditor(page).evaluate((element) => (element as HTMLElement).innerText);
+  expect(await bodyText()).toBe(FIRST_LINE + typed);
+});
+
+test("再送の応答を待つ間に Enter を押して、再送が成功しても、本文は変わらず focus は body に落ちない", async ({
+  page,
+  api,
+  isMobile,
+}, testInfo) => {
+  const created = await openFreshPage(page, api, uniqueTitle(testInfo, "待つ間の成功"));
+  let succeed = false;
+  let puts = 0;
+  let gate: Promise<void> | null = null;
+  await page.route(`**/api/pages/${created.id}`, async (route) => {
+    if (!isSave(route)) return route.fallback();
+    puts += 1;
+    await gate;
+    if (succeed) return route.fallback();
+    return route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "internal" }),
+    });
+  });
+  const typed = "、成功しても残る";
+  await typeAtBodyEnd(page, typed);
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
+  const retry = alert.getByRole("button", { name: "もう一度保存する" });
+  await expect(retry).toBeVisible();
+  const first = puts;
+  await retry.focus();
+  await expect.poll(() => puts, "blur の保存が送られない").toBeGreaterThan(first);
+  await expect(saveState(page)).toHaveText("保存に失敗");
+  await expect(retry).toBeFocused();
+
+  let release = () => {};
+  gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  succeed = true;
+  const before = puts;
+  await page.keyboard.press("Enter");
+  await expect.poll(() => puts, "再送が送られない").toBeGreaterThan(before);
+  await expect(retry).toBeHidden();
+  await page.keyboard.press("Enter");
+  release();
+  await expect(saveState(page)).toHaveText("保存済み");
+  await expect(alert).toBeHidden();
+  // タッチ端末では、キーボードを開かないよう、本文でなくページの枠に移る
+  if (isMobile) await expect(page.locator("article.note")).toBeFocused();
+  else await expect(bodyEditor(page)).toBeFocused();
+  const bodyText = () => bodyEditor(page).evaluate((element) => (element as HTMLElement).innerText);
+  expect(await bodyText()).toBe(FIRST_LINE + typed);
+  await expectSavedOnServer(api, created.id, FIRST_LINE + typed);
+});
+
 test("本文を打った後に失敗の通知のボタンを押し、blur の保存が失敗しても、focus はその通知に残る", async ({
   page,
   api,
