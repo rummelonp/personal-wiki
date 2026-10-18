@@ -319,11 +319,13 @@ export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["
  *
  * keyset のページングなので、走査中の変更は並びの鍵が cursor の前か後かで扱いが決まる。
  * - 更新日時の順: 走査中に更新されたページは先頭へ移り、まだ返していなければ後続のページでは返らない。
+ *   走査中に作られたページも更新日時が最新なので先頭に入り、後続のページでは返らない。
  * - 作成日時の順: 作成日時は変わらないので、更新や title の変更では位置が動かない。走査中に作られたページは
  *   先頭に入り、後続のページでは返らない。
  * - title の順: title を変えたページは新しい title_key の位置へ移る。cursor より後ろへ移れば後続のページで
- *   返り、返し済みなら二度返る。cursor より前へ移れば、まだ返していなければ返らない。走査中に作られたページは
- *   title_key が cursor より後ろのときだけ返る。
+ *   返り、返し済みなら二度返る。cursor より前へ移れば、まだ返していなければ返らない。cursor の条件は
+ *   `title_key > cursor` なので、cursor の行が改名か削除で key を手放した後に、別のページがその key を取ると
+ *   cursor と同じ key でも返らない。走査中に作られたページは title_key が cursor より後ろのときだけ返る。
  * どの並びでも、削除されたページはそれ以降返らない。差分の同期には使えず、先頭から取り直す。
  * タグで絞らない一覧は、並びに合うインデックス（pages_alive_updated、pages_alive_created、pages_title_key_alive）を
  * 先頭からたどり、limit + 1 件で止まる。

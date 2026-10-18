@@ -513,6 +513,39 @@ describe("GET /api/pages/recent", () => {
     expect(keys).toEqual([...keys].sort());
   });
 
+  it.each(["updated", "created"])(
+    "sort=%s では、走査中に作られたページは続きで返らない",
+    async (sort) => {
+      const client = await buildClient();
+      await client.create("a");
+      client.clock.now += 1000;
+      const b = await client.create("b");
+      const head = await recent(client, `?sort=${sort}&limit=1`);
+      expect(head.pages.map((page) => page.id)).toEqual([b.id]);
+      client.clock.now += 1000;
+      await client.create("new");
+      const rest = await recent(client, `?sort=${sort}&cursor=${head.nextCursor}`);
+      expect(titles(rest.pages)).toEqual(["a"]);
+    },
+  );
+
+  it("title の順では、cursor の行が手放した key を別のページが取っても、続きで返らない", async () => {
+    const client = await buildClient();
+    const a = await client.create("a");
+    const b = await client.create("b");
+    const c = await client.create("c");
+    const head = await recent(client, "?sort=title&limit=2");
+    expect(head.pages.map((page) => page.id)).toEqual([a.id, b.id]);
+    // key は一意なので、b が手放してから c が取る
+    expect((await client.update(b, "z", "")).status).toBe(200);
+    expect((await client.update(c, "b", "")).status).toBe(200);
+    const rest = await recent(
+      client,
+      `?sort=title&cursor=${encodeURIComponent(head.nextCursor ?? "")}`,
+    );
+    expect(titles(rest.pages)).toEqual(["z"]);
+  });
+
   it("sort の不正な値と、並びの違う cursor、壊れた cursor は 400", async () => {
     const client = await buildClient();
     await client.create("a");
