@@ -520,14 +520,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // 失敗の後に操作を始めると session は失敗の記録を消すので、通知も消える。保存の状態の表示はページの上端に
   // あり、下までスクロールしていると進んでいる手応えが無いため、終わるまで同じ場所に進行の通知を残す。
   // 「もう一度保存する」を押す前に本文の blur が保存を始めると、ボタンが消えて押せないので、押したかどうかでなく
-  // 失敗の通知が出ていたかどうかで決める
-  const failure =
-    state.error !== null && state.failedOp !== null && state.failedOp.kind !== "create"
-      ? state.failedOp
-      : null;
+  // 失敗の通知が出ていたかどうかで決める。再送のボタンへ focus を戻す判断にも使うので、作成の失敗も数える
+  const shownFailure = state.error !== null ? state.failedOp : null;
+  const failure = shownFailure !== null && shownFailure.kind !== "create" ? shownFailure : null;
   const [afterFailure, setAfterFailure] = useState(false);
-  if (failure !== null && !afterFailure) setAfterFailure(true);
-  else if (afterFailure && failure === null && state.busy === null) setAfterFailure(false);
+  if (shownFailure !== null && !afterFailure) setAfterFailure(true);
+  else if (afterFailure && shownFailure === null && state.busy === null) setAfterFailure(false);
   // 再送が再び失敗すると、失敗の通知は進行の通知を挟んで作り直される（読み上げさせるため、同じ要素を使い回せない）。
   // 再送のボタンが消えるとき、押そうとしていたなら、作り直されたボタンが押せるようになった描画で
   // focus を戻す。作り直されたボタンは、操作が終わるまで disabled で focus を受けない。
@@ -1029,6 +1027,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                   <button
                     type="button"
                     className="button button-main"
+                    ref={retryButtonRef}
                     disabled={!idle}
                     onClick={() => void retryFailed(state.failedOp)}
                   >

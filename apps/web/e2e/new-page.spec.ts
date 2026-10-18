@@ -205,6 +205,37 @@ test("オフラインで作れないと失敗の案内が出て、打った内�
   await expectCreatedAndKept(page, title, body);
 });
 
+test("もう一度作成するを Enter で押して再び失敗しても、focus は失敗の通知の中に残る", async ({
+  page,
+}, testInfo) => {
+  // 応答を遅らせないと、通知が作り直された直後に検査が走り、作り直しの間の focus の動きを測れない
+  let posts = 0;
+  await page.route(CREATE, async (route) => {
+    if (!isCreate(route)) return route.fallback();
+    posts += 1;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "internal" }),
+    });
+  });
+  await openFromPlus(page);
+  await typeTitleThenBody(page, uniqueTitle(testInfo, "作成の再送の focus"), "残る本文");
+  const alert = page.getByRole("alert").filter({ hasText: "作成できませんでした" });
+  const retry = alert.getByRole("button", { name: "もう一度作成する" });
+  await expect(retry).toBeEnabled();
+  await retry.focus();
+
+  for (let round = 0; round < 2; round++) {
+    const before = posts;
+    await page.keyboard.press("Enter");
+    await expect.poll(() => posts, "再送が送られない").toBeGreaterThan(before);
+    await expect(retry).toBeFocused();
+    await expect(retry).toBeEnabled();
+  }
+});
+
 test("/?new に横スクロールが出ない", async ({ page }) => {
   await page.goto("/?new");
   await expect(titleEditor(page)).toBeVisible();

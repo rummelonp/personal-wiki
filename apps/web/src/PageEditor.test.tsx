@@ -1635,6 +1635,79 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(createPage).toHaveBeenLastCalledWith({ title: "題", body: "残る本文" });
   });
 
+  describe("再送のボタンへ focus を戻す印", () => {
+    const retryButton = () =>
+      [...(container?.querySelectorAll<HTMLButtonElement>("button.button-main") ?? [])].find(
+        (b) => b.textContent === "もう一度作成する",
+      );
+
+    // キーボードで再送したように、focus を持った「もう一度作成する」が応答待ちの間に消えた状態にする
+    async function pressRetryAndWait() {
+      vi.mocked(createPage).mockResolvedValue({ ok: false, reason: "error", message: "失敗" });
+      const { view } = renderNew();
+      act(() => typeAtEnd(view(), "残る本文"));
+      typeTitle("題");
+      pressEnter(false);
+      await vi.waitFor(() => expect(retryButton()).toBeDefined());
+
+      let reply: (value: ApiResult<Page>) => void = () => {};
+      vi.mocked(createPage).mockReturnValueOnce(
+        new Promise((resolve) => {
+          reply = resolve;
+        }),
+      );
+      act(() => retryButton()?.focus());
+      act(() => retryButton()?.click());
+      await flushAsync();
+      expect(retryButton()).toBeUndefined();
+      expect(document.activeElement).toBe(document.body);
+      return { reply: (value: ApiResult<Page>) => act(async () => reply(value)) };
+    }
+
+    it("再び失敗して通知のボタンが作り直されたら、そこへ戻す", async () => {
+      const { reply } = await pressRetryAndWait();
+      await reply({ ok: false, reason: "error", message: "また失敗" });
+      await flushAsync();
+      expect(retryButton()?.disabled).toBe(false);
+      expect(document.activeElement).toBe(retryButton());
+    });
+
+    it("待つ間に何も無い所を押して focus を外したら、作り直されたボタンへ戻さない", async () => {
+      const { reply } = await pressRetryAndWait();
+      act(() => {
+        document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      });
+      await reply({ ok: false, reason: "error", message: "また失敗" });
+      await flushAsync();
+      expect(retryButton()?.disabled).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    it("再送が題名の重複で止まったら印を捨て、後から現れる再送のボタンへ移さない", async () => {
+      const { reply } = await pressRetryAndWait();
+      await reply({ ok: false, reason: "title_conflict", message: "重複" });
+      await flushAsync();
+      expect(retryButton()).toBeUndefined();
+
+      // 題名を変えて欄を離れると作り直され、通信の失敗で再送のボタンが現れる
+      let fail: (value: ApiResult<Page>) => void = () => {};
+      vi.mocked(createPage).mockReturnValueOnce(
+        new Promise((resolve) => {
+          fail = resolve;
+        }),
+      );
+      act(() => titleView().contentDOM.focus());
+      typeTitle("別の題");
+      act(() => titleView().contentDOM.blur());
+      await flushAsync();
+      expect(document.activeElement).toBe(document.body);
+      await act(async () => fail({ ok: false, reason: "error", message: "失敗" }));
+      await flushAsync();
+      expect(retryButton()?.disabled).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+    });
+  });
+
   it("作成の失敗の後に本文を規則に合わなくしたら、押しても作れない再試行を隠す", async () => {
     vi.mocked(createPage).mockResolvedValue({
       ok: false,
