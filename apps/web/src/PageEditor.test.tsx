@@ -793,8 +793,11 @@ describe("保存の前の検査の表示", () => {
     expect(alertNotice()?.textContent).toContain(
       `本文が上限を ${(bytes - MAX_BODY_BYTES).toLocaleString("ja-JP")}\u00a0バイト超えています。`,
     );
-    // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わない
-    expect(alertNotice()?.textContent).toContain("この端末に残します。");
+    // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わず、書く時機を添える
+    expect(alertNotice()?.textContent).toContain(
+      "入力した内容は、入力が止まってからこの端末に残します。",
+    );
+    expect(alertNotice()?.textContent).not.toContain("残してあります");
     // 数は打つたびに変わるので、通知自体は読み上げず、原因だけを status で伝える
     expect(alertNotice()?.querySelector("[role]")).toBeNull();
     const meter = container?.querySelector(".body-meter .input-meter");
