@@ -2100,10 +2100,11 @@ a.segmented-option {
 
 /* 衝突 */
 
-/* 名前と title を 1 行に並べ、狭い画面でも通知の高さを取りすぎない */
+/* 名前と title を 1 行に並べ、狭い画面でも通知の高さを取りすぎない。名前は小さい字なので、上端でなく最初の行のベースラインをそろえる */
 .conflict-titles {
   display: grid;
   grid-template-columns: auto 1fr;
+  align-items: baseline;
   gap: 0 var(--space-3);
   margin: 0;
 }

@@ -5,6 +5,7 @@ import { page as browserPage } from "vitest/browser";
 import { ConflictPanel } from "./ConflictPanel";
 import { NoticeDockProvider } from "./Notice";
 import type { Page } from "./pages-api";
+import { titleBaselineGaps } from "./test-baseline";
 import "./theme.css";
 import "./styles.css";
 
@@ -34,7 +35,7 @@ const SERVER: Page = {
   updatedAt: 0,
 };
 
-function mount(localBody = "手元の本文") {
+function mount(localBody = "手元の本文", localTitle = SERVER.title) {
   const onOverwrite = vi.fn();
   const onTakeServer = vi.fn();
   container = document.createElement("div");
@@ -45,7 +46,7 @@ function mount(localBody = "手元の本文") {
       root?.render(
         <ConflictPanel
           server={SERVER}
-          local={{ title: "題", body: localBody }}
+          local={{ title: localTitle, body: localBody }}
           busy={busy}
           onOverwrite={onOverwrite}
           onTakeServer={onTakeServer}
@@ -117,6 +118,17 @@ describe("衝突の操作の確認", () => {
     expect(diff).not.toBeNull();
     expect(legend?.compareDocumentPosition(diff as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(document.querySelector(".notice-details")?.contains(legend as Node)).toBe(false);
+  });
+
+  it.each([
+    ["1 行の title", "新しい題"],
+    ["折り返す title", "とても長い題名が通知の幅で折り返して複数の行になる場合の例".repeat(3)],
+  ])("title の違いの見出しは、%sでも名前と title の文字の下端がそろう", (_, title) => {
+    mount("手元の本文", title);
+    const titles = document.querySelector(".conflict-titles") as Element;
+    const gaps = titleBaselineGaps(titles);
+    expect(gaps).toHaveLength(2);
+    for (const gap of gaps) expect(gap).toBeLessThanOrEqual(1);
   });
 
   it("本文に差分が無いときは、凡例を出さない", () => {

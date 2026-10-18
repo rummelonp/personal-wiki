@@ -5,6 +5,7 @@ import { userEvent } from "vitest/browser";
 import { setLoadingDelay } from "./Loading";
 import { type ApiResult, getRevision, listRevisions, type RevisionSummary } from "./pages-api";
 import { RevisionHistory } from "./RevisionHistory";
+import { titleBaselineGaps } from "./test-baseline";
 import "./theme.css";
 import "./styles.css";
 
@@ -282,6 +283,18 @@ describe("版の差分の並び", () => {
     await act(async () => (full as HTMLButtonElement).click());
     await vi.waitFor(() => expect(dialog.querySelector(".revision-viewer-prose")).not.toBeNull());
     expect(gapBelowSwitch(dialog), "全文").toBeCloseTo(expected, 1);
+  });
+
+  it.each([
+    ["1 行の title", "新題"],
+    ["折り返す title", "とても長い題名が欄の幅で折り返して複数の行になる場合の例".repeat(3)],
+  ])("title の違いの見出しは、%sでも名前と title の文字の下端がそろう", async (_, title) => {
+    const dialog = await openEntry(0, { 4: { ...SAME, title }, 3: SAME });
+    await vi.waitFor(() => expect(dialog.querySelector(".revision-diff-titles")).not.toBeNull());
+    const titles = dialog.querySelector(".revision-diff-titles") as Element;
+    const gaps = titleBaselineGaps(titles);
+    expect(gaps).toHaveLength(2);
+    for (const gap of gaps) expect(gap).toBeLessThanOrEqual(1);
   });
 
   it("差分が無いと伝える文は、凡例と同じ大きさで出す", async () => {
