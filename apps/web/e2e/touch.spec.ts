@@ -24,7 +24,9 @@ const TARGETS = [
   ".toc > summary",
   ".segmented-option",
   ".rail .button",
-  ".publish-bar .button",
+  ".visibility-pill",
+  ".visibility-option",
+  ".publish-dialog .button",
   ".chips .chip-link",
 ];
 
@@ -186,19 +188,19 @@ test.describe("タップ対象", () => {
     expect(m.chipTopHit, "抜粋に重ねてもタグの上端が押せる").toBe(true);
   });
 
-  test("owner のページの編集（公開の切り替え、backlink、目次）", async ({ page, seedIds }) => {
+  test("owner のページの編集（公開範囲の印、backlink、目次）", async ({ page, seedIds }) => {
     await page.goto(`/p/${seedIds[SEED.welcome]}`);
     await expect(page.locator(".title-input")).toHaveText(SEED.welcome);
     await expect(page.locator(".rail-list a").first()).toBeVisible();
-    await expect(page.locator(".segmented-option").first()).toBeVisible();
-    await expectTapTargets(page, [".segmented-option", ".brand", ".rail-list a"]);
+    await expect(page.locator(".visibility-pill")).toBeVisible();
+    await expectTapTargets(page, [".visibility-pill", ".brand", ".rail-list a"]);
     await page.goto(`/p/${seedIds[SEED.server]}`);
     await expect(page.locator(".title-input")).toHaveText(SEED.server);
     await expect(page.locator(".rail-list a").first()).toBeVisible();
     await expectTapTargets(page, [".rail-list a"]);
   });
 
-  test("公開の切り替えと確認の操作は 44px 以上で、title の下に並ぶ", async ({
+  test("公開範囲の印、メニュー、確認の操作は 44px 以上で、印は title の横に並ぶ", async ({
     page,
     api,
   }, testInfo) => {
@@ -207,19 +209,35 @@ test.describe("タップ対象", () => {
       body: "本文",
     });
     await page.goto(`/p/${created.id}`);
-    await expect(page.locator(".segmented-option").first()).toBeVisible();
-    await expectTapTargets(page, [".segmented-option"]);
-    await page.locator(".segmented-option", { hasText: /^公開$/ }).click();
-    await expect(page.getByRole("region", { name: "公開の確認" })).toBeVisible();
-    await expectTapTargets(page, [".segmented-option", ".publish-confirm .button"]);
-    // 切り替えは title の下にあり、本文の下まで探さなくても届く（Safari のツールバーの伸縮でずれない位置）
-    const { titleBottom, optionTop, bodyTop } = await page.evaluate(() => ({
-      titleBottom: document.querySelector(".title-input")?.getBoundingClientRect().bottom ?? 0,
-      optionTop: document.querySelector(".segmented-option")?.getBoundingClientRect().top ?? 0,
-      bodyTop: document.querySelector(".body-editor")?.getBoundingClientRect().top ?? 0,
-    }));
-    expect(optionTop, "切り替えが title より下").toBeGreaterThanOrEqual(titleBottom);
-    expect(optionTop, "切り替えが本文より上").toBeLessThan(bodyTop);
+    const pill = page.locator(".visibility-pill");
+    await expect(pill).toBeVisible();
+    await expectTapTargets(page, [".visibility-pill"]);
+    // 印は title の 1 行目の横にあり、本文の下まで探さなくても届く（Safari のツールバーの伸縮でずれない位置）
+    const { titleTop, titleRight, pillLeft, pillCenter, bodyTop } = await page.evaluate(() => {
+      const rect = (selector: string) => {
+        const found = document.querySelector(selector)?.getBoundingClientRect();
+        if (found === undefined) throw new Error(`${selector} が無い`);
+        return found;
+      };
+      const pillBox = rect(".visibility-pill");
+      return {
+        titleTop: rect(".title-input").top,
+        titleRight: rect(".title-input").right,
+        pillLeft: pillBox.left,
+        pillCenter: pillBox.top + pillBox.height / 2,
+        bodyTop: rect(".body-editor").top,
+      };
+    });
+    expect(pillLeft, "印が title の右").toBeGreaterThanOrEqual(titleRight);
+    expect(pillCenter, "印が title の 1 行目の高さ").toBeGreaterThan(titleTop);
+    expect(pillCenter, "印が本文より上").toBeLessThan(bodyTop);
+
+    await pill.tap();
+    await expect(page.getByRole("menu", { name: "公開範囲" })).toBeVisible();
+    await expectTapTargets(page, [".visibility-option"]);
+    await page.getByRole("menuitemradio", { name: "公開", exact: true }).tap();
+    await expect(page.getByRole("dialog", { name: "公開の確認" })).toBeVisible();
+    await expectTapTargets(page, [".publish-dialog .button"]);
   });
 
   test("見出しの多いページの目次", async ({ page, seedIds }) => {

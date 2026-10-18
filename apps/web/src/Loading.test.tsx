@@ -116,13 +116,6 @@ describe("読み込み中のスケルトン", () => {
     expect(container?.querySelector(".note-title .skeleton")).toBeNull();
   });
 
-  it("匿名の画面には公開の行が無いので、そのスケルトンも出さない", () => {
-    restoreDelay = setLoadingDelay(0);
-    mount(<PageSkeleton owner={false} />);
-    expect(container?.querySelector(".skeleton-meta")).toBeNull();
-    expect(container?.querySelector(".skeleton-body")).not.toBeNull();
-  });
-
   it("owner か分からない間は、URL の公開範囲を見出しの文字に出さない", () => {
     restoreDelay = setLoadingDelay(0);
     const heading = (search: string, owner: boolean | undefined) => {

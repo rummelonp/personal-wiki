@@ -129,13 +129,13 @@ const noHorizontalScroll = () =>
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
 
 describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => {
-  it("title の案内は欄の下の余白に収まり、出ても公開の行と本文を動かさない", async () => {
+  it("title の案内は欄の下の余白に収まり、出ても本文を動かさない", async () => {
     await browserPage.viewport(width, 800);
     const { query, title, replace } = mountEditor();
     await flushAsync();
-    // title の行数は文字を足すと変わりうるので、欄の下端から公開の行までの間を比べる
+    // title の行数は文字を足すと変わりうるので、欄の下端から本文までの間を比べる
     const gap = () =>
-      query(".publish-bar").getBoundingClientRect().top -
+      query(".body-editor").getBoundingClientRect().top -
       query(".title-input").getBoundingClientRect().bottom;
     const base = "あ".repeat(Math.ceil((MAX_TITLE_BYTES * 0.8) / 3) - 2);
     replace(title(), base);
@@ -153,7 +153,7 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     const note = query(".note").getBoundingClientRect();
     expect(rect.top).toBeGreaterThanOrEqual(field.bottom - 0.5);
     expect(rect.bottom).toBeLessThanOrEqual(
-      query(".publish-bar").getBoundingClientRect().top + 0.5,
+      query(".body-editor").getBoundingClientRect().top + 0.5,
     );
     expect(rect.right).toBeLessThanOrEqual(note.right + 0.5);
     // 狭い幅で省略するのは左の文だけで、長さの数は切らない
@@ -168,7 +168,7 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
     const { query, title, replace } = mountEditor({ ...PAGE, title: "長い題".repeat(40) });
     await flushAsync();
     const gap = () =>
-      query(".publish-bar").getBoundingClientRect().top -
+      query(".body-editor").getBoundingClientRect().top -
       query(".title-input").getBoundingClientRect().bottom;
     // 長い title は折り返して行が増えるので、案内の出ない 1 行の title と比べる
     replace(title(), "a");
@@ -191,7 +191,7 @@ describe.each([320, 375, 768])("入力の長さの表示（%dpx）", (width) => 
       query(".title-hint [role='status']").getBoundingClientRect().right + 0.5,
     );
     expect(rect.bottom).toBeLessThanOrEqual(
-      query(".publish-bar").getBoundingClientRect().top + 0.5,
+      query(".body-editor").getBoundingClientRect().top + 0.5,
     );
     expect(gap()).toBeCloseTo(before, 0);
     noHorizontalScroll();

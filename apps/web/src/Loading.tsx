@@ -218,17 +218,10 @@ export function ListSkeleton({
 
 /**
  * ページの画面全体のスケルトン。title が分かっていれば文字で出し、スケルトンは本文の行だけにする
- * （title は読み込み後も同じ位置と書体で出るので、動かない）。
- * `owner` が false なら公開の行を出さない（匿名の画面には無く、届くと本文が上へ詰まるため）。
- * 起動時はまだ分からないので、使う人の多い owner の形を既定にする。
+ * （title は読み込み後も同じ位置と書体で出るので、動かない）。owner の公開範囲の印は title の横に出て
+ * 本文を押し下げないので、owner と匿名で形を分けない。
  */
-export function PageSkeleton({
-  title,
-  owner = true,
-}: {
-  title?: string | undefined;
-  owner?: boolean | undefined;
-}) {
+export function PageSkeleton({ title }: { title?: string | undefined }) {
   const painted = useSkeletonPainted();
   const rail = (
     <div className={`skeleton-rail ${paintedClass(painted) ?? ""}`} aria-hidden="true">
@@ -252,15 +245,6 @@ export function PageSkeleton({
             title
           )}
         </div>
-        {owner && (
-          <div className="skeleton-meta" aria-hidden="true">
-            {/* 本物の segmented と同じ文字を透明で置き、幅と高さを合わせる */}
-            <span className="skeleton skeleton-segmented">
-              <span>下書き</span>
-              <span>公開</span>
-            </span>
-          </div>
-        )}
         <div className="skeleton-body" aria-hidden="true">
           {[0, 1, 2, 3, 4].map((i) => (
             <span className="skeleton skeleton-text" key={i} />
@@ -290,11 +274,11 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
       return <ListSkeleton heading={heading} />;
     }
     case "title":
-      return <PageSkeleton title={loadingTitleFor(route.title)} owner={owner} />;
+      return <PageSkeleton title={loadingTitleFor(route.title)} />;
     case "page":
-      return <PageSkeleton title={recallTitle(route.id)} owner={owner} />;
+      return <PageSkeleton title={recallTitle(route.id)} />;
     case "new":
-      return <PageSkeleton owner={owner} />;
+      return <PageSkeleton />;
     case "unknown":
       return <ListSkeleton status="読み込み中…" />;
   }

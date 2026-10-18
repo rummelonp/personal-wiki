@@ -577,13 +577,13 @@ a {
  * 選択中は中立の地で示し、公開の選択中だけ差し色の文字と薄い地にする（差し色が「公開中」の印になる）。
  * どちらも塗りの強調ではなく、1 画面の塗りはヘッダーの新規作成に譲る
  */
-.segmented-option:is([aria-pressed="true"], [aria-current="page"]) {
+.segmented-option[aria-current="page"] {
   font-weight: var(--font-weight-medium);
   color: var(--color-fg);
   background-color: var(--color-selected);
 }
 
-.segmented-option:is([aria-pressed="true"], [aria-current="page"])[data-value="public"] {
+.segmented-option[aria-current="page"][data-value="public"] {
   color: var(--color-tag-fg);
   background-color: var(--color-tag-bg);
 }
@@ -607,16 +607,6 @@ a {
   border-end-end-radius: var(--radius-pill);
 }
 
-.segmented-option:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-/* レスポンスを待っている間は、押した選択を薄くせず、押したことが分かるようにする */
-.segmented[data-pending] .segmented-option[aria-pressed="true"]:disabled {
-  opacity: 1;
-}
-
 a.segmented-option {
   display: inline-flex;
   align-items: center;
@@ -624,44 +614,8 @@ a.segmented-option {
   text-decoration: none;
 }
 
-/* 公開の状態と操作の行。title の下に置く */
-
-.publish-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin: 0 0 var(--space-3);
-  font-size: var(--font-size-sm);
-}
-
-.publish-note {
-  margin: 0;
-  color: var(--color-fg-muted);
-}
-
 /*
- * 結果の知らせは行の残りに収める。basis を 0 にして折り返しの判定から外すので、狭い幅でも次の行に
- * 出て下の本文を押し下げない。残りに 1 行で入らなければその中で折り返し、行間を詰めて 2 行まで
- * ボタン（--control-height）の高さに収める。2 行の知らせは 13px × 1.35 × 2 で 35px なので、
- * 細いポインタの端末の 36px には入るが、同じ端末の segmented（--control-height-sm の 32px）には入らない。
- * 知らせが 2 行になるのは URL をコピーのボタンが同じ行にある公開のときだけで、ボタンの無い下書きでは
- * 知らせが短く 1 行に収まる。行間や文字を大きくすると、公開の行が知らせの出入りで伸び縮みする。
- * 省略すると、375 の幅で「URL をコピーしました。」の末尾が読めなくなる。
- * 長い案内（コピーできなかったときの手順）は、自分の行に出す。
- */
-.publish-note {
-  flex: 1 1 0;
-  min-width: 0;
-  line-height: var(--line-height-tight);
-}
-
-.publish-note-wrap {
-  flex-basis: 100%;
-}
-
-/*
- * 知らせと凡例は短い固定の文で、区切りは句読点と空白にある。語の途中を切らないよう keep-all にし、
+ * 凡例は短い固定の文で、区切りは句読点と空白にある。語の途中を切らないよう keep-all にし、
  * auto-phrase を解釈する描画だけ文節で切る。WebKit は解釈しないので keep-all が残り、line-break: strict で
  * 小さい仮名や長音を行頭に置かない。
  * 通知（.notice-title と .notice-text）は利用者の入力を含み、固定の句読点だけに頼れないので、
@@ -669,48 +623,221 @@ a.segmented-option {
  * 切れなくなり、あふれた分を body の overflow-wrap: anywhere が切る。この切り方は line-break: strict を
  * 無視して小さい仮名を行頭に置く。
  */
-.publish-note,
 .diff-legend {
   line-break: strict;
   word-break: keep-all;
 }
 
 @supports (word-break: auto-phrase) {
-  .publish-note,
   .diff-legend {
     word-break: auto-phrase;
   }
 }
 
-.publish-url {
-  flex: 1 1 100%;
-  min-height: var(--control-height);
-  padding: 0 var(--space-3);
+/*
+ * title の右の公開範囲の印。高さを title の 1 行目と同じにして、印をその行の中央に置く。
+ * 本文の側に行を取らないので、本文の上端は匿名の画面と同じ位置になる。ただし title は印の幅だけ狭く、
+ * 匿名の画面より 1 行多く折り返すときは、その分だけ本文が下がる
+ */
+.visibility {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: calc(var(--font-size-title) * var(--line-height-tight));
+}
+
+/*
+ * 枠は ::before に描き、ボタンの箱は当たり判定に回す（タッチ端末では箱だけを 44px に広げる）。
+ * 下書きは中立の枠と白丸、公開は差し色の枠と文字と黒丸にする。塗りのチップにしないのは、
+ * タグのチップと見分けるため
+ */
+.visibility-pill {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  min-height: var(--visibility-pill-height);
+  padding: 0 var(--space-2) 0 var(--space-3);
   font: inherit;
-  font-size: var(--font-size-input);
-  color: var(--color-fg);
-  background: var(--color-input);
-  border: var(--border-width) solid var(--color-border-strong);
-  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
 }
 
-.publish-confirm {
-  flex: 1 1 100%;
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface);
+.visibility-pill::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* token-ok: 印の中（isolation で閉じた重なり）で、地を文字の後ろに置くだけの値 */
+  content: "";
   border: var(--border-width) solid var(--color-border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
 }
 
-.publish-confirm > p {
-  margin: 0 0 var(--space-2);
+.visibility-pill[data-visibility="public"] {
+  color: var(--color-accent);
+}
+
+.visibility-pill[data-visibility="public"]::before {
+  border-color: var(--color-accent);
+}
+
+.visibility-pill[aria-expanded="true"]::before {
+  background: var(--color-selected);
+}
+
+@media (hover: hover) {
+  .visibility-pill:hover:not(:disabled)::before {
+    background: var(--color-selected);
+  }
+}
+
+/* 輪は見た目の枠に沿わせる。箱に引くと、タッチ端末で枠より縦に大きい輪になる */
+.visibility-pill:focus-visible {
+  outline: none;
+}
+
+.visibility-pill:focus-visible::before {
+  outline: calc(var(--border-width) * 2) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+/* 待っている間も押した先の印を薄くせず、何を選んだかを見せる */
+.visibility-pill:disabled {
+  cursor: default;
+}
+
+.visibility-pill:disabled:not([aria-busy="true"]) {
+  opacity: 0.5;
+}
+
+.visibility-mark {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border: var(--border-width) solid currentColor;
+  border-radius: 50%;
+}
+
+.visibility-pill[data-visibility="public"] .visibility-mark {
+  background: currentColor;
+}
+
+.visibility-pill .visibility-spinner {
+  background: none;
+  border-right-color: transparent;
+  animation: visibility-spin 0.8s linear infinite;
+}
+
+@keyframes visibility-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* 回らなくても、欠けた輪で待っていることは分かる */
+@media (prefers-reduced-motion: reduce) {
+  .visibility-pill .visibility-spinner {
+    animation: none;
+  }
+}
+
+/* 印の見た目の下端から少し離して、右端をそろえて出す */
+.visibility-menu {
+  position: absolute;
+  top: calc(50% + var(--visibility-pill-height) / 2 + var(--space-1));
+  right: 0;
+  z-index: var(--z-popover);
+  display: grid;
+  width: var(--visibility-menu-width);
+  padding: var(--space-1);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.visibility-option {
+  display: grid;
+  grid-template-columns: var(--space-4) 1fr;
+  gap: var(--space-1) var(--space-1);
+  align-items: baseline;
+  padding: var(--space-2);
+  font: inherit;
+  line-height: var(--line-height-tight);
   color: var(--color-fg);
+  text-align: start;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.visibility-option:focus-visible {
+  outline-offset: calc(-2 * var(--border-width));
+}
+
+.visibility-option[aria-checked="true"] {
+  background: var(--color-selected);
+}
+
+@media (hover: hover) {
+  .visibility-option:hover {
+    background: var(--color-selected);
+  }
+}
+
+.visibility-option-check {
+  grid-row: span 2;
+  color: var(--color-accent);
+}
+
+.visibility-option-label {
+  font-weight: var(--font-weight-medium);
+}
+
+.visibility-option-note {
+  grid-column: 2;
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+/*
+ * 公開の確認。高さが足りないときは、確認の文と操作を残して、リンク先の下書きの一覧だけが縮んでスクロールする
+ */
+.publish-dialog {
+  width: min(100% - var(--space-5), var(--publish-dialog-width));
+  max-height: calc(var(--viewport-height) - 2 * var(--space-5));
+  margin: auto;
+  font-size: var(--font-size-base);
+}
+
+.publish-dialog-head {
+  flex: none;
+  padding: var(--space-4);
+}
+
+.publish-dialog-head > p {
+  margin: 0 0 var(--space-4);
+}
+
+.publish-drafts {
+  min-height: 0;
+  overflow-y: auto;
+  font-size: var(--font-size-sm);
 }
 
 /* 本文からリンクしている下書き。確認の操作の後ろに、届いたときだけ区切って足す */
 .publish-drafts:not(:empty) {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   border-top: var(--border-width) solid var(--color-border);
 }
 
@@ -955,7 +1082,7 @@ a.segmented-option {
 /*
  * 見出しと本文は line-break: strict で、小さい仮名、長音、句読点を行頭に置かない。
  * WebKit は既定（auto）だとこれらを行頭に置く。word-break: auto-phrase も解釈しないので、
- * 文節の切れ目は .phrased と <wbr> で決める（.publish-note の注釈にある）。
+ * 文節の切れ目は .phrased と <wbr> で決める（.diff-legend の注釈にある）。
  */
 .notice-text {
   font-size: var(--font-size-sm);
@@ -1444,24 +1571,6 @@ a.segmented-option {
   width: 55%;
 }
 
-/* title の下の、公開の行（.publish-bar）。segmented と同じ横長の角丸にする */
-.skeleton-meta {
-  display: flex;
-  margin-bottom: var(--space-3);
-  font-size: var(--font-size-sm);
-}
-
-.skeleton-segmented {
-  display: inline-flex;
-  color: transparent;
-  border: var(--border-width) solid transparent;
-  border-radius: var(--radius-pill);
-}
-
-.skeleton-segmented > span {
-  padding: var(--space-1) var(--space-3);
-}
-
 .skeleton-body {
   --skeleton-leading: var(--line-height-prose);
 
@@ -1632,9 +1741,26 @@ a.segmented-option {
 }
 
 /*
+ * 編集の画面の title と公開範囲の印の行。title の下の案内は、印の下まで行の幅いっぱいに使う
+ * （.title-field を基準にすると、印の幅だけ案内が狭くなって省略が増える）
+ */
+.title-row {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.title-row > .title-field {
+  position: static;
+  flex: 1;
+  min-width: 0;
+}
+
+/*
  * 1 行に収め、狭い幅では左の文の可変の部分を省略する。長さは右に寄せて、省略されないようにする。
  * 高さは .title-input の下の margin と同じ token にして、その余白にちょうど収める。片方だけ変えると、
- * 案内の帯が下の公開の行に重なるか、余白から浮く
+ * 案内の帯が下の本文に重なるか、余白から浮く
  */
 .title-hint {
   position: absolute;
@@ -2021,6 +2147,10 @@ a.segmented-option {
     font-size: var(--font-size-title-narrow);
   }
 
+  .visibility {
+    height: calc(var(--font-size-title-narrow) * var(--line-height-tight));
+  }
+
   .header {
     padding-inline-end: var(--gutter);
   }
@@ -2311,6 +2441,20 @@ a.segmented-option {
   .segmented-option {
     min-width: var(--tap-size);
     min-height: var(--tap-size);
+  }
+
+  /* 枠（::before）は見た目の高さのまま、箱だけを上下に広げる。狭い幅では title の 1 行より高くなり、上下にはみ出す */
+  .visibility-pill {
+    min-height: var(--tap-size);
+  }
+
+  .visibility-pill::before {
+    inset-block: calc((var(--tap-size) - var(--visibility-pill-height)) / 2);
+  }
+
+  .visibility-option {
+    min-height: var(--tap-size);
+    padding-block: var(--space-2);
   }
 }
 

@@ -1730,6 +1730,17 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(createPage).not.toHaveBeenCalled();
   });
 
+  it("作る前は公開範囲の印を出さず、作った後に title の横に出す", async () => {
+    renderNew();
+    expect(container?.querySelector(".visibility-pill")).toBeNull();
+    typeTitle("新しい題");
+    pressEnter(false);
+    await flushAsync();
+    expect(createPage).toHaveBeenCalledTimes(1);
+    const pill = container?.querySelector(".title-row > .visibility .visibility-pill");
+    expect(pill?.getAttribute("aria-label")).toBe("公開範囲：下書き");
+  });
+
   it("title を渡されたら、開いてすぐ作り、本文にフォーカスする", async () => {
     renderNew("渡した題");
     expect(document.activeElement).toBe(bodyContent());
@@ -2689,14 +2700,23 @@ describe("公開の切り替えと削除の待ち", () => {
     restoreDelay = null;
   });
 
-  const option = (label: string) => {
-    const found = [
-      ...(container?.querySelectorAll<HTMLButtonElement>(".segmented-option") ?? []),
-    ].find((b) => b.textContent === label);
-    if (!found) throw new Error(`${label} の選択が無い`);
+  const pill = () => {
+    const found = container?.querySelector<HTMLButtonElement>(".visibility-pill");
+    if (!found) throw new Error("公開範囲の印が無い");
     return found;
   };
-  const publishNote = () => container?.querySelector(".publish-note")?.textContent;
+  // 印に出ている公開範囲。押した直後は待っている先を出す
+  const shown = () => (pill().dataset.visibility === "public" ? "公開" : "下書き");
+  // 印を押してメニューを開き、項目を選ぶ。「公開」は確認のダイアログを開くところまで
+  const choose = (label: string) => {
+    act(() => pill().click());
+    const found = [
+      ...(container?.querySelectorAll<HTMLButtonElement>("[role='menuitemradio']") ?? []),
+    ].find((b) => b.querySelector(".visibility-option-label")?.textContent === label);
+    if (!found) throw new Error(`${label} の項目が無い`);
+    act(() => found.click());
+  };
+  const publishNote = () => container?.querySelector(".visibility > [role='status']")?.textContent;
 
   function deferred<T>() {
     let resolve: (value: T) => void = () => {};
@@ -2713,14 +2733,12 @@ describe("公開の切り替えと削除の待ち", () => {
     const { button } = renderPage();
     await flushAsync();
 
-    act(() => option("公開").click());
+    choose("公開");
     act(() => button("公開する").click());
     await flushAsync();
     expect(setVisibility).toHaveBeenCalledWith(ID, 1, "public");
-    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("false");
-    expect(option("公開").disabled).toBe(true);
-    expect(option("下書き").disabled).toBe(true);
+    expect(shown()).toBe("公開");
+    expect(pill().disabled).toBe(true);
     expect(publishNote()).toBe("");
 
     await act(() => new Promise((resolve) => setTimeout(resolve, 60)));
@@ -2728,10 +2746,10 @@ describe("公開の切り替えと削除の待ち", () => {
 
     await act(async () => reply.resolve(ok({ ...PAGE, visibility: "public", version: 2 })));
     await flushAsync();
-    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
-    expect(option("公開").disabled).toBe(false);
+    expect(shown()).toBe("公開");
+    expect(pill().disabled).toBe(false);
     expect(publishNote()).toBe("公開しました。");
-    expect(document.activeElement).toBe(option("公開"));
+    expect(document.activeElement).toBe(pill());
   });
 
   it("公開が失敗したら元の「下書き」に戻し、失敗の通知を出す", async () => {
@@ -2741,15 +2759,14 @@ describe("公開の切り替えと削除の待ち", () => {
     const { button } = renderPage();
     await flushAsync();
 
-    act(() => option("公開").click());
+    choose("公開");
     act(() => button("公開する").click());
     await flushAsync();
     expect(publishNote()).toBe("公開に変更中…");
 
     await act(async () => reply.resolve({ ok: false, reason: "error", message: "失敗" }));
     await flushAsync();
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
-    expect(option("公開").getAttribute("aria-pressed")).toBe("false");
+    expect(shown()).toBe("下書き");
     expect(publishNote()).toBe("");
     expect(container?.textContent).toContain("公開範囲を変更できませんでした");
   });
@@ -2761,15 +2778,14 @@ describe("公開の切り替えと削除の待ち", () => {
     renderPage(PUBLIC);
     await flushAsync();
 
-    act(() => option("下書き").click());
+    choose("下書き");
     await flushAsync();
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
-    expect(option("公開").getAttribute("aria-pressed")).toBe("false");
+    expect(shown()).toBe("下書き");
     expect(publishNote()).toBe("下書きに変更中…");
 
     await act(async () => reply.resolve(ok({ ...PUBLIC, visibility: "draft", version: 2 })));
     await flushAsync();
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("下書き");
     expect(publishNote()).toBe("下書きに戻しました。");
   });
 
@@ -2788,10 +2804,10 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(1);
-    expect(option("公開").disabled).toBe(false);
+    expect(pill().disabled).toBe(false);
 
-    act(() => option("公開").click());
-    expect(container?.querySelector(".publish-confirm")).not.toBeNull();
+    choose("公開");
+    expect(container?.querySelector("dialog")?.open).toBe(true);
     expect(button("公開する").disabled).toBe(false);
     act(() => button("公開する").click());
     await flushAsync();
@@ -2801,7 +2817,7 @@ describe("公開の切り替えと削除の待ち", () => {
     await flushAsync();
     expect(setVisibility).toHaveBeenCalledTimes(1);
     expect(setVisibility).toHaveBeenCalledWith(ID, 2, "public");
-    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("公開");
     expect(publishNote()).toBe("公開しました。");
   });
 
@@ -2820,10 +2836,10 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(1);
-    act(() => option("下書き").click());
+    choose("下書き");
     await flushAsync();
     expect(setVisibility).not.toHaveBeenCalled();
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("下書き");
 
     await act(async () => save.resolve(ok({ ...PUBLIC, body: "本文追記", version: 2 })));
     await flushAsync();
@@ -2843,14 +2859,14 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(1);
-    act(() => option("公開").click());
+    choose("公開");
 
     await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
     await flushAsync();
     expect(button("公開する").disabled).toBe(true);
     expect(container?.textContent).toContain("保存できませんでした");
     expect(setVisibility).not.toHaveBeenCalled();
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("下書き");
   });
 
   it("保存の間に押した切り替えは、保存が失敗したら送らず、元の選択に戻して保存の失敗を知らせる", async () => {
@@ -2867,14 +2883,14 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => view().contentDOM.blur());
     await flushAsync();
     expect(updatePage).toHaveBeenCalledTimes(1);
-    act(() => option("下書き").click());
+    choose("下書き");
     await flushAsync();
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("下書き");
 
     await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
     await flushAsync();
     expect(setVisibility).not.toHaveBeenCalled();
-    expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("公開");
     expect(publishNote()).toBe("");
     expect(container?.textContent).toContain("保存できませんでした");
   });
@@ -2894,7 +2910,7 @@ describe("公開の切り替えと削除の待ち", () => {
     act(() => typeAtEnd(view(), "追記"));
     act(() => view().contentDOM.blur());
     await flushAsync();
-    act(() => option("下書き").click());
+    choose("下書き");
     await flushAsync();
 
     await act(async () => save.resolve({ ok: false, reason: "error", message: "失敗" }));
@@ -2902,7 +2918,7 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(updatePage).toHaveBeenCalledTimes(2);
     expect(setVisibility).toHaveBeenCalledTimes(1);
     expect(setVisibility).toHaveBeenCalledWith(ID, 2, "draft");
-    expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toBe("下書き");
     expect(publishNote()).toBe("下書きに戻しました。");
   });
 
@@ -2934,15 +2950,15 @@ describe("公開の切り替えと削除の待ち", () => {
       act(() => view().contentDOM.blur());
       await flushAsync();
       expect(updatePage).toHaveBeenCalledTimes(1);
-      act(() => option("下書き").click());
+      choose("下書き");
       await flushAsync();
-      expect(option("下書き").getAttribute("aria-pressed")).toBe("true");
+      expect(shown()).toBe("下書き");
 
       await act(async () => save.resolve(provoke()));
       await flushAsync();
       expect(updatePage).toHaveBeenCalledTimes(1);
       expect(setVisibility).not.toHaveBeenCalled();
-      expect(option("公開").getAttribute("aria-pressed")).toBe("true");
+      expect(shown()).toBe("公開");
       expect(publishNote()).toBe("");
       expect(container?.textContent).toContain(notice);
     },
@@ -2954,7 +2970,7 @@ describe("公開の切り替えと削除の待ち", () => {
     const { button } = renderPage();
     await flushAsync();
 
-    act(() => option("公開").click());
+    choose("公開");
     act(() => button("公開する").click());
     await flushAsync();
     expect(publishNote()).toBe("公開しました。");

@@ -200,7 +200,6 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
                 ? recallTitle(target.id)
                 : undefined
           }
-          owner={owner}
         />
       );
     case "unauthorized":

@@ -7,9 +7,13 @@ import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixt
  * 匿名の側は、印が無いことに加えて、draft の id が応答とページのどこにも出ないことを確かめる。
  */
 
-const option = (page: Page, label: "下書き" | "公開") =>
-  page.locator(".publish-bar .segmented-option", { hasText: new RegExp(`^${label}$`) });
-const confirmPanel = (page: Page) => page.getByRole("region", { name: "公開の確認" });
+const pill = (page: Page) => page.locator(".visibility-pill");
+const confirmDialog = (page: Page) => page.getByRole("dialog", { name: "公開の確認" });
+/** title の右の印からメニューを開き、「公開」を選んで確認のダイアログを開く */
+async function openPublishConfirm(page: Page) {
+  await pill(page).click();
+  await page.getByRole("menuitemradio", { name: "公開", exact: true }).click();
+}
 const link = (page: Page, text: string) =>
   bodyEditor(page).locator(".cm-wikilink", { hasText: text });
 const badges = (page: Page) => bodyEditor(page).locator(".cm-wikilink-draft-badge");
@@ -68,19 +72,19 @@ test.describe("owner", () => {
     await expect(link(page, first.title).first()).toHaveAttribute("href", `/p/${first.id}`);
     await expect(badges(page)).toHaveCount(0);
 
-    await option(page, "公開").click();
-    const drafts = confirmPanel(page).locator(".publish-drafts");
-    await expect(drafts).toContainText("本文から 2 件の下書きにリンクしています");
+    await openPublishConfirm(page);
+    const drafts = confirmDialog(page).locator(".publish-drafts");
+    await expect(drafts).toContainText("本文から2件の下書きにリンクしています");
     const items = drafts.getByRole("link");
     await expect(items).toHaveText([first.title, second.title]);
     await expect(items.nth(0)).toHaveAttribute("href", `/p/${first.id}`);
     await expect(items.nth(1)).toHaveAttribute("href", `/p/${second.id}`);
     // 一覧は確定の操作を止めない
-    const publish = confirmPanel(page).getByRole("button", { name: "公開する" });
+    const publish = confirmDialog(page).getByRole("button", { name: "公開する" });
     await expect(publish).toBeEnabled();
 
     await publish.click();
-    await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill(page)).toHaveAttribute("data-visibility", "public");
     // 本文の link は 2 つとも同じ draft を指すので、印も 2 つ。展開した embed のタイトルにも付く
     await expect(badges(page)).toHaveCount(3);
     const embed = bodyEditor(page).locator(`.cm-embed-page[data-embed-target="${second.title}"]`);
@@ -138,8 +142,8 @@ test.describe("owner", () => {
     await page.goto(`/p/${self.id}`);
     await expect(page.locator(".title-input")).toHaveText(self.title);
 
-    await option(page, "公開").click();
-    await confirmPanel(page)
+    await openPublishConfirm(page);
+    await confirmDialog(page)
       .locator(".publish-drafts")
       .getByRole("link", { name: draft.title })
       .click();
@@ -167,8 +171,8 @@ test.describe("owner", () => {
     });
     await page.goto(`/p/${self.id}`);
     await expect(page.locator(".title-input")).toHaveText(self.title);
-    await option(page, "公開").click();
-    const drafts = confirmPanel(page).locator(".publish-drafts");
+    await openPublishConfirm(page);
+    const drafts = confirmDialog(page).locator(".publish-drafts");
     await expect(drafts.getByRole("link")).toHaveCount(2);
 
     const rows = await drafts.locator("li").evaluateAll((items) => {
@@ -238,10 +242,10 @@ test.describe("owner", () => {
     const listed = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/pages/resolve",
     );
-    await option(page, "公開").click();
+    await openPublishConfirm(page);
     await listed;
-    await expect(confirmPanel(page).locator(".publish-drafts")).toBeEmpty();
-    await expect(confirmPanel(page)).not.toContainText("下書きにリンク");
+    await expect(confirmDialog(page).locator(".publish-drafts")).toBeEmpty();
+    await expect(confirmDialog(page)).not.toContainText("下書きにリンク");
   });
 
   test("保存前の本文に書いた draft への link も、公開の確認に並べる", async ({
@@ -273,13 +277,13 @@ test.describe("owner", () => {
     await page.keyboard.press("End");
     // 1 字ずつ打つと括弧の補完と候補の窓が働くので、まとめて入れる
     await page.keyboard.insertText(` [[${draft.title}]]`);
-    await option(page, "公開").click();
-    const drafts = confirmPanel(page).locator(".publish-drafts");
+    await openPublishConfirm(page);
+    const drafts = confirmDialog(page).locator(".publish-drafts");
     await expect(drafts.getByRole("link")).toHaveText([draft.title]);
     expect((await api.getPage(self.id)).body).toBe("前置き");
 
     releaseSaves();
-    await confirmPanel(page).getByRole("button", { name: "やめる" }).click();
+    await confirmDialog(page).getByRole("button", { name: "やめる" }).click();
     await expect(saveState(page)).toHaveText("保存済み");
     expect((await api.getPage(self.id)).body).toBe(`前置き [[${draft.title}]]`);
   });
@@ -312,9 +316,9 @@ test.describe("owner", () => {
         }
       }).observe(content, { childList: true, subtree: true });
     });
-    await option(page, "公開").click();
-    await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
-    await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
+    await openPublishConfirm(page);
+    await confirmDialog(page).getByRole("button", { name: "公開する" }).click();
+    await expect(pill(page)).toHaveAttribute("data-visibility", "public");
     // href が title の URL に変われば、公開した後の取り直しは済んでいる
     await expect(link(page, title)).not.toHaveAttribute("href", /^\/p\//);
     await expect(link(page, title)).toHaveAttribute("href", /^\//);

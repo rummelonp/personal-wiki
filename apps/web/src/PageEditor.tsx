@@ -50,7 +50,6 @@ import { findLinkedDrafts } from "./linked-drafts";
 import { Notice } from "./Notice";
 import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline, Outline } from "./Outline";
-import { PublishBar } from "./PublishBar";
 import { hashOfLink } from "./page-fragment";
 import { rememberTitle } from "./page-titles";
 import {
@@ -70,6 +69,7 @@ import { RevisionHistory } from "./RevisionHistory";
 import { homeHref, missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
+import { VisibilityControl } from "./VisibilityControl";
 import { createWikiLinks } from "./wiki-links";
 
 /** 保存のレスポンスのリンクの書き換えの数は、セッションに渡さず、保存した title と一緒に onLinkRewrites に渡す。 */
@@ -1062,18 +1062,31 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           </Notice>
         )}
 
-        <TitleEditor
-          ref={titleEditor}
-          value={state.titleInput ?? state.draft.title}
-          readOnly={readOnly}
-          autoFocus={focusTarget === "title"}
-          keptTitle={uncreated ? "" : state.draft.title}
-          saveHeldBack={holdsBack(state)}
-          bodyView={() => editor.current?.view() ?? null}
-          onChange={(title) => session.editTitle(title)}
-          onCommit={() => void session.commitTitle()}
-          onBlur={() => void session.commitTitle()}
-        />
+        <div className="title-row">
+          <TitleEditor
+            ref={titleEditor}
+            value={state.titleInput ?? state.draft.title}
+            readOnly={readOnly}
+            autoFocus={focusTarget === "title"}
+            keptTitle={uncreated ? "" : state.draft.title}
+            saveHeldBack={holdsBack(state)}
+            bodyView={() => editor.current?.view() ?? null}
+            onChange={(title) => session.editTitle(title)}
+            onCommit={() => void session.commitTitle()}
+            onBlur={() => void session.commitTitle()}
+          />
+          {/* 作る前は公開範囲を持たない。title を確定して作った後に出す */}
+          {!uncreated && (
+            <VisibilityControl
+              visibility={savedVisibility}
+              disabled={!canChangeVisibility || state.pendingBackup !== null}
+              externalBases={state.externalBases}
+              pending={pendingVisibility}
+              onChange={changeVisibility}
+              findLinkedDrafts={findDrafts}
+            />
+          )}
+        </div>
         {/* 通知はドックへ重なるので、JSX の位置は表示位置を決めない。作成は title の確定で起きるので、title の後に置く */}
         {state.error !== null &&
           state.failedOp?.kind === "create" &&
@@ -1150,21 +1163,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         <span className="visually-hidden" role="status">
           {inputProblem === undefined ? "" : inputProblemTitle(inputProblem)}
         </span>
-        <PublishBar
-          visibility={savedVisibility}
-          uncreated={uncreated}
-          disabled={!canChangeVisibility || state.pendingBackup !== null}
-          externalBases={state.externalBases}
-          titlePending={
-            state.titleInput !== null
-              ? state.titleInput !== savedTitle
-              : state.draft.title !== savedTitle
-          }
-          sharePath={pageHrefFor({ id: pageId, title: savedTitle, visibility: "public" })}
-          pending={pendingVisibility}
-          onChange={changeVisibility}
-          findLinkedDrafts={findDrafts}
-        />
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor
           ref={editor}
