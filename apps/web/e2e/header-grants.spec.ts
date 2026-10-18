@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "./support/fixtures";
+import { expect, expectNoHorizontalScroll, test } from "./support/fixtures";
 
 /*
  * ヘッダーの「許可した接続」は、Worker が返す一覧の画面への素のリンク。
@@ -68,4 +68,65 @@ test.describe("ロゴの文字", () => {
       await expect(page.getByRole("banner").getByRole("link", { name: SITE })).toBeVisible();
     });
   });
+});
+
+test.describe("検索語を出した header", () => {
+  test.skip(({ isMobile }) => !isMobile, "タッチ端末だけ");
+  test.use({ viewport: { width: 320, height: 568 } });
+
+  // 検索語に残る幅の下限。ロゴが下限まで縮んだ幅 320px の owner（操作が 4 つ）で約 64px 残る
+  const MIN_TEXT_WIDTH = 48;
+
+  for (const [label, query] of [
+    ["短い", "メモ"],
+    ["長い", "とても長い検索語".repeat(8)],
+  ] as const) {
+    test(`幅 320px の owner で${label}検索語を出しても、要素が重ならず、検索語の欄が潰れない`, async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const header = page.locator("header.header");
+      await expect(page.locator(".header-grants")).toBeVisible();
+      const plainHeight = (await header.boundingBox())?.height;
+
+      await page.goto(`/?q=${encodeURIComponent(query)}`);
+      await expect(page.getByRole("button", { name: `ページを検索: ${query}` })).toBeVisible();
+      await expect(page.locator(".header-grants")).toBeVisible();
+      expect((await header.boundingBox())?.height, "header は 1 行のまま").toBe(plainHeight);
+      await expectNoHorizontalScroll(page);
+
+      const { boxes, text } = await page.evaluate(() => {
+        const rect = (element: Element) => {
+          const { left, right } = element.getBoundingClientRect();
+          return { left, right };
+        };
+        const search = document.querySelector<HTMLElement>(".header-search-text");
+        return {
+          // 左から順に、ロゴ、検索語のボタン、右の操作
+          boxes: [
+            ...document.querySelectorAll(".header > .brand, .header > .header-search"),
+            ...document.querySelectorAll(".header-actions > *"),
+          ].map(rect),
+          text: search && {
+            width: search.clientWidth,
+            scrollWidth: search.scrollWidth,
+          },
+        };
+      });
+      expect(boxes).toHaveLength(5);
+      for (const [index, box] of boxes.entries()) {
+        const previous = boxes[index - 1];
+        if (previous)
+          expect(box.left, `${index} 番目の左端が前の要素と重ならない`).toBeGreaterThanOrEqual(
+            previous.right - 0.5,
+          );
+      }
+      // 右の余白（左と同じ 12px）を食わない
+      expect(boxes.at(-1)?.right).toBeLessThanOrEqual(320 - 12 + 0.5);
+      // 短い語は省略されず、長い語は残る幅いっぱいの欄の中で省略される
+      const truncated = (text?.scrollWidth ?? 0) > (text?.width ?? 0);
+      expect(truncated, "語が省略される").toBe(label === "長い");
+      if (truncated) expect(text?.width, "検索語の欄の幅").toBeGreaterThanOrEqual(MIN_TEXT_WIDTH);
+    });
+  }
 });
