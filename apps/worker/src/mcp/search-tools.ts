@@ -193,6 +193,7 @@ export const listUnresolvedLinksTool = defineTool({
   description: [
     "本文の `[[title]]` のうち、行き先のページがまだ無いものを、title ごとにまとめて返す。draft のページに書かれたものも含む。wiki の棚卸しで、意図して残した未作成の語と、書き間違いやリンク切れを見分けるのに使う。",
     `各件は titleKey、sourceCount（リンク元のページ数）、sources（リンク元の新しい順に先頭 ${UNRESOLVED_SOURCES_PER_TITLE} 件）。titleKey の昇順で、nextCursor が null でなければ、cursor に渡して続きを取る。`,
+    "cursor は nextCursor の値をそのまま渡す。形の検査はせず、渡した文字列より大きい titleKey を返すので、nextCursor 以外の値を渡すと、それより小さい titleKey の件は飛ばされる（エラーにはならない）。titleKey は先頭と末尾の `_` が空白として残る（`[[__init__]]` は `  init  `）ので、正規化し直した値は cursor にならない。",
     "titleKey は title を大文字小文字と全角半角、`_` と空白を畳んだ値で、本文に書かれた表記そのままではない（元の表記はリンク元を read_page で読む）。list_backlinks の title と、そのページを作った後の read_page の title にそのまま渡せる。",
     "リンク元をすべて見るには、titleKey を list_backlinks の title に渡す。",
     "id と title はどちらも省略できる。どちらか一方を渡すと、そのページの本文にある行き先の無いリンクだけを返す（sourceCount は 1）。ページが無ければ not_found。",

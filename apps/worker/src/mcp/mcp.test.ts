@@ -324,6 +324,7 @@ describe("tools/list", () => {
       "titleKey",
       "list_backlinks",
       "rewrite_links",
+      "形の検査はせず",
     ]) {
       expect(byName.list_unresolved_links?.description).toContain(rule);
     }
@@ -2015,6 +2016,42 @@ describe("検索と一覧の tool", () => {
           isError: true,
           json: { error: "invalid_field", field: "limit" },
         });
+      }
+    });
+
+    it("先頭と末尾の `_` が空白で残る titleKey も、nextCursor をそのまま渡せば取りこぼさず続きを取れる", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      await call("create_page", { title: "Src", body: "[[__init__]] [[b_]] [[a]]" });
+      const keys: string[] = [];
+      let cursor: unknown;
+      for (let i = 0; i < 5; i++) {
+        const page = await call("list_unresolved_links", { limit: 1, cursor });
+        expect(page.isError).toBe(false);
+        keys.push(...keysOf(page));
+        cursor = page.json.nextCursor;
+        if (cursor === null) break;
+      }
+      // normalizeTitleKey し直すと `init` と `b` になり、nextCursor と一致しなくなる値
+      expect(keys).toEqual(["  init  ", "a", "b "]);
+      expect(cursor).toBeNull();
+    });
+
+    it("cursor は形を検査せず、渡した文字列より大きい titleKey を返す", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      await call("create_page", { title: "Src", body: "[[a]] [[b]] [[c]]" });
+      // nextCursor の形でない値と、正規化すると変わる値でも、エラーにならず下限として使う
+      for (const [cursor, expected] of [
+        ["", ["a", "b", "c"]],
+        ["B", ["a", "b", "c"]],
+        ["ａ", []],
+        ["a ", ["b", "c"]],
+        ["a", ["b", "c"]],
+        ["bb", ["c"]],
+        ["z", []],
+      ] as const) {
+        const listed = await call("list_unresolved_links", { cursor });
+        expect(listed.isError).toBe(false);
+        expect(keysOf(listed)).toEqual(expected);
       }
     });
 
