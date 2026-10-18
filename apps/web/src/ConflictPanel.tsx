@@ -1,12 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { conflictRows } from "./conflict-diff";
+import { DiffRows } from "./DiffRows";
 import type { Draft } from "./editor-session";
 import { formatTime } from "./format";
 import { focusAfterInput } from "./input-modality";
 import { Notice } from "./Notice";
 import type { Page } from "./pages-api";
-
-const MARKS = { equal: " ", delete: "−", insert: "＋" } as const;
 
 type Choice = "take" | "overwrite";
 
@@ -217,31 +216,13 @@ export function ConflictPanel({
           {hasDiff && (
             <div className="notice-details" ref={setScroller}>
               {titles}
-              <div className="diff">
-                {rows.map((row, index) =>
-                  row.kind === "skip" ? (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: 差分の行に安定した id は無い
-                    <div key={index} className="diff-skip muted">
-                      … {row.count}行は同じ …
-                    </div>
-                  ) : (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: 同上
-                    <div key={index} className={`diff-row diff-${row.kind}`}>
-                      <span className="diff-mark" aria-hidden="true">
-                        {MARKS[row.kind]}
-                      </span>
-                      <span className="diff-text">{row.text === "" ? " " : row.text}</span>
-                      <span className="visually-hidden">
-                        {row.kind === "delete"
-                          ? "（別の場所の内容だけにある行）"
-                          : row.kind === "insert"
-                            ? "（この画面だけにある行）"
-                            : ""}
-                      </span>
-                    </div>
-                  ),
-                )}
-              </div>
+              <DiffRows
+                rows={rows}
+                notes={{
+                  delete: "（別の場所の内容だけにある行）",
+                  insert: "（この画面だけにある行）",
+                }}
+              />
             </div>
           )}
         </>
