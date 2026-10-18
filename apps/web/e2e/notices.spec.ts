@@ -369,32 +369,49 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   // 見出しの最後の 1 文字だけが次の行に落ちない
   const heading = conflict.getByRole("heading", { name: "別の場所でも更新されています" });
   const lines = await heading.evaluate((element) => {
+    // 先頭の点と、文字の行の top。文節の切れ目に <wbr> を置く描画では文字が <span> に入るので、
+    // 要素の箱ではなく text node の行を測る
     const range = document.createRange();
-    range.selectNodeContents(element);
-    const rects = [...range.getClientRects()].filter((rect) => rect.width > 0);
-    return new Set(rects.map((rect) => Math.round(rect.top))).size;
+    const tops = new Set<number>();
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) if (rect.width > 0) tops.add(Math.round(rect.top));
+    }
+    const dot = element.querySelector(".dot")?.getBoundingClientRect();
+    if (dot !== undefined) tops.add(Math.round(dot.top));
+    return tops.size;
   });
   expect(lines, "見出しが短い行に折り返している").toBeLessThanOrEqual(2);
   const orphan = await heading.evaluate((element) => {
-    const text = element.textContent ?? "";
-    const range = document.createRange();
-    const node = element.lastChild;
-    if (node === null || node.nodeType !== Node.TEXT_NODE) return false;
-    const last = text.length;
-    if (last < 2) return false;
-    const textNode = node as Text;
-    range.setStart(textNode, textNode.length - 1);
-    range.setEnd(textNode, textNode.length);
-    const tail = range.getBoundingClientRect();
-    range.setStart(textNode, 0);
-    range.setEnd(textNode, 1);
-    const head = range.getBoundingClientRect();
-    if (Math.round(tail.top) === Math.round(head.top)) return false;
-    // 最後の行が 1 文字だけか
-    range.setStart(textNode, textNode.length - 2);
-    range.setEnd(textNode, textNode.length - 1);
-    const beforeLast = range.getBoundingClientRect();
-    return Math.round(beforeLast.top) !== Math.round(tail.top);
+    // 文節の切れ目に <wbr> を置く描画では、見出しの文字列が複数の text node に分かれる
+    const nodes: Text[] = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      nodes.push(node as Text);
+    }
+    const first = nodes.at(0);
+    const last = nodes.at(-1);
+    if (first === undefined || last === undefined || (element.textContent ?? "").length < 2) {
+      return false;
+    }
+    const topOf = (node: Text, start: number): number => {
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + 1);
+      return Math.round(range.getBoundingClientRect().top);
+    };
+    const tail = topOf(last, last.length - 1);
+    if (topOf(first, 0) === tail) return false;
+    // 最後の行が 1 文字だけか。最後の text node が 1 文字なら、その前の文字は前の text node にある
+    const beforeLast =
+      last.length >= 2
+        ? topOf(last, last.length - 2)
+        : (() => {
+            const previous = nodes.at(-2);
+            return previous === undefined ? tail : topOf(previous, previous.length - 1);
+          })();
+    return beforeLast !== tail;
   });
   expect(orphan, "見出しの最後の 1 文字だけが次の行に落ちている").toBe(false);
 

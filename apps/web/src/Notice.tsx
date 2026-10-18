@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { focusAfterInput, trackInputModality } from "./input-modality";
 import { bindNoticeDock } from "./notice-dock";
+import { needsPhraseBreaks, withPhraseBreaks } from "./phrase-wrap";
 
 /**
  * 通知を重ねて出すドック。undefined はドックが無い（コンポーネントだけを描画する）ので通知をその場に出し、
@@ -108,6 +109,7 @@ export function Notice({
     if (isTyping(document.activeElement)) return;
     if (heading.current !== null) focusAfterInput(heading.current, { preventScroll: true });
   }, [claimFocus, placed]);
+  const phrased = needsPhraseBreaks();
   const notice = (
     <section className={`notice notice-${tone}`} {...interaction}>
       <div className="notice-main" {...(silent ? {} : { role, "aria-labelledby": headingId })}>
@@ -118,9 +120,12 @@ export function Notice({
           tabIndex={claimFocus ? -1 : undefined}
         >
           <span className="dot" aria-hidden="true" />
-          {title}
+          {/* h2 は flex なので、<wbr> を直下に置くと文節ごとに別の項目になる。withPhraseBreaks は文字列を 1 つの span にまとめる */}
+          {phrased ? withPhraseBreaks(title) : title}
         </h2>
-        {children !== undefined && <div className="notice-text">{children}</div>}
+        {children !== undefined && (
+          <div className="notice-text">{phrased ? withPhraseBreaks(children) : children}</div>
+        )}
         {actions !== undefined && <div className="actions">{actions}</div>}
       </div>
       {details}

@@ -660,8 +660,9 @@ a.segmented-option {
  * 知らせと凡例は短い固定の文で、区切りは句読点と空白にある。語の途中を切らないよう keep-all にし、
  * auto-phrase を解釈する描画だけ文節で切る。WebKit は解釈しないので keep-all が残り、line-break: strict で
  * 小さい仮名や長音を行頭に置かない。
- * 利用者の入力を含む通知（.notice-text）には keep-all を使わない。keep-all は区切りのない長い文字列を
- * 切らなくなり、あふれた分は body の overflow-wrap: anywhere が切る。この切り方は line-break: strict を
+ * 通知（.notice-title と .notice-text）は利用者の入力を含み、固定の句読点だけに頼れないので、
+ * 文節の切れ目に <wbr> を置く（Notice.tsx）。keep-all だけを当てると、区切りのない長い文字列が
+ * 切れなくなり、あふれた分を body の overflow-wrap: anywhere が切る。この切り方は line-break: strict を
  * 無視して小さい仮名を行頭に置く。
  */
 .publish-note,
@@ -949,14 +950,23 @@ a.segmented-option {
 
 /*
  * 見出しと本文は line-break: strict で、小さい仮名、長音、句読点を行頭に置かない。
- * WebKit は既定（auto）だとこれらを行頭に置き、word-break: auto-phrase も解釈しないので、
- * 語の途中で折り返すことが残る。keep-all で絞らない理由は .publish-note の注釈にある。
+ * WebKit は既定（auto）だとこれらを行頭に置く。word-break: auto-phrase も解釈しないので、
+ * 文節の切れ目は .phrased と <wbr> で決める（.publish-note の注釈にある）。
  */
 .notice-text {
   font-size: var(--font-size-sm);
   line-break: strict;
   word-break: auto-phrase;
   text-wrap: pretty;
+}
+
+/*
+ * auto-phrase を解釈しない描画では、withPhraseBreaks が文節の切れ目に <wbr> を置いた文字列を span にまとめ、
+ * 文節の中は keep-all で切らせない。<wbr> を置けない部品の中の文字列は keep-all を継がず、普通の word-break で折り返す。
+ * 1 行より長い文節だけは body の overflow-wrap: anywhere が切るので、その切れ目では line-break: strict が効かない。
+ */
+.phrased {
+  word-break: keep-all;
 }
 
 .notice-text > :first-child {
