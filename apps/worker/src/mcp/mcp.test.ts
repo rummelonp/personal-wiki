@@ -12,6 +12,8 @@ import type { WikiToolContext } from "./tool";
 
 const ORIGIN = "http://localhost";
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 /** tools/list が返す順。tool の増減と入れ替えに気づけるよう、名前で比べる */
 const TOOL_NAMES = [
   "search",
@@ -475,6 +477,7 @@ describe("ページの tool", () => {
       title: "New  Page",
       visibility: "draft",
       version: 1,
+      bodySha256: expect.stringMatching(SHA256_HEX),
       updatedAt: T0,
       url: `${ORIGIN}/p/${id}`,
       titleUrl: null,
@@ -494,6 +497,7 @@ describe("ページの tool", () => {
       id: created.id,
       title: "Notes",
       body: "# 見出し\n本文",
+      bodySha256: expect.stringMatching(SHA256_HEX),
       visibility: "draft",
       version: 1,
       createdAt: T0 + 5,
@@ -963,6 +967,111 @@ describe("ページの tool", () => {
   });
 });
 
+describe("bodySha256", () => {
+  // description の手順（保存された本文を UTF-8 にした SHA-256 の小文字の 16 進）で別に求めた値
+  const VECTORS = [
+    ["abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"],
+    ["", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
+    ["日本語\r\n- 項目\n", "d4aef048f38a59c85c43030736b104ebc3af33364e7b997b1dfa1da62c728967"],
+    [
+      "---\ntags: [a]\n---\n本文",
+      "c2daae8dcb4de019cfb6a664df1870b37c6994270fa2278c34fe581580bc10f1",
+    ],
+  ] as const;
+
+  it("read_page と書き込みの応答は、保存された本文を UTF-8 にした SHA-256 を返す", async () => {
+    const { call } = await mcpClient();
+    for (const [i, [body, hash]] of VECTORS.entries()) {
+      const created = await call("create_page", { title: `Hash ${i}`, body });
+      expect(created.json.bodySha256).toBe(hash);
+      const read = await call("read_page", { id: created.json.id });
+      // 改行と末尾は保存で変わらないので、読んだ本文のハッシュと一致する
+      expect(read.json).toMatchObject({ body, bodySha256: hash });
+    }
+  });
+
+  it("update_page、edit_page、append_to_page の応答は書いた後の本文のハッシュで、read_page と一致する", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Doc", body: "- a" });
+    const id = created.id as string;
+    const hashes = [created.bodySha256 as string];
+    const hashOf = async () => (await call("read_page", { id })).json.bodySha256;
+
+    const appended = await call("append_to_page", { id, text: "- b" });
+    // 改行を挟んで "- a\n- b" になる。追記後の本文はクライアントが持たないので、応答のハッシュで確かめる
+    expect(appended.json.bodySha256).toBe(
+      "4e11985d599fbbf978c25d40a56777b17b1f399b68a59ed9c1971fa2e35cc281",
+    );
+    expect(await hashOf()).toBe(appended.json.bodySha256);
+    hashes.push(appended.json.bodySha256 as string);
+
+    const edited = await call("edit_page", {
+      id,
+      version: appended.json.version,
+      edits: [{ old: "- b", new: "- c" }],
+    });
+    expect(edited.json).toMatchObject({
+      changed: true,
+      bodySha256: "b8187a727bf3d3dcb784a4a4400b41aca7058a7f40e785b35612fb5d9505f3a5",
+    });
+    expect(await hashOf()).toBe(edited.json.bodySha256);
+    hashes.push(edited.json.bodySha256 as string);
+
+    const updated = await call("update_page", {
+      id,
+      version: edited.json.version,
+      title: "Doc",
+      body: "abc",
+    });
+    expect(updated.json.bodySha256).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    expect(await hashOf()).toBe(updated.json.bodySha256);
+    hashes.push(updated.json.bodySha256 as string);
+
+    expect(new Set(hashes).size).toBe(hashes.length);
+  });
+
+  it("本文が変わらない edit_page は、同じハッシュと今の版を返す", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Doc", body: "same" });
+    const edited = await call("edit_page", {
+      id: created.id,
+      version: 1,
+      edits: [{ old: "same", new: "same" }],
+    });
+    expect(edited.json).toMatchObject({
+      changed: false,
+      version: 1,
+      bodySha256: created.bodySha256,
+    });
+  });
+
+  it("title だけを変える update_page は、本文のハッシュを変えない", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Old", body: "abc" });
+    const updated = await call("update_page", {
+      id: created.id,
+      version: 1,
+      title: "New",
+      body: "abc",
+    });
+    expect(updated.json).toMatchObject({ version: 2, bodySha256: created.bodySha256 });
+  });
+
+  it("revision を指定した read_page は、revision.body のハッシュを revision に入れ、上の階層には入れない", async () => {
+    const { call } = await mcpClient();
+    const { json: created } = await call("create_page", { title: "Doc", body: "abc" });
+    await call("update_page", { id: created.id, version: 1, title: "Doc", body: "" });
+    const res = await call("read_page", { id: created.id, revision: 1 });
+    expect(res.json).not.toHaveProperty("bodySha256");
+    expect(res.json.revision).toMatchObject({
+      body: "abc",
+      bodySha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    });
+  });
+});
+
 describe("edit_page", () => {
   async function created(body: string, title = "Doc") {
     const client = await mcpClient();
@@ -984,6 +1093,7 @@ describe("edit_page", () => {
         title: "Doc",
         visibility: "draft",
         version: 2,
+        bodySha256: expect.stringMatching(SHA256_HEX),
         updatedAt: expect.any(Number),
         url: expect.stringContaining(`/p/${id}`),
         titleUrl: null,
@@ -1296,7 +1406,14 @@ describe("版の履歴の tool", () => {
         updatedAt: T0 + 20,
         url: `${ORIGIN}/p/${id}`,
         titleUrl: null,
-        revision: { version: 1, title: "Draft", body: "v1", createdAt: T0, author },
+        revision: {
+          version: 1,
+          title: "Draft",
+          body: "v1",
+          bodySha256: expect.stringMatching(SHA256_HEX),
+          createdAt: T0,
+          author,
+        },
       },
     });
     expect(res.json).not.toHaveProperty("body");

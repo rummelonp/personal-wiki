@@ -18,6 +18,7 @@ import { findRevision, listRevisions, parseRevisionCursor } from "../pages/revis
 import { LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT } from "../pages/search";
 import { type AppendError, findPageByTitle, type Page, type WriteError } from "../pages/store";
 import { pageUrls } from "../pages/urls";
+import { BODY_SHA256_NOTE, bodySha256 } from "./body-hash";
 import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool";
 
 const LIMITS = [
@@ -29,13 +30,21 @@ const LIMITS = [
 const NO_SECRETS =
   "draft も URL を知っていれば誰でも読めるので、パスワードやトークンなどの秘密を書かない。";
 
-/** 書き込みの結果。上限近い本文を書き込みのたびに送り返さないよう、本文は含めない。 */
-function pageSummary(page: Page, origin: string) {
+/** 書き込みの tool の description に載せる。計算の手順は read_page の description にある */
+const WRITE_HASH =
+  "応答の bodySha256 は保存後の本文のハッシュ（read_page と同じ手順）。本文は返さないので、書いた内容がローカルの Markdown と一致するかはこの値で確かめる。";
+
+/**
+ * 書き込みの結果。上限近い本文を書き込みのたびに送り返さないよう、本文は含めず、保存後の本文の
+ * ハッシュだけを返す（追記のように、保存後の本文を呼び出し側が持たない書き込みの確認に使う）。
+ */
+async function pageSummary(page: Page, origin: string) {
   return {
     id: page.id,
     title: page.title,
     visibility: page.visibility,
     version: page.version,
+    bodySha256: await bodySha256(page.body),
     updatedAt: page.updatedAt,
     ...pageUrls(origin, page),
   };
@@ -64,10 +73,11 @@ export const readPageTool = defineTool({
   scope: "read",
   title: "ページを読む",
   description: [
-    "ページを id か title で 1 件読み、本文（Markdown）、version、visibility、URL を返す。",
+    "ページを id か title で 1 件読み、本文（Markdown）、bodySha256、version、visibility、URL を返す。",
+    BODY_SHA256_NOTE,
     "id と title はどちらか一方だけを指定する。本文の `[[title]]` のリンクは title を渡して辿る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "titleUrl は public のページで、title が予約語と重ならないときだけ返る。",
-    "revision に list_revisions の各件の version を渡すと、上の階層は今のページの値（id、title、version、visibility、createdAt、updatedAt、URL）だけで body を含まず、読んだ版の中身は revision（version、title、body、createdAt、author）に入る。update_page と edit_page には上の階層の version を渡す。",
+    "revision に list_revisions の各件の version を渡すと、上の階層は今のページの値（id、title、version、visibility、createdAt、updatedAt、URL）だけで body を含まず、読んだ版の中身は revision（version、title、body、bodySha256、createdAt、author）に入り、その bodySha256 は revision.body のハッシュ。update_page と edit_page には上の階層の version を渡す。",
     `その版が無ければ revision_not_found になる。${REVISION_NUMBERS}少し前に見た番号が無くなっていたら、list_revisions を呼び直す。`,
   ].join("\n"),
   inputSchema: z.strictObject({
@@ -95,6 +105,7 @@ export const readPageTool = defineTool({
         id: page.id,
         title: page.title,
         body: page.body,
+        bodySha256: await bodySha256(page.body),
         visibility: page.visibility,
         version: page.version,
         createdAt: page.createdAt,
@@ -121,6 +132,7 @@ export const readPageTool = defineTool({
         version: found.revision.version,
         title: found.revision.title,
         body: found.revision.body,
+        bodySha256: await bodySha256(found.revision.body),
         createdAt: found.revision.createdAt,
         author: found.revision.author,
       },
@@ -188,6 +200,7 @@ export const createPageTool = defineTool({
     "ページを新しく作る。作る前に search で同じ主題を探し、あれば作らずに append_to_page か update_page を使う。",
     "ページは常に draft で作られる。title は wiki 全体で一意で、重なると title_conflict になる。`_` と空白だけが違う title も重なるとみなす。",
     "title はページの主題を表す名詞句にし、日付、エージェント名、「メモ」などの接頭辞を付けない。search で近いページの title の付け方を見て合わせる。`[ ] | # ^` を含む title と `\\` で終わる title は `[[...]]` のリンクが壊れるので使わない。",
+    WRITE_HASH,
     LIMITS,
     NO_SECRETS,
   ].join("\n"),
@@ -204,7 +217,7 @@ export const createPageTool = defineTool({
   async run({ title, body }, ctx) {
     const result = await createPageAs(ctx, { title, body });
     if (!result.ok) return writeError(result);
-    return toolResult(pageSummary(result.page, ctx.origin));
+    return toolResult(await pageSummary(result.page, ctx.origin));
   },
 });
 
@@ -220,6 +233,7 @@ export const updatePageTool = defineTool({
     "オーナーが wiki を開いたときや、定期実行を設定していればその発火ごとにも、1 ページずつ書き換わる。",
     "書き換わったページ（このページ自身を含む）は version が進むので、続けて書き換えるときは read_page で読み直す。書き換えるのは、title を変えた時点で旧 title にリンクしていたページだけ。そのページの `[[旧 title]]` は、書き換わる前に足したものも、旧 title で別のページを作ったあとに書いたものも、新しい title に書き換わる（新しく作った同名のページは指さない）。それ以外のページが title を変えたあとに書いた `[[旧 title]]` は書き換わらない。",
     "title に `[ ] | # ^` を含む、または `\\` で終わると書き換えを積まずに linkRewrites.skipped を返す。そのときの旧 title のリンクは、あとで別の title に変えても書き換わらない。",
+    WRITE_HASH,
     LIMITS,
     NO_SECRETS,
   ].join("\n"),
@@ -238,7 +252,10 @@ export const updatePageTool = defineTool({
   async run({ id, version, title, body }, ctx) {
     const result = await updatePageAs(ctx, { id, expectedVersion: version, title, body });
     if (result.ok) {
-      return toolResult({ ...pageSummary(result.page, ctx.origin), ...linkRewritesField(result) });
+      return toolResult({
+        ...(await pageSummary(result.page, ctx.origin)),
+        ...linkRewritesField(result),
+      });
     }
     if (result.reason !== "version_conflict") return writeError(result);
     return versionConflict(ctx, id, result);
@@ -282,6 +299,7 @@ export const editPageTool = defineTool({
     "置き換えた結果が今の本文と同じなら何も保存せず、changed が false で今の version を返す。",
     "frontmatter の中も置き換えられる。保存は update_page と同じ規則で、公開範囲は変わらない（frontmatter に書いても反映されない）。",
     "保存後の本文が上限を超えると body_too_large、NUL を含むと invalid_field（位置は置き換えた後の本文で数える）になる。",
+    WRITE_HASH,
     LIMITS,
     NO_SECRETS,
   ].join("\n"),
@@ -314,7 +332,7 @@ export const editPageTool = defineTool({
     const result = await editPageAs(ctx, { id, expectedVersion: version, edits });
     if (result.ok) {
       return toolResult({
-        ...pageSummary(result.page, ctx.origin),
+        ...(await pageSummary(result.page, ctx.origin)),
         changed: result.rowsWritten > 0,
         applied: edits.length,
       });
@@ -405,6 +423,7 @@ export const appendToPageTool = defineTool({
     "ページの本文の末尾に text を書き足す。メモや調べた結果はこのツールで足す。version は要らない。",
     "本文が改行で終わっていなければ改行を 1 つ挟む。段落を分けたいときは text の先頭に空行を入れる。",
     "append_conflict（他の保存との競合が続いた）で失敗したら、同じ text をそのまま送り直してよい。",
+    WRITE_HASH,
     LIMITS,
     NO_SECRETS,
   ].join("\n"),
@@ -421,7 +440,7 @@ export const appendToPageTool = defineTool({
   async run({ id, text }, ctx) {
     const result = await appendToPageAs(ctx, { id, text });
     if (!result.ok) return writeError(result);
-    return toolResult(pageSummary(result.page, ctx.origin));
+    return toolResult(await pageSummary(result.page, ctx.origin));
   },
 });
 
