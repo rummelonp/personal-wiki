@@ -2631,6 +2631,72 @@ describe("公開の切り替えと削除の待ち", () => {
     expect(updatePage).toHaveBeenCalledTimes(1);
   });
 
+  it("保存の間に承認した削除が済んだら、まだ画面にいる間は一覧へ移る", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(deletePage).mockResolvedValue(ok(null));
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    expect(location.search).not.toBe("");
+
+    await act(async () => save.resolve(ok({ ...PAGE, body: "本文追記", version: 2 })));
+    await flushAsync();
+    expect(deletePage).toHaveBeenCalledTimes(1);
+    expect(location.pathname + location.search).toBe("/");
+  });
+
+  it("保存の間に承認した削除を待つ間に画面を離れたら、削除は送り、削除が済んでも今の画面を一覧へ移さない", async () => {
+    restoreDelay = setLoadingDelay(0);
+    const save = deferred<ApiResult<Page>>();
+    vi.mocked(updatePage).mockReturnValueOnce(save.promise);
+    vi.mocked(deletePage).mockResolvedValue(ok(null));
+    const { view, button } = renderPage();
+    await flushAsync();
+
+    act(() => view().focus());
+    act(() => typeAtEnd(view(), "追記"));
+    act(() => view().contentDOM.blur());
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    act(() => root?.unmount());
+    act(() => navigate("/p/BBBBBBBBBBBBBBBBBBBBBB"));
+
+    await act(async () => save.resolve(ok({ ...PAGE, body: "本文追記", version: 2 })));
+    await flushAsync();
+    expect(deletePage).toHaveBeenCalledTimes(1);
+    expect(deletePage).toHaveBeenCalledWith(ID, 2);
+    expect(location.pathname).toBe("/p/BBBBBBBBBBBBBBBBBBBBBB");
+  });
+
+  it("「もう一度削除する」の応答を待つ間に画面を離れたら、削除が済んでも今の画面を一覧へ移さない", async () => {
+    const retry = deferred<ApiResult<null>>();
+    vi.mocked(deletePage)
+      .mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" })
+      .mockReturnValueOnce(retry.promise);
+    const { button } = renderPage();
+    await flushAsync();
+    act(() => button("このページを削除").click());
+    await flushAsync();
+    act(() => button("もう一度削除する").click());
+    await flushAsync();
+    expect(deletePage).toHaveBeenCalledTimes(2);
+    act(() => root?.unmount());
+    act(() => navigate("/p/BBBBBBBBBBBBBBBBBBBBBB"));
+
+    await act(async () => retry.resolve(ok(null)));
+    await flushAsync();
+    expect(location.pathname).toBe("/p/BBBBBBBBBBBBBBBBBBBBBB");
+  });
+
   it("保存の間に承認した削除は、保存が衝突したら送らず、待つ間の入力でも送らず、衝突の通知を出す", async () => {
     restoreDelay = setLoadingDelay(0);
     const save = deferred<ApiResult<Page>>();

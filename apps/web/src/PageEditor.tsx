@@ -494,6 +494,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     });
   }
 
+  // 削除を待つ間に別の画面へ移ると、削除が済んでも今いる画面を一覧へ移さない。削除そのものは続ける
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   async function handleDelete() {
     const warning = isDirty(state) ? "未保存の変更も含めて、元に戻せません。" : "元に戻せません。";
     if (!window.confirm(`「${state.base.title}」を削除しますか？${warning}`)) return;
@@ -505,7 +514,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     } finally {
       setPendingDelete(false);
     }
-    if (removed) navigate(homeHref());
+    if (removed && mounted.current) navigate(homeHref());
   }
 
   // 失敗の後に操作を始めると session は失敗の記録を消すので、通知も消える。保存の状態の表示はページの上端に
@@ -606,7 +615,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (op.kind === "create") await session.retryCreate();
     else if (op.kind === "save") await session.flush();
     else if (op.kind === "visibility") await changeVisibility(op.to);
-    else if (await session.remove()) navigate(homeHref());
+    else if ((await session.remove()) && mounted.current) navigate(homeHref());
   }
 
   const goneUnkept = state.gone && isDirty(state) && state.backupFailed;
