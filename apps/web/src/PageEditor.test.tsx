@@ -1966,6 +1966,55 @@ describe("まだ作っていないページ（page が null）", () => {
     expect(newBackupKeys()).toEqual([]);
   });
 
+  describe("端末に残った内容の通知を閉じた後の focus", () => {
+    const keptButton = (label: string) =>
+      [...(container?.querySelectorAll("button") ?? [])].find((b) => b.textContent === label);
+    const closeKept = async (label: string) => {
+      act(() => keptButton(label)?.focus());
+      act(() => keptButton(label)?.click());
+      await flushAsync();
+    };
+
+    it.each(["残った内容に戻す", "残った内容を破棄する"])(
+      "title が空のままなら、%s を押した後は title の欄に移る",
+      async (label) => {
+        seedOrphan({ title: "", body: "残った本文", baseVersion: 0, savedAt: 0 });
+        renderNew();
+        await closeKept(label);
+        expect(document.activeElement).toBe(titleContent());
+      },
+    );
+
+    it("破棄した退避に title があっても、画面の title は空なので title の欄に移る", async () => {
+      seedOrphan({ title: "残った題", body: "残った本文", baseVersion: 0, savedAt: 0 });
+      renderNew();
+      await closeKept("残った内容を破棄する");
+      expect(document.activeElement).toBe(titleContent());
+    });
+
+    it("戻した内容で title が埋まったときは、本文に移る", async () => {
+      seedOrphan({ title: "残った題", body: "残った本文", baseVersion: 0, savedAt: 0 });
+      renderNew();
+      await closeKept("残った内容に戻す");
+      expect(document.activeElement).toBe(bodyContent());
+    });
+
+    it.each(["残った内容に戻す", "残った内容を破棄する"])(
+      "タッチ端末では、title が空でも %s を押した後は title の欄でなくページの枠に移る",
+      async (label) => {
+        const coarse = mockCoarse();
+        try {
+          seedOrphan({ title: "", body: "残った本文", baseVersion: 0, savedAt: 0 });
+          renderNew();
+          await closeKept(label);
+          expect(document.activeElement).toBe(container?.querySelector("article"));
+        } finally {
+          coarse.mockRestore();
+        }
+      },
+    );
+  });
+
   it("削除されたページの退避は、見出しだけで削除されたページの内容と分かる", async () => {
     seedOrphan({
       title: "消えた題",

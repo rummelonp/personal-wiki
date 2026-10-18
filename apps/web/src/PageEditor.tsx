@@ -353,6 +353,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       frame.focus({ preventScroll: true });
     } else editor.current?.view()?.focus();
   }
+  // title を直す場面で、title の欄へ移す。タッチ端末は、本文と同じ理由でキーボードを開かない枠へ移す
+  function focusTitleOrBodyOrFrame(toTitle: boolean) {
+    if (toTitle && !window.matchMedia("(pointer: coarse)").matches) titleEditor.current?.focus();
+    else focusBodyOrFrame();
+  }
   // 解決の間にサーバーの版がまた進むと衝突の通知が残るので、そのときは動かさない
   async function resolveConflict(resolve: () => void | Promise<void>) {
     await resolve();
@@ -365,8 +370,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     settleKeptFocus.current = false;
     // 本文が差し替わった後に移す。利用者が先に別の場所へ focus を移していたら奪わない
     const active = document.activeElement;
-    if ((active === null || active === document.body) && session.getState().conflict === null)
-      focusBodyOrFrame();
+    const now = session.getState();
+    if ((active === null || active === document.body) && now.conflict === null)
+      // 作る前のページで title が空のままなら、次に書くのは title なので、開いた直後と同じく title の欄へ移す。
+      // 戻した内容で title が埋まったときは本文へ移す
+      focusTitleOrBodyOrFrame(now.uncreated && (now.titleInput ?? now.draft.title) === "");
   });
   // 復元か破棄の次の通知（別のタブの退避の続き、衝突）が出るときは、その通知が focus を受ける
   function resolveKept(resolve: () => void) {
@@ -628,14 +636,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     }
     // 預けた先が、再送のボタンに戻らずに消えたとき（成功、衝突など）は、focus を body に落とさない。
     // title の重複で終わったときは、次に直すのが title なので、title の欄へ移す。
-    // タッチ端末は、本文と同じくキーボードを開かないよう、枠へ移す
     if (parked && anchor === null && lost && !restoreRetryFocus.current) {
       const titleTaken =
         (shownFailure?.kind === "create" || shownFailure?.kind === "save") &&
         shownFailure.titleTaken !== undefined;
-      if (titleTaken && !window.matchMedia("(pointer: coarse)").matches)
-        titleEditor.current?.focus();
-      else focusBodyOrFrame();
+      focusTitleOrBodyOrFrame(titleTaken);
     }
   });
   // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない

@@ -391,6 +391,39 @@ test.describe("補完の窓の右端 @widths", () => {
   }
 });
 
+for (const [label, kind] of [
+  ["残った内容に戻す", "restore"],
+  ["残った内容を破棄する", "discard"],
+] as const) {
+  test(`作る前のページで端末に残った内容を「${label}」と選ぶと、title が空のままなら title の欄に focus が移る`, async ({
+    page,
+    isMobile,
+  }) => {
+    const kept = "端末に残っていた本文";
+    await page.addInitScript(
+      ({ key, value }) => {
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+      },
+      {
+        key: `personal-wiki:draft:new:e2e-kept-${kind}`,
+        value: JSON.stringify({ title: "", body: kept, baseVersion: 0, savedAt: Date.now() }),
+      },
+    );
+    await page.goto("/?new");
+    const button = page.getByRole("button", { name: label });
+    await expect(button).toBeVisible();
+    // WebKit の Tab はボタンを飛ばすので、focus を直接移して Enter で押す
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await expect(button).toBeHidden();
+
+    // タッチ端末では、キーボードを開かないよう title の欄でなくページの枠に移る
+    if (isMobile) await expect(page.locator("article.note")).toBeFocused();
+    else await expect(titleEditor(page)).toBeFocused();
+    await expect(bodyEditor(page)).toHaveText(kind === "restore" ? kept : "");
+  });
+}
+
 test.describe("匿名", () => {
   test.use({ role: "anonymous" });
 
