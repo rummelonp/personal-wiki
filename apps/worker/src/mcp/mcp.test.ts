@@ -2161,6 +2161,7 @@ describe("リクエストをまたいだ状態", () => {
     const tokens = {
       alice: await insertApiToken({ name: "alice", scopes: "read write" }),
       bob: await insertApiToken({ name: "bob", scopes: "read" }),
+      carol: await insertApiToken({ name: "carol", scopes: "read write" }),
     };
     let nextId = 1;
     async function rpc(who: keyof typeof tokens, method: string, params?: unknown) {
@@ -2188,7 +2189,12 @@ describe("リクエストをまたいだ状態", () => {
       });
       return result as { isError?: boolean; content: { text: string }[] };
     };
-    return { rpc, create, metrics, tokens };
+    const call = async (who: keyof typeof tokens, name: string, args: Record<string, unknown>) => {
+      const { result } = await rpc(who, "tools/call", { name, arguments: args });
+      const content = (result as { content: { text: string }[] }).content;
+      return JSON.parse(content[0]?.text ?? "") as Record<string, unknown>;
+    };
+    return { rpc, create, call, metrics, tokens };
   }
 
   it("write と read の principal を交互に流しても、scope と actor が混ざらない", async () => {
@@ -2214,6 +2220,54 @@ describe("リクエストをまたいだ状態", () => {
     });
     expect(metrics).toHaveLength(3);
     expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
+  });
+
+  it("別の token が rewrite_links を呼んでも、書き換えた版の作者と計測の actor は改題した token になる", async () => {
+    const { call, metrics, tokens } = await sharedApp();
+    const target = await call("alice", "create_page", { title: "Old", body: "" });
+    const source = await call("carol", "create_page", { title: "S", body: "[[Old]]" });
+    await call("alice", "update_page", { id: target.id, version: 1, title: "New", body: "" });
+
+    const stepped = await call("carol", "rewrite_links", {});
+    expect(stepped).toMatchObject({ processed: { id: source.id, version: 2 }, remaining: 0 });
+
+    const { revisions } = (await call("carol", "list_revisions", { id: source.id })) as {
+      revisions: { version: number; author: unknown }[];
+    };
+    expect(revisions.map(({ version, author }) => ({ version, author }))).toEqual([
+      { version: 2, author: parseActor(tokens.alice.actor) },
+      { version: 1, author: parseActor(tokens.carol.actor) },
+    ]);
+    expect(metrics.filter((metric) => metric.op === "link_rewrite")).toEqual([
+      {
+        op: "link_rewrite",
+        actor: tokens.alice.actor,
+        pageId: source.id,
+        rowsWritten: expect.any(Number),
+      },
+    ]);
+  });
+
+  it("rewrite_links に targetPageId を渡すと、選んだリンク元のほかの改題の分も 1 つの版で書き換える", async () => {
+    const { call, metrics, tokens } = await sharedApp();
+    const a = await call("alice", "create_page", { title: "Alpha", body: "" });
+    const b = await call("alice", "create_page", { title: "Beta", body: "" });
+    const both = await call("carol", "create_page", { title: "Both", body: "[[Alpha]] [[Beta]]" });
+    const onlyA = await call("carol", "create_page", { title: "OnlyA", body: "[[Alpha]]" });
+    await call("alice", "update_page", { id: a.id, version: 1, title: "Alpha 2", body: "" });
+    await call("alice", "update_page", { id: b.id, version: 1, title: "Beta 2", body: "" });
+
+    const stepped = await call("carol", "rewrite_links", { targetPageId: b.id });
+    // remaining は targetPageId の分だけを数えるので、Alpha の改題だけで待つ OnlyA は含まない
+    expect(stepped).toMatchObject({
+      processed: { id: both.id, version: 2, rewritten: 2 },
+      remaining: 0,
+    });
+    expect((await call("carol", "read_page", { id: both.id })).body).toBe("[[Alpha 2]] [[Beta 2]]");
+    expect((await call("carol", "read_page", { id: onlyA.id })).body).toBe("[[Alpha]]");
+    const written = metrics.filter((metric) => metric.op === "link_rewrite");
+    expect(written).toMatchObject([{ actor: tokens.alice.actor, pageId: both.id }]);
+    expect((await call("carol", "rewrite_links", {})).processed).toMatchObject({ id: onlyA.id });
   });
 
   it("tools/call のあとの tools/list は 11 個の tool を返し、知らない tool は JSON-RPC のエラー", async () => {
