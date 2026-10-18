@@ -692,6 +692,18 @@ function appendEditButton(
     const lastLine = [...name.getClientRects()].at(-1);
     const natural = button.getBoundingClientRect();
     let shift = lastLine ? lastLine.left - natural.left : 0;
+    // 最後の行が「下書き」の印だけのとき、行の断片の左端は印の margin を含む。印の枠の左端へ寄せる
+    const badge = name.querySelector(".cm-wikilink-draft-badge");
+    if (lastLine && badge) {
+      const badgeRect = badge.getBoundingClientRect();
+      const margin = Number.parseFloat(getComputedStyle(badge).marginInlineStart);
+      if (
+        badgeRect.top >= lastLine.top - 1 &&
+        Math.abs(badgeRect.left - lastLine.left - margin) < 0.5
+      ) {
+        shift += badgeRect.left - lastLine.left;
+      }
+    }
     shift -= Math.max(0, natural.right + shift - view.contentDOM.getBoundingClientRect().right);
     if (shift !== 0) button.style.left = `${shift}px`;
   });

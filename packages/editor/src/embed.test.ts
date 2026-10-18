@@ -1594,11 +1594,52 @@ describe("edit button", () => {
       const width = button.getBoundingClientRect().width;
       embed.dispatchEvent(new PointerEvent("pointerenter"));
       const rect = button.getBoundingClientRect();
-      expect(rect.left).toBeCloseTo(lastLine.left, 0);
+      // 印だけの最後の行の断片は印の margin を含むので、そのときは印の枠の左端が基準になる
+      const badge = embed.querySelector(".cm-wikilink-draft-badge");
+      const badgeLeft = badge?.getBoundingClientRect().left ?? Number.NaN;
+      const badgeAlone =
+        badge &&
+        Math.abs(
+          badgeLeft - lastLine.left - Number.parseFloat(getComputedStyle(badge).marginInlineStart),
+        ) < 0.5;
+      expect(rect.left).toBeCloseTo(badgeAlone ? badgeLeft : lastLine.left, 0);
       expect(rect.top).toBeCloseTo(lastLine.bottom, 0);
       expect(rect.width).toBeCloseTo(width, 0);
     },
   );
+
+  // 最後の行が「下書き」の印だけのとき、行の断片の左端は印の margin を含む。印の枠の左端へ寄せないと、
+  // ボタンが印より左へ出る。印だけが最後の行に回る幅は文字の大きさに依るので、幅を振って探す。
+  it("puts the button under the badge when the badge alone wraps onto the last line", () => {
+    const name = "あ".repeat(30);
+    const doc = `前の文です。 ![[${name}]]\n\n最後`;
+    const v = mount(doc, {
+      resolvePageEmbed: () => ({ kind: "loading" }),
+      isDraftWikiLink: () => true,
+    });
+    placeCursor(v, doc.length);
+    const embed = embedOf(v, name);
+    const button = editButtonOf(v, name);
+    const badge = embed?.querySelector<HTMLElement>(".cm-wikilink-draft-badge");
+    if (!embed || !button || !badge || !host) throw new Error("embed is not drawn");
+    let checked = 0;
+    for (let width = 200; width <= 340; width += 1) {
+      host.style.width = `${width}px`;
+      const lastLine = [...(embed.firstElementChild?.getClientRects() ?? [])].at(-1);
+      const badgeRect = badge.getBoundingClientRect();
+      if (!lastLine || badgeRect.top < lastLine.top - 1) continue;
+      // 印の左に文字が無い（最後の行の断片が印の margin から始まる）幅だけ見る
+      const margin = Number.parseFloat(getComputedStyle(badge).marginInlineStart);
+      if (Math.abs(badgeRect.left - lastLine.left - margin) > 0.5) continue;
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      const rect = button.getBoundingClientRect();
+      expect(rect.left, `${width}px`).toBeCloseTo(badgeRect.left, 0);
+      expect(rect.top, `${width}px`).toBeCloseTo(lastLine.bottom, 0);
+      checked += 1;
+    }
+    // 印だけが最後の行に回る幅が無ければ、この test は何も見張らない
+    expect(checked).toBeGreaterThan(0);
+  });
 
   it.each([
     ["image", "![[a.png]]", {}],
