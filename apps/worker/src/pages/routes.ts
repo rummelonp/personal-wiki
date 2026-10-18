@@ -1,5 +1,7 @@
 import {
   ANONYMOUS_SEARCH_MIN_CHARS,
+  DEFAULT_LIST_SORT,
+  isListSort,
   MAX_BODY_BYTES,
   prepareSearchQuery,
   searchQueryLength,
@@ -35,7 +37,6 @@ import {
 import { actorOf } from "./revisions";
 import {
   type Cursor,
-  isListSort,
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
   listBacklinks,
@@ -345,7 +346,7 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
       })
       // `/api/pages/:id` より前に登録する。後ろだと :id のハンドラが "recent" を id として先に 404 にする
       .get("/api/pages/recent", allowAnonymousRead(), async (c) => {
-        const sort = c.req.query("sort") ?? "updated";
+        const sort = c.req.query("sort") ?? DEFAULT_LIST_SORT;
         if (!isListSort(sort)) return errorResponse(c, 400, "invalid_field", { field: "sort" });
         const limit = readLimit(c, LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
         if (!limit.ok) return limit.response;

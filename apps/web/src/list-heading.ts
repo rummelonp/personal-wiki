@@ -1,4 +1,4 @@
-import { DEFAULT_LIST_SORT, type ListSort } from "./list-sort";
+import { DEFAULT_LIST_SORT, type ListSort } from "@personal-wiki/domain/list-sort";
 import type { VisibilityFilter } from "./route";
 
 /** 公開範囲の絞り込みを、見出しと空の状態で呼ぶ名前。 */

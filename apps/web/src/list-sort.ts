@@ -1,22 +1,14 @@
+import { DEFAULT_LIST_SORT, isListSort, type ListSort } from "@personal-wiki/domain/list-sort";
 import { useCallback, useState } from "react";
 
-/** 一覧の並び。Worker の `LIST_SORTS` と同じ値。 */
-export type ListSort = "updated" | "created" | "title";
-
-export const DEFAULT_LIST_SORT: ListSort = "updated";
-
+/** Record にして、並びの値が増えたときに表示名の抜けを型エラーにする。 */
 export const LIST_SORT_LABELS: Record<ListSort, string> = {
   updated: "更新日時",
   created: "作成日時",
   title: "タイトル",
 };
 
-export const LIST_SORTS = Object.keys(LIST_SORT_LABELS) as ListSort[];
-
 const STORAGE_KEY = "personal-wiki:list-sort";
-
-const isListSort = (value: unknown): value is ListSort =>
-  typeof value === "string" && Object.hasOwn(LIST_SORT_LABELS, value);
 
 /**
  * 端末に残した並び。URL には載せず、この値だけで並びを決める（URL と食い違う状態を作らない）。

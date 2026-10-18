@@ -1,8 +1,9 @@
+import type { ListSort } from "@personal-wiki/domain/list-sort";
 import { useEffect, useState } from "react";
 import { expectTaggedRows } from "./entry-shape";
 import { ListSortButtonFace } from "./ListSortMenu";
 import { listHeading, listTitleClass } from "./list-heading";
-import { type ListSort, readStoredListSort } from "./list-sort";
+import { readStoredListSort } from "./list-sort";
 import { loadingTitleFor, recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";

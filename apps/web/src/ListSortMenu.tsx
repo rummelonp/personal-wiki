@@ -1,3 +1,4 @@
+import { LIST_SORTS, type ListSort } from "@personal-wiki/domain/list-sort";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -6,7 +7,7 @@ import {
   useState,
 } from "react";
 import { ChevronDownIcon } from "./icons";
-import { LIST_SORT_LABELS, LIST_SORTS, type ListSort } from "./list-sort";
+import { LIST_SORT_LABELS } from "./list-sort";
 
 /**
  * 一覧の見出しの右の、並び順のメニュー。ボタンに今の並びの名前を出し、押すと並びを選ぶメニューを開く。

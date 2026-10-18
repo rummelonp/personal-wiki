@@ -1,3 +1,4 @@
+import type { ListSort } from "@personal-wiki/domain/list-sort";
 import { useEffect } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList, type EntryTime } from "./EntryRow";
@@ -6,7 +7,7 @@ import { Link } from "./Link";
 import { ListSortMenu } from "./ListSortMenu";
 import { LoadingMoreRows, LoadingStatus, SkeletonEntries, useSkeletonPainted } from "./Loading";
 import { listHeading, listTitleClass, VISIBILITY_FILTER_NOUNS } from "./list-heading";
-import { type ListSort, useListSort } from "./list-sort";
+import { useListSort } from "./list-sort";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { RailLayout } from "./Rail";

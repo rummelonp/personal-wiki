@@ -1,3 +1,4 @@
+import { DEFAULT_LIST_SORT, type ListSort } from "@personal-wiki/domain/list-sort";
 import {
   findControlChar,
   findNul,
@@ -9,7 +10,6 @@ import {
 import { SEARCH_MAX_QUERY_CHARS } from "@personal-wiki/domain/search";
 import { singleLineTitle } from "@personal-wiki/domain/title";
 import { formatCount, inputProblemMessage } from "./input-messages";
-import { DEFAULT_LIST_SORT, type ListSort } from "./list-sort";
 
 export type Visibility = "public" | "draft";
 

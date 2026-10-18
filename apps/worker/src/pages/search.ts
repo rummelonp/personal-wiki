@@ -1,5 +1,6 @@
 import {
   foldKeepingUnderscore,
+  type ListSort,
   MAX_TITLE_BYTES,
   normalizeTitleKey,
   SEARCH_MAX_QUERY_CHARS,
@@ -129,13 +130,6 @@ export function parseCursor(value: string): Cursor | null {
   if (match === null) return null;
   return { updatedAt: Number(match[1]), id: match[2] as string };
 }
-
-/** listRecentPages の並び。updated は更新日時の降順、created は作成日時の降順、title は title_key の昇順。 */
-export const LIST_SORTS = ["updated", "created", "title"] as const;
-export type ListSort = (typeof LIST_SORTS)[number];
-
-export const isListSort = (value: string): value is ListSort =>
-  (LIST_SORTS as readonly string[]).includes(value);
 
 /**
  * listRecentPages の並びと、その並びでの続きの位置。cursor の形は並びごとに違い、ほかの並びの cursor は

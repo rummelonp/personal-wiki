@@ -1,6 +1,6 @@
+import { DEFAULT_LIST_SORT, type ListSort } from "@personal-wiki/domain/list-sort";
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_LIST_SORT, type ListSort } from "./list-sort";
 import { failureMessage, type ListedPage, LOAD_FAILED, listRecent, searchPages } from "./pages-api";
 import type { VisibilityFilter } from "./route";
 import { restoreCount } from "./scroll-restore";
