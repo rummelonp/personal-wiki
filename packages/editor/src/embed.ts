@@ -686,10 +686,8 @@ function appendEditButton(
   //   最後の行の左端へ寄せる。
   // - 行の右端に近い名前では editor の外へ切れるので、収まる分だけ左へ寄せる。
   // 画像と動画のボタンは右端に付くので、left を入れると横に伸びる
-  const textName = () =>
-    TEXT_ONLY_NAMES.map((selector) => root.querySelector(`:scope > ${selector}`)).find(
-      (element) => element !== null,
-    );
+  const textNameSelector = TEXT_ONLY_NAMES.map((selector) => `:scope > ${selector}`).join(", ");
+  const textName = () => root.querySelector(textNameSelector);
   // 読むだけで、style には触れない。いまの left を差し引いて `left: 0` のときの位置に戻すので、
   // 位置を合わせ終えたあとにも測り直せる
   const measureShift = (): number => {
@@ -739,6 +737,8 @@ function appendEditButton(
   root.addEventListener("pointerenter", () => {
     stopHover?.();
     if (!textName()) return;
+    // hover できない端末ではボタンを出さない（embedTheme）。測っても位置は要らず、測り直しの登録も無駄になる
+    if (getComputedStyle(button).display === "none") return;
     applyShift(measureShift());
     const hovered = hoveredEmbeds.get(view) ?? new Set<() => void>();
     hoveredEmbeds.set(view, hovered);

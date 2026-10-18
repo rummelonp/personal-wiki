@@ -186,10 +186,15 @@ test("折り返した名前の embed では、「記法を編集」が名前の�
     uniqueTitle(testInfo, "折り返した名前"),
     `前の文です。![[${name}]] 後\n\n最後`,
   );
-  test.skip(!(await canHover(page)), "hover できない端末では出さない");
   const editor = bodyEditor(page);
   await editor.locator(".cm-line", { hasText: "最後" }).click();
   const embed = editor.locator(".cm-embed-unresolved").locator("xpath=..");
+  const button = embed.locator(".cm-embed-edit");
+  if (!(await canHover(page))) {
+    await embed.hover();
+    await expect(button).toBeHidden();
+    return;
+  }
   const lastLine = await embed.evaluate((el) => {
     const r = [...(el.firstElementChild?.getClientRects() ?? [])];
     const last = r.at(-1);
@@ -197,7 +202,6 @@ test("折り返した名前の embed では、「記法を編集」が名前の�
   });
   expect(lastLine.lines).toBeGreaterThan(1);
   await page.mouse.move(lastLine.x + 10, lastLine.y + 4);
-  const button = embed.locator(".cm-embed-edit");
   await expect(button).toBeVisible();
   const box = await button.boundingBox();
   if (!box) throw new Error("the button is not laid out");
@@ -216,12 +220,17 @@ test("折り返した名前の embed に hover したまま前に文字を打っ
     uniqueTitle(testInfo, "hover 中の打鍵"),
     `前の文です。![[${name}]] 後\n\n最後`,
   );
-  test.skip(!(await canHover(page)), "hover できない端末では出さない");
   const editor = bodyEditor(page);
   // caret を embed から離して先頭に置く（隣り合うと記法が source で出る）
   await editor.locator(".cm-line", { hasText: "最後" }).click();
   await page.keyboard.press("ControlOrMeta+Home");
   const embed = editor.locator(".cm-embed-unresolved").locator("xpath=..");
+  const button = embed.locator(".cm-embed-edit");
+  if (!(await canHover(page))) {
+    await embed.hover();
+    await expect(button).toBeHidden();
+    return;
+  }
   const lastLineOf = () =>
     embed.evaluate((el) => {
       const last = [...(el.firstElementChild?.getClientRects() ?? [])].at(-1);
@@ -229,7 +238,6 @@ test("折り返した名前の embed に hover したまま前に文字を打っ
     });
   const first = await lastLineOf();
   await page.mouse.move(first.x + 10, first.y + 4);
-  const button = embed.locator(".cm-embed-edit");
   await expect(button).toBeVisible();
   // 打つたびに最初の行の左端が右へ動き、最後の行の左端との差が変わる
   for (let i = 0; i < 6; i += 1) {

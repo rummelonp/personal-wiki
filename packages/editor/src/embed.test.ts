@@ -1562,22 +1562,22 @@ describe("edit button", () => {
   // 折り返した名前でも、ボタンは最後の行の左端の真下に出る（行の途中から始まる名前では、
   // 位置合わせが無いと最初の行の左端に付き、最後の行の下から離れる）。
   it.each([
-    ["a single line", "前 ", "短い", "unresolved", false, 1],
-    ["a name wrapped from the start of the line", "", "あ".repeat(40), "unresolved", false, 3],
-    ["a name wrapped after text", "前の文です。", "あ".repeat(30), "unresolved", false, 2],
+    ["a single line", "前 ", "短い", "unresolved", false, false],
+    ["a name wrapped from the start of the line", "", "あ".repeat(40), "unresolved", false, true],
+    ["a name wrapped after text", "前の文です。", "あ".repeat(30), "unresolved", false, true],
     [
       "a name with spaces",
       "前の文です。 ",
       "Getting Started With Cloudflare Workers",
       "unresolved",
       false,
-      2,
+      true,
     ],
-    ["a draft name with a badge", "前の文です。 ", "あ".repeat(30), "loading", true, 3],
-    ["a draft name with a badge on one line", "前 ", "短い", "loading", true, 1],
+    ["a draft name with a badge", "前の文です。 ", "あ".repeat(30), "loading", true, true],
+    ["a draft name with a badge on one line", "前 ", "短い", "loading", true, false],
   ] as const)(
     "puts the button of %s under the left edge of its last line",
-    (_label, prefix, name, kind, draft, lines) => {
+    (_label, prefix, name, kind, draft, wraps) => {
       const doc = `${prefix}![[${name}]]\n\n最後`;
       const v = mount(doc, {
         resolvePageEmbed: () => ({ kind }),
@@ -1590,7 +1590,10 @@ describe("edit button", () => {
       if (!embed || !button) throw new Error("embed is not drawn");
       const lastLine = [...(embed.firstElementChild?.getClientRects() ?? [])].at(-1);
       if (!lastLine) throw new Error("name is not drawn");
-      expect(embed.firstElementChild?.getClientRects().length).toBe(lines);
+      // 折り返す行数は文字の寸法に依るので、折り返すかどうかだけを見る
+      const lines = embed.firstElementChild?.getClientRects().length ?? 0;
+      if (wraps) expect(lines).toBeGreaterThan(1);
+      else expect(lines).toBe(1);
       const width = button.getBoundingClientRect().width;
       embed.dispatchEvent(new PointerEvent("pointerenter"));
       const rect = button.getBoundingClientRect();
@@ -1756,12 +1759,8 @@ describe("edit button", () => {
     expect(button.style.left).toBe("");
   });
 
-  it("hides the button of a text-only embed on a device that cannot hover, and leaves an image's", async () => {
-    const v = mount("![[a]]\n\n![[image.png|120x80]]\n\n最後", {
-      resolvePageEmbed: () => ({ kind: "unresolved" }),
-    });
-    await loadedImg(v, "image.png");
-    // 実機の media の判定は差し替えられないので、media 抜きで同じ規則を当てる
+  // 実機の media の判定は差し替えられないので、media 抜きで同じ規則を当てる
+  const applyHoverNoneRules = (): (() => void) => {
     const rules: string[] = [];
     for (const sheet of [...document.styleSheets, ...document.adoptedStyleSheets]) {
       for (const rule of sheet.cssRules) {
@@ -1774,11 +1773,44 @@ describe("edit button", () => {
     const style = document.createElement("style");
     style.textContent = rules.join("\n");
     document.head.append(style);
+    return () => style.remove();
+  };
+
+  it("hides the button of a text-only embed on a device that cannot hover, and leaves an image's", async () => {
+    const v = mount("![[a]]\n\n![[image.png|120x80]]\n\n最後", {
+      resolvePageEmbed: () => ({ kind: "unresolved" }),
+    });
+    await loadedImg(v, "image.png");
+    const restore = applyHoverNoneRules();
     try {
       expect(getComputedStyle(editButtonOf(v, "a") as Element).display).toBe("none");
       expect(getComputedStyle(editButtonOf(v, "image.png") as Element).display).not.toBe("none");
     } finally {
-      style.remove();
+      restore();
+    }
+  });
+
+  it("does not position or keep measuring a button that is hidden on a device that cannot hover", async () => {
+    const name = "あ".repeat(12);
+    const doc = `前の文です。![[${name}]]\n\n最後`;
+    const unresolved = { kind: "unresolved" } as const;
+    const v = mount(doc, { resolvePageEmbed: () => unresolved });
+    if (host) host.style.width = "300px";
+    placeCursor(v, v.state.doc.length);
+    const embed = embedOf(v, name);
+    const button = editButtonOf(v, name);
+    if (!embed || !button) throw new Error("embed is not drawn");
+    const restore = applyHoverNoneRules();
+    try {
+      expect(getComputedStyle(button).display).toBe("none");
+      embed.dispatchEvent(new PointerEvent("pointerenter"));
+      // 表示しないボタンは大きさが 0 なので、測ると left に意味のない値が入る
+      expect(button.style.left).toBe("");
+      v.dispatch({ changes: { from: 0, insert: "あ".repeat(6) } });
+      await new Promise<void>((resolve) => v.requestMeasure({ read: () => null, write: resolve }));
+      expect(button.style.left).toBe("");
+    } finally {
+      restore();
     }
   });
 
