@@ -172,20 +172,7 @@ test("短いページに通知のドックが出ても、横スクロールは�
     title: uniqueTitle(testInfo, "短いページ"),
     body: "短い本文",
   });
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(`/p/${created.id}`);
-  await expect(bodyEditor(page)).toHaveText("短い本文");
-  await page.route(`**/api/pages/${created.id}`, (route) =>
-    route.request().method() === "PUT"
-      ? route.fulfill({
-          status: 500,
-          contentType: "application/json",
-          body: JSON.stringify({ error: "internal" }),
-        })
-      : route.fallback(),
-  );
-  await typeAtBodyEnd(page, "、打った");
-  await expect(page.locator(".notice-dock").getByRole("alert")).toBeVisible();
+  await showSaveFailureDock(page, created.id, { width: 1280, height: 800 });
   await expectNoHorizontalScroll(page);
   // ドックの高さの分だけ文書の末尾に余白が付くので縦には少しスクロールできるが、それ以上は伸びない。
   // ドックの高さの余白は .app の最低の高さに含まれるので、欄の線（rail）はドックの上端まで引かれる
@@ -248,6 +235,39 @@ async function dockCutsRail(page: Page): Promise<string | null> {
   });
 }
 
+/**
+ * 通知の左端がロゴの左端にそろい、幅が本文の幅と、右の余白を除いた残りの小さい方になっているか。
+ * ドックを画面の右端まで伸ばす幅でも、通知の幅と左右の位置は変わらない。
+ * 期待する幅は、通知の中に置いた probe で CSS の token を px にして求める（em は通知の文字の大きさで測る）。
+ */
+async function noticeProblem(page: Page): Promise<string | null> {
+  const brand = await brandLeft(page);
+  return page.evaluate(async (brandLeftX) => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const notice = document.querySelector(".notice-dock > .notice") as HTMLElement;
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:absolute;visibility:hidden;height:0;box-sizing:content-box;width:var(--prose-width);padding-left:var(--gutter)";
+    notice.append(probe);
+    const gutter = Number.parseFloat(getComputedStyle(probe).paddingLeft);
+    const prose = probe.getBoundingClientRect().width - gutter;
+    probe.remove();
+    const box = notice.getBoundingClientRect();
+    const available = document.documentElement.clientWidth - box.left - gutter;
+    const expected = Math.min(prose, available);
+    const problems: string[] = [];
+    if (Math.abs(box.left - brandLeftX) > 0.75) {
+      problems.push(
+        `通知の左端 ${box.left.toFixed(1)} がロゴの左端 ${brandLeftX.toFixed(1)} とずれている`,
+      );
+    }
+    if (Math.abs(box.width - expected) > 0.75) {
+      problems.push(`通知の幅 ${box.width.toFixed(1)} が期待する幅 ${expected.toFixed(1)} と違う`);
+    }
+    return problems.length === 0 ? null : problems.join("、");
+  }, brand);
+}
+
 test("横向きの iPhone で通知のドックが出ても、右の欄の文字がドックの右端で切れない", async ({
   page,
   api,
@@ -280,7 +300,7 @@ test("横向きの iPhone で通知のドックが出ても、右の欄の文字
   expect(straddling, "ドックの右の縁をまたぐ欄の文字がある").toEqual([]);
 });
 
-test("通知のドックの右端は、右の欄の文字を切る位置で止まらない @widths", async ({
+test("通知のドックの右端は、右の欄の文字を切る位置で止まらず、通知の幅と左端は動かない @widths", async ({
   page,
   api,
 }, testInfo) => {
@@ -294,8 +314,9 @@ test("通知のドックの右端は、右の欄の文字を切る位置で止�
   const cut: string[] = [];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 600 });
-    const problem = await dockCutsRail(page);
-    if (problem !== null) cut.push(`幅 ${width}: ${problem}`);
+    for (const problem of [await dockCutsRail(page), await noticeProblem(page)]) {
+      if (problem !== null) cut.push(`幅 ${width}: ${problem}`);
+    }
   }
   expect(cut).toEqual([]);
 });
