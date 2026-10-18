@@ -116,6 +116,39 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
   await expect(viewer(page).locator(".cm-content")).toHaveText("OAuth の接続の本文");
 });
 
+test("名前の長い接続の版があっても、行は 1 行のままで作成者の左端がそろい、名前は title に残す", async ({
+  page,
+  api,
+}, testInfo) => {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const clientName = `Claude Code (personal-wiki) ${suffix} with a long name`;
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "長い名前"),
+    body: "owner の本文",
+    visibility: "public",
+  });
+  await updatePageWithOAuth(await connectOAuthClient(clientName), created, "接続の本文");
+
+  await page.goto(`/p/${created.id}`);
+  await expect(bodyEditor(page)).toContainText("接続の本文");
+  await expect(entries(page)).toHaveCount(2);
+
+  const boxes = await entries(page).evaluateAll((rows) =>
+    rows.map((row) => ({
+      height: Math.round(row.getBoundingClientRect().height),
+      authorLeft: Math.round(
+        row.querySelector(".revision-author")?.getBoundingClientRect().left ?? Number.NaN,
+      ),
+    })),
+  );
+  expect(new Set(boxes.map((b) => b.height)).size).toBe(1);
+  expect(new Set(boxes.map((b) => b.authorLeft)).size).toBe(1);
+  await expect(entries(page).nth(0).locator(".revision-author")).toHaveAttribute(
+    "title",
+    clientName,
+  );
+});
+
 test("保存すると履歴を取り直し、10 分のうちの保存は先頭の版にまとまる", async ({
   page,
   api,

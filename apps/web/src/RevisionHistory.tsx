@@ -211,6 +211,7 @@ export function RevisionHistory({
         <ol className="revision-list" ref={listRef}>
           {list.revisions.map((summary, index) => {
             const stamp = stampOf(summary, index, list.basis);
+            const author = authorLabel(summary.author);
             return (
               <li key={summary.version}>
                 <button
@@ -228,7 +229,9 @@ export function RevisionHistory({
                   >
                     {formatRelativeTime(stamp.at, now)}
                   </time>
-                  <span className="revision-author">{authorLabel(summary.author)}</span>
+                  <span className="revision-author" title={author}>
+                    {author}
+                  </span>
                 </button>
               </li>
             );
