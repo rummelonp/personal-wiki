@@ -77,7 +77,7 @@ test("保存が 500 になると失敗の案内が出て、もう一度保存で
   const typed = "、サーバーが落ちても残る";
   await typeAtBodyEnd(page, typed);
   const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
-  await expect(alert).toContainText("問題が起きました");
+  await expect(alert).toContainText("wiki の側で問題が起きました");
   await expect(alert).toContainText("時間をおいて、もう一度試してください。");
   await expect(alert).toContainText("入力した内容は、この端末に残してあります。");
   await expect(saveState(page)).toHaveText("保存に失敗");

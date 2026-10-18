@@ -162,7 +162,7 @@ describe("失敗の分類", () => {
     const server = failing(500, { error: "internal" });
     expect(await getPage(ID, server.fetchFn)).toMatchObject({
       ok: false,
-      message: "問題が起きました（HTTP 500）。時間をおいて、もう一度試してください。",
+      message: "wiki の側で問題が起きました（HTTP 500）。時間をおいて、もう一度試してください。",
     });
     const offline = async () => {
       throw new TypeError("Failed to fetch");
@@ -294,7 +294,7 @@ describe("失敗の分類", () => {
     const { fetchFn } = failing(503, {});
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
-      message: "問題が起きました（HTTP 503）。時間をおいて、もう一度試してください。",
+      message: "wiki の側で問題が起きました（HTTP 503）。時間をおいて、もう一度試してください。",
     });
   });
 
