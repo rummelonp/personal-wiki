@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { fetchMe, logout } from "./api";
+import { expectTaggedRows, forgetEntryShape } from "./entry-shape";
 import { linkRewrites } from "./link-rewrites";
 import { stepLinkRewrites } from "./link-rewrites-api";
 import { recallTitle, rememberTitle } from "./page-titles";
@@ -100,6 +101,7 @@ afterEach(() => {
   restoreUserAgent?.();
   restoreUserAgent = null;
   linkRewrites.stop();
+  forgetEntryShape();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -500,6 +502,51 @@ describe("App の owner の画面", () => {
     expect(vi.mocked(listRecent).mock.calls.length).toBeGreaterThan(recentCalls);
     expect(vi.mocked(listTags).mock.calls.length).toBeGreaterThan(tagCalls);
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("ログアウトすると、owner の一覧で覚えた行の形を忘れる", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
+    );
+    expect(expectTaggedRows()).toBe(true);
+    // 匿名の一覧が届くと形を覚え直すので、届く前に確かめる
+    vi.mocked(listRecent).mockReturnValue(new Promise(() => {}));
+
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    expect(expectTaggedRows()).toBe(false);
+  });
+
+  it("ログアウトに失敗しても匿名になっていたら、覚えた行の形を忘れる", async () => {
+    serve("owner", [PUBLIC]);
+    await renderAt("/");
+    await vi.waitFor(() =>
+      expect(main()?.querySelector(`a[href='${titleUrl(PUBLIC.title)}']`)).not.toBeNull(),
+    );
+    expect(expectTaggedRows()).toBe(true);
+    vi.mocked(listRecent).mockReturnValue(new Promise(() => {}));
+    // サーバーでは済んでいたが、レスポンスは失敗だった
+    const signOut = vi.mocked(logout).getMockImplementation();
+    vi.mocked(logout).mockImplementationOnce(async () => {
+      await signOut?.();
+      throw new Error("POST /_auth/logout が 500 を返した");
+    });
+
+    const logoutButton = [...(header()?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent === "ログアウト",
+    );
+    act(() => logoutButton?.click());
+    await vi.waitFor(() =>
+      expect(header()?.querySelector("a[href^='/_auth/login']")).not.toBeNull(),
+    );
+    expect(expectTaggedRows()).toBe(false);
   });
 
   it("ログアウトに失敗してログイン状態が続くなら、止めた書き換えを再開し、画面はそのままにする", async () => {

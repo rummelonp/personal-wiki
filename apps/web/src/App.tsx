@@ -2,6 +2,7 @@ import { Suspense, useEffect, useState } from "react";
 import { fetchMe, logout, NO_FEATURES } from "./api";
 import { setDocumentTitle } from "./document-title";
 import { saveAllEditors } from "./editor-lifecycle";
+import { forgetEntryShape } from "./entry-shape";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";
 import { LinkRewriteStatus } from "./LinkRewriteStatus";
@@ -63,6 +64,7 @@ export function App() {
             // 残っていれば捨て、匿名の画面に移る
             linkRewrites.stop();
             forgetTitles();
+            forgetEntryShape();
           }
           setSession({ status: "ready", me });
         })
@@ -95,6 +97,7 @@ export function App() {
         if (me.kind === "anonymous") {
           linkRewrites.stop();
           forgetTitles();
+          forgetEntryShape();
         }
         setSession({ status: "ready", me });
         if (me.kind === "owner" && me.features.linkRewrites) linkRewrites.resume();
@@ -102,6 +105,7 @@ export function App() {
       }
       linkRewrites.stop();
       forgetTitles();
+      forgetEntryShape();
       // features は環境の性質で、ログアウトでは変わらない
       setSession((current) => ({
         status: "ready",
