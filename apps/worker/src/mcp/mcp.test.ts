@@ -21,6 +21,7 @@ const TOOL_NAMES = [
   "list_revisions",
   "create_page",
   "update_page",
+  "rewrite_links",
   "append_to_page",
 ];
 
@@ -122,6 +123,7 @@ describe("/mcp の認可", () => {
     });
     for (const [name, args] of [
       ["update_page", { id: created.json.id, version: 1, title: "x", body: "" }],
+      ["rewrite_links", {}],
       ["append_to_page", { id: created.json.id, text: "x" }],
     ] as const) {
       expect(await reader.call(name, args)).toMatchObject({
@@ -133,8 +135,8 @@ describe("/mcp の認可", () => {
     expect(reader.metrics).toEqual([]);
   });
 
-  // 同意画面の読み書きの説明（auth/oauth-routes.ts）はこの 3 つでできることだけを書いているので、範囲が変わったら説明も直す
-  it("write の scope を要る tool は create_page、update_page、append_to_page だけ", async () => {
+  // 同意画面の読み書きの説明（auth/oauth-routes.ts）はこの 4 つでできることだけを書いているので、範囲が変わったら説明も直す
+  it("write の scope を要る tool は create_page、update_page、rewrite_links、append_to_page だけ", async () => {
     const reader = await mcpClient({ name: "reader", scopes: "read" });
     const { result } = await reader.rpc("tools/list");
     const tools = (result?.tools ?? []) as { name: string }[];
@@ -147,7 +149,12 @@ describe("/mcp の認可", () => {
       const outcome = await reader.call(name, {});
       if (outcome.isError && outcome.json.error === "forbidden") writeOnly.push(name);
     }
-    expect(writeOnly.toSorted()).toEqual(["append_to_page", "create_page", "update_page"]);
+    expect(writeOnly.toSorted()).toEqual([
+      "append_to_page",
+      "create_page",
+      "rewrite_links",
+      "update_page",
+    ]);
     expect(await snapshotDb()).toEqual(before);
   });
 
@@ -300,7 +307,17 @@ describe("tools/list", () => {
     }
     expect(byName.update_page?.description).toContain("read_page で取った version が必須");
     expect(byName.update_page?.description).toContain("上書きで押し切らない");
-    expect(byName.update_page?.description).toContain("`[[旧 title]]` はすぐには書き換わらない");
+    expect(byName.update_page?.description).toContain(
+      "`[[旧 title]]` はこの呼び出しでは書き換わらず",
+    );
+    expect(byName.update_page?.description).toContain("rewrite_links");
+    expect(byName.rewrite_links?.inputSchema.required ?? []).toEqual([]);
+    expect(Object.keys(byName.rewrite_links?.inputSchema.properties ?? {})).toEqual([
+      "targetPageId",
+    ]);
+    for (const rule of ["remaining が 0 になるまで", "conflict が true なら", "failed は"]) {
+      expect(byName.rewrite_links?.description).toContain(rule);
+    }
     expect(byName.append_to_page?.description).toContain("そのまま送り直してよい");
     for (const name of ["create_page", "update_page", "append_to_page"]) {
       expect(byName[name]?.description).toContain("秘密を書かない");
@@ -553,7 +570,7 @@ describe("ページの tool", () => {
   });
 
   it("update_page で title を変えると、リンクの書き換えをキューに入れた件数を返す", async () => {
-    const { call, request } = await mcpClient();
+    const { call } = await mcpClient();
     const { json: target } = await call("create_page", { title: "Old", body: "" });
     const { json: source } = await call("create_page", { title: "S", body: "[[Old]]" });
     const renamed = await call("update_page", {
@@ -574,8 +591,8 @@ describe("ページの tool", () => {
     });
     expect(unchanged.json).not.toHaveProperty("linkRewrites");
 
-    const res = await request("/api/link-rewrites/step", { method: "POST", json: {} });
-    expect(await res.json()).toMatchObject({ processed: { sourcePageId: source.id } });
+    const stepped = await call("rewrite_links", {});
+    expect(stepped).toMatchObject({ json: { processed: { id: source.id } } });
     expect((await call("read_page", { id: source.id })).json.body).toBe("[[New]]");
 
     const unsafe = await call("update_page", {
@@ -585,6 +602,105 @@ describe("ページの tool", () => {
       body: "本文",
     });
     expect(unsafe.json).toMatchObject({ linkRewrites: { queued: 0, skipped: "unsafe_title" } });
+  });
+
+  it("rewrite_links は remaining が 0 になるまで 1 ページずつ書き換え、新しい title の list_backlinks に出す", async () => {
+    const { call, metrics, actor } = await mcpClient();
+    const { json: a } = await call("create_page", { title: "Alpha", body: "" });
+    const { json: b } = await call("create_page", { title: "Beta", body: "" });
+    const { json: s1 } = await call("create_page", { title: "S1", body: "[[Alpha]] [[Beta]]" });
+    const { json: s2 } = await call("create_page", { title: "S2", body: "x [[alpha]]" });
+    await call("update_page", { id: a.id, version: 1, title: "Alpha 2", body: "" });
+    await call("update_page", { id: b.id, version: 1, title: "Beta 2", body: "" });
+    expect((await call("list_backlinks", { id: a.id })).json).toMatchObject({ pages: [] });
+
+    // キューの順は作成の時刻と id で決まり、同じ時刻なら id の順なので、どちらが先かはテストで決めない
+    const first = await call("rewrite_links", {});
+    const second = await call("rewrite_links", {});
+    const processed = [first, second].map((outcome) => outcome.json.processed as { id: string });
+    expect(processed.map((page) => page.id).toSorted()).toEqual([s1.id, s2.id].toSorted());
+    expect(first).toMatchObject({
+      isError: false,
+      json: { conflict: false, failed: [], remaining: 1 },
+    });
+    expect(second.json).toMatchObject({ conflict: false, failed: [], remaining: 0 });
+    expect(processed.find((page) => page.id === s1.id)).toEqual({
+      id: s1.id,
+      title: "S1",
+      visibility: "draft",
+      version: 2,
+      rewritten: 2,
+    });
+    expect(await call("rewrite_links", {})).toEqual({
+      isError: false,
+      json: { processed: null, conflict: false, failed: [], remaining: 0 },
+    });
+
+    expect((await call("read_page", { id: s1.id })).json.body).toBe("[[Alpha 2]] [[Beta 2]]");
+    expect((await call("read_page", { id: s2.id })).json.body).toBe("x [[Alpha 2]]");
+    const backlinks = await call("list_backlinks", { id: a.id });
+    expect((backlinks.json.pages as { id: string }[]).map((page) => page.id).toSorted()).toEqual(
+      [s1.id, s2.id].toSorted(),
+    );
+    const written = metrics.filter((metric) => metric.op === "link_rewrite");
+    expect(written.map((metric) => metric.pageId).toSorted()).toEqual([s1.id, s2.id].toSorted());
+    expect(written.every((metric) => metric.actor === actor)).toBe(true);
+    const revisions = await call("list_revisions", { id: s1.id });
+    expect(revisions.json.revisions).toMatchObject([{ version: 2, author: { kind: "token" } }, {}]);
+  });
+
+  it("rewrite_links は targetPageId の改題で待っている分だけを進める", async () => {
+    const { call } = await mcpClient();
+    const { json: a } = await call("create_page", { title: "Alpha", body: "" });
+    const { json: b } = await call("create_page", { title: "Beta", body: "" });
+    const { json: sa } = await call("create_page", { title: "SA", body: "[[Alpha]]" });
+    const { json: sb } = await call("create_page", { title: "SB", body: "[[Beta]]" });
+    await call("update_page", { id: a.id, version: 1, title: "Alpha 2", body: "" });
+    await call("update_page", { id: b.id, version: 1, title: "Beta 2", body: "" });
+
+    const forB = await call("rewrite_links", { targetPageId: b.id });
+    expect(forB.json).toMatchObject({ processed: { id: sb.id }, remaining: 0 });
+    expect((await call("read_page", { id: sa.id })).json.body).toBe("[[Alpha]]");
+    expect(await call("rewrite_links", { targetPageId: b.id })).toMatchObject({
+      json: { processed: null },
+    });
+    expect((await call("rewrite_links", {})).json).toMatchObject({ processed: { id: sa.id } });
+  });
+
+  it("rewrite_links は書き換えられないリンク元を failed に title つきで返し、本文を変えない", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { call } = await mcpClient();
+    const { json: target } = await call("create_page", { title: "Old", body: "" });
+    const { json: s } = await call("create_page", { title: "S", body: "a ` b [[Old]] c" });
+    await call("update_page", { id: target.id, version: 1, title: "Ne`w", body: "" });
+
+    expect(await call("rewrite_links", {})).toEqual({
+      isError: false,
+      json: {
+        processed: null,
+        conflict: false,
+        failed: [{ id: s.id, title: "S" }],
+        remaining: 0,
+      },
+    });
+    expect((await call("read_page", { id: s.id })).json).toMatchObject({
+      body: "a ` b [[Old]] c",
+      version: 1,
+    });
+  });
+
+  it("rewrite_links は形式の違う targetPageId を invalid_field、知らないキーを unknown_field で返す", async () => {
+    const { call } = await mcpClient();
+    const before = await snapshotDb();
+    expect(await call("rewrite_links", { targetPageId: "not-an-id" })).toEqual({
+      isError: true,
+      json: { error: "invalid_field", field: "targetPageId" },
+    });
+    expect(await call("rewrite_links", { id: "x" })).toMatchObject({
+      isError: true,
+      json: { error: "unknown_field" },
+    });
+    expect(await snapshotDb()).toEqual(before);
   });
 
   it("update_page と append_to_page は存在しないページに not_found を返す", async () => {
@@ -1260,11 +1376,11 @@ describe("リクエストをまたいだ状態", () => {
     expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
-  it("tools/call のあとの tools/list は 8 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {
+  it("tools/call のあとの tools/list は 9 つの tool を返し、知らない tool は JSON-RPC のエラー", async () => {
     const { rpc, create } = await sharedApp();
     await create("alice", "First");
     const listed = await rpc("bob", "tools/list");
-    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(8);
+    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(9);
 
     const unknown = await rpc("alice", "tools/call", { name: "no_such_tool", arguments: {} });
     expect(unknown.error).toEqual({ code: -32602, message: "Tool no_such_tool not found" });

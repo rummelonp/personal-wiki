@@ -185,6 +185,50 @@ describe("1 invocation のクエリ数", () => {
     expectWithinBudget(racing.counter);
   });
 
+  it("MCP の rewrite_links は REST の step と同じ数のクエリに収まる", async () => {
+    const client = await buildClient();
+    const target = await client.create("Old");
+    const links = Array.from({ length: 30 }, (_, i) => `[[Old]] [[L${i}]] #t${i}`).join("\n");
+    const s = await client.create("S", links);
+    await client.update(target, "New", "");
+
+    const call = (db: D1Database) =>
+      requestWith(db, "/mcp", {
+        method: "POST",
+        headers: { Accept: "application/json, text/event-stream" },
+        json: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "rewrite_links", arguments: {} },
+        },
+      });
+    const outcome = async (res: Response) => {
+      const text = await res.text();
+      const data = text.startsWith("{")
+        ? text
+        : (text.split("\n").find((line) => line.startsWith("data: ")) ?? "").slice(6);
+      const rpc = JSON.parse(data) as { result: { content: { text: string }[] } };
+      return JSON.parse(rpc.result.content[0]?.text ?? "") as {
+        processed: { rewritten: number } | null;
+        conflict: boolean;
+      };
+    };
+
+    const success = instrumentedDb();
+    const res = await call(success.db);
+    expect(res.status).toBe(200);
+    expect((await outcome(res)).processed?.rewritten).toBe(30);
+    // REST の step と同じ 22（認証 2、選ぶ 1、ページ 1、派生データ 1、batch 16、残り 1）
+    expect(success.counter.queries).toBe(22);
+
+    await client.update({ id: target.id, version: 2 }, "Newer", "");
+    const racing = instrumentedDb(() => s.id);
+    expect((await outcome(await call(racing.db))).conflict).toBe(true);
+    expect(racing.counter.queries).toBe(23);
+    expectWithinBudget(racing.counter);
+  });
+
   it("owner の cookie で呼ぶ step は、認証に D1 のクエリを使わない", async () => {
     const client = await buildClient();
     const target = await client.create("Old");

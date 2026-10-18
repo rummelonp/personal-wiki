@@ -2,12 +2,14 @@
 import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import * as z from "zod/v4";
 import { readableVisibilityOf } from "../auth/principal";
+import { isPageId } from "../pages/id";
 import {
   appendToPageAs,
   createPageAs,
   describeWriteError,
   findPageByInputId,
   linkRewritesField,
+  stepLinkRewritesAs,
   updatePageAs,
 } from "../pages/operations";
 import { findRevision, listRevisions, parseRevisionCursor } from "../pages/revision-history";
@@ -209,7 +211,8 @@ export const updatePageTool = defineTool({
     "ページの title と body を丸ごと置き換える。構成を直すときだけ使い、メモや調べた結果は append_to_page で足す。",
     "read_page で取った version が必須。title を変えないときも読んだ title を渡す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して変更を載せ直し、current.version で保存し直す。上書きで押し切らない。",
-    "title を変えても、他のページの `[[旧 title]]` はすぐには書き換わらない。オーナーが wiki を開いたときや、定期実行を設定していればその発火ごとに 1 ページずつ新しい title に書き換わり、それまでリンク元は旧 title のリンクのままで、新しい title の list_backlinks にも出ない。linkRewrites.queued は書き換えを待つページの数。",
+    "title を変えても、他のページの `[[旧 title]]` はこの呼び出しでは書き換わらず、リンク元は旧 title のリンクのままで、新しい title の list_backlinks にも出ない。linkRewrites.queued は書き換えを待つページの数で、rewrite_links をこのページの id（targetPageId）で remaining が 0 になるまで呼ぶと、新しい title に書き換わる。リンク元の本文を自分で置換して update_page で上書きしない（rewrite_links は同じ規則で書き換え、版の履歴にも残る）。",
+    "オーナーが wiki を開いたときや、定期実行を設定していればその発火ごとにも、1 ページずつ書き換わる。",
     "書き換わったページ（このページ自身を含む）は version が進むので、続けて書き換えるときは read_page で読み直す。書き換えるのは、title を変えた時点で旧 title にリンクしていたページだけ。そのページの `[[旧 title]]` は、書き換わる前に足したものも、旧 title で別のページを作ったあとに書いたものも、新しい title に書き換わる（新しく作った同名のページは指さない）。それ以外のページが title を変えたあとに書いた `[[旧 title]]` は書き換わらない。",
     "title に `[ ] | # ^` を含む、または `\\` で終わると書き換えを積まずに linkRewrites.skipped を返す。そのときの旧 title のリンクは、あとで別の title に変えても書き換わらない。",
     LIMITS,
@@ -234,6 +237,55 @@ export const updatePageTool = defineTool({
     }
     if (result.reason !== "version_conflict") return writeError(result);
     return versionConflict(ctx, id, result);
+  },
+});
+
+export const rewriteLinksTool = defineTool({
+  name: "rewrite_links",
+  scope: "write",
+  title: "改題で待っているリンクを書き換える",
+  description: [
+    "update_page で title を変えたあとに待っている、他のページの `[[旧 title]]` の書き換えを、リンク元 1 ページ分だけ進める。書き換えの規則はオーナーの画面や定期実行と同じで、書き換えたページには版が積まれる。",
+    "1 回の呼び出しで書き換えるリンク元は 1 ページ（そのページの待っているリンクをまとめて 1 つの版にする）。remaining（待っているリンク元の数）が 0 になるまで、続けて呼ぶ。1 回で終えないのは、1 リクエストで使える D1 のクエリと CPU に収めるため。",
+    "targetPageId に title を変えたページの id を渡すと、そのページの改題で待っている分だけを進める。省くと、待っている全部から古い順に選ぶ。連作の改題をまとめて済ませるときは、省いて remaining が 0 になるまで呼べばよい。",
+    "返す値: processed は書き換えたリンク元（id、title、visibility、version（書き換えたあとの版）、rewritten（書き換えたリンクの数））。このリンク元を開いていたら read_page で読み直す。書き換えるものが無ければ null。",
+    "conflict が true なら、読んだあとにリンク元が保存されたか、対象が改題か削除された。何も書かれておらず、待っている分も残るので、そのまま呼び直す。",
+    "failed は、書き換えるとほかのリンクやタグが変わる、本文が上限を超える、処理が 3 回続けて終わらないのどれかで、書き換えずに待ちから外したリンク元（id と title）。本文の旧 title のリンクは残るので、read_page で読んで update_page で手で直す。title が null のときは、読む前に外した。",
+    "待っているものが無ければ processed が null、remaining が 0 で、何も書かない。",
+  ].join("\n"),
+  inputSchema: z.strictObject({
+    targetPageId: pageIdSchema
+      .optional()
+      .describe("title を変えたページの id。省くと、待っている全部から選ぶ"),
+  }),
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
+  async run({ targetPageId }, ctx) {
+    if (targetPageId !== undefined && !isPageId(targetPageId)) {
+      return toolError({ error: "invalid_field", field: "targetPageId" });
+    }
+    const { processed, conflict, failedPages, remaining } = await stepLinkRewritesAs(ctx, {
+      targetPageId: targetPageId ?? null,
+    });
+    return toolResult({
+      processed:
+        processed === null
+          ? null
+          : {
+              id: processed.sourcePageId,
+              title: processed.title,
+              visibility: processed.visibility,
+              version: processed.version,
+              rewritten: processed.rewritten,
+            },
+      conflict,
+      failed: failedPages,
+      remaining,
+    });
   },
 });
 
@@ -287,5 +339,6 @@ export const PAGE_TOOLS = [
   listRevisionsTool,
   createPageTool,
   updatePageTool,
+  rewriteLinksTool,
   appendToPageTool,
 ];

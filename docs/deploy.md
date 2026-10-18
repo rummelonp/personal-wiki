@@ -177,7 +177,8 @@ claude.ai や Claude Desktop のカスタムコネクタから OAuth で MCP に
 ### リンクの書き換えの自動実行（Cron）
 
 title を変えると、他のページの `[[旧 title]]` を書き換えるジョブがキューに入る。
-owner がブラウザで開いていれば画面が進めるが、MCP 経由の rename ではキューに入ったまま残る。
+owner がブラウザで開いていれば画面が進め、MCP のクライアントは `rewrite_links` の tool で進められる。
+どちらも使わなければ、キューに入ったまま残る。
 `deploy.env` の `LINK_REWRITE_CRON` に cron 式（5 フィールド。例 `*/5 * * * *`）を書いてデプロイすると、1 回の発火で 1 リンク元ずつ進める。
 
 Cron Trigger はアカウント全体で 5 本までなので、既定は空である。

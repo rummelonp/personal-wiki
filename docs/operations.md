@@ -65,8 +65,9 @@ API は `POST /api/admin/derived/rebuild` で、CPU の上限に収まるよう 
 ## リンクの書き換え
 
 title を変えると、他のページの `[[旧 title]]` を書き換えるジョブが `link_rewrites` のキューに入る。
-キューに入ったジョブは、ブラウザで開いている画面と Cron が進める。
-画面は `POST /api/link-rewrites/step` を呼んで 1 回に 1 ページずつ書き換え、Cron（[deploy.md](./deploy.md) の「リンクの書き換えの自動実行（Cron）」）は発火ごとに 1 リンク元を進める。
+キューに入ったジョブは、ブラウザで開いている画面と MCP のクライアントと Cron が進める。
+画面は `POST /api/link-rewrites/step` を呼んで 1 回に 1 ページずつ書き換え、MCP のクライアントは同じ処理を `rewrite_links` の tool で呼ぶ。
+Cron（[deploy.md](./deploy.md) の「リンクの書き換えの自動実行（Cron）」）は発火ごとに 1 リンク元を進める。
 
 手動で最後まで進めるには、write の token で次を実行する。
 
