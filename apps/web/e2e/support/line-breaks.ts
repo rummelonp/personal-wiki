@@ -7,7 +7,7 @@ import type { Locator } from "@playwright/test";
 const PHRASE_END = "、。，．… 　」』）】";
 
 interface Line {
-  /** 行に載った文字。行末の空白は幅を持たないので含まれない */
+  /** 行に載った文字。行末の空白は、描画が幅を返しても返さなくても同じ結果になるよう落とす */
   text: string;
   /** 前の行との境が、空白か <wbr> の位置だったか。最初の行は false */
   breakAllowedBefore: boolean;
@@ -55,6 +55,8 @@ async function layoutLines(locator: Locator): Promise<Line[]> {
         previous = { char, top: rect.top, node, index };
       }
     }
+    // 改行しない空白（U+00A0）は行末でも本文の一部なので残す
+    for (const line of lines) line.text = line.text.replace(/[^\S\u00a0]+$/, "");
     return lines;
   }, PHRASE_END);
 }

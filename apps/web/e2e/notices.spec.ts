@@ -341,10 +341,9 @@ test("衝突の通知は、title と本文を動かさず、主操作は取り�
   if (!(await page.evaluate(() => CSS.supports("word-break", "auto-phrase")))) {
     expect(await midPhraseBreaks(legend), "凡例が語の途中で折り返している").toEqual([]);
   }
-  // 記号が説明と別の行に分かれると、何の記号か読み取れない。空白の後の折り返しは midPhraseBreaks が許すので別に見る。
-  // 描画が行末の空白に幅を返すと、行の文字列は記号の後に空白が続く形になるので、\s* を許す
+  // 記号が説明と別の行に分かれると、何の記号か読み取れない。空白の後の折り返しは midPhraseBreaks が許すので別に見る
   for (const line of await lineTexts(legend)) {
-    expect(line, "凡例の記号が行末に残っている").not.toMatch(/[＋−]\s*$/);
+    expect(line, "凡例の記号が行末に残っている").not.toMatch(/[＋−]$/);
   }
   // 本文を打っている最中に通知が出ても、focus は奪わない（変換中なら IME が切れる）
   await expect(bodyEditor(page)).toBeFocused();
