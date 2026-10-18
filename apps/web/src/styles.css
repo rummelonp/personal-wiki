@@ -749,7 +749,8 @@ a.segmented-option {
   background: currentColor;
 }
 
-.visibility-pill .visibility-spinner {
+/* 待つ間は data-visibility が向かう先になる。公開の塗りに負けると欠けた輪が見えないので、詳細度をそろえて後に置く */
+.visibility-pill .visibility-mark.visibility-spinner {
   background: none;
   border-right-color: transparent;
   animation: visibility-spin 0.8s linear infinite;
@@ -763,7 +764,7 @@ a.segmented-option {
 
 /* 回らなくても、欠けた輪で待っていることは分かる */
 @media (prefers-reduced-motion: reduce) {
-  .visibility-pill .visibility-spinner {
+  .visibility-pill .visibility-mark.visibility-spinner {
     animation: none;
   }
 }
