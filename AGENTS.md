@@ -23,7 +23,7 @@ pnpm workspace の構成で、アプリは `apps/*`、共有パッケージは `
 - [docs/deploy.md](./docs/deploy.md): 初回のデプロイ、任意の機能（owner のログイン、R2、OAuth、Cron）の設定、ゾーンの WAF やレート制限と併用するときの注意、本番の更新、前の版に戻すときの注意
 - [docs/operations.md](./docs/operations.md): API token、派生データの作り直し、リンクの書き換え、バックアップと復元
 - [docs/attachments.md](./docs/attachments.md): 添付（R2）の API と公開範囲
-- [docs/design.md](./docs/design.md): 画面の見た目と使い心地の原則、守る条件、確かめ方
+- [docs/design.md](./docs/design.md): 画面の見た目と使い心地の原則、対象の環境と幅、守る条件、確かめ方
 
 ## コマンド
 
