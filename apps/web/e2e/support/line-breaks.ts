@@ -156,6 +156,23 @@ export async function lineTexts(locator: Locator): Promise<string[]> {
 }
 
 /**
+ * 要素の本文の折り返しのうち、数とそれに続く単位（「3|文字」）や、「約」と数（「約|3」）を別の行に分けたものを
+ * 「前の行の末尾の文字|次の行の先頭の文字」で返す。数の中の区切り（「65,|536」「19:|09」「1/|3」）と、
+ * 日付と時刻の間の空白での折り返しは数どうしなので返さない。
+ */
+export async function splitNumbers(locator: Locator): Promise<string[]> {
+  const lines = await layoutLines(locator);
+  const splits: string[] = [];
+  for (let index = 1; index < lines.length; index++) {
+    const before = (lines[index - 1] as Line).text.slice(-1);
+    const after = (lines[index] as Line).text.slice(0, 1);
+    const unitAfterNumber = /\d/.test(before) && !/[\d,.:/]/.test(after);
+    if (unitAfterNumber || (before === "約" && /\d/.test(after))) splits.push(`${before}|${after}`);
+  }
+  return splits;
+}
+
+/**
  * 要素の本文の折り返しのうち、句読点、空白、正しい位置の <wbr> でないものを「前の行の末尾の文字|次の行の先頭の文字」で返す。
  * 語の途中で切れていれば空でなくなる。閉じ括弧の直後は、助詞が続くときも文節の途中として返す。
  */
