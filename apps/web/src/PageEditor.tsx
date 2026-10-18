@@ -3,6 +3,7 @@ import { wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
 import {
   type ReactNode,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -40,6 +41,7 @@ import { extractOutline } from "./heading-outline";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
 import { isInView } from "./in-view";
 import { inputProblemMessage, inputProblemTitle } from "./input-messages";
+import { focusAfterInput } from "./input-modality";
 import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
@@ -513,6 +515,51 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const [afterFailure, setAfterFailure] = useState(false);
   if (failure !== null && !afterFailure) setAfterFailure(true);
   else if (afterFailure && failure === null && state.busy === null) setAfterFailure(false);
+  // 再送が再び失敗すると、失敗の通知は進行の通知を挟んで作り直される（読み上げさせるため、同じ要素を使い回せない）。
+  // 再送のボタンが消えるとき、押そうとしていたなら、作り直されたボタンが押せるようになった描画で
+  // focus を戻す。作り直されたボタンは、操作が終わるまで disabled で focus を受けない。
+  // 本文の blur が保存を始めるのは mousedown の途中で、ボタンに focus が着く前に消えることがあるので、
+  // focus を持っていたかだけでなく、押す操作が始まっていたか（ボタンの上の pointerdown）も見る。
+  // ボタンへ向かう focusout は、届く時点でボタンがもう外れているので手がかりにならない。
+  // 待つ間に focus が別の要素（打ち始めた本文など）へ移っていたら、戻さない
+  const retryButtonEl = useRef<HTMLButtonElement | null>(null);
+  const restoreRetryFocus = useRef(false);
+  const aimingAtRetry = useRef(false);
+  const retryButtonRef = useCallback((element: HTMLButtonElement | null) => {
+    const button = retryButtonEl.current;
+    if (element === null && button !== null) {
+      if (aimingAtRetry.current || document.activeElement === button)
+        restoreRetryFocus.current = true;
+      aimingAtRetry.current = false;
+    }
+    retryButtonEl.current = element;
+  }, []);
+  useEffect(() => {
+    const onDown = (event: Event) => {
+      const button = retryButtonEl.current;
+      if (button === null) return;
+      aimingAtRetry.current =
+        event.type === "pointerdown" &&
+        event.target instanceof Node &&
+        button.contains(event.target);
+    };
+    const types = ["pointerdown", "focusin", "click"];
+    for (const type of types) document.addEventListener(type, onDown, true);
+    return () => {
+      for (const type of types) document.removeEventListener(type, onDown, true);
+    };
+  }, []);
+  useEffect(() => {
+    if (!restoreRetryFocus.current) return;
+    // 失敗の通知が戻らずに操作が終わったとき（成功、衝突など）に、次の失敗の通知へ持ち越さない
+    const active = document.activeElement;
+    const lost = active === null || active === document.body;
+    if (!afterFailure || !lost) restoreRetryFocus.current = false;
+    else if (retryButtonEl.current?.disabled === false) {
+      restoreRetryFocus.current = false;
+      focusAfterInput(retryButtonEl.current, { preventScroll: true });
+    }
+  });
   // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
   const inProgress =
     afterFailure &&
@@ -805,6 +852,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                   <button
                     type="button"
                     className="button button-main"
+                    ref={retryButtonRef}
                     disabled={!idle}
                     onClick={() => void retryFailed(failure)}
                   >
