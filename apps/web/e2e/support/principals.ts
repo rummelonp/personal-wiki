@@ -88,7 +88,7 @@ export async function updatePageWithToken(
 }
 
 // 登録できるリダイレクト先の既定（auth/oauth-registration.ts）。コードは受け取るだけで、アクセスしない
-const REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
+export const REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 
 // 同意画面の binding の cookie の名前は、この接頭辞に画面ごとの hash が続く（OAuth ライブラリの既定）。
 // 画面がほかの cookie を足しても取り違えないよう、名前で選ぶ
@@ -104,28 +104,36 @@ async function expectStatus(res: Response, status: number, what: string): Promis
 }
 
 /**
- * 接続の名前を名乗って登録し、owner として同意して、/mcp に使えるアクセストークンを返す。
- * 同意画面の POST は、画面を開いたときに付く binding の cookie と owner のセッションを両方求める。
+ * client を 1 件登録して client_id を返す。Worker は登録を 1 日に 20 件までしか受け付けないので、
+ * 繰り返し実行しても上限に届くことがないよう、client は必要な数より多く登録しない。
  */
-export async function connectOAuthClient(clientName: string): Promise<string> {
-  const { origin, sessionSecret } = stackEnv();
-  const registration = JSON.stringify({
-    redirect_uris: [REDIRECT_URI],
-    client_name: clientName,
-    token_endpoint_auth_method: "none",
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-  });
+export async function registerOAuthClient(origin: string, clientName: string): Promise<string> {
   const registered = await expectStatus(
     await fetch(`${origin}/_auth/oauth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: registration,
+      body: JSON.stringify({
+        redirect_uris: [REDIRECT_URI],
+        client_name: clientName,
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+      }),
     }),
     201,
     "OAuth の登録",
   );
-  const { client_id: clientId } = (await registered.json()) as { client_id: string };
+  return ((await registered.json()) as { client_id: string }).client_id;
+}
+
+/**
+ * 接続の名前を名乗る client を新しく登録し、owner として同意して、/mcp に使えるアクセストークンを返す。
+ * client を使い回さないのは、同じ client が同意し直すと、ライブラリが前の grant を取り消すため（既定）。
+ * 同意画面の POST は、画面を開いたときに付く binding の cookie と owner のセッションを両方求める。
+ */
+export async function connectOAuthClient(clientName: string): Promise<string> {
+  const { origin, sessionSecret } = stackEnv();
+  const clientId = await registerOAuthClient(origin, clientName);
 
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));

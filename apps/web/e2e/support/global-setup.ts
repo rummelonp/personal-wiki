@@ -1,4 +1,5 @@
 import { ownerApi } from "./api";
+import { registerOAuthClient } from "./principals";
 import { seed } from "./seed";
 import { setupTimings, startStack, timed } from "./stack";
 
@@ -10,7 +11,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const stack = await startStack();
   try {
     const ids = await timed("seed", () => seed(ownerApi(stack.origin, stack.sessionSecret)));
+    // 同意画面を開くだけのテストが共有する client。Worker の登録は 1 日 20 件までなので、worker ごとには登録しない
+    const consentClientId = await timed("OAuth の client", () =>
+      registerOAuthClient(stack.origin, "Claude"),
+    );
     process.env.E2E_ORIGIN = stack.origin;
+    process.env.E2E_CONSENT_CLIENT_ID = consentClientId;
     process.env.E2E_SESSION_SECRET = stack.sessionSecret;
     process.env.E2E_STACK_CONFIG = stack.configPath;
     process.env.E2E_STACK_STATE = stack.persistDir;

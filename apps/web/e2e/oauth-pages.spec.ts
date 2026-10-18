@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./support/fixtures";
-import { connectOAuthClient } from "./support/principals";
+import { REDIRECT_URI as CALLBACK, connectOAuthClient } from "./support/principals";
 
 /*
  * OAuth の画面（同意、エラー、接続の一覧）の折り返し、タッチ端末での押せる範囲、同意の送信、接続の取り消し。
@@ -11,39 +11,14 @@ import { connectOAuthClient } from "./support/principals";
 /** Worker が取り消しの知らせを渡す cookie。Secure なので、ブラウザによっては http://localhost で受け付けない */
 const NOTICE_COOKIE_NAME = "__Host-wiki_oauth_notice";
 
-const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
-
 // 文節の途中で切れないことを見る語。画面の警告文（.warn）に含まれる
 const WORDS = ["許可", "ください", "リンク", "接続", "自分", "限りません", "始めた"];
 
-let consentClient: Promise<string> | undefined;
-
-/**
- * 同じ worker のテストは 1 つの client を使い回す。Worker が受け付ける登録は 1 日に 20 件までで、
- * テストごとに登録すると、全部の環境を流す 1 回の実行で上限に届く。
- */
-function registerConsentClient(origin: string): Promise<string> {
-  consentClient ??= (async () => {
-    const res = await fetch(`${origin}/_auth/oauth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        redirect_uris: [CALLBACK],
-        client_name: "Claude",
-        token_endpoint_auth_method: "none",
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-      }),
-    });
-    expect(res.status).toBe(201);
-    return ((await res.json()) as { client_id: string }).client_id;
-  })();
-  return consentClient;
-}
-
 async function openConsent(page: Page): Promise<void> {
   const origin = process.env.E2E_ORIGIN ?? "";
-  const clientId = await registerConsentClient(origin);
+  // global setup が 1 件だけ登録した client
+  const clientId = process.env.E2E_CONSENT_CLIENT_ID ?? "";
+  expect(clientId, "global setup が同意画面用の client を登録していない").not.toBe("");
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -282,8 +257,8 @@ test.describe("接続の取り消し", () => {
     page,
     browserName,
   }, testInfo) => {
-    // ほかの環境の同じテストも同じ KV に接続を足すので、名前を環境ごとに分け、件数ではなく grant の id で確かめる
-    const name = `Claude ${testInfo.project.name}`;
+    // ほかの環境や繰り返しの同じテストも同じ KV に接続を足すので、名前を実行ごとに分け、件数ではなく grant の id で確かめる
+    const name = `Claude ${testInfo.project.name} ${testInfo.repeatEachIndex}`;
     await connectOAuthClient(name);
     await connectOAuthClient(name);
     await page.goto("/_auth/oauth/grants");
