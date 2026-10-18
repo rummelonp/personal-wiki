@@ -229,6 +229,37 @@ describe("1 invocation のクエリ数", () => {
     expectWithinBudget(racing.counter);
   });
 
+  it("MCP の list_unresolved_links は、リンクが多くても件数に関係なく固定のクエリ数に収まる", async () => {
+    const client = await buildClient();
+    const page = await client.create(
+      "Page",
+      Array.from({ length: 60 }, (_, i) => `[[Ghost ${i}]]`).join(" "),
+    );
+    for (let i = 0; i < 7; i++) await client.create(`Other ${i}`, "[[Ghost 0]]");
+    const count = async (args: Record<string, unknown>) => {
+      const { db, counter } = instrumentedDb();
+      const res = await requestWith(db, "/mcp", {
+        method: "POST",
+        headers: { Accept: "application/json, text/event-stream" },
+        json: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "list_unresolved_links", arguments: args },
+        },
+      });
+      expect(res.status).toBe(200);
+      // 本文を読み切るまで tool は走り続けるので、数えるのは読んだあと
+      expect(await res.text()).not.toContain('"isError":true');
+      expectWithinBudget(counter);
+      return counter.queries;
+    };
+    // 認証 2、title_key の集計 1、リンク元 1
+    expect(await count({ limit: 100 })).toBe(4);
+    // 上に加えて、ページの読み 1
+    expect(await count({ id: page.id, limit: 100 })).toBe(5);
+  });
+
   it("MCP の edit_page は、版の競合で最新の本文を読み直すところまで収まる", async () => {
     const client = await buildClient();
     const page = await client.create("Page", "[[Other]] #tag 古い");

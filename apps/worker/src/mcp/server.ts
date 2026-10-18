@@ -38,7 +38,7 @@ const INSTRUCTIONS = [
   "- メモや調べた結果は append_to_page で末尾に足し、既存の本文の一部の修正は edit_page で置き換える。update_page での本文全体の書き換えは構成を直すときだけ。",
   "- 作るページは draft。draft も URL を知っていれば誰でも読めるので、パスワード、API キー、トークン、個人情報などの秘密を書かない。",
   "- 公開範囲は tool から変えられない。公開はオーナーがブラウザで行うので、頼まれたらオーナーに伝える。frontmatter に書いても反映されない。",
-  "- 本文の `[[title]]` は別のページへのリンク。参照元は list_backlinks（id か title で引く。まだ無いページの title でもよい）、最近の動きは list_recent で見る。",
+  "- 本文の `[[title]]` は別のページへのリンク。参照元は list_backlinks（id か title で引く。まだ無いページの title でもよい）、最近の動きは list_recent で見る。行き先のページがまだ無いリンクの一覧は list_unresolved_links で見る。",
   "- title を変えても、他のページの `[[旧 title]]` はすぐには書き換わらず、それまで新しい title の list_backlinks に出ない。update_page のあとに rewrite_links を remaining が 0 になるまで呼ぶと書き換わる。詳しくは update_page の説明にある。",
   "- title はページの主題を表す名詞句にし、日付、エージェント名、「メモ」などの接頭辞を付けない。作る前に search で近いページの title の付け方を見て合わせる。`[ ] | # ^` を含む title と `\\` で終わる title は `[[...]]` のリンクが壊れるので使わない。",
   "記法は Obsidian と同じで、違いは次のとおり。",

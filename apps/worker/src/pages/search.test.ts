@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { buildClient, type PageJson, T0 } from "../test/pages";
-import { listTagCounts, searchPages } from "./search";
+import { listTagCounts, listUnresolvedLinks, searchPages } from "./search";
 
 interface Hit {
   id: string;
@@ -335,6 +335,32 @@ describe("listTagCounts の公開範囲", () => {
     const unfiltered = await listTagCounts(env.DB, "public");
     expect(unfiltered.tags.map((t) => t.tag).sort()).toEqual(["public-only", "shared"]);
     expect(await listTagCounts(env.DB, "public", "public")).toEqual(unfiltered);
+  });
+});
+
+describe("listUnresolvedLinks の公開範囲", () => {
+  // MCP の token は常に readable が all なので、public の絞り込みは直接呼んで確かめる
+  it("readable が public なら、draft のリンク元とそのリンクを数えず、title_key の一覧にも出さない", async () => {
+    const client = await buildClient();
+    const open = await client.create("公開", "[[shared]] [[public-only]]");
+    await client.create("下書き", "[[shared]] [[draft-only]]");
+    await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
+      .bind(open.id)
+      .run();
+    const options = { limit: 10, after: null, sourceId: null };
+
+    const all = await listUnresolvedLinks(env.DB, { ...options, readable: "all" });
+    expect(all.links.map((l) => [l.titleKey, l.sourceCount])).toEqual([
+      ["draft-only", 1],
+      ["public-only", 1],
+      ["shared", 2],
+    ]);
+    const anonymous = await listUnresolvedLinks(env.DB, { ...options, readable: "public" });
+    expect(anonymous.links.map((l) => [l.titleKey, l.sourceCount])).toEqual([
+      ["public-only", 1],
+      ["shared", 1],
+    ]);
+    expect(anonymous.links.flatMap((l) => l.sources.map((s) => s.id))).toEqual([open.id, open.id]);
   });
 });
 

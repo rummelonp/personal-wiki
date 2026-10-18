@@ -10,6 +10,7 @@ import {
   listBacklinks,
   listBacklinksByTitle,
   listRecentPages,
+  listUnresolvedLinks,
   type PageList,
   type PageSummary,
   parseCursor,
@@ -17,7 +18,9 @@ import {
   SEARCH_MAX_LIMIT,
   searchPages,
   searchQueryErrorFields,
+  UNRESOLVED_SOURCES_PER_TITLE,
 } from "../pages/search";
+import { findPageById, findPageByTitle } from "../pages/store";
 import { pageUrls } from "../pages/urls";
 import { pageIdSchema } from "./page-tools";
 import { defineTool, toolError, toolResult } from "./tool";
@@ -159,4 +162,63 @@ export const listBacklinksTool = defineTool({
   },
 });
 
-export const SEARCH_TOOLS = [searchTool, listRecentTool, listBacklinksTool];
+export const listUnresolvedLinksTool = defineTool({
+  name: "list_unresolved_links",
+  scope: "read",
+  title: "行き先の無いリンク",
+  description: [
+    "本文の `[[title]]` のうち、行き先のページがまだ無いものを、title ごとにまとめて返す。draft のページに書かれたものも含む。wiki の棚卸しで、意図して残した未作成の語と、書き間違いやリンク切れを見分けるのに使う。",
+    `各件は titleKey、sourceCount（リンク元のページ数）、sources（リンク元の新しい順に先頭 ${UNRESOLVED_SOURCES_PER_TITLE} 件）。titleKey の昇順で、nextCursor が null でなければ、cursor に渡して続きを取る。`,
+    "titleKey は title を大文字小文字と全角半角、`_` と空白を畳んだ値で、本文に書かれた表記そのままではない（元の表記はリンク元を read_page で読む）。list_backlinks の title と、そのページを作った後の read_page の title にそのまま渡せる。",
+    "リンク元をすべて見るには、titleKey を list_backlinks の title に渡す。",
+    "id と title はどちらも省略できる。どちらか一方を渡すと、そのページの本文にある行き先の無いリンクだけを返す（sourceCount は 1）。ページが無ければ not_found。",
+    "ページを作ると、そのページへのリンクは一覧から消える。title を変えた直後は、他のページに残る `[[旧 title]]` も出る。rewrite_links を remaining が 0 になるまで呼ぶと消える。",
+    "添付の embed（`![[a.png]]`）は含まない。",
+  ].join("\n"),
+  inputSchema: z.strictObject({
+    id: pageIdSchema.optional(),
+    title: z.string().describe("このページの本文にあるリンクだけに絞る。ページの title").optional(),
+    limit: limitSchema(LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT),
+    cursor: cursorSchema,
+  }),
+  annotations: READ_ONLY,
+  async run({ id, title, limit, cursor }, ctx) {
+    if (id !== undefined && title !== undefined) {
+      return toolError({
+        error: "invalid_arguments",
+        message: "id と title は同時に指定できない",
+      });
+    }
+    const readable = readableVisibilityOf(ctx.principal);
+    let sourceId: string | null = null;
+    if (id !== undefined || title !== undefined) {
+      if (id !== undefined && !isPageId(id)) return toolError({ error: "not_found" });
+      const page =
+        id === undefined
+          ? await findPageByTitle(ctx.db, title as string, readable)
+          : await findPageById(ctx.db, id);
+      if (page === null) return toolError({ error: "not_found" });
+      sourceId = page.id;
+    }
+    const { links, nextCursor } = await listUnresolvedLinks(ctx.db, {
+      limit: limit ?? LIST_DEFAULT_LIMIT,
+      after: cursor === undefined || cursor === "" ? null : cursor,
+      sourceId,
+      readable,
+    });
+    return toolResult({
+      links: links.map((link) => ({
+        ...link,
+        sources: link.sources.map((source) => withUrls(source, ctx.origin)),
+      })),
+      nextCursor,
+    });
+  },
+});
+
+export const SEARCH_TOOLS = [
+  searchTool,
+  listRecentTool,
+  listBacklinksTool,
+  listUnresolvedLinksTool,
+];

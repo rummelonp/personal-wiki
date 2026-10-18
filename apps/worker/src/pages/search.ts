@@ -429,6 +429,99 @@ export async function listBacklinksByTitle(
   return pageOf(results, limit, toSummary);
 }
 
+/** 行き先の無いリンク 1 種類（title_key 1 つ）と、そのリンク元。 */
+export interface UnresolvedLink {
+  /**
+   * リンクの title を normalizeTitleKey で畳んだ値。`[[...]]` に書かれた表記（大文字小文字、全角半角、`_`）は
+   * links に残らないので、元の表記はリンク元の本文から読む。
+   */
+  titleKey: string;
+  /** リンク元のページ数（読める範囲）。sources はこのうち新しい順の先頭 UNRESOLVED_SOURCES_PER_TITLE 件 */
+  sourceCount: number;
+  sources: PageSummary[];
+}
+
+export interface UnresolvedLinkList {
+  links: UnresolvedLink[];
+  /** 続きがあれば、次のリクエストの after に渡す値。無ければ null */
+  nextCursor: string | null;
+}
+
+/** UnresolvedLink.sources に載せるリンク元の数。全部は list_backlinks に title を渡して取る */
+export const UNRESOLVED_SOURCES_PER_TITLE = 5;
+
+/**
+ * links.target_page_id が NULL の行（削除されていないページの本文にある、行き先のページが無いリンク）を
+ * title_key ごとにまとめて返す。target_page_id は保存、改題、削除のたびに付け直されるので、
+ * 作ったページへのリンクは外れ、改題や削除で行き先を失ったリンクは入る。改題の直後は、書き換えを待つ
+ * 旧 title のリンクも入る（rewrite_links が進めると消える）。
+ *
+ * 並びは title_key の昇順なので、cursor は updated_at の並びではなく最後の title_key にする。
+ * readable が public なら、リンク元を public のページに絞る（件数も絞った後の数）。
+ * sourceId を渡すと、そのページが書いたリンクだけにする（sourceCount は 1）。
+ *
+ * 匿名に見せる経路では使わない。行き先が draft のリンクは target_page_id が付いて一覧から外れるので、
+ * public のページの本文にある `[[X]]` が一覧に無いことから、X という draft の存在がわかってしまう。
+ */
+export async function listUnresolvedLinks(
+  db: D1Database,
+  {
+    limit,
+    after,
+    sourceId,
+    readable,
+  }: { limit: number; after: string | null; sourceId: string | null; readable: ReadableVisibility },
+): Promise<UnresolvedLinkList> {
+  const publicOnly = publicOnlyFlag(readable);
+  const { results: keys } = await db
+    .prepare(
+      `SELECT l.target_title_key AS title_key, count(*) AS source_count
+       FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
+       WHERE l.target_page_id IS NULL AND p.deleted_at IS NULL AND (?1 = 0 OR p.visibility = 'public')
+         AND (?2 IS NULL OR l.target_title_key > ?2) AND (?4 IS NULL OR l.source_page_id = ?4)
+       GROUP BY l.target_title_key ORDER BY l.target_title_key LIMIT ?3`,
+    )
+    .bind(publicOnly, after, limit + 1, sourceId)
+    .all<{ title_key: string; source_count: number }>();
+  const shown = keys.slice(0, limit);
+  if (shown.length === 0) return { links: [], nextCursor: null };
+  // リンク元は、取ったリンクの title_key をまとめて 1 クエリで引く（key を個別に bind すると bind 100 個の上限に近づく）
+  const { results: rows } = await db
+    .prepare(
+      `SELECT title_key, id, title, visibility, updated_at FROM (
+         SELECT l.target_title_key AS title_key, p.id, p.title, p.visibility, p.updated_at,
+                row_number() OVER (
+                  PARTITION BY l.target_title_key ORDER BY p.updated_at DESC, p.id DESC) AS rank
+         FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
+         WHERE l.target_page_id IS NULL AND p.deleted_at IS NULL AND (?1 = 0 OR p.visibility = 'public')
+           AND l.target_title_key IN (SELECT value FROM json_each(?2))
+           AND (?4 IS NULL OR l.source_page_id = ?4)
+       ) WHERE rank <= ?3
+       ORDER BY title_key, updated_at DESC, id DESC`,
+    )
+    .bind(
+      publicOnly,
+      JSON.stringify(shown.map((row) => row.title_key)),
+      UNRESOLVED_SOURCES_PER_TITLE,
+      sourceId,
+    )
+    .all<SummaryRow & { title_key: string }>();
+  const sourcesByKey = new Map<string, PageSummary[]>();
+  for (const row of rows) {
+    const sources = sourcesByKey.get(row.title_key);
+    if (sources === undefined) sourcesByKey.set(row.title_key, [toSummary(row)]);
+    else sources.push(toSummary(row));
+  }
+  return {
+    links: shown.map((row) => ({
+      titleKey: row.title_key,
+      sourceCount: row.source_count,
+      sources: sourcesByKey.get(row.title_key) ?? [],
+    })),
+    nextCursor: keys.length > limit ? (shown.at(-1)?.title_key ?? null) : null,
+  };
+}
+
 const SEARCH_QUERY_MESSAGES: Record<Extract<SearchQuery, { ok: false }>["reason"], string> = {
   empty: "検索語が空か、空白だけになっている",
   too_long: `検索語が長すぎる（上限 ${SEARCH_MAX_QUERY_CHARS} 文字）`,

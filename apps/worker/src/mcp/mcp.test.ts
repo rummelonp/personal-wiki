@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
 import { parseActor } from "../pages/revision-history";
+import { UNRESOLVED_SOURCES_PER_TITLE } from "../pages/search";
 import { buildClient, linksFrom, snapshotDb, T0, tagsOf } from "../test/pages";
 import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";
@@ -19,6 +20,7 @@ const TOOL_NAMES = [
   "search",
   "list_recent",
   "list_backlinks",
+  "list_unresolved_links",
   "read_page",
   "list_revisions",
   "create_page",
@@ -261,7 +263,7 @@ describe("/mcp の認可", () => {
 });
 
 describe("tools/list", () => {
-  it("10 個の tool を、知らないキーを拒む入力の schema で返す", async () => {
+  it("11 個の tool を、知らないキーを拒む入力の schema で返す", async () => {
     const { rpc } = await mcpClient({ scopes: "read" });
     const { result } = await rpc("tools/list");
     const tools = result?.tools as {
@@ -304,13 +306,38 @@ describe("tools/list", () => {
       expect.arrayContaining(["id", "title"]),
     );
     expect(byName.list_backlinks?.description).toContain("まだ作られていないページ");
+    expect(byName.list_unresolved_links?.inputSchema.required ?? []).toEqual([]);
+    expect(Object.keys(byName.list_unresolved_links?.inputSchema.properties ?? {})).toEqual([
+      "id",
+      "title",
+      "limit",
+      "cursor",
+    ]);
+    expect(byName.list_unresolved_links?.inputSchema.properties.limit).toMatchObject({
+      maximum: 100,
+    });
+    for (const rule of [
+      "行き先のページがまだ無い",
+      "titleKey",
+      "list_backlinks",
+      "rewrite_links",
+    ]) {
+      expect(byName.list_unresolved_links?.description).toContain(rule);
+    }
     expect(byName.list_revisions?.inputSchema.required ?? []).toEqual([]);
     expect(byName.list_revisions?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
     expect(byName.list_revisions?.description).toContain("版の番号は連続しない");
     expect(byName.read_page?.description).toContain(
       "update_page と edit_page には上の階層の version を渡す",
     );
-    for (const name of ["search", "list_recent", "list_backlinks", "read_page", "list_revisions"]) {
+    for (const name of [
+      "search",
+      "list_recent",
+      "list_backlinks",
+      "list_unresolved_links",
+      "read_page",
+      "list_revisions",
+    ]) {
       expect(byName[name]?.annotations.readOnlyHint).toBe(true);
     }
     expect(byName.create_page?.annotations.readOnlyHint).toBe(false);
@@ -1734,6 +1761,195 @@ describe("検索と一覧の tool", () => {
       json: { error: "title_conflict" },
     });
   });
+
+  describe("list_unresolved_links", () => {
+    const keysOf = (outcome: ToolOutcome) =>
+      (outcome.json.links as { titleKey: string }[]).map((link) => link.titleKey);
+
+    it("行き先の無いリンクを title_key ごとにまとめ、リンク元を新しい順に返す", async () => {
+      const { call, clock } = await mcpClient({ name: "writer" });
+      await call("create_page", { title: "Exists", body: "" });
+      const { json: a } = await call("create_page", {
+        title: "A",
+        body: "[[Exists]] [[Ghost Page]] [[Missing]]",
+      });
+      clock.now += 1000;
+      const { json: b } = await call("create_page", { title: "B", body: "[[ghost_page]]" });
+      // 添付の embed は page への参照ではない
+      await call("create_page", { title: "C", body: "![[image.png]]" });
+
+      const reader = await mcpClient({ name: "reader", scopes: "read" });
+      const listed = await reader.call("list_unresolved_links", {});
+      expect(listed.isError).toBe(false);
+      expect(listed.json.nextCursor).toBeNull();
+      expect(listed.json.links).toEqual([
+        {
+          titleKey: "ghost page",
+          sourceCount: 2,
+          sources: [
+            {
+              id: b.id,
+              title: "B",
+              visibility: "draft",
+              updatedAt: T0 + 1000,
+              url: `${ORIGIN}/p/${b.id}`,
+              titleUrl: null,
+            },
+            {
+              id: a.id,
+              title: "A",
+              visibility: "draft",
+              updatedAt: T0,
+              url: `${ORIGIN}/p/${a.id}`,
+              titleUrl: null,
+            },
+          ],
+        },
+        {
+          titleKey: "missing",
+          sourceCount: 1,
+          sources: [expect.objectContaining({ id: a.id })],
+        },
+      ]);
+    });
+
+    it("sources は先頭の数件だけで、sourceCount は全体の数", async () => {
+      const { call, clock } = await mcpClient({ name: "writer" });
+      for (let i = 0; i < UNRESOLVED_SOURCES_PER_TITLE + 2; i++) {
+        clock.now += 1000;
+        await call("create_page", { title: `S${i}`, body: "[[Ghost]]" });
+      }
+      const [link] = (await call("list_unresolved_links", {})).json.links as {
+        sourceCount: number;
+        sources: { title: string }[];
+      }[];
+      expect(link?.sourceCount).toBe(UNRESOLVED_SOURCES_PER_TITLE + 2);
+      expect(link?.sources.map((s) => s.title)).toEqual(
+        ["S6", "S5", "S4", "S3", "S2"].slice(0, UNRESOLVED_SOURCES_PER_TITLE),
+      );
+    });
+
+    it("ページを作ると消え、正規化の違う title のページでも消える", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      await call("create_page", { title: "Src", body: "[[Ghost Page]] [[Other]] [[ｐｉｎｇ]]" });
+      expect(keysOf(await call("list_unresolved_links", {}))).toEqual([
+        "ghost page",
+        "other",
+        "ping",
+      ]);
+
+      await call("create_page", { title: "GHOST_PAGE", body: "" });
+      await call("create_page", { title: "Ping", body: "" });
+      expect(keysOf(await call("list_unresolved_links", {}))).toEqual(["other"]);
+    });
+
+    it("削除したページへのリンクは出て、削除したページが書いたリンクは出ない", async () => {
+      const { call, request } = await mcpClient({ name: "writer" });
+      const { json: target } = await call("create_page", { title: "Target", body: "" });
+      await call("create_page", { title: "Src", body: "[[Target]]" });
+      const { json: gone } = await call("create_page", {
+        title: "Gone",
+        body: "[[Only From Gone]]",
+      });
+      expect(keysOf(await call("list_unresolved_links", {}))).toEqual(["only from gone"]);
+
+      for (const [id, version] of [
+        [target.id, 1],
+        [gone.id, 1],
+      ] as const) {
+        const res = await request(`/api/pages/${id}`, {
+          method: "DELETE",
+          headers: { "If-Match": `"${version}"` },
+        });
+        expect(res.status).toBeLessThan(300);
+      }
+      expect(keysOf(await call("list_unresolved_links", {}))).toEqual(["target"]);
+    });
+
+    it("limit と cursor で title_key の順に続きを取る", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      await call("create_page", { title: "Src", body: "[[c]] [[a]] [[b]]" });
+      const first = await call("list_unresolved_links", { limit: 2 });
+      expect(keysOf(first)).toEqual(["a", "b"]);
+      expect(first.json.nextCursor).toEqual(expect.any(String));
+      const rest = await call("list_unresolved_links", {
+        limit: 2,
+        cursor: first.json.nextCursor,
+      });
+      expect(keysOf(rest)).toEqual(["c"]);
+      expect(rest.json.nextCursor).toBeNull();
+
+      // ちょうど limit 件で終わるときは続きを返さない
+      const exact = await call("list_unresolved_links", { limit: 3 });
+      expect(keysOf(exact)).toEqual(["a", "b", "c"]);
+      expect(exact.json.nextCursor).toBeNull();
+
+      for (const limit of [0, 101]) {
+        expect(await call("list_unresolved_links", { limit })).toMatchObject({
+          isError: true,
+          json: { error: "invalid_field", field: "limit" },
+        });
+      }
+    });
+
+    it("id か title を渡すと、そのページの本文にあるリンクだけを返す", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      const { json: a } = await call("create_page", { title: "A page", body: "[[x]] [[y]]" });
+      await call("create_page", { title: "Another", body: "[[y]] [[z]]" });
+      await call("create_page", { title: "Clean", body: "text" });
+
+      const byId = await call("list_unresolved_links", { id: a.id });
+      expect(keysOf(byId)).toEqual(["x", "y"]);
+      expect(byId.json.links).toEqual([
+        { titleKey: "x", sourceCount: 1, sources: [expect.objectContaining({ id: a.id })] },
+        { titleKey: "y", sourceCount: 1, sources: [expect.objectContaining({ id: a.id })] },
+      ]);
+      expect(await call("list_unresolved_links", { title: "A_PAGE" })).toEqual(byId);
+      expect(await call("list_unresolved_links", { title: "Clean" })).toEqual({
+        isError: false,
+        json: { links: [], nextCursor: null },
+      });
+    });
+
+    it("ページの指定のエラーは not_found か invalid_arguments", async () => {
+      const { call } = await mcpClient({ name: "writer" });
+      const { json: a } = await call("create_page", { title: "A", body: "" });
+      const notFound = { isError: true, json: { error: "not_found" } };
+      for (const args of [
+        { id: "A".repeat(22) },
+        { id: "bad" },
+        { title: "Nope" },
+        { title: " " },
+      ]) {
+        expect(await call("list_unresolved_links", args)).toEqual(notFound);
+      }
+      expect(await call("list_unresolved_links", { id: a.id, title: "A" })).toMatchObject({
+        isError: true,
+        json: { error: "invalid_arguments" },
+      });
+    });
+
+    it("read の token で使え、write の無い token でも draft のリンク元を返す", async () => {
+      const writer = await mcpClient({ name: "writer" });
+      const { json: open } = await writer.call("create_page", { title: "Open", body: "[[Ghost]]" });
+      const { json: hidden } = await writer.call("create_page", {
+        title: "Hidden",
+        body: "[[Ghost]]",
+      });
+      await setVisibility(open.id as string, "public");
+
+      const reader = await mcpClient({ name: "reader", scopes: "read" });
+      const listed = await reader.call("list_unresolved_links", {});
+      const [link] = listed.json.links as { sourceCount: number; sources: { id: string }[] }[];
+      expect(link?.sourceCount).toBe(2);
+      expect(link?.sources.map((s) => s.id).sort()).toEqual([open.id, hidden.id].sort());
+      // list_backlinks の title 引きと同じリンク元
+      const backlinks = await reader.call("list_backlinks", { title: "ghost" });
+      expect((backlinks.json.pages as { id: string }[]).map((p) => p.id)).toEqual(
+        link?.sources.map((s) => s.id),
+      );
+    });
+  });
 });
 
 describe("リクエストをまたいだ状態", () => {
@@ -1799,11 +2015,11 @@ describe("リクエストをまたいだ状態", () => {
     expect(metrics.every((m) => m.actor === tokens.alice.actor)).toBe(true);
   });
 
-  it("tools/call のあとの tools/list は 10 個の tool を返し、知らない tool は JSON-RPC のエラー", async () => {
+  it("tools/call のあとの tools/list は 11 個の tool を返し、知らない tool は JSON-RPC のエラー", async () => {
     const { rpc, create } = await sharedApp();
     await create("alice", "First");
     const listed = await rpc("bob", "tools/list");
-    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(10);
+    expect((listed.result?.tools as unknown[] | undefined)?.length).toBe(11);
 
     const unknown = await rpc("alice", "tools/call", { name: "no_such_tool", arguments: {} });
     expect(unknown.error).toEqual({ code: -32602, message: "Tool no_such_tool not found" });
