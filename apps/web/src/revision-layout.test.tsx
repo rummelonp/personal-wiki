@@ -212,4 +212,108 @@ describe("版の差分の並び", () => {
     const line = Number.parseFloat(getComputedStyle(changed as HTMLElement).lineHeight);
     expect((changed as HTMLElement).getBoundingClientRect().height).toBeGreaterThan(line * 2);
   });
+
+  type Fixture = { title: string; body: string };
+
+  /** 版の番号ごとの内容で一覧の index 行を開く。返す内容が無い版は取得の失敗にする */
+  async function openEntry(index: number, versions: Record<number, Fixture>) {
+    vi.mocked(getRevision).mockImplementation(async (_id, version) => {
+      const found = versions[version];
+      if (found === undefined) return { ok: false, reason: "error", message: "失敗" };
+      const summary = REVISIONS.find((r) => r.version === version) as RevisionSummary;
+      return { ok: true, value: { ...summary, ...found } };
+    });
+    await mount("var(--rail-width)", REVISIONS);
+    await act(async () => (all(".revision-entry")[index] as HTMLElement).click());
+    const dialog = document.querySelector<HTMLElement>(".revision-viewer");
+    if (!dialog) throw new Error("ダイアログが無い");
+    return dialog;
+  }
+
+  /** 切り替えの下端から、その下の最初の内容の上端までの距離 */
+  function gapBelowSwitch(dialog: HTMLElement) {
+    const switcher = dialog.querySelector<HTMLElement>(".segmented");
+    const body = dialog.querySelector<HTMLElement>(".revision-viewer-body");
+    if (!switcher || !body) throw new Error("切り替えか本文が無い");
+    const first = [...body.children].find((c) => c.getBoundingClientRect().height > 0);
+    if (!first) throw new Error("本文に内容が無い");
+    return first.getBoundingClientRect().top - switcher.getBoundingClientRect().bottom;
+  }
+
+  function space3() {
+    const probe = document.createElement("div");
+    probe.style.height = "var(--space-3)";
+    document.body.append(probe);
+    const height = probe.getBoundingClientRect().height;
+    probe.remove();
+    return height;
+  }
+
+  const SAME = { title: "題", body: "共通\n末尾" };
+  const CHANGED = { title: "題", body: "共通\n変更後\n末尾" };
+
+  it("切り替えと本文の間は、どの表示でも同じ余白になる", async () => {
+    const cases: [string, number, Record<number, Fixture>, () => string][] = [
+      ["差分だけ", 0, { 4: CHANGED, 3: SAME }, () => ".diff-row"],
+      [
+        "title の違いも出す",
+        0,
+        { 4: { ...CHANGED, title: "新題" }, 3: SAME },
+        () => ".conflict-titles",
+      ],
+      ["title だけ違う", 0, { 4: { ...SAME, title: "新題" }, 3: SAME }, () => ".diff-legend"],
+      ["最初の版", 3, { 1: CHANGED }, () => ".diff-legend"],
+      ["前の版の取得に失敗", 0, { 4: CHANGED }, () => ".revision-diff-error"],
+    ];
+    const expected = space3();
+    for (const [name, index, versions, ready] of cases) {
+      const dialog = await openEntry(index, versions);
+      await vi.waitFor(() => expect(dialog.querySelector(ready())).not.toBeNull());
+      expect(gapBelowSwitch(dialog), name).toBeCloseTo(expected, 1);
+      act(() => root?.unmount());
+      container?.remove();
+      root = null;
+      container = null;
+    }
+
+    const dialog = await openEntry(0, { 4: CHANGED, 3: SAME });
+    await vi.waitFor(() => expect(dialog.querySelector(".diff-row")).not.toBeNull());
+    const full = [...dialog.querySelectorAll("button")].find((b) => b.textContent === "全文");
+    await act(async () => (full as HTMLButtonElement).click());
+    await vi.waitFor(() => expect(dialog.querySelector(".revision-viewer-prose")).not.toBeNull());
+    expect(gapBelowSwitch(dialog), "全文").toBeCloseTo(expected, 1);
+  });
+
+  it("差分が無いと伝える文は、凡例と同じ大きさで出す", async () => {
+    const dialog = await openEntry(0, { 4: { ...SAME, title: "新題" }, 3: SAME });
+    await vi.waitFor(() => expect(dialog.textContent).toContain("本文は前の版と同じです。"));
+    const note = [...dialog.querySelectorAll<HTMLElement>(".revision-diff p")].find((p) =>
+      p.textContent?.includes("本文は前の版と同じです。"),
+    );
+    const probe = document.createElement("p");
+    probe.style.fontSize = "var(--font-size-sm)";
+    dialog.append(probe);
+    const small = getComputedStyle(probe).fontSize;
+    probe.remove();
+    expect(getComputedStyle(note as HTMLElement).fontSize).toBe(small);
+  });
+
+  it("切り替えはスクロールする欄の外にあり、本文をスクロールしても動かない", async () => {
+    const lines = Array.from({ length: 80 }, (_, i) => `行${i}`).join("\n");
+    const dialog = await openEntry(0, { 4: { title: "題", body: lines }, 3: SAME });
+    await vi.waitFor(() => expect(dialog.querySelector(".diff-row")).not.toBeNull());
+    const body = dialog.querySelector<HTMLElement>(".revision-viewer-body");
+    const switcher = dialog.querySelector<HTMLElement>(".segmented");
+    if (!body || !switcher) throw new Error("切り替えか本文が無い");
+    expect(body.contains(switcher)).toBe(false);
+    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
+    const before = switcher.getBoundingClientRect().top;
+    body.scrollTop = body.scrollHeight;
+    expect(switcher.getBoundingClientRect().top).toBe(before);
+    // 本文の欄の余白はスクロールで流れるので、見えている欄の上端との距離で間が残ることを確かめる
+    expect(body.getBoundingClientRect().top - switcher.getBoundingClientRect().bottom).toBeCloseTo(
+      space3(),
+      1,
+    );
+  });
 });

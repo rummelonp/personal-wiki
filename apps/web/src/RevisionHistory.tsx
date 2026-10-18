@@ -400,35 +400,34 @@ function RevisionViewer({
           <p className="revision-viewer-status" role="status">
             {restore?.state?.status === "done" ? restore.state.note : ""}
           </p>
-          <div className="revision-viewer-body">
-            {viewing.status === "loading" && <PendingBody />}
-            {viewing.status === "missing" && (
-              <p className="muted" role="status">
-                この版は後の保存にまとめられたため、表示できません。履歴を読み込み直しました。
-              </p>
-            )}
-            {viewing.status === "gone" && (
-              <p className="muted" role="status">
-                このページは削除されたため、版を表示できません。
-              </p>
-            )}
-            {viewing.status === "error" && (
-              <p className="muted" role="status">
-                取得できませんでした。{viewing.message}
-              </p>
-            )}
-            {viewing.status === "ready" && (
-              <RevisionContent
-                // 版を開き直すたびに、既定の差分から始める
-                key={viewing.revision.version}
-                pageId={pageId}
-                revision={viewing.revision}
-                previous={viewing.previous}
-                onPreviousMissing={onPreviousMissing}
-                resolveAttachmentUrl={resolveAttachmentUrl}
-              />
-            )}
-          </div>
+          {viewing.status === "ready" ? (
+            <RevisionContent
+              pageId={pageId}
+              revision={viewing.revision}
+              previous={viewing.previous}
+              onPreviousMissing={onPreviousMissing}
+              resolveAttachmentUrl={resolveAttachmentUrl}
+            />
+          ) : (
+            <div className="revision-viewer-body">
+              {viewing.status === "loading" && <PendingBody />}
+              {viewing.status === "missing" && (
+                <p className="muted" role="status">
+                  この版は後の保存にまとめられたため、表示できません。履歴を読み込み直しました。
+                </p>
+              )}
+              {viewing.status === "gone" && (
+                <p className="muted" role="status">
+                  このページは削除されたため、版を表示できません。
+                </p>
+              )}
+              {viewing.status === "error" && (
+                <p className="muted" role="status">
+                  取得できませんでした。{viewing.message}
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
     </dialog>
@@ -444,7 +443,9 @@ const MODES: { value: Mode; label: string }[] = [
 
 /**
  * 開いた版の中身。既定は前の版との差分で、全文は読み取り専用のエディタで出す。
- * エディタは全文に切り替えたときに作る。読み取り専用で IME の対象にならないので、作り直してよい。
+ * 切り替えはスクロールする欄の外に置き、差分や全文を長くスクロールしても押せるようにする。
+ * エディタは全文に切り替えたときに作る。切り替えはボタンを押して起こり、そのときエディタは
+ * 焦点も変換も持たないので、作り直しても IME を壊さない。
  */
 function RevisionContent({
   pageId,
@@ -462,37 +463,41 @@ function RevisionContent({
   const [mode, setMode] = useState<Mode>("diff");
   return (
     <>
-      <fieldset className="segmented revision-viewer-modes">
-        <legend className="visually-hidden">表示</legend>
-        {MODES.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            className="segmented-option"
-            aria-pressed={mode === value}
-            onClick={() => setMode(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </fieldset>
-      <RevisionDiff
-        pageId={pageId}
-        revision={revision}
-        previous={previous}
-        hidden={mode !== "diff"}
-        onPreviousMissing={onPreviousMissing}
-      />
-      {mode === "full" && (
-        <div className="revision-viewer-prose">
-          <BodyEditor
-            value={revision.body}
-            readOnly
-            scrollAnchor={false}
-            {...(resolveAttachmentUrl === undefined ? {} : { resolveAttachmentUrl })}
-          />
-        </div>
-      )}
+      <div className="revision-viewer-modes">
+        <fieldset className="segmented">
+          <legend className="visually-hidden">表示</legend>
+          {MODES.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              className="segmented-option"
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+      </div>
+      <div className="revision-viewer-body">
+        <RevisionDiff
+          pageId={pageId}
+          revision={revision}
+          previous={previous}
+          hidden={mode !== "diff"}
+          onPreviousMissing={onPreviousMissing}
+        />
+        {mode === "full" && (
+          <div className="revision-viewer-prose">
+            <BodyEditor
+              value={revision.body}
+              readOnly
+              scrollAnchor={false}
+              {...(resolveAttachmentUrl === undefined ? {} : { resolveAttachmentUrl })}
+            />
+          </div>
+        )}
+      </div>
     </>
   );
 }

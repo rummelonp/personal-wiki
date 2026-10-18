@@ -620,6 +620,32 @@ describe("RevisionHistory の版の差分", () => {
     expect(diffRows(dialog)).toEqual([" 共通", " 古い行", "−最初", "＋末尾"]);
   });
 
+  it("「さらに表示」で次の行が足されたら、続きを取り直さずその行の版を 1 つ古い版にする", async () => {
+    vi.mocked(listRevisions)
+      .mockResolvedValueOnce(ok({ revisions: REVISIONS.slice(0, 1), nextCursor: "5" }))
+      .mockResolvedValueOnce(ok({ revisions: REVISIONS.slice(1), nextCursor: null }));
+    serve(NEW, OLD);
+    await mount();
+    const more = await vi.waitFor(() => {
+      const found = [...(container?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent === "さらに表示",
+      );
+      expect(found).toBeDefined();
+      return found as HTMLButtonElement;
+    });
+    await act(async () => more.click());
+    await vi.waitFor(() => expect(entries()).toHaveLength(2));
+
+    const entry = container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[0];
+    await act(async () => entry?.click());
+    const dialog = container?.querySelector("dialog") as HTMLDialogElement;
+    await vi.waitFor(() =>
+      expect(diffRows(dialog)).toEqual([" 共通", "−古い行", "＋新しい行", " 末尾"]),
+    );
+    expect(getRevision).toHaveBeenCalledWith(ID, 2);
+    expect(listRevisions).toHaveBeenCalledTimes(2);
+  });
+
   it("続きの先が空なら最初の版として扱う", async () => {
     vi.mocked(listRevisions)
       .mockResolvedValueOnce(ok({ revisions: REVISIONS, nextCursor: "2" }))

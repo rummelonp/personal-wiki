@@ -350,6 +350,49 @@ test("長い行は折り返して全部を読め、ダイアログも画面も�
   expect(fit.insertHeight).toBeGreaterThan(fit.lineHeight * 2);
 });
 
+test("差分と全文で高さが違っても切り替えの位置は動かず、全文を末尾までスクロールしても押せる", async ({
+  page,
+  api,
+}, testInfo) => {
+  const lines = Array.from({ length: 150 }, (_, i) => `行${i}`);
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "切り替えの位置"),
+    body: lines.join("\n"),
+    visibility: "public",
+  });
+  await api.updatePage(created, {
+    body: lines.map((l, i) => (i === 75 ? "変えた行" : l)).join("\n"),
+  });
+
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+  await entries(page).first().click();
+  await expect(viewer(page).locator(".diff-insert .diff-text")).toHaveText("変えた行");
+
+  const switchTop = async () =>
+    viewer(page)
+      .getByRole("button", { name: "全文" })
+      .evaluate((button) => button.getBoundingClientRect().top);
+  const dialogTop = () => viewer(page).evaluate((d) => d.getBoundingClientRect().top);
+  const diffTops = { switch: await switchTop(), dialog: await dialogTop() };
+
+  await showFull(page);
+  await expect(viewer(page).locator(".cm-content")).toContainText("行0行1行2");
+  expect({ switch: await switchTop(), dialog: await dialogTop() }).toEqual(diffTops);
+
+  await viewer(page)
+    .locator(".revision-viewer-body")
+    .evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+  await expect(viewer(page).getByRole("button", { name: "差分" })).toBeInViewport();
+  await expect(viewer(page).getByRole("button", { name: "全文" })).toBeInViewport();
+
+  await viewer(page).getByRole("button", { name: "差分" }).click();
+  await expect(viewer(page).locator(".diff-insert .diff-text")).toHaveText("変えた行");
+  expect({ switch: await switchTop(), dialog: await dialogTop() }).toEqual(diffTops);
+});
+
 test("前の版の取得に失敗したら理由を出し、再試行で差分を出す。全文は読める", async ({
   page,
   api,

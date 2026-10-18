@@ -190,7 +190,7 @@ function DiffContent({
         </p>
       )}
       {previous !== null && !hasDiff && (
-        <p className="muted">
+        <p className="muted diff-legend">
           {titleChanged ? "本文は前の版と同じです。" : "前の版との差分はありません。"}
         </p>
       )}

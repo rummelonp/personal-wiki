@@ -484,7 +484,10 @@ a {
 .revision-viewer {
   width: min(100% - var(--space-5), var(--revision-viewer-width));
   max-height: calc(var(--viewport-height) - 2 * var(--space-5));
-  margin: auto;
+
+  /* 上端を固定する。中央寄せだと、差分と全文で高さが違うときに切り替えの位置が動く */
+  margin: var(--space-5) auto auto;
+
   /* top layer に出ても右の列（.rail）の小さい文字を継ぐので、画面の本文と同じ大きさ（と em で決まる本文の幅）にそろえる */
   font-size: var(--font-size-base);
 }
@@ -563,9 +566,19 @@ a {
   max-width: var(--prose-width);
 }
 
-/* 差分と全文の切り替え。本文の上に置き、どちらの表示でも同じ位置にする */
+/*
+ * 差分と全文の切り替え。スクロールする欄の外に置き、どちらの表示でも同じ位置に残す。
+ * 本文との間は切り替えの側に持たせ、本文の欄の上の余白は外す。欄の余白はスクロールで流れるので、
+ * 欄の側に持たせると、スクロールした本文が切り替えの下端に接する。
+ * フレックスにして、切り替えを行ボックスに乗せない（行の高さの余白が下に付かない）。
+ */
 .revision-viewer-modes {
-  margin-bottom: var(--space-3);
+  display: flex;
+  padding: var(--space-3) var(--space-4);
+}
+
+.revision-viewer-modes + .revision-viewer-body {
+  padding-top: 0;
 }
 
 /* 差分の欄は本文の幅に限らず、ダイアログの幅いっぱいに使って長い行の折り返しを減らす */
