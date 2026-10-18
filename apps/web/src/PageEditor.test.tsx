@@ -989,6 +989,49 @@ describe("PageEditor と本文のエディタ", () => {
       },
     );
 
+    it.each(["残った内容に戻す", "残った内容を破棄する"])(
+      "%s を押した後、本文が差し替わる前に利用者が別の要素へ移した focus は奪わない",
+      async (label) => {
+        seedKept();
+        const { button, view } = renderPage();
+        const elsewhere = document.createElement("input");
+        document.body.append(elsewhere);
+        try {
+          // 押した操作の処理（本文の差し替えと focus の移し直し）より先に、利用者が focus を移した状態にする
+          button(label).addEventListener("click", () => elsewhere.focus());
+          act(() => button(label).click());
+          await flushAsync();
+          expect(document.activeElement).toBe(elsewhere);
+          expect(document.activeElement).not.toBe(view().contentDOM);
+        } finally {
+          elsewhere.remove();
+        }
+      },
+    );
+
+    // 押したボタンが focus を受けない操作では、押す前に通知の見出しにあった focus も外れて body に落ちる
+    it.each([
+      ["押したボタンが focus を持つ", (b: HTMLElement) => b.focus()],
+      ["focus が body に落ちている", () => (document.activeElement as HTMLElement).blur()],
+    ])("破棄の後に別のタブの退避が続くときは、%s場合も本文へ移さない", async (_name, setUp) => {
+      localStorage.setItem(
+        BACKUP_KEY,
+        JSON.stringify({ title: "題", body: "新しい退避", baseVersion: 1, savedAt: 2 }),
+      );
+      localStorage.setItem(
+        `${BACKUP_KEY}@other`,
+        JSON.stringify({ title: "題", body: "別のタブの退避", baseVersion: 1, savedAt: 1 }),
+      );
+      const { view, button } = renderPage();
+      act(() => setUp(button("残った内容を破棄する")));
+      act(() => button("残った内容を破棄する").click());
+      await flushAsync();
+      expect(button("残った内容を破棄する")).toBeTruthy();
+      expect(view().state.readOnly).toBe(true);
+      expect(document.activeElement?.closest(".cm-content")).toBeNull();
+      expect(document.activeElement?.closest(".title-input")).toBeNull();
+    });
+
     it("復元で衝突になるときは、衝突の通知が focus を受けるので動かさない", async () => {
       localStorage.setItem(
         BACKUP_KEY,
