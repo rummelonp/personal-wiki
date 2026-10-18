@@ -174,11 +174,20 @@ test("本文を編集した直後に「公開」を 1 回押すと、保存の�
     return route.fallback();
   });
 
+  let saveRequests = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && request.url().endsWith(`/api/pages/${id}`)) saveRequests += 1;
+  });
+
   await typeAtBodyEnd(page, "追記");
+  // 保存は押す操作の途中の blur で始まる。押す前に始まっていれば、保存の間に押す経路を通らない
+  expect(saveRequests).toBe(0);
   // タッチの端末では、タップから作られる event の順でも届くことを見る
   if (hasTouch) await option(page, "公開").tap();
   else await option(page, "公開").click();
   await expect(confirmPanel(page)).toBeVisible();
+  // request の event は page の外から非同期に届くので、確認が開いた時点ではまだ数えていないことがある
+  await expect.poll(() => saveRequests).toBe(1);
   await expect(saveState(page)).toHaveText("保存中…");
 
   await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
@@ -191,6 +200,96 @@ test("本文を編集した直後に「公開」を 1 回押すと、保存の�
   await expect(saveState(page)).toHaveText("保存済み");
   const saved = await api.getPage(id);
   expect(saved.body).toBe("公開の検査に使う本文追記");
+  expect(saved.visibility).toBe("public");
+  expect(await anonymousSees(title)).toBe(true);
+});
+
+test("自動保存が始まっている間にも、blur を伴わない「公開」の押下で確認が開き、保存の後に公開する", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "自動保存中の公開");
+  const id = await openDraft(page, title, api);
+  let releaseSaves: () => void = () => {};
+  const saves = new Promise<void>((resolve) => {
+    releaseSaves = resolve;
+  });
+  await page.route(`**/api/pages/${id}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    await saves;
+    return route.fallback();
+  });
+
+  // ボタンを押しても本文の focus が外れない環境では、blur から保存が始まらない。
+  // 入力が止まった後の自動保存が始まるのを待ち、click だけを送る
+  const autosave = page.waitForRequest(
+    (request) => request.method() === "PUT" && request.url().endsWith(`/api/pages/${id}`),
+  );
+  await typeAtBodyEnd(page, "追記");
+  await autosave;
+  await expect(saveState(page)).toHaveText("保存中…");
+  await option(page, "公開").dispatchEvent("click");
+  await expect(confirmPanel(page)).toBeVisible();
+
+  await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+  await expect(notice(page)).toHaveText("公開に変更中…");
+  expect(await anonymousSees(title)).toBe(false);
+
+  releaseSaves();
+  await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
+  await expect(notice(page)).toHaveText("公開しました。");
+  const saved = await api.getPage(id);
+  expect(saved.body).toBe("公開の検査に使う本文追記");
+  expect(saved.visibility).toBe("public");
+  expect(await anonymousSees(title)).toBe(true);
+});
+
+test("版の本文に戻している間も、ダイアログを閉じて「公開」を押せ、戻した後に公開する", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "戻し中の公開");
+  // draft の保存は 10 分のうちに 1 つの版へまとまるので、公開の版を先に作って区切る
+  const created = await api.createPage({ title, body: "最初の本文", visibility: "public" });
+  await api.updatePage(created, { body: "二つ目の本文" });
+  await page.goto(`/p/${created.id}`);
+  await option(page, "下書き").click();
+  await expect(notice(page)).toHaveText("下書きに戻しました。");
+  const entries = page.locator(".rail-section-history .revision-entry");
+  // 戻す前の保存を止め、戻している間（未保存の入力の保存が終わるまで）を作る
+  let releaseSaves: () => void = () => {};
+  const saves = new Promise<void>((resolve) => {
+    releaseSaves = resolve;
+  });
+  await page.route(`**/api/pages/${created.id}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    await saves;
+    return route.fallback();
+  });
+
+  await typeAtBodyEnd(page, "を足した");
+  await entries.last().click();
+  const viewer = page.getByRole("dialog");
+  await expect(viewer.locator(".cm-content")).toHaveText("最初の本文");
+  await viewer.getByRole("button", { name: "この版の本文に戻す" }).click();
+  await expect(viewer.getByRole("button", { name: "戻し中…" })).toBeDisabled();
+  await expect(saveState(page)).toHaveText("保存中…");
+  await viewer.getByRole("button", { name: "閉じる" }).click();
+  await expect(viewer).toHaveCount(0);
+
+  await expect(option(page, "公開")).toBeEnabled();
+  await option(page, "公開").click();
+  await expect(confirmPanel(page)).toBeVisible();
+  await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
+  await expect(notice(page)).toHaveText("公開に変更中…");
+  expect(await anonymousSees(title)).toBe(false);
+
+  releaseSaves();
+  await expect(notice(page)).toHaveText("公開しました。");
+  await expect(option(page, "公開")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".body-editor")).toHaveText("最初の本文");
+  const saved = await api.getPage(created.id);
+  expect(saved.body).toBe("最初の本文");
   expect(saved.visibility).toBe("public");
   expect(await anonymousSees(title)).toBe(true);
 });
