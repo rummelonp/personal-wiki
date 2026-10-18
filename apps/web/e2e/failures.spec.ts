@@ -178,8 +178,8 @@ test("もう一度保存するを Enter で押して応答を待つ間にもう�
   await expect(saveState(page)).toHaveText("保存に失敗");
   await expect(retry).toBeFocused();
 
-  // 押したボタンは待つ間に消える。WebKit は本文の選択が残っていると、focus を本文へ移すか、
-  // 打鍵の既定の動作を本文へ届けるので、2 回目の Enter が改行として入らないよう、待つ間の focus の置き場を持つ。
+  // 押したボタンは待つ間に消える。WebKit は、本文に選択が残っていると、focus がどこにあっても
+  // 打鍵の既定の動作を本文へ届けるので、2 回目の Enter が改行として入らないよう、待つ間は本文の選択を外す。
   // toHaveText は空白を畳むので、改行は innerText で見る
   const release = saves.hold();
   const before = saves.puts();
@@ -192,6 +192,39 @@ test("もう一度保存するを Enter で押して応答を待つ間にもう�
   await expect(retry).toBeEnabled();
   const bodyText = () => bodyEditor(page).evaluate((element) => (element as HTMLElement).innerText);
   expect(await bodyText()).toBe(FIRST_LINE + typed);
+});
+
+test("title の欄に選択を残して再送を押し、応答を待つ間に Enter を押しても、title は変わらない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "待つ間の title");
+  const created = await openFreshPage(page, api, title);
+  const saves = await failSaves(page, created.id);
+  await typeAtBodyEnd(page, "、title の選択が残る");
+  const alert = page.getByRole("alert").filter({ hasText: "保存できませんでした" });
+  await expect(alert).toBeVisible();
+  const retry = alert.getByRole("button", { name: "もう一度保存する" });
+  const titleContent = page.locator(".title-input .cm-content");
+  await titleContent.click();
+  await expect(titleContent).toBeFocused();
+  const first = saves.puts();
+  await retry.focus();
+  await expect.poll(saves.puts, "blur の保存が送られない").toBeGreaterThan(first);
+  await expect(saveState(page)).toHaveText("保存に失敗");
+  await expect(retry).toBeFocused();
+
+  const release = saves.hold();
+  const before = saves.puts();
+  await page.keyboard.press("Enter");
+  await expect.poll(saves.puts, "再送が送られない").toBeGreaterThan(before);
+  await expect(retry).toBeHidden();
+  await page.keyboard.press("Enter");
+  release();
+  await expect(retry).toBeFocused();
+  await expect(retry).toBeEnabled();
+  const titleText = () => titleContent.evaluate((element) => (element as HTMLElement).innerText);
+  expect(await titleText()).toBe(title);
 });
 
 test("再送の応答を待つ間に Enter を押して、再送が成功しても、本文は変わらず focus は body に落ちない", async ({

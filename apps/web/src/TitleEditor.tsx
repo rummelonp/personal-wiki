@@ -31,6 +31,8 @@ export interface TitleEditorHandle {
   whenSettled: () => Promise<void>;
   /** 入力欄にカーソルを置く。選択範囲は前のまま。 */
   focus: () => void;
+  /** 編集できる要素（contentDOM）が node を含むか。要素そのものも含む */
+  contains: (node: Node) => boolean;
 }
 
 export interface TitleEditorProps {
@@ -181,6 +183,9 @@ export function TitleEditor({
     },
     focus() {
       view.current?.focus();
+    },
+    contains(node) {
+      return view.current?.contentDOM.contains(node) ?? false;
     },
   }));
 

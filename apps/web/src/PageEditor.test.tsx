@@ -513,11 +513,15 @@ describe("PageEditor と本文のエディタ", () => {
 
   describe("再送のボタンへ focus を戻す印", () => {
     // キーボードで再送したように、focus を持った「もう一度保存する」が応答待ちの間に消えた状態にする
-    async function pressRetryAndWait() {
+    async function pressRetryAndWait(
+      placeCursor?: (view: EditorView) => void,
+      beforeRetry?: (view: EditorView) => void,
+    ) {
       vi.mocked(updatePage).mockResolvedValueOnce({ ok: false, reason: "error", message: "失敗" });
       const { view, button } = renderPage();
       view().focus();
       typeAtEnd(view(), "を書き足す");
+      placeCursor?.(view());
       act(() => view().contentDOM.blur());
       await flushAsync();
 
@@ -527,6 +531,7 @@ describe("PageEditor と本文のエディタ", () => {
           reply = resolve;
         }),
       );
+      beforeRetry?.(view());
       act(() => button("もう一度保存する").focus());
       act(() => button("もう一度保存する").click());
       await flushAsync();
@@ -548,6 +553,41 @@ describe("PageEditor と本文のエディタ", () => {
       await flushAsync();
       expect(waitAnchor()).toBeNull();
       expect(document.activeElement).toBe(view().contentDOM);
+    });
+
+    it("再送が成功して本文へ戻ったら、預ける前のカーソルの位置に戻る", async () => {
+      const { view, reply } = await pressRetryAndWait((v) => {
+        v.dispatch({ selection: { anchor: 2, head: 4 } });
+      });
+      expect(view().state.selection.main.from).toBe(2);
+      expect(view().state.selection.main.to).toBe(4);
+      await reply(ok({ ...PAGE, body: "を書き足す", version: 2 }));
+      await flushAsync();
+      expect(document.activeElement).toBe(view().contentDOM);
+      expect(view().state.selection.main.from).toBe(2);
+      expect(view().state.selection.main.to).toBe(4);
+      const selection = window.getSelection();
+      expect(selection?.rangeCount).toBe(1);
+      expect(view().contentDOM.contains(selection?.anchorNode ?? null)).toBe(true);
+    });
+
+    it("本文の選択が contenteditable の要素そのものにあっても、待つ間は選択を外す", async () => {
+      // 本文の先頭や空の本文では、選択の端が行でなく contenteditable の要素そのものに置かれる
+      await pressRetryAndWait(undefined, (v) => {
+        window.getSelection()?.collapse(v.contentDOM, 0);
+        expect(window.getSelection()?.anchorNode).toBe(v.contentDOM);
+      });
+      expect(window.getSelection()?.rangeCount).toBe(0);
+    });
+
+    it("title の欄に選択が残っていても、待つ間は選択を外す", async () => {
+      await pressRetryAndWait(undefined, () => {
+        act(() => titleView().focus());
+        act(() => titleView().dispatch({ selection: { anchor: 1 } }));
+        const node = window.getSelection()?.anchorNode ?? null;
+        expect(node && titleView().contentDOM.contains(node)).toBe(true);
+      });
+      expect(window.getSelection()?.rangeCount).toBe(0);
     });
 
     it("待つ間に本文へ移した focus は、再送が失敗しても奪わない", async () => {
@@ -1802,6 +1842,26 @@ describe("まだ作っていないページ（page が null）", () => {
       await flushAsync();
       expect(retryButton()?.disabled).toBe(false);
       expect(document.activeElement).toBe(document.body);
+    });
+
+    it("再送が成功したら、置き場から本文へ focus を移し、body に落とさない", async () => {
+      const { reply } = await pressRetryAndWait();
+      await reply(created({ title: "題", body: "残る本文" }));
+      await flushAsync();
+      expect(waitAnchor()).toBeNull();
+      expect(document.activeElement).toBe(bodyContent());
+    });
+
+    it("タッチ端末では、再送が成功したら本文でなくページの枠へ移す", async () => {
+      const coarse = mockCoarse();
+      try {
+        const { reply } = await pressRetryAndWait();
+        await reply(created({ title: "題", body: "残る本文" }));
+        await flushAsync();
+        expect(document.activeElement).toBe(container?.querySelector("article"));
+      } finally {
+        coarse.mockRestore();
+      }
     });
 
     it("再送が題名の重複で止まったら印を捨て、後から現れる再送のボタンへ移さない", async () => {

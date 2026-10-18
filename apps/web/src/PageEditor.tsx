@@ -610,13 +610,18 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         focusAfterInput(button, { preventScroll: true });
         return;
       } else if (anchor !== null && lost) {
-        // 押したボタンが消えると、WebKit は本文の選択が残っていれば focus を本文へ移し、
-        // 応答を待つ間の Enter が本文に改行として入る。消えない要素に預けても、選択が本文に残っている間は
-        // 打鍵の既定の動作がそこへ届くので、選択も外す。本文の view は focus を受けるときに選択を描き直す
+        // 押したボタンが消えると、focus は body に落ちる。WebKit は、focus が body や消えない要素に
+        // あっても、本文か title の欄に選択が残っていれば打鍵の既定の動作（Enter の改行）をその選択へ届けるので、
+        // 応答を待つ間の Enter が欄に入る。そこで選択を外す。view は focus を受けるときに選択を描き直す。
+        // focus の預け先は、body に落とさないための置き場で、Enter を止めるのは選択を外す方である
         focusAfterInput(anchor, { preventScroll: true });
         const selection = window.getSelection();
-        if (selection?.anchorNode?.parentElement?.closest('[contenteditable="true"]'))
-          selection.removeAllRanges();
+        const node = selection?.anchorNode;
+        if (
+          node &&
+          (editor.current?.view()?.contentDOM.contains(node) || titleEditor.current?.contains(node))
+        )
+          selection?.removeAllRanges();
         parkedOnAnchor.current = true;
         return;
       }
