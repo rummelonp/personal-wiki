@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 
 const INDEX_HTML = "<!doctype html><title>wiki</title>";
-const FAVICON = "fake-icon";
+const PUBLIC_FILE = "fake-image";
 const HTML_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
 
 // Static Assets と同じく、置いたファイルだけを返し、無いパスは 404 にする
@@ -19,8 +19,8 @@ function fakeAssets() {
           headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"index"' },
         });
       }
-      if (pathname === "/favicon.ico") {
-        return new Response(FAVICON, { headers: { "Content-Type": "image/x-icon" } });
+      if (pathname === "/example.png") {
+        return new Response(PUBLIC_FILE, { headers: { "Content-Type": "image/png" } });
       }
       return new Response("not found", { status: 404 });
     },
@@ -98,13 +98,13 @@ describe("SPA の配信", () => {
     const { assets } = fakeAssets();
     for (const accept of [HTML_ACCEPT, "image/*"]) {
       const res = await createApp().request(
-        "/favicon.ico",
+        "/example.png",
         { headers: { Accept: accept } },
         { ...env, ASSETS: assets },
       );
       expect(res.status).toBe(200);
-      expect(new TextDecoder().decode(await res.arrayBuffer())).toBe(FAVICON);
-      expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+      expect(new TextDecoder().decode(await res.arrayBuffer())).toBe(PUBLIC_FILE);
+      expect(res.headers.get("Content-Type")).toBe("image/png");
       expect(res.headers.get("Content-Security-Policy")).toBeNull();
       expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     }

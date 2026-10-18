@@ -64,8 +64,18 @@ describe("titlePath", () => {
     }
   });
 
-  it("Static Assets が先にレスポンスを返す index.html、index、robots.txt は null", () => {
-    for (const title of ["index", "Index", "index.html", "INDEX.HTML", "index/x", "robots.txt"]) {
+  it("Static Assets が先にレスポンスを返す index.html、index、robots.txt、favicon は null", () => {
+    for (const title of [
+      "index",
+      "Index",
+      "index.html",
+      "INDEX.HTML",
+      "index/x",
+      "robots.txt",
+      "favicon.svg",
+      "favicon.ico",
+      "apple-touch-icon.png",
+    ]) {
       expect(titlePath(title)).toBeNull();
     }
   });

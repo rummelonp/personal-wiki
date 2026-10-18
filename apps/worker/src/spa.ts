@@ -23,8 +23,8 @@ type PageLookup = { ok: true; page: PageMeta | null } | { ok: false };
  * wrangler.jsonc の run_worker_first で `/assets/*` 以外は Worker が先に受ける。
  * 1. Worker のパス（paths.ts）はレスポンスを作らずに next() へ回す。後から登録した API のルートも隠さず、
  *    何もレスポンスを返さなければ notFound の JSON の 404 になる
- * 2. ASSETS に実際のファイル（`apps/web/public` の favicon など）があればそれを返す。`/` もここで
- *    ASSETS が index.html を返すので、3 には来ない
+ * 2. ASSETS に実際のファイル（`apps/web/public` のうち run_worker_first から除いていないもの）があれば
+ *    それを返す。`/` もここで ASSETS が index.html を返すので、3 には来ない
  * 3. 無ければ、HTML を受け付けるナビゲーションにだけ index.html を返す。fetch や画像の読み込みに
  *    200 の HTML を返すと、呼び出し元が中身を取り違えるので、それ以外は JSON の 404 にする。
  *    例外として、Accept が無いか任意の型だけ（acceptKindOf の any）のリクエストには、読めるページがあるときに
