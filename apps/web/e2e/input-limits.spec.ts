@@ -164,6 +164,50 @@ test("上限を超えたまま画面を離れると送らずに退避し、開�
   expect(puts()).toBe(0);
 });
 
+test("title が上限を超えたまま離れて戻ると、画面の位置に関わらず退避の申し出が見え、上端は保存済みと言わない", async ({
+  page,
+  api,
+}, testInfo) => {
+  // 上限を超えた title は何行にも折り返し、末尾の caret を見せるために画面が深くスクロールする。
+  // その位置が履歴に残り、短い title に戻ったページでは本文の下の方で開く
+  const body = Array.from({ length: 40 }, (_, i) => `行 ${i} ${"a".repeat(60)}`).join("\n");
+  const created = await api.createPage({ title: uniqueTitle(testInfo, "戻る"), body });
+  const puts = await countPuts(page, created.id);
+  await page.goto(`/p/${created.id}`);
+  await expect(saveState(page)).toHaveText("保存済み");
+  await titleEditor(page).click();
+  await page.keyboard.press("End");
+  await page.keyboard.insertText("#".repeat(MAX_TITLE_BYTES + 100));
+  await expect(page.locator(".title-hint .input-meter")).toHaveClass(/input-meter-over/);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+
+  await page.getByRole("link", { name: "personal-wiki" }).click();
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(puts()).toBe(0);
+  await page.goBack();
+
+  const kept = notice(page, "前回、保存できなかった内容があります");
+  await expect(kept).toBeVisible();
+  // 前提の確認: 履歴の位置に戻り、上端が見えない深さで開いている
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+  const viewport = page.viewportSize();
+  const box = await kept.boundingBox();
+  if (viewport === null || box === null) throw new Error("位置を取れない");
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 0.5);
+  await expect(kept.getByRole("heading")).toBeFocused();
+  // 利用者が上端を見に戻る操作をなぞる
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(saveState(page)).toHaveText("端末に残った内容あり");
+  await expect(saveState(page)).not.toHaveText("保存済み");
+
+  await kept.getByRole("button", { name: "残った内容に戻す" }).click();
+  await expect(notice(page, "タイトルが長すぎて保存できません")).toBeVisible();
+  await expect(saveState(page)).toHaveText("保存できません");
+  expect(puts()).toBe(0);
+});
+
 test("本文の NUL に印を付け、通知のボタンで選んで消すと保存する", async ({
   page,
   api,

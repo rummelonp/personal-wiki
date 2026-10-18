@@ -529,6 +529,8 @@ describe("ログイン切れ", () => {
     const { session, server } = setup({ backup });
     expect(session.getState().pendingBackup?.body).toBe("退避");
     expect(session.getState().draft.body).toBe("本文");
+    // 画面の内容は保存済みの版だが、退避の扱いが決まるまで編集を止めているので「保存済み」とは言わない
+    expect(saveStatusOf(session.getState())).toBe("kept");
     session.restoreBackup();
     expect(session.getState().draft.body).toBe("退避");
     expect(saveStatusOf(session.getState())).toBe("unsaved");

@@ -219,6 +219,7 @@ export type SaveStatus =
   | "invalid"
   | "error"
   | "conflict"
+  | "kept"
   | "auth"
   | "gone";
 
@@ -277,6 +278,9 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.gone) return "gone";
   if (state.authLost) return "auth";
   if (state.conflict !== null) return "conflict";
+  // 端末に残った内容の扱いが決まるまで編集を止めている。既存のページで「保存済み」と出すと、
+  // 止めている理由の通知を見落としたとき、何も起きていないように読める
+  if (state.pendingBackup !== null) return "kept";
   if (state.busy === "creating") return "creating";
   if (state.busy === "saving") return "saving";
   if ((state.uncreated || isDirty(state)) && inputProblemsOf(state.draft).length > 0) {

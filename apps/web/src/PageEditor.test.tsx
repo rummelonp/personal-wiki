@@ -230,6 +230,17 @@ describe("PageEditor と本文のエディタ", () => {
       expect(spoken()?.textContent).toBe("");
     });
 
+    it("端末に残った内容の扱いが決まるまでは、通知が伝えるので読み上げない", async () => {
+      localStorage.setItem(
+        BACKUP_KEY,
+        JSON.stringify({ title: "題", body: "退避した本文", baseVersion: 1, savedAt: 0 }),
+      );
+      renderPage();
+      await flushAsync();
+      expect(top()?.textContent).toBe("端末に残った内容あり");
+      expect(spoken()?.textContent).toBe("");
+    });
+
     it("保存できない入力のときは、上端でなく入力の通知の原因の status が読み上げる", async () => {
       const { view } = renderPage();
       view().focus();

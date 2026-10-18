@@ -1534,16 +1534,18 @@ a.segmented-option {
 }
 
 /*
- * 衝突とログイン切れは、同時に出る通知（warn）と色の意味をそろえる。通知の見出しと同じく、
+ * 衝突、端末に残った内容、ログイン切れは、同時に出る通知（warn）と色の意味をそろえる。通知の見出しと同じく、
  * 文字は本文の色のまま、先頭の点だけを注意の色にする（枠の色を小さな文字に使うと地との差が足りない）
  */
 .save-state-conflict,
+.save-state-kept,
 .save-state-auth {
   font-weight: var(--font-weight-medium);
   color: var(--color-fg);
 }
 
 .save-state.save-state-conflict .dot,
+.save-state.save-state-kept .dot,
 .save-state.save-state-auth .dot {
   color: var(--color-warn-border);
 }

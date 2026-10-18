@@ -106,6 +106,7 @@ const STATUS_LABELS: Record<SaveStatus, string> = {
   invalid: "保存できません",
   error: "保存に失敗",
   conflict: "別の場所でも更新あり",
+  kept: "端末に残った内容あり",
   auth: "ログインの期限切れ",
   gone: "削除済み",
 };
@@ -119,6 +120,7 @@ const SPOKEN_BY_NOTICE: ReadonlySet<SaveStatus> = new Set([
   "error",
   "invalid",
   "conflict",
+  "kept",
   "auth",
   "gone",
 ]);
@@ -717,6 +719,9 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 ? "削除されたページで保存できなかった内容があります"
                 : "前回、保存できなかった内容があります"
             }
+            // 復元か破棄を選ぶまで入力欄は読み取り専用で、選ぶ操作はこの通知の中にしか無い。
+            // 新規ページでは title の autoFocus が先に focus を持つので、打鍵の guard で移らない
+            claimFocus
             actions={
               <>
                 <button
