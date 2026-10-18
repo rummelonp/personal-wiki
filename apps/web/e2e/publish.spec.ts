@@ -408,6 +408,7 @@ test.describe("共有の URL", () => {
         };
         const note = document.querySelector(".publish-note");
         return {
+          bar: box(".publish-bar"),
           body: box(".body-editor"),
           button: box(".publish-bar .button"),
           note: box(".publish-note"),
@@ -422,6 +423,9 @@ test.describe("共有の URL", () => {
     await page.getByRole("button", { name: "URL をコピー" }).click();
     await expect(notice(page)).toHaveText("URL をコピーしました。");
     const after = await boxes();
+    expect(after.bar.bottom - after.bar.top, "知らせが出ても公開の行は伸びない").toBe(
+      before.bar.bottom - before.bar.top,
+    );
     expect(after.body.top, "知らせが出ても本文は動かない").toBe(before.body.top);
     expect(after.note.top, "知らせは操作と同じ行").toBeGreaterThanOrEqual(after.button.top);
     expect(after.note.bottom, "知らせは操作と同じ行").toBeLessThanOrEqual(after.button.bottom);
@@ -438,18 +442,23 @@ test.describe("公開の行の知らせ（375px）", () => {
   const expectPhrased = async (page: Page, text: string) => {
     await expect(notice(page)).toHaveText(text);
     const note = await notice(page).boundingBox();
-    // 指で押さない端末の操作は 2 行の知らせより低いので、行に収める条件は指で押す端末（--tap-size）にだけ当てる
-    if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) {
-      const control = await page.locator(".publish-bar .segmented").boundingBox();
-      expect(note, `「${text}」の箱が測れない`).not.toBeNull();
-      expect(control, "操作の箱が測れない").not.toBeNull();
-      const { y, height } = note as NonNullable<typeof note>;
-      const row = control as NonNullable<typeof control>;
-      expect(y, `「${text}」が操作の行より上にはみ出す`).toBeGreaterThanOrEqual(row.y - 1);
-      expect(y + height, `「${text}」が操作の行より下にはみ出す`).toBeLessThanOrEqual(
-        row.y + row.height + 1,
-      );
-    }
+    // 操作の行は segmented とボタンの高い方。細いポインタの端末では 2 行の知らせが segmented（32px）より
+    // 高く、ボタン（36px）には入る。2 行になるのはボタンが同じ行にあるときだけなので、箱は両方を合わせて測る
+    const controls = await page
+      .locator(".publish-bar > .segmented, .publish-bar > .button")
+      .evaluateAll((elements) => {
+        const rects = elements.map((element) => element.getBoundingClientRect());
+        return {
+          top: Math.min(...rects.map((r) => r.top)),
+          bottom: Math.max(...rects.map((r) => r.bottom)),
+        };
+      });
+    expect(note, `「${text}」の箱が測れない`).not.toBeNull();
+    const { y, height } = note as NonNullable<typeof note>;
+    expect(y, `「${text}」が操作の行より上にはみ出す`).toBeGreaterThanOrEqual(controls.top - 1);
+    expect(y + height, `「${text}」が操作の行より下にはみ出す`).toBeLessThanOrEqual(
+      controls.bottom + 1,
+    );
     // auto-phrase を解釈する描画は文節で切るので、句読点と空白での折り返しだけを許す判定は WebKit にだけ当てる
     if (!(await page.evaluate(() => CSS.supports("word-break", "auto-phrase")))) {
       expect(await midPhraseBreaks(notice(page)), `「${text}」が語の途中で折り返している`).toEqual(
