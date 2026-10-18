@@ -304,6 +304,7 @@ describe("tools/list", () => {
     expect(byName.list_recent?.inputSchema.properties.limit).toMatchObject({ maximum: 100 });
     expect(byName.list_recent?.inputSchema.properties.tag).toMatchObject({ type: "string" });
     expect(byName.list_recent?.description).toContain("子のタグ");
+    expect(byName.list_recent?.description).toContain("createdAt");
     expect(byName.list_backlinks?.inputSchema.required ?? []).toEqual([]);
     expect(Object.keys(byName.list_backlinks?.inputSchema.properties ?? {})).toEqual(
       expect.arrayContaining(["id", "title"]),
@@ -1628,6 +1629,24 @@ describe("検索と一覧の tool", () => {
       isError: true,
       json: { error: "invalid_field", field: "limit", max: 100, message: "100 以下で渡す" },
     });
+  });
+
+  it("list_recent の各件の createdAt はページを作った時刻（epoch ミリ秒）で、更新しても変わらない", async () => {
+    const { call, clock } = await mcpClient();
+    clock.now = T0 + 1000;
+    const first = (await call("create_page", { title: "First", body: "" })).json;
+    clock.now = T0 + 2000;
+    const second = (await call("create_page", { title: "Second", body: "" })).json;
+    clock.now = T0 + 3000;
+    await call("update_page", { id: first.id, version: first.version, title: "First", body: "x" });
+
+    const pages = (await call("list_recent", {})).json.pages as { id: string; createdAt: number }[];
+    // 更新で First が先頭に移っても、createdAt は作った時刻のまま
+    expect(pages.map((p) => [p.id, p.createdAt])).toEqual([
+      [first.id, T0 + 1000],
+      [second.id, T0 + 2000],
+    ]);
+    expect((await call("read_page", { id: first.id })).json.createdAt).toBe(T0 + 1000);
   });
 
   it("search、list_recent、list_backlinks の各件の version は read_page と同じで、そのまま update_page に渡せる", async () => {

@@ -102,7 +102,7 @@ export const listRecentTool = defineTool({
   title: "最近の更新",
   description: [
     "ページを更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
-    "各件に tags（ページに付いたタグの表記）と、本文の先頭の excerpt を付ける。本文が空のページと、抜粋を作り直す前のページには excerpt が無い。",
+    "各件に tags（ページに付いたタグの表記）、createdAt（ページを作った時刻。UNIX エポックのミリ秒で、更新しても変わらない）、本文の先頭の excerpt を付ける。本文が空のページと、抜粋を作り直す前のページには excerpt が無い。",
     VERSION_NOTE,
     "tag を渡すと、そのタグが付いたページだけに絞る。親のタグには子のタグのページも含まれる（`work` は `work/project` が付いたページにも一致する）。全角半角と大文字小文字は区別せず、先頭の `#` はあってもなくてもよい。タグでまとめたページを見渡すのに使う。cursor を渡すときは、前の呼び出しと同じ tag を渡す。",
     `tag は表記をそろえた後で ${TAG_MAX_LENGTH} 文字まで。`,
