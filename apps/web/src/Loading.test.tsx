@@ -116,6 +116,23 @@ describe("読み込み中のスケルトン", () => {
     expect(container?.querySelector(".note-title .skeleton")).toBeNull();
   });
 
+  it("owner と分かっているページのスケルトンだけ、title の右に公開範囲の印の幅を空ける", () => {
+    restoreDelay = setLoadingDelay(0);
+    const reserved = (path: string, search: string, owner: boolean | undefined) => {
+      mount(<RouteSkeleton route={parseRoute(path, search)} owner={owner} />);
+      const found = container?.querySelector(".title-row .visibility-placeholder") ?? null;
+      act(() => root?.unmount());
+      container?.remove();
+      return found !== null;
+    };
+    expect(reserved("/p/AAAAAAAAAAAAAAAAAAAAAA", "", true)).toBe(true);
+    expect(reserved("/題", "", true)).toBe(true);
+    expect(reserved("/p/AAAAAAAAAAAAAAAAAAAAAA", "", false)).toBe(false);
+    // 起動時はまだ owner か分からない。作る前のページには印が無い
+    expect(reserved("/p/AAAAAAAAAAAAAAAAAAAAAA", "", undefined)).toBe(false);
+    expect(reserved("/", "?new", true)).toBe(false);
+  });
+
   it("owner か分からない間は、URL の公開範囲を見出しの文字に出さない", () => {
     restoreDelay = setLoadingDelay(0);
     const heading = (search: string, owner: boolean | undefined) => {

@@ -717,6 +717,25 @@ a.segmented-option {
   opacity: 0.5;
 }
 
+/* 名前は両方を重ねて置き、長い方の幅を常に取る。公開範囲が変わっても印の幅は変わらず、title が折り返し直さない */
+.visibility-label {
+  display: inline-grid;
+  justify-items: center;
+}
+
+.visibility-label > * {
+  grid-area: 1 / 1;
+}
+
+.visibility-label > :not([data-shown]) {
+  visibility: hidden;
+}
+
+/* 読み込みの間に、印の幅だけを空けておく */
+.visibility-placeholder {
+  visibility: hidden;
+}
+
 .visibility-mark {
   flex: none;
   box-sizing: border-box;

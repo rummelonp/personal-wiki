@@ -397,6 +397,63 @@ test.describe("公開範囲の印の配置 @widths", () => {
     });
   }
 
+  test("読み込みの間も印の幅を空けておき、読み込んだ後に title が折り返し直さない（幅 1280）", async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    // 印の横では折り返し、印が無ければ 1 行に収まる長さ。読み込んだ後に、この前提が崩れていないかも確かめる
+    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}`;
+    await api.createPage({ title, body: "上端をそろえる本文", visibility: "public" });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === "/api/pages/by-title",
+      async (route) => {
+        await gate;
+        await route.continue().catch(() => {});
+      },
+    );
+    await page.goto(titlePath(title));
+    // 起動時は owner か分からないので、ログインの状態が届いた後のスケルトンを測る
+    await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
+    await expect(page.locator(".note[aria-busy='true'] .note-title")).toHaveText(title);
+    const skeleton = await page.evaluate(() => ({
+      height: document.querySelector(".note-title")?.getBoundingClientRect().height ?? Number.NaN,
+      body:
+        (document.querySelector(".skeleton-body")?.getBoundingClientRect().top ?? Number.NaN) +
+        window.scrollY,
+    }));
+
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await expect(pill(page)).toBeVisible();
+    await expect(page.locator(".body-editor .cm-line").first()).toHaveText("上端をそろえる本文");
+    const loaded = await page.evaluate(() => {
+      const height = () =>
+        document.querySelector(".title-input")?.getBoundingClientRect().height ?? Number.NaN;
+      const visibility = document.querySelector<HTMLElement>(".visibility");
+      const result = {
+        height: height(),
+        body:
+          (document.querySelector(".body-editor")?.getBoundingClientRect().top ?? Number.NaN) +
+          window.scrollY,
+        withoutPill: Number.NaN,
+      };
+      if (visibility !== null) {
+        visibility.style.display = "none";
+        result.withoutPill = height();
+        visibility.style.display = "";
+      }
+      return result;
+    });
+    expect(loaded.withoutPill, "印が無ければ 1 行に収まる title").toBeLessThan(loaded.height);
+    expect(loaded.height).toBeCloseTo(skeleton.height, 0);
+    expect(loaded.body).toBeCloseTo(skeleton.body, 0);
+  });
+
   for (const width of [320, 375, 1280]) {
     test(`長い title は印の左で折り返し、印は 1 行目の右端に残る（幅 ${width}）`, async ({
       page,

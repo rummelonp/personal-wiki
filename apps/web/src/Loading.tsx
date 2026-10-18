@@ -5,6 +5,7 @@ import { loadingTitleFor, recallTitle } from "./page-titles";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
 import { useHoldScrollRestore } from "./scroll-restore";
+import { VisibilityPillFace } from "./VisibilityPillFace";
 
 /*
  * 読み込み中の見せ方。最終の配置と同じ形のスケルトンを、取得が遅いときだけ出す。
@@ -218,10 +219,18 @@ export function ListSkeleton({
 
 /**
  * ページの画面全体のスケルトン。title が分かっていれば文字で出し、スケルトンは本文の行だけにする
- * （title は読み込み後も同じ位置と書体で出るので、動かない）。owner の公開範囲の印は title の横に出て
- * 本文を押し下げないので、owner と匿名で形を分けない。
+ * （title は読み込み後も同じ位置と書体で出るので、動かない）。
+ * `visibilityPill` なら、編集の画面で title の右に出る公開範囲の印の幅を先に空けておく。空けないと、
+ * 印が出たときに title が折り返し直し、本文が下がる。owner か分からない起動時と作る前のページには
+ * 印が無いものとして空けない。
  */
-export function PageSkeleton({ title }: { title?: string | undefined }) {
+export function PageSkeleton({
+  title,
+  visibilityPill = false,
+}: {
+  title?: string | undefined;
+  visibilityPill?: boolean | undefined;
+}) {
   const painted = useSkeletonPainted();
   const rail = (
     <div className={`skeleton-rail ${paintedClass(painted) ?? ""}`} aria-hidden="true">
@@ -238,11 +247,22 @@ export function PageSkeleton({ title }: { title?: string | undefined }) {
     <RailLayout rail={rail}>
       <LoadingStatus text="ページを読み込み中…" />
       <div className={`note ${paintedClass(painted) ?? ""}`} aria-busy="true">
-        <div className="note-title">
-          {title === undefined ? (
-            <span className="skeleton skeleton-text skeleton-title" aria-hidden="true" />
-          ) : (
-            title
+        <div className="title-row">
+          <div className="title-field">
+            <div className="note-title">
+              {title === undefined ? (
+                <span className="skeleton skeleton-text skeleton-title" aria-hidden="true" />
+              ) : (
+                title
+              )}
+            </div>
+          </div>
+          {visibilityPill && (
+            <div className="visibility visibility-placeholder" aria-hidden="true">
+              <span className="visibility-pill">
+                <VisibilityPillFace shown="draft" />
+              </span>
+            </div>
           )}
         </div>
         <div className="skeleton-body" aria-hidden="true">
@@ -274,9 +294,9 @@ export function RouteSkeleton({ route, owner }: { route: Route; owner?: boolean 
       return <ListSkeleton heading={heading} />;
     }
     case "title":
-      return <PageSkeleton title={loadingTitleFor(route.title)} />;
+      return <PageSkeleton title={loadingTitleFor(route.title)} visibilityPill={owner} />;
     case "page":
-      return <PageSkeleton title={recallTitle(route.id)} />;
+      return <PageSkeleton title={recallTitle(route.id)} visibilityPill={owner} />;
     case "new":
       return <PageSkeleton />;
     case "unknown":

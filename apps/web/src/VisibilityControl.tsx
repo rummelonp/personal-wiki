@@ -11,6 +11,7 @@ import type { LinkedDraft } from "./linked-drafts";
 import { rememberTitle } from "./page-titles";
 import type { ApiResult } from "./pages-api";
 import { pageHref } from "./route";
+import { VisibilityPillFace } from "./VisibilityPillFace";
 
 type Visibility = "draft" | "public";
 
@@ -245,12 +246,7 @@ export function VisibilityControl({
           setMenuOpen(true);
         }}
       >
-        <span
-          className={pendingShown ? "visibility-mark visibility-spinner" : "visibility-mark"}
-          aria-hidden="true"
-        />
-        {LABELS[shownVisibility]}
-        <span aria-hidden="true">▾</span>
+        <VisibilityPillFace shown={shownVisibility} spinning={pendingShown} />
       </button>
       {menuOpen && (
         <div
