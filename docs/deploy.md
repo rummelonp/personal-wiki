@@ -147,9 +147,9 @@ owner のセッションを切るときは、次のようにする。
 
 API の使い方と公開範囲は [attachments.md](./attachments.md) にある。
 
-### OAuth（claude.ai などのカスタムコネクタ）
+### OAuth（カスタムコネクタ、コーディングエージェント）
 
-claude.ai や Claude Desktop のカスタムコネクタから OAuth で MCP に接続するときだけ必要である。
+claude.ai や Claude Desktop のカスタムコネクタ、Claude Code や Codex などのコーディングエージェントから OAuth で MCP に接続するときだけ必要である。
 同意画面は owner のセッションを使うので、上の owner のログインも設定する。
 
 1. KV namespace を作る
@@ -163,7 +163,8 @@ claude.ai や Claude Desktop のカスタムコネクタから OAuth で MCP に
 接続の扱いは次のとおりである。
 
 - claude.ai のリダイレクト先は既定で許可している。
-  ほかのクライアントから接続するときだけ、redirect URI を `OAUTH_REDIRECT_URIS`（カンマ区切り、完全一致）に足す
+  ほかのクライアントから接続するときだけ、redirect URI を `OAUTH_REDIRECT_URIS`（カンマ区切り、完全一致）に足す。
+  コーディングエージェントの足し方は、次の「コーディングエージェントから接続する」にある
 - client の登録は、redirect URI が許可したものだけを受け付け、1 日（UTC）に 20 件までである。
   上限に達した日は、新しい接続だけが止まる
 - 同意画面では、「接続するアプリ」の名前と「トークンの送り先」を確かめ、「読み取り」か「読み書き」を選んで許可する。
@@ -173,6 +174,50 @@ claude.ai や Claude Desktop のカスタムコネクタから OAuth で MCP に
 - 同意画面と一覧に出る `client_id` が同じアプリを許可し直すと、以前の許可とトークンは自動で取り消される。
   アプリが登録をやり直して `client_id` が変わると、以前の許可は残るので、一覧から取り消す
 - API token による接続は、KV と owner のログインが無くても使える
+
+#### コーディングエージェントから接続する
+
+Claude Code や Codex などの CLI のエージェントは、OAuth の callback を手元の loopback のポートで受ける。
+この wiki は client の登録で redirect URI を完全一致で比べるので、ポート番号も一致しなければ登録を断る。
+ポートを固定しないと接続のたびに別の URI で登録することになり、`OAUTH_REDIRECT_URIS` に書いた値と一致しない。
+そこで、エージェントの callback のポートを固定し、その redirect URI を 1 つ `OAUTH_REDIRECT_URIS` に足して再デプロイする。
+同じ redirect URI を使うエージェントどうしは、その URI を `OAUTH_REDIRECT_URIS` に 1 つ書けば足りる。
+ただし同じポートで同時に待ち受けられないので、login は 1 つずつ行う。
+
+1. `deploy.env` の `OAUTH_REDIRECT_URIS` に redirect URI を書き、`pnpm deploy:remote` を実行する。
+   すでに値があるときは、カンマで区切って足す
+
+   ```sh
+   OAUTH_REDIRECT_URIS=http://localhost:8976/callback
+   ```
+
+2. エージェントの callback のポートを、手順 1 の URI のポートに固定して接続する。
+   接続を始めるとブラウザで同意画面が開くので、「接続するアプリ」の名前と「トークンの送り先」を確かめ、「読み取り」か「読み書き」を選んで許可する
+
+   - Claude Code は、登録のときに `--callback-port` を付ける。
+     `claude mcp add` は設定を書くだけなので、Claude Code の中で `/mcp` からこのサーバーの認証を選ぶと、ブラウザが開く。
+
+     ```sh
+     claude mcp add --transport http --callback-port 8976 personal-wiki https://wiki.example.com/mcp
+     ```
+
+   - Codex は、サーバーを登録した後、login のときに `callback_port` と `callback_url` を `-c` で渡す。
+     token の更新は redirect URI を使わないので、`-c` が要るのは login し直すときだけである。
+
+     ```sh
+     codex mcp add personal-wiki --url https://wiki.example.com/mcp
+     codex mcp login personal-wiki \
+       -c mcp_servers.personal-wiki.oauth.callback_port=8976 \
+       -c 'mcp_servers.personal-wiki.oauth.callback_url="http://localhost:8976/callback"'
+     ```
+
+     `codex mcp add` は、OAuth に対応したサーバーにはその場で login を始める。
+     ポートが固定されていないので、client の登録が「この wiki が許可していない redirect_uri です」（400）で断られ、add はエラーを出す。
+     断られた登録は 1 日の登録数に数えず、サーバーの設定も残るので、このエラーは無視して `codex mcp login` に進む。
+
+redirect URI は文字列で比べるので、`localhost` と `127.0.0.1` は別の値になる。
+エージェントが送る URI のホスト、ポート、パスを、`OAUTH_REDIRECT_URIS` に書いた値と同じにする。
+エージェントごとにポートを分けるときは、それぞれの URI を `OAUTH_REDIRECT_URIS` に足して再デプロイする。
 
 ### リンクの書き換えの自動実行（Cron）
 

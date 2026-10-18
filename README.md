@@ -30,7 +30,7 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
   戻すのは本文と、本文から作るタグとリンクだけで、title は今のままである。
   戻すと新しい版を積み、戻す前の本文も履歴に残る
 - API token による REST と MCP の認証。
-  claude.ai などのカスタムコネクタからは OAuth でも接続できる
+  claude.ai などのカスタムコネクタと、Claude Code や Codex などのコーディングエージェントからは OAuth でも接続できる
 - ブラウザで閲覧と編集をする owner のログイン（Cloudflare Access）
 - 全ページの派生データの作り直し（`derived:rebuild`）と、手元へのバックアップ（`backup`）
 
@@ -83,7 +83,7 @@ Cloudflare アカウントと、そのアカウントの DNS にあるホスト�
 
 - owner のログイン（ブラウザでの閲覧と編集。Cloudflare Access）
 - 添付（R2）
-- OAuth（claude.ai などのカスタムコネクタ）
+- OAuth（カスタムコネクタ、コーディングエージェント）
 - リンクの書き換えの自動実行（Cron）
 
 ## MCP への接続
@@ -102,6 +102,10 @@ Cloudflare アカウントと、そのアカウントの DNS にあるホスト�
   token の scope が `read` だけのときは、write が要るツールを呼ぶとエラーになる。
 - claude.ai や Claude Desktop のカスタムコネクタ: コネクタの URL に上の URL を入れて接続する。
   ブラウザで同意画面が開くので、「接続するアプリ」の名前と「トークンの送り先」を確かめ、「読み取り」か「読み書き」を選んで許可する。
+  OAuth と owner のログインの設定が要る
+- Claude Code や Codex などのコーディングエージェント: OAuth でも接続できる。
+  callback のポートを固定し、その redirect URI を `OAUTH_REDIRECT_URIS` に足す。
+  手順は [docs/deploy.md](./docs/deploy.md) の「コーディングエージェントから接続する」にある。
   OAuth と owner のログインの設定が要る
 
 ## 運用
