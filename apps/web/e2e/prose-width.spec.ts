@@ -72,6 +72,9 @@ test("広い幅では、本文が 712px で全角 44 字、行間 1.8 で、右�
   await page.goto(`/p/${created.id}`);
   await expect(bodyEditor(page).locator(".cm-line").first()).toHaveText(fits);
 
+  // 幅 1024 は、列と欄の枠（本文 712px、左右の余白 40px ずつ、欄 230px で 1022px）に 2px しか余らない。
+  // スクロールバーが幅を取る環境ではこの余裕を超えて列が縮み、本文が 712px にならない。
+  // この期待値は、スクロールバーが幅を取らない環境（overlay、または非表示）を前提にしている。
   for (const width of [1024, 1280, 1600]) {
     await test.step(`${width}px`, async () => {
       await page.setViewportSize({ width, height: 900 });
