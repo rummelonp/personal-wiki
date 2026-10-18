@@ -474,6 +474,48 @@ describe("認可と同意画面", () => {
     }
   });
 
+  it("同意、一覧、エラーの画面は SPA と同じ icon を指し、CSP は画像を自分の origin からだけ許す", async () => {
+    const { request } = setup();
+    await connect(request, "read");
+    const client = await register(request);
+    const consent = await openConsent(
+      request,
+      authorizePath(client.client_id, (await pkcePair()).challenge),
+    );
+    const session = await ownerCookie(T0);
+    const grants = await request("/_auth/oauth/grants", { headers: { Cookie: session } });
+    const error = await request("/_auth/oauth/authorize", { headers: { Cookie: session } });
+    expect(grants.status).toBe(200);
+    expect(error.status).toBe(400);
+    const base = [
+      "default-src 'none'",
+      "style-src 'unsafe-inline'",
+      "frame-ancestors 'none'",
+      "base-uri 'none'",
+      "img-src 'self'",
+    ];
+    const pages = [
+      { res: consent.res, html: consent.html, rest: ["form-action 'self' https://claude.ai"] },
+      { res: grants, html: await grants.text(), rest: ["form-action 'self'"] },
+      { res: error, html: await error.text(), rest: ["form-action 'none'"] },
+    ];
+    for (const { res, html, rest } of pages) {
+      const directives = (res.headers.get("Content-Security-Policy") ?? "")
+        .split("; ")
+        .filter((directive) => !directive.startsWith("script-src"));
+      expect(directives).toEqual([...base, ...rest]);
+      const head = html.slice(0, html.indexOf("<style>"));
+      expect(head).toContain('<link rel="icon" href="/favicon.ico" sizes="32x32">');
+      expect(head).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+      expect(head).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png">');
+      expect([...html.matchAll(/<link [^>]*href="([^"]+)"/g)].map((match) => match[1])).toEqual([
+        "/favicon.ico",
+        "/favicon.svg",
+        "/apple-touch-icon.png",
+      ]);
+    }
+  });
+
   it("redirect の種類にかかわらず自分で始めた接続だけを許可する警告と、client の登録時刻を出す", async () => {
     const { request } = setup();
     const client = await register(request, { client_name: "<b>x</b>" });

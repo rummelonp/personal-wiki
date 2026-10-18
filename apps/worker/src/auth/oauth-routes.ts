@@ -275,6 +275,8 @@ const BASE_PAGE_POLICY = [
   "style-src 'unsafe-inline'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
+  // Firefox などは favicon の取得にも img-src を当てる。data: や外部の origin は使わないので足さない
+  "img-src 'self'",
 ];
 
 // オリジンとしてそのまま CSP の source に書いてよい形。`;` や空白を含む値で指示を足させない
@@ -694,6 +696,14 @@ ${loopback}
   );
 }
 
+/**
+ * SPA（apps/web/index.html）と同じ icon を指す。パスは wrangler.jsonc の run_worker_first で Worker を通さない
+ * ものに限る。Worker を通すと owner には private, no-store が付き、キャッシュが効かない。
+ */
+const ICON_LINKS = `<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
+
 function pageHtml(title: string, main: string, siteName: string): string {
   return `<!doctype html>
 <html lang="ja">
@@ -701,6 +711,7 @@ function pageHtml(title: string, main: string, siteName: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>${title}</title>
+${ICON_LINKS}
 <style>
 ${themeCss}
 ${pageCss}
