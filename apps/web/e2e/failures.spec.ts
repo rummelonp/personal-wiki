@@ -350,3 +350,48 @@ test("別の場所の保存と食い違うと衝突の画面が出て、手元�
   else await expect(bodyEditor(page)).toBeFocused();
   await expectSavedOnServer(api, created.id, FIRST_LINE + typed);
 });
+
+for (const [label, kind] of [
+  ["残った内容に戻す", "restore"],
+  ["残った内容を破棄する", "discard"],
+] as const) {
+  test(`端末に残った内容をキーボードで「${label}」と選んでも、focus は body に落ちない`, async ({
+    page,
+    api,
+    isMobile,
+  }, testInfo) => {
+    const title = uniqueTitle(testInfo, `残った内容 ${kind}`);
+    const created = await api.createPage({ title, body: FIRST_LINE });
+    const kept = `${FIRST_LINE}、端末に残っていた内容`;
+    await page.addInitScript(
+      ({ key, value }) => {
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+      },
+      {
+        key: `personal-wiki:draft:${created.id}`,
+        value: JSON.stringify({
+          title,
+          body: kept,
+          baseVersion: created.version,
+          savedAt: Date.now(),
+        }),
+      },
+    );
+    await page.goto(`/p/${created.id}`);
+    const notice = page
+      .getByRole("alert")
+      .filter({ hasText: "前回、保存できなかった内容があります" });
+    await expect(notice).toBeVisible();
+    await expect(notice.getByRole("heading")).toBeFocused();
+    const button = notice.getByRole("button", { name: label });
+    // WebKit の Tab はボタンを飛ばすので、focus を直接移して Enter で押す
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await expect(notice).toBeHidden();
+
+    // タッチ端末では、キーボードを開かないよう、本文でなくページの枠に移る
+    if (isMobile) await expect(page.locator("article.note")).toBeFocused();
+    else await expect(bodyEditor(page)).toBeFocused();
+    await expect(bodyEditor(page)).toHaveText(kind === "restore" ? kept : FIRST_LINE);
+  });
+}

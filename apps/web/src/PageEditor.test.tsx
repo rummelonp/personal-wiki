@@ -864,6 +864,78 @@ describe("PageEditor と本文のエディタ", () => {
     expect(v.contentDOM.hasAttribute("inputmode")).toBe(false);
   });
 
+  describe("端末に残った内容の通知を閉じた後の focus", () => {
+    function seedKept(): void {
+      localStorage.setItem(
+        BACKUP_KEY,
+        JSON.stringify({ title: "題", body: "退避した本文", baseVersion: 1, savedAt: 0 }),
+      );
+    }
+
+    function mockCoarse() {
+      return vi.spyOn(window, "matchMedia").mockImplementation(
+        (query) =>
+          ({
+            matches: query === "(pointer: coarse)",
+            media: query,
+            addEventListener() {},
+            removeEventListener() {},
+          }) as unknown as MediaQueryList,
+      );
+    }
+
+    it("復元すると、押したボタンが消えても focus は本文に戻る", async () => {
+      seedKept();
+      const { view, button } = renderPage();
+      act(() => button("残った内容に戻す").focus());
+      act(() => button("残った内容に戻す").click());
+      await flushAsync();
+      expect(view().state.doc.toString()).toBe("退避した本文");
+      expect(document.activeElement).toBe(view().contentDOM);
+    });
+
+    it("破棄すると、focus は本文に戻る", async () => {
+      seedKept();
+      const { view, button } = renderPage();
+      act(() => button("残った内容を破棄する").focus());
+      act(() => button("残った内容を破棄する").click());
+      await flushAsync();
+      expect(view().state.doc.toString()).toBe("本文");
+      expect(document.activeElement).toBe(view().contentDOM);
+    });
+
+    it.each(["残った内容に戻す", "残った内容を破棄する"])(
+      "タッチ端末では、%s を押した後、本文でなくページの枠に focus を移す",
+      async (label) => {
+        const coarse = mockCoarse();
+        try {
+          seedKept();
+          const { button, view } = renderPage();
+          act(() => button(label).click());
+          await flushAsync();
+          expect(document.activeElement).toBe(container?.querySelector("article"));
+          expect(document.activeElement).not.toBe(view().contentDOM);
+        } finally {
+          coarse.mockRestore();
+        }
+      },
+    );
+
+    it("復元で衝突になるときは、衝突の通知が focus を受けるので動かさない", async () => {
+      localStorage.setItem(
+        BACKUP_KEY,
+        JSON.stringify({ title: "題", body: "退避した本文", baseVersion: 0, savedAt: 0 }),
+      );
+      const { button } = renderPage();
+      act(() => button("残った内容に戻す").click());
+      await flushAsync();
+      expect(container?.textContent).toContain("別の場所の内容を使う");
+      expect(document.activeElement).not.toBe(document.body);
+      expect(container?.querySelector("article")?.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement?.closest(".cm-content")).toBeNull();
+    });
+  });
+
   it("[[ の title の候補に title の一覧を使う", async () => {
     vi.mocked(listPageTitles).mockResolvedValue(
       ok({

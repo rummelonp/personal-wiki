@@ -359,6 +359,21 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (session.getState().conflict !== null) return;
     focusBodyOrFrame();
   }
+  const settleKeptFocus = useRef(false);
+  useEffect(() => {
+    if (!settleKeptFocus.current) return;
+    settleKeptFocus.current = false;
+    // 本文が差し替わった後に移す。利用者が先に別の場所へ focus を移していたら奪わない
+    const active = document.activeElement;
+    if ((active === null || active === document.body) && session.getState().conflict === null)
+      focusBodyOrFrame();
+  });
+  // 復元か破棄の次の通知（別のタブの退避の続き、衝突）が出るときは、その通知が focus を受ける
+  function resolveKept(resolve: () => void) {
+    resolve();
+    const next = session.getState();
+    settleKeptFocus.current = next.pendingBackup === null && next.conflict === null;
+  }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
@@ -772,13 +787,17 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 <button
                   type="button"
                   className="button button-main"
-                  onClick={() => session.restoreBackup()}
+                  onClick={() => resolveKept(() => session.restoreBackup())}
                 >
                   {state.pendingBackup.deletedFrom !== undefined
                     ? "新しいページとして作る"
                     : "残った内容に戻す"}
                 </button>
-                <button type="button" className="button" onClick={() => session.discardBackup()}>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => resolveKept(() => session.discardBackup())}
+                >
                   残った内容を破棄する
                 </button>
               </>
