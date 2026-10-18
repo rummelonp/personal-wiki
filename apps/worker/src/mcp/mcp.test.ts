@@ -2055,6 +2055,22 @@ describe("検索と一覧の tool", () => {
       });
     });
 
+    it("id で引くとき、draft のページは read の token でも引け、削除済みのページは not_found", async () => {
+      const writer = await mcpClient({ name: "writer" });
+      const { json: draft } = await writer.call("create_page", { title: "Draft", body: "[[x]]" });
+      const { json: gone } = await writer.call("create_page", { title: "Gone", body: "[[y]]" });
+      await env.DB.prepare("UPDATE pages SET deleted_at = ?2, deleted_by = 'owner' WHERE id = ?1")
+        .bind(gone.id as string, T0)
+        .run();
+
+      const reader = await mcpClient({ name: "reader", scopes: "read" });
+      expect(keysOf(await reader.call("list_unresolved_links", { id: draft.id }))).toEqual(["x"]);
+      expect(await reader.call("list_unresolved_links", { id: gone.id })).toEqual({
+        isError: true,
+        json: { error: "not_found" },
+      });
+    });
+
     it("read の token で使え、write の無い token でも draft のリンク元を返す", async () => {
       const writer = await mcpClient({ name: "writer" });
       const { json: open } = await writer.call("create_page", { title: "Open", body: "[[Ghost]]" });

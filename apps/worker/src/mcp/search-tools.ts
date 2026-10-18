@@ -23,7 +23,7 @@ import {
   tagFilterErrorFields,
   UNRESOLVED_SOURCES_PER_TITLE,
 } from "../pages/search";
-import { findPageById, findPageByTitle } from "../pages/store";
+import { findPageByTitle, pageExists } from "../pages/store";
 import { pageUrls } from "../pages/urls";
 import { pageIdSchema } from "./page-tools";
 import { defineTool, toolError, toolResult } from "./tool";
@@ -217,12 +217,14 @@ export const listUnresolvedLinksTool = defineTool({
     let sourceId: string | null = null;
     if (id !== undefined || title !== undefined) {
       if (id !== undefined && !isPageId(id)) return toolError({ error: "not_found" });
-      const page =
-        id === undefined
-          ? await findPageByTitle(ctx.db, title as string, readable)
-          : await findPageById(ctx.db, id);
-      if (page === null) return toolError({ error: "not_found" });
-      sourceId = page.id;
+      if (id === undefined) {
+        const page = await findPageByTitle(ctx.db, title as string, readable);
+        if (page === null) return toolError({ error: "not_found" });
+        sourceId = page.id;
+      } else {
+        if (!(await pageExists(ctx.db, id))) return toolError({ error: "not_found" });
+        sourceId = id;
+      }
     }
     const { links, nextCursor } = await listUnresolvedLinks(ctx.db, {
       limit: limit ?? LIST_DEFAULT_LIMIT,

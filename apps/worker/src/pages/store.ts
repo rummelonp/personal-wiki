@@ -112,6 +112,18 @@ export async function findPageById(db: D1Database, id: string): Promise<Page | n
 }
 
 /**
+ * 削除されていないページが id にあるかを返す。findPageById と同じく visibility では絞らない。
+ * 本文を読まないので、存在だけを確かめたいときに使う。
+ */
+export async function pageExists(db: D1Database, id: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT 1 AS found FROM pages WHERE id = ?1 AND deleted_at IS NULL")
+    .bind(id)
+    .first();
+  return row !== null;
+}
+
+/**
  * 削除されていないページを、title を title_key に正規化して引く。title_key にできない title は null。
  * readable が public なら draft は null（無いページと区別できないようにする）。
  */
