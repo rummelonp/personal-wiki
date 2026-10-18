@@ -56,6 +56,7 @@
   --font-size-chip: 0.75rem; /* タグのチップ */
   --font-size-base: 0.9375rem; /* 本文、操作 */
   --font-size-md: 1rem; /* 一覧のタイトル */
+  --font-size-prose: 16px; /* 本文（エディタとスケルトン）。rem にせず固定 px にして、ルートの font-size が変わっても本文の大きさを動かさない */
   --font-size-input: 1rem; /* 入力欄。iOS が focus でページを拡大しない下限 */
   --font-size-lg: 1.25rem; /* 小見出し */
   --font-size-title: 2.125rem; /* ページ名 */
@@ -63,7 +64,7 @@
   --font-weight-strong: 700; /* 明朝の見出し */
   --font-weight-medium: 500; /* ラベル */
   --line-height: 1.7; /* 操作と補助の行間 */
-  --line-height-prose: 1.8; /* 本文の行間。エディタ（packages/editor の typographyTheme）と同じ値 */
+  --line-height-prose: 1.8; /* 本文の行間。エディタとスケルトンで共有する */
   --line-height-tight: 1.35; /* 見出し、ボタン */
   --letter-spacing-brand: 0.14em; /* wiki 名 */
   --letter-spacing-heading: 0.02em; /* 明朝の見出し */
@@ -163,6 +164,8 @@
   --ui-color-danger: var(--color-danger);
   --ui-font-body: var(--font-sans);
   --ui-font-heading: var(--font-serif);
+  --ui-font-size-body: var(--font-size-prose);
+  --ui-line-height-body: var(--line-height-prose);
   --ui-font-mono: var(--font-mono);
   --ui-radius-sm: var(--radius-sm);
   --ui-radius-md: var(--radius-md);

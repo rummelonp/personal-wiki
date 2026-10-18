@@ -118,13 +118,19 @@ export const codeHighlighting: Extension = [
  * `codeHighlightStyle` の `t.monospace` が span に直接 font-family を当てる（子孫要素への
  * 直接の宣言は祖先からの継承に常に勝つので、この rule との宣言順には依存しない）。
  *
- * 16px と行の高さ 1.8 は本文用。`rem` にせず固定 px にしているのは、ホストの
- * root の font-size が変わっても本文の大きさを固定するため（Editor はホストの
- * spacing のように rem で揃える対象ではなく、可読性の基準そのものである）。
+ * 本文の大きさと行の高さは、ホストが `--ui-font-size-body`、`--ui-line-height-body` で渡す
+ * （読み込み中の表示など、エディタの外で同じ刻みの行を描くホストが値を共有できるようにする）。
+ * 無ければ 16px と 1.8。`rem` にせず固定 px にしているのは、ホストの root の font-size が
+ * 変わっても本文の大きさを固定するため（Editor はホストの spacing のように rem で揃える対象ではなく、
+ * 可読性の基準そのものである）。ホストが渡す値も px にする。
  */
 export const typographyTheme = EditorView.theme({
   "&": { fontFamily: "var(--ui-font-body)" },
-  ".cm-scroller": { fontFamily: "var(--ui-font-body)", fontSize: "16px", lineHeight: "1.8" },
+  ".cm-scroller": {
+    fontFamily: "var(--ui-font-body)",
+    fontSize: "var(--ui-font-size-body, 16px)",
+    lineHeight: "var(--ui-line-height-body, 1.8)",
+  },
 });
 
 const TOUCH_ROW_HEIGHT = "44px";

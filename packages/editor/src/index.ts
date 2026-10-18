@@ -9,7 +9,9 @@
  * - 明暗の切り替え: ライトでは `--ui-light: initial; --ui-dark: ;`、ダークでは逆にする。
  *   editor の一部の色は `var(--ui-light, 明) var(--ui-dark, 暗)` の形で、`initial` にした側の
  *   値が残り、空にした側は消える。
- * - 任意（無ければ既定値）: `--ui-radius-sm`、`--ui-space-2`、`-3`、`-4`、`-6`
+ * - 任意（無ければ既定値）: `--ui-radius-sm`、`--ui-space-2`、`-3`、`-4`、`-6`、
+ *   本文の大きさ `--ui-font-size-body`（既定 16px）と行の高さ `--ui-line-height-body`（既定 1.8）。
+ *   大きさは rem でなく px で渡す
  *
  * 値の出発点は `test-tokens.ts` のテスト用ホストにある（`data-ui-scheme` と `--ui-editor-hue` は
  * そのホストの切り替え方で、editor 自身は読まない）。

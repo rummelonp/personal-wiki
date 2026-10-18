@@ -1800,7 +1800,7 @@ a.segmented-option {
   --skeleton-leading: var(--line-height-prose);
 
   display: grid;
-  font-size: var(--font-size-md); /* 1 行の刻みをエディタの本文（16px、行間 1.8）にそろえる */
+  font-size: var(--font-size-prose); /* エディタの本文と同じ 1 行の刻み */
 }
 
 .skeleton-body .skeleton-text {
