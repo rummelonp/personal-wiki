@@ -36,7 +36,8 @@
   // （この 404 は Worker を通らない）。
   // robots.txt はクローラーが、favicon と apple-touch-icon はブラウザが繰り返し取りに来るので、Worker の
   // 日次の上限を消費させないよう直接返す。Worker を通すと owner には private, no-store が付き、キャッシュも効かない。
-  // ここで除いたパスは packages/domain の RESERVED_TITLE_SEGMENTS にも足す。
+  // 除くのは apps/web/public のファイルのうち Worker を通さないものだけで、そのファイル名は
+  // packages/domain の RESERVED_TITLE_SEGMENTS にも足す。対応は scripts/public-assets.test.ts が検査する。
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",

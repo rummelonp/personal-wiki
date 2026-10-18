@@ -25,7 +25,8 @@ export const WORKER_PATH_SEGMENTS: readonly string[] = [
  * - Worker の分と、SPA が開く `/p/<id>` の `p`
  * - Static Assets が Worker より先にレスポンスを返すパス。`/index.html` と `/index` は、Static Assets の
  *   html_handling（auto-trailing-slash）が `/` への 307 にするので、同じ title のページを開けない。
- *   `apps/web/public` にファイルを置くときは、その名前（`.html` なら拡張子を除いた名前も）をここに足す
+ *   `apps/web/public` のファイルの名前（`.html` なら拡張子を除いた名前も）は、ここに足す。
+ *   wrangler.jsonc の run_worker_first の除外との対応は apps/worker/scripts/public-assets.test.ts が検査する
  */
 export const RESERVED_TITLE_SEGMENTS: readonly string[] = [
   ...WORKER_PATH_SEGMENTS,
