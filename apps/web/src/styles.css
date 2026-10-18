@@ -973,6 +973,11 @@ a.segmented-option {
   word-break: keep-all;
 }
 
+/* 括弧とそれに接する文字を離さない（withPhraseBreaks の keepBracketsTogether） */
+.nobreak {
+  white-space: nowrap;
+}
+
 .notice-text > :first-child {
   margin-top: 0;
 }

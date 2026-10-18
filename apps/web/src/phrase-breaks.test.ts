@@ -26,6 +26,8 @@ describe("splitPhrases", () => {
     const phrases = split("にっこりしゃべりながら");
     expect(phrases.join("")).toBe("にっこりしゃべりながら");
     for (const phrase of phrases) expect(phrase).not.toMatch(LINE_HEAD_PROHIBITED);
+    // 助詞の直後に、単独の語として長音が来る形（Intl.Segmenter が「ー」を切り出す）
+    expect(split("データをーを読む")).toEqual(["データをーを", "読む"]);
   });
 
   it("接頭辞「お」「ご」を語から離さない", () => {
@@ -44,6 +46,17 @@ describe("splitPhrases", () => {
       "通信が",
       "戻ってから、もう一度お試しください。",
     ]);
+  });
+
+  it("閉じ括弧は内容語の終わりとして、直後の助詞までを 1 つの文節にする", () => {
+    expect(split("「公開設定」のページを保存できませんでした")).toEqual([
+      "「公開設定」の",
+      "ページを",
+      "保存できませんでした",
+    ]);
+    expect(split("（仮）のページ")).toEqual(["（仮）の", "ページ"]);
+    // 助詞が続かない閉じ括弧の後ろは、描画が括弧の後ろで折り返せるので切れ目を足さない
+    expect(split("「A」ページ")).toEqual(["「A」ページ"]);
   });
 
   it("複合動詞の中を切らない", () => {

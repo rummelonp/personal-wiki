@@ -41,6 +41,9 @@ const LINE_HEAD_PROHIBITED = /^[ゃゅょっぁぃぅぇぉゎャュョッァィ
 // 先頭の文字だけを見る。送り仮名を持つ語（見直し、下書き）は漢字で始まる内容語として扱う
 const HIRAGANA = /^\p{Script=Hiragana}/u;
 
+/** 閉じ括弧。引用した名前（「title」）は内容語と同じに扱い、その後ろの助詞で文節を閉じる。 */
+const CLOSING_BRACKET = /^[」』）】]$/u;
+
 const startsWithHiragana = (text: string): boolean => HIRAGANA.test(text);
 
 /** 平仮名の列が助詞だけでできているか。「までは」「だけが」のように重なった助詞も 1 つの尾とみなす。 */
@@ -71,7 +74,7 @@ export function splitPhrases(text: string, segmenter: Intl.Segmenter): string[] 
       current = "";
       particles = null;
     }
-    if (!isWordLike) particles = null;
+    if (!isWordLike) particles = CLOSING_BRACKET.test(segment) ? [] : null;
     else if (!startsWithHiragana(segment)) particles = [];
     else if (particles !== null) particles.push(segment);
     current += segment;
