@@ -16,6 +16,10 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
   `limit` を付けなければ、従来どおり全件の `tags` だけを返す。
   一覧で draft を見られるのは owner と read 以上の API token だけである。
   ログインしていない閲覧者の `visibility=draft` は、draft があっても空の一覧を返す。
+- 一覧の並び順の切り替え（更新日時、作成日時、タイトル）。
+  画面で選んだ並びはブラウザに残り、ほかの一覧へ移っても続く。
+  REST の `GET /api/pages/recent` は `sort=updated`（既定）、`sort=created`、`sort=title` を受け付け、`nextCursor` は同じ `sort` でだけ使える。
+  タイトルの順は、title の大文字小文字などをそろえた値の文字コードの順で、漢字は読みの順に並ばない。
 - title を変えたときの、他のページの `[[旧 title]]` の書き換え
 - ページの版の履歴。
   保存のたびに版を残し、owner のブラウザからの保存は、最初の保存から 10 分までを 1 つの版にまとめる。

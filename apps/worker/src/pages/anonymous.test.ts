@@ -309,6 +309,53 @@ describe("匿名の読み取り", () => {
     expect(titleSeen).toEqual(seen);
   });
 
+  it("作成日時と title の順で 1 件ずつたどっても、cursor を含めて draft が出ず、public を取りこぼさない", async () => {
+    const { anonymous, asOwner, draft, open, linker, create, setVisibility } = await seed();
+    // title_key の順で public の間に入り、作成日時の順で先頭に来る draft を作る
+    const between = await setVisibility(await create("Between", "#shared"), "public");
+    const fresh = await create("Newest Draft", "#shared");
+    const draftKeys = ["hidden plan", "newest draft"];
+    const decodeTitleCursor = (cursor: string) =>
+      new TextDecoder().decode(
+        Uint8Array.from(atob(cursor.slice(1).replaceAll("-", "+").replaceAll("_", "/")), (ch) =>
+          ch.charCodeAt(0),
+        ),
+      );
+
+    for (const sort of ["created", "title"]) {
+      const owner = (await (await asOwner(`/api/pages/recent?sort=${sort}`)).json()) as {
+        pages: (Listed & { visibility: string })[];
+      };
+      // owner には draft も同じ並びで出る
+      expect(
+        owner.pages.map((page) => page.id),
+        sort,
+      ).toContain(fresh.id);
+      const expected = owner.pages
+        .filter((page) => page.visibility === "public")
+        .map((page) => page.id);
+      expect([...expected].sort(), sort).toEqual([between.id, linker.id, open.id].sort());
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: string = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+        const text = await (
+          await anonymous(`/api/pages/recent?sort=${sort}&limit=1${query}`)
+        ).text();
+        expect(text, sort).not.toContain(draft.id);
+        expect(text, sort).not.toContain(fresh.id);
+        const list = JSON.parse(text) as { pages: Listed[]; nextCursor: string | null };
+        seen.push(...list.pages.map((page) => page.id));
+        cursor = list.nextCursor;
+        if (sort === "title" && cursor !== null) {
+          expect(draftKeys, cursor).not.toContain(decodeTitleCursor(cursor));
+        }
+      } while (cursor !== null);
+      expect(seen, sort).toEqual(expected);
+    }
+  });
+
   it("backlink を 1 件ずつたどっても、より新しい draft のリンク元が出ず、public のリンク元を取りこぼさない", async () => {
     const { anonymous, open, linker, draft, clock, create } = await seed();
     // public の Linker より新しい draft のリンク元を作る。絞り込みが LIMIT の後なら 1 ページ目が空になる
@@ -539,6 +586,17 @@ describe("匿名向けのレスポンスの総当たり", () => {
         "/api/pages/recent?visibility=public",
         "/api/pages/recent?visibility=public&tag=shared",
         "/api/pages/recent?visibility=bogus",
+        "/api/pages/recent?sort=created",
+        "/api/pages/recent?sort=created&limit=1",
+        "/api/pages/recent?sort=title",
+        "/api/pages/recent?sort=title&limit=1",
+        "/api/pages/recent?sort=title&tag=shared",
+        "/api/pages/recent?sort=title&visibility=draft",
+        "/api/pages/recent?sort=created&visibility=public&tag=shared",
+        "/api/pages/recent?sort=bogus",
+        // 匿名が draft の title_key や id で作った cursor でも、その位置の後ろの public だけを返す
+        `/api/pages/recent?sort=title&cursor=t${btoa("hidden plan").replace(/=+$/, "")}`,
+        `/api/pages/recent?sort=created&cursor=c1.${draft.id}`,
       ],
       "GET /api/pages/titles": [
         "/api/pages/titles",

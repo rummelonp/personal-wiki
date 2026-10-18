@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { buildClient, type PageJson, T0 } from "../test/pages";
@@ -299,7 +300,7 @@ describe("GET /api/search", () => {
 async function recent(
   client: Awaited<ReturnType<typeof buildClient>>,
   query = "",
-): Promise<{ pages: Omit<Hit, "excerpt">[]; nextCursor: string | null }> {
+): Promise<{ pages: (Omit<Hit, "excerpt"> & { createdAt: number })[]; nextCursor: string | null }> {
   const res = await client.request(`/api/pages/recent${query}`);
   expect(res.status).toBe(200);
   return res.json();
@@ -386,12 +387,21 @@ describe("GET /api/pages/recent", () => {
         title: "a",
         visibility: "draft",
         version: 2,
+        createdAt: T0,
         updatedAt: T0 + 3000,
         excerpt: "更新",
         tags: [],
       },
       // 本文が空のページは excerpt を返さない
-      { id: c.id, title: "c", visibility: "draft", version: 1, updatedAt: T0 + 2000, tags: [] },
+      {
+        id: c.id,
+        title: "c",
+        visibility: "draft",
+        version: 1,
+        createdAt: T0 + 2000,
+        updatedAt: T0 + 2000,
+        tags: [],
+      },
     ]);
     expect(body.nextCursor).toBeNull();
   });
@@ -445,6 +455,126 @@ describe("GET /api/pages/recent", () => {
       expect(res.status, query).toBe(400);
     }
     expect((await client.request("/api/pages/recent?limit=100")).status).toBe(200);
+  });
+
+  it("sort=created は作成日時の降順、sort=title は title_key の昇順で返し、tag の絞り込みとも合わせられる", async () => {
+    const client = await buildClient();
+    // 作成、更新、title の順がどれも違うように作る
+    const banana = await client.create("Banana", "#fruit");
+    client.clock.now += 1000;
+    const apple = await client.create("apple", "#fruit");
+    client.clock.now += 1000;
+    const cherry = await client.create("Cherry");
+    client.clock.now += 1000;
+    await client.update(banana, "Banana", "#fruit 更新");
+    const ids = (body: { pages: { id: string }[] }) => body.pages.map((page) => page.id);
+
+    expect(ids(await recent(client))).toEqual([banana.id, cherry.id, apple.id]);
+    expect(ids(await recent(client, "?sort=updated"))).toEqual([banana.id, cherry.id, apple.id]);
+    const created = await recent(client, "?sort=created");
+    expect(ids(created)).toEqual([cherry.id, apple.id, banana.id]);
+    expect(created.pages.map((page) => [page.createdAt, page.updatedAt])).toEqual([
+      [T0 + 2000, T0 + 2000],
+      [T0 + 1000, T0 + 1000],
+      [T0, T0 + 3000],
+    ]);
+    // 大文字小文字は title_key で畳んで並べる
+    expect(ids(await recent(client, "?sort=title"))).toEqual([apple.id, banana.id, cherry.id]);
+    expect(ids(await recent(client, "?sort=title&tag=fruit"))).toEqual([apple.id, banana.id]);
+    expect(ids(await recent(client, "?sort=created&tag=fruit"))).toEqual([apple.id, banana.id]);
+    // レスポンスに title_key を載せない
+    expect(created.pages[0]).not.toHaveProperty("titleKey");
+    expect(created.pages[0]).not.toHaveProperty("title_key");
+  });
+
+  it("sort=created と sort=title も cursor でページングし、同じ作成日時や任意の文字の title でも取りこぼさない", async () => {
+    const client = await buildClient();
+    const titles = ["日本語", "a/b?c&d", "Ω 100%", "emoji 🍣", "#tag", "z"];
+    for (const [i, title] of titles.entries()) {
+      // 3 件ずつ同じ created_at にして、id による順序づけを通す
+      if (i % 3 === 0) client.clock.now += 1000;
+      await client.create(title);
+    }
+    for (const sort of ["created", "title"]) {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: string = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+        const body = await recent(client, `?sort=${sort}&limit=2${query}`);
+        expect(body.pages.length, sort).toBeLessThanOrEqual(2);
+        seen.push(...body.pages.map((page) => page.id));
+        cursor = body.nextCursor;
+      } while (cursor !== null);
+      expect(seen, sort).toEqual((await recent(client, `?sort=${sort}`)).pages.map((p) => p.id));
+      expect(new Set(seen).size, sort).toBe(titles.length);
+    }
+    const byTitle = await recent(client, "?sort=title");
+    const keys = byTitle.pages.map((page) => page.title.toLowerCase());
+    expect(keys).toEqual([...keys].sort());
+  });
+
+  it("sort の不正な値と、並びの違う cursor、壊れた cursor は 400", async () => {
+    const client = await buildClient();
+    await client.create("a");
+    await client.create("b");
+    const cursorOf = async (sort: string) =>
+      (await recent(client, `?sort=${sort}&limit=1`)).nextCursor as string;
+    const cursors = {
+      updated: await cursorOf("updated"),
+      created: await cursorOf("created"),
+      title: await cursorOf("title"),
+    };
+    const bad = [
+      "?sort=bogus",
+      "?sort=",
+      "?sort=Title",
+      `?sort=created&cursor=${encodeURIComponent(cursors.updated)}`,
+      `?sort=title&cursor=${encodeURIComponent(cursors.updated)}`,
+      `?sort=updated&cursor=${encodeURIComponent(cursors.created)}`,
+      `?sort=title&cursor=${encodeURIComponent(cursors.created)}`,
+      `?cursor=${encodeURIComponent(cursors.title)}`,
+      `?sort=created&cursor=${encodeURIComponent(cursors.title)}`,
+      "?sort=title&cursor=t",
+      "?sort=title&cursor=t%2B%2F",
+      // 1 文字余る base64url と、UTF-8 として読めないバイト列
+      "?sort=title&cursor=tAAAAA",
+      "?sort=title&cursor=t_w",
+      "?sort=created&cursor=c1.short",
+    ];
+    for (const query of bad) {
+      const res = await client.request(`/api/pages/recent${query}`);
+      expect(res.status, query).toBe(400);
+      const field = query.includes("cursor") ? "cursor" : "sort";
+      expect(await res.json(), query).toMatchObject({ error: "invalid_field", field });
+    }
+    for (const [sort, cursor] of Object.entries(cursors)) {
+      const res = await client.request(
+        `/api/pages/recent?sort=${sort}&cursor=${encodeURIComponent(cursor)}`,
+      );
+      expect(res.status, sort).toBe(200);
+    }
+  });
+
+  it("title の順の cursor は、NFKC で伸びた上限の長さの title_key まで受け、それより長いと 400", async () => {
+    const client = await buildClient();
+    // U+FDFA は NFKC で 3 バイトから 33 バイトに伸びる。title の上限いっぱいの 2 ページを作る
+    const long = "ﷺ".repeat((MAX_TITLE_BYTES - 1) / 3);
+    const first = await client.create(`${long}a`);
+    const second = await client.create(`${long}b`);
+    const head = await recent(client, "?sort=title&limit=1");
+    expect(head.pages.map((page) => page.id)).toEqual([first.id]);
+    const cursor = head.nextCursor as string;
+    expect(cursor.length).toBeGreaterThan(Math.ceil((MAX_TITLE_BYTES * 4) / 3));
+    const rest = await recent(client, `?sort=title&cursor=${encodeURIComponent(cursor)}`);
+    expect(rest.pages.map((page) => page.id)).toEqual([second.id]);
+
+    const titleCursor = (bytes: number) =>
+      `t${btoa("a".repeat(bytes)).replace(/=+$/, "").replaceAll("+", "-").replaceAll("/", "_")}`;
+    const status = async (bytes: number) =>
+      (await client.request(`/api/pages/recent?sort=title&cursor=${titleCursor(bytes)}`)).status;
+    // key の上限は title の上限の 11 倍。1 バイト超えた 11265 バイトは base64url で余りが出ない長さで、形は正しい
+    expect(await status(MAX_TITLE_BYTES * 11)).toBe(200);
+    expect(await status(MAX_TITLE_BYTES * 11 + 1)).toBe(400);
   });
 
   it("/api/pages/:id と重ならず、token が無ければ匿名として 200、read の token で 200", async () => {

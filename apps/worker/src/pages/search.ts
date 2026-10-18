@@ -1,10 +1,12 @@
 import {
   foldKeepingUnderscore,
+  MAX_TITLE_BYTES,
   normalizeTitleKey,
   SEARCH_MAX_QUERY_CHARS,
   type SearchQuery,
   TRIGRAM_MIN_CHARS,
 } from "@personal-wiki/domain";
+import { decodeBase64Url, encodeBase64Url } from "../auth/base64url";
 import type { ReadableVisibility } from "../auth/principal";
 import { publicOnlyFlag, type Visibility } from "./store";
 
@@ -31,6 +33,7 @@ export interface VersionedSummary extends PageSummary {
 
 /** 最近の更新の 1 件。 */
 export interface ListedPage extends VersionedSummary {
+  createdAt: number;
   /**
    * 本文の先頭の抜粋。保存時に作った派生データで、それより前から在るページは rebuild するまで無い。
    * 本文が空のページにも無い。
@@ -67,6 +70,9 @@ interface VersionedRow extends SummaryRow {
 }
 
 interface ExcerptRow extends VersionedRow {
+  created_at: number;
+  /** cursor を作るためだけに読む。レスポンスには載せない */
+  title_key: string;
   /** page_excerpts の行が無いページは null */
   excerpt: string | null;
 }
@@ -116,9 +122,7 @@ export interface Cursor {
   id: string;
 }
 
-function encodeCursor(page: Pick<PageSummary, "updatedAt" | "id">): string {
-  return `${page.updatedAt}.${page.id}`;
-}
+const encodeCursor = (row: SummaryRow): string => `${row.updated_at}.${row.id}`;
 
 export function parseCursor(value: string): Cursor | null {
   const match = CURSOR_PATTERN.exec(value);
@@ -126,26 +130,120 @@ export function parseCursor(value: string): Cursor | null {
   return { updatedAt: Number(match[1]), id: match[2] as string };
 }
 
+/** listRecentPages の並び。updated は更新日時の降順、created は作成日時の降順、title は title_key の昇順。 */
+export const LIST_SORTS = ["updated", "created", "title"] as const;
+export type ListSort = (typeof LIST_SORTS)[number];
+
+export const isListSort = (value: string): value is ListSort =>
+  (LIST_SORTS as readonly string[]).includes(value);
+
 /**
- * cursor より後ろ（並び (updated_at DESC, id DESC) で先）の行に絞る条件。?1 と ?2 に cursor を bind する。
- * cursor が無いときは条件を足さない。`?1 IS NULL OR ...` の 1 本の SQL にすると、SQLite は bind する値を
- * 見ずに計画を立てるのでインデックスを範囲の検索に使えず、cursor の位置までインデックスを先頭から読み飛ばす。
+ * listRecentPages の並びと、その並びでの続きの位置。cursor の形は並びごとに違い、ほかの並びの cursor は
+ * parseListOrder が受け付けない。updated の cursor は Cursor と同じ形で、sort を省けば updated になる。
+ * title の続きの位置は title_key だけで決まる。削除されていないページの title_key は一意
+ * （pages_title_key_alive）で、同じ key の行が cursor の前後に分かれないので、id で順を補わなくてよい。
  */
-function afterCursor(cursor: Cursor | null, alias: string): string {
-  return cursor === null ? "" : `AND (${alias}updated_at, ${alias}id) < (?1, ?2)`;
+export type ListOrder =
+  | { sort?: "updated"; cursor: Cursor | null }
+  | { sort: "created"; cursor: { createdAt: number; id: string } | null }
+  | { sort: "title"; cursor: { titleKey: string } | null };
+
+/** 作成日時の順の cursor。更新日時の順の cursor と取り違えないよう、先頭に `c` を付ける */
+const CREATED_CURSOR_PATTERN = /^c([0-9]{1,16})\.([A-Za-z0-9_-]{22})$/;
+/**
+ * title_key の UTF-8 のバイト数の上限。title_key は title を NFKC で畳むので、title より長くなりうる。
+ * 1 文字あたりの伸びは U+FDFA の 3 バイトから 33 バイトへの 11 倍が最大で（UAX #15 の NFKC の最大の伸び）、
+ * 後の case fold と空白の畳み込みはこれを超えて伸ばさない。
+ */
+const MAX_TITLE_KEY_BYTES = MAX_TITLE_BYTES * 11;
+/**
+ * title の順の cursor。title_key は任意の文字を含むので、UTF-8 の base64url（padding なし）にして `t` を付ける。
+ * 長さは MAX_TITLE_KEY_BYTES を base64url にした長さで抑え、保存できない長さの key を decode しない。
+ */
+const TITLE_CURSOR_PATTERN = new RegExp(
+  `^t([A-Za-z0-9_-]{1,${Math.ceil((MAX_TITLE_KEY_BYTES * 4) / 3)}})$`,
+);
+
+function encodeListCursor(sort: ListSort, row: ExcerptRow): string {
+  switch (sort) {
+    case "updated":
+      return encodeCursor(row);
+    case "created":
+      return `c${row.created_at}.${row.id}`;
+    case "title":
+      return `t${encodeBase64Url(new TextEncoder().encode(row.title_key))}`;
+  }
 }
 
-/** limit + 1 件取った行から、limit 件と続きの cursor を作る。 */
+function decodeTitleKey(encoded: string): string | null {
+  const bytes = decodeBase64Url(encoded);
+  if (bytes === null) return null;
+  try {
+    const key = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    return key === "" ? null : key;
+  } catch {
+    return null;
+  }
+}
+
+/** sort の並びの cursor を読む。raw が無ければ cursor は null。形が sort の cursor でなければ null。 */
+export function parseListOrder(sort: ListSort, raw: string | undefined): ListOrder | null {
+  if (raw === undefined) return { sort, cursor: null } as ListOrder;
+  switch (sort) {
+    case "updated": {
+      const cursor = parseCursor(raw);
+      return cursor === null ? null : { sort, cursor };
+    }
+    case "created": {
+      const match = CREATED_CURSOR_PATTERN.exec(raw);
+      if (match === null) return null;
+      return { sort, cursor: { createdAt: Number(match[1]), id: match[2] as string } };
+    }
+    case "title": {
+      const match = TITLE_CURSOR_PATTERN.exec(raw);
+      const titleKey = match === null ? null : decodeTitleKey(match[1] as string);
+      return titleKey === null ? null : { sort, cursor: { titleKey } };
+    }
+  }
+}
+
+/**
+ * 並びごとの ORDER BY と、cursor より後ろに絞る条件（?1 と ?2 に cursor を bind する）。
+ * 条件は cursor のあるときだけ足す。`?1 IS NULL OR ...` の 1 本の SQL にすると、SQLite は bind する値を
+ * 見ずに計画を立てるのでインデックスを範囲の検索に使えず、cursor の位置までインデックスを先頭から読み飛ばす。
+ * 条件と並びは pages を別名 p で参照するので、使う SQL も pages に p の別名を付ける。
+ */
+const LIST_ORDER_SQL: Record<ListSort, { after: string; orderBy: string }> = {
+  updated: {
+    after: "AND (p.updated_at, p.id) < (?1, ?2)",
+    orderBy: "p.updated_at DESC, p.id DESC",
+  },
+  created: {
+    after: "AND (p.created_at, p.id) < (?1, ?2)",
+    orderBy: "p.created_at DESC, p.id DESC",
+  },
+  title: { after: "AND p.title_key > ?1", orderBy: "p.title_key" },
+};
+
+function listCursorBinds(order: ListOrder): [string | number | null, string | null] {
+  if (order.cursor === null) return [null, null];
+  if (order.sort === "title") return [order.cursor.titleKey, null];
+  if (order.sort === "created") return [order.cursor.createdAt, order.cursor.id];
+  return [order.cursor.updatedAt, order.cursor.id];
+}
+
+/** limit + 1 件取った行から、limit 件と続きの cursor（返す最後の行の位置）を作る。 */
 function pageOf<R extends SummaryRow, T extends PageSummary>(
   rows: R[],
   limit: number,
   map: (row: R) => T,
+  encode: (row: R) => string = encodeCursor,
 ): PageList<T> {
-  const pages = rows.slice(0, limit).map(map);
-  const last = pages.at(-1);
+  const shown = rows.slice(0, limit);
+  const last = shown.at(-1);
   return {
-    pages,
-    nextCursor: rows.length > limit && last !== undefined ? encodeCursor(last) : null,
+    pages: shown.map(map),
+    nextCursor: rows.length > limit && last !== undefined ? encode(last) : null,
   };
 }
 
@@ -207,7 +305,8 @@ export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["
 }
 
 /**
- * 削除されていないページを更新日時の降順で返す。
+ * 削除されていないページを sort の順（既定は更新日時の降順）で返す。cursor は sort ごとの形で、
+ * parseListOrder で読む。title の順は title_key の文字コードの順で、D1 に ICU が無いので漢字は読みの順に並ばない。
  *
  * tagKey（prepareTagFilter の値）を渡すと、そのタグが付いたページに絞る。ネストタグは親で子も拾い、
  * `a` は `a/b`、`a/b/c` が付いたページにも一致する（Obsidian の検索と同じ）。tag_key は `/` 区切りの
@@ -218,41 +317,49 @@ export function tagFilterErrorFields(reason: Extract<TagFilter, { ok: false }>["
  * visibility を渡すと、その公開範囲のページに絞る。readable との AND で、readable が public なら
  * draft を指定しても 1 件も返らない（読めない範囲を絞り込みで広げない）。
  *
- * keyset のページングなので、走査中に更新されたページは先頭へ移り、後続のページでは返らない。
- * 差分の同期には使えず、先頭から取り直す。
- * タグで絞らない一覧は pages_alive_updated のインデックスを新しい順にたどり、limit + 1 件で止まる。
+ * keyset のページングなので、走査中の変更は並びの鍵が cursor の前か後かで扱いが決まる。
+ * - 更新日時の順: 走査中に更新されたページは先頭へ移り、まだ返していなければ後続のページでは返らない。
+ * - 作成日時の順: 作成日時は変わらないので、更新や title の変更では位置が動かない。走査中に作られたページは
+ *   先頭に入り、後続のページでは返らない。
+ * - title の順: title を変えたページは新しい title_key の位置へ移る。cursor より後ろへ移れば後続のページで
+ *   返り、返し済みなら二度返る。cursor より前へ移れば、まだ返していなければ返らない。走査中に作られたページは
+ *   title_key が cursor より後ろのときだけ返る。
+ * どの並びでも、削除されたページはそれ以降返らない。差分の同期には使えず、先頭から取り直す。
+ * タグで絞らない一覧は、並びに合うインデックス（pages_alive_updated、pages_alive_created、pages_title_key_alive）を
+ * 先頭からたどり、limit + 1 件で止まる。
  * visibility と readable の条件はインデックスでなく行ごとに照合するので、合う行が少ないと多くの行を読む。
  */
 export async function listRecentPages(
   db: D1Database,
   {
     limit,
-    cursor,
     tagKey = null,
     visibility = null,
     readable,
+    ...order
   }: {
     limit: number;
-    cursor: Cursor | null;
     tagKey?: string | null;
     visibility?: Visibility | null;
     readable: ReadableVisibility;
-  },
+  } & ListOrder,
 ): Promise<PageList<ListedPage>> {
+  const sort = order.sort ?? "updated";
+  const sql = LIST_ORDER_SQL[sort];
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at, e.excerpt
+      `SELECT p.id, p.title, p.title_key, p.visibility, p.version, p.created_at, p.updated_at,
+              e.excerpt
        FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE p.deleted_at IS NULL AND (?7 = 0 OR p.visibility = 'public')
          AND (?8 IS NULL OR p.visibility = ?8)
-         ${afterCursor(cursor, "p.")}
+         ${order.cursor === null ? "" : sql.after}
          AND (?4 IS NULL OR p.id IN (
            SELECT page_id FROM tags WHERE tag_key = ?4 OR (tag_key >= ?5 AND tag_key < ?6)))
-       ORDER BY p.updated_at DESC, p.id DESC LIMIT ?3`,
+       ORDER BY ${sql.orderBy} LIMIT ?3`,
     )
     .bind(
-      cursor?.updatedAt ?? null,
-      cursor?.id ?? null,
+      ...listCursorBinds(order),
       limit + 1,
       tagKey,
       tagKey === null ? null : `${tagKey}/`,
@@ -261,7 +368,12 @@ export async function listRecentPages(
       visibility,
     )
     .all<ExcerptRow>();
-  const list = pageOf(results, limit, toVersioned);
+  const list = pageOf(
+    results,
+    limit,
+    (row) => ({ ...toVersioned(row), createdAt: row.created_at }),
+    (row) => encodeListCursor(sort, row),
+  );
   const excerpts = new Map(results.map((row) => [row.id, row.excerpt]));
   const tags = await tagsByPage(
     db,
@@ -295,10 +407,10 @@ export async function listPageTitles(
 ): Promise<PageList> {
   const { results } = await db
     .prepare(
-      `SELECT id, title, visibility, updated_at FROM pages
-       WHERE deleted_at IS NULL AND (?4 = 0 OR visibility = 'public')
-         ${afterCursor(cursor, "")}
-       ORDER BY updated_at DESC, id DESC LIMIT ?3`,
+      `SELECT p.id, p.title, p.visibility, p.updated_at FROM pages AS p
+       WHERE p.deleted_at IS NULL AND (?4 = 0 OR p.visibility = 'public')
+         ${cursor === null ? "" : LIST_ORDER_SQL.updated.after}
+       ORDER BY ${LIST_ORDER_SQL.updated.orderBy} LIMIT ?3`,
     )
     .bind(cursor?.updatedAt ?? null, cursor?.id ?? null, limit + 1, publicOnlyFlag(readable))
     .all<SummaryRow>();

@@ -35,6 +35,7 @@ import {
 import { actorOf } from "./revisions";
 import {
   type Cursor,
+  isListSort,
   LIST_DEFAULT_LIMIT,
   LIST_MAX_LIMIT,
   listBacklinks,
@@ -43,6 +44,7 @@ import {
   listRecentPages,
   listTagCounts,
   parseCursor,
+  parseListOrder,
   prepareTagFilter,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
@@ -343,8 +345,13 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
       })
       // `/api/pages/:id` より前に登録する。後ろだと :id のハンドラが "recent" を id として先に 404 にする
       .get("/api/pages/recent", allowAnonymousRead(), async (c) => {
-        const paging = readPaging(c);
-        if (!paging.ok) return paging.response;
+        const sort = c.req.query("sort") ?? "updated";
+        if (!isListSort(sort)) return errorResponse(c, 400, "invalid_field", { field: "sort" });
+        const limit = readLimit(c, LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
+        if (!limit.ok) return limit.response;
+        // 並びの違う cursor は位置の意味が違うので、読み替えずに 400 にする
+        const order = parseListOrder(sort, c.req.query("cursor"));
+        if (order === null) return errorResponse(c, 400, "invalid_field", { field: "cursor" });
         const rawTag = c.req.query("tag");
         const tag = rawTag === undefined ? null : prepareTagFilter(rawTag);
         if (tag?.ok === false) {
@@ -365,7 +372,8 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
           return c.json({ pages: [], nextCursor: null });
         }
         const { pages, nextCursor } = await listRecentPages(c.env.DB, {
-          ...paging.value,
+          ...order,
+          limit: limit.value,
           tagKey: tag?.key ?? null,
           visibility: visibility ?? null,
           readable,
