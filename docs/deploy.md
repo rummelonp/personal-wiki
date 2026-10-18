@@ -245,19 +245,19 @@ OAuth の同意画面などの認証の画面は CSP が beacon を止めるの�
 
 ## 更新
 
-新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で毎回次の 3 つを順に実行する。
+新しい版に更新するときは、取得と `pnpm install` のあと、`apps/worker` で毎回次を順に実行する。
 `derived:rebuild` は環境変数 `WIKI_TOKEN` から write の token を読む。
-`0008_title_key_underscore.sql` を含む更新（これより前の版からの更新）だけは、`pnpm deploy:remote` と `pnpm derived:rebuild --remote` の間に、title_key をそろえ直す SQL の実行が要る。
-`pnpm db:migrate:remote` の出力に `0008_title_key_underscore.sql` が出たら、この更新に当たる。
-手順は「title の `_` と空白をそろえる migration」の項にある。
+token の扱いは [operations.md](./operations.md) の「API token」を参照する。
 
 ```sh
 pnpm db:migrate:remote
 pnpm deploy:remote
+read -rs WIKI_TOKEN && export WIKI_TOKEN  # write の token を入れる
 pnpm derived:rebuild --remote
 ```
 
-`0009_api_token_names.sql` は、上の 3 つのコマンドのほかに操作が要らない。
+`pnpm db:migrate:remote` の出力に `0008_title_key_underscore.sql` が出たときだけ、`pnpm deploy:remote` と `pnpm derived:rebuild --remote` の間に追加の手順が要る。
+次の「title の `_` と空白をそろえる migration」の項に従う。
 
 migration は派生データのテーブルを足すことがある。
 デプロイが先だと、新しい版が使うテーブルがまだ無く、保存と一覧がエラーで止まる。
@@ -267,6 +267,8 @@ migration の前からあるページは、これを回すまで一覧に抜粋�
 作り直しの内容は [operations.md](./operations.md) の「派生データの作り直し」にある。
 
 ### title の `_` と空白をそろえる migration
+
+`0008_title_key_underscore.sql` より前の版から更新するときだけの手順で、初回のデプロイでは要らない。
 
 `0008_title_key_underscore.sql` から、title の重複の検査と title での参照は `_` と空白を同じ文字として扱う。
 この migration は保存済みの title_key を新しい規則に書き換える。
