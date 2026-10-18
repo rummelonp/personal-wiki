@@ -438,8 +438,10 @@ test.describe("公開の行の知らせ（375px）", () => {
     await page.setViewportSize({ width: 375, height: 812 });
   });
 
-  // 知らせは操作と同じ行に収まり、WebKit では語の途中で折り返さない
-  const expectPhrased = async (page: Page, text: string) => {
+  // 知らせは操作と同じ行に収まり、WebKit では語の途中で折り返さない。
+  // knownBreaks は、PublishBar が手で置いた <wbr> が「名詞|しました」の間にあるため、文節の途中と判定される位置。
+  // 余白に 1 行で入らない文を、語の途中の強制の折り返しより読める位置で折るための選択として許す
+  const expectPhrased = async (page: Page, text: string, knownBreaks: readonly string[] = []) => {
     await expect(notice(page)).toHaveText(text);
     const note = await notice(page).boundingBox();
     // 操作の行は segmented とボタンの高い方。細いポインタの端末では 2 行の知らせが segmented（32px）より
@@ -461,9 +463,10 @@ test.describe("公開の行の知らせ（375px）", () => {
     );
     // auto-phrase を解釈する描画は文節で切るので、句読点と空白での折り返しだけを許す判定は WebKit にだけ当てる
     if (!(await page.evaluate(() => CSS.supports("word-break", "auto-phrase")))) {
-      expect(await midPhraseBreaks(notice(page)), `「${text}」が語の途中で折り返している`).toEqual(
-        [],
+      const breaks = (await midPhraseBreaks(notice(page))).filter(
+        (found) => !knownBreaks.includes(found),
       );
+      expect(breaks, `「${text}」が語の途中で折り返している`).toEqual([]);
     }
   };
 
@@ -479,9 +482,9 @@ test.describe("公開の行の知らせ（375px）", () => {
 
     await option(page, "公開").click();
     await confirmPanel(page).getByRole("button", { name: "公開する" }).click();
-    await expectPhrased(page, "公開しました。");
+    await expectPhrased(page, "公開しました。", ["開|し"]);
     await page.getByRole("button", { name: "URL をコピー" }).click();
-    await expectPhrased(page, "URL をコピーしました。");
+    await expectPhrased(page, "URL をコピーしました。", ["ー|し"]);
     await option(page, "下書き").click();
     await expectPhrased(page, "下書きに戻しました。");
   });

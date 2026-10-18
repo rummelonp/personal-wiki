@@ -1,68 +1,131 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, TestInfo } from "@playwright/test";
+import type { OwnerApi } from "./support/api";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
-import { lineTexts, midPhraseBreaks } from "./support/line-breaks";
+import { lineTexts, midPhraseBreaks, misplacedWbrs, phraseSeams } from "./support/line-breaks";
 
 /*
  * 通知の見出しと本文の折り返し。小さい仮名（ゃ、っ）、長音（ー）、句読点を行頭に置かない。
- * 行頭に来る文字は文字ごとの Range の位置で測る。幅を 150〜360px で振ると、WebKit の既定の禁則
- * （line-break: auto）では小さい仮名が行頭に来る幅が現れる。
- * 最初のテストは Notice を通さない HTML で禁則だけを測る。語の途中で折り返すかは、実際の通知を出す
- * 後ろのテストで測る。word-break: auto-phrase を解釈しない描画（iPhone の WebKit）では、Notice が
- * 文節の切れ目に <wbr> を置いて折り返しを決める。
+ * 行頭に来る文字は文字ごとの Range の位置で測る。word-break: auto-phrase を解釈しない描画（iPhone の WebKit）では、
+ * Notice が文節の切れ目に <wbr> を置いて折り返しを決めるので、<wbr> が文節の切れ目に置かれているかも測る。
+ * 測る道具（support/line-breaks.ts）が語の途中の <wbr> を許さないことは、最初のテストで確かめる。
  */
 
-const TITLE = "ショートカットのキャンセルができませんでした";
-const TEXT =
-  "ちょっとしたシャッターを切ってください。ニュースのキャンセルはじゅうぶんにっこりしゃべりながら、きっちりぎゅっとゆっくりフェッチしたデータをコーヒーのようにリフレッシュします。";
 const LINE_HEAD_PROHIBITED = "ゃゅょっぁぃぅぇぉゎャュョッァィゥェォヮー、。，．";
 
-test("通知の見出しと本文は、どの幅でも小さい仮名、長音、句読点が行頭に来ない", async ({ page }) => {
-  await page.goto("/");
-  const violations = await page.evaluate(
-    ({ title, text, prohibited }) => {
-      const host = document.createElement("div");
-      host.style.cssText = "position:fixed;top:0;left:0;visibility:hidden";
-      host.innerHTML = `<section class="notice notice-info"><h2 class="notice-title"><span class="dot"></span>${title}</h2><div class="notice-text"><p>${text}</p></div></section>`;
-      document.body.append(host);
-      const section = host.firstElementChild as HTMLElement;
+const isAutoPhraseRendering = (page: Page): Promise<boolean> =>
+  page.evaluate(() => CSS.supports("word-break", "auto-phrase"));
 
-      const lineHeads = (root: Element): string[] => {
-        const heads: string[] = [];
-        let top: number | null = null;
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-          const data = (node as Text).data;
-          for (let index = 0; index < data.length; index++) {
-            const range = document.createRange();
-            range.setStart(node, index);
-            range.setEnd(node, index + 1);
-            const rect = range.getBoundingClientRect();
-            if (rect.width === 0) continue;
-            const lineTop = Math.round(rect.top);
-            if (top !== null && lineTop !== top) heads.push(data[index] as string);
-            top = lineTop;
-          }
-        }
-        return heads;
-      };
+test("測る道具は、語の途中の <wbr> と、閉じ括弧と助詞の間の折り返しを見つける", async ({
+  page,
+}) => {
+  await page.goto("about:blank");
+  const probe = page.locator("#probe");
+  // 幅を振って、現れた折り返しの位置を集める（文字の幅は描画の font で変わるので、1 つの幅には頼らない）
+  const breaksOf = async (html: string): Promise<{ breaks: string[]; misplaced: string[] }> => {
+    await page.setContent(
+      `<div id="probe" style="font:16px sans-serif;line-break:strict;word-break:keep-all">${html}</div>`,
+    );
+    const breaks = new Set<string>();
+    for (let width = 40; width <= 200; width += 4) {
+      await probe.evaluate((element, w) => {
+        element.style.width = `${w}px`;
+      }, width);
+      for (const found of await midPhraseBreaks(probe)) breaks.add(found);
+    }
+    return { breaks: [...breaks], misplaced: await misplacedWbrs(probe) };
+  };
 
-      const found: string[] = [];
-      for (let width = 150; width <= 360; width += 3) {
-        section.style.width = `${width}px`;
-        for (const selector of [".notice-title", ".notice-text"]) {
-          const root = section.querySelector(selector) as Element;
-          for (const head of lineHeads(root)) {
-            if (prohibited.includes(head)) found.push(`${selector} ${width}px 「${head}」`);
-          }
-        }
-      }
-      host.remove();
-      return found;
-    },
-    { title: TITLE, text: TEXT, prohibited: LINE_HEAD_PROHIBITED },
+  const wellPlaced = await breaksOf("画像を<wbr>添付できませんでした");
+  expect(wellPlaced.breaks, "文節の切れ目の <wbr> での折り返しを咎めている").toEqual([]);
+  expect(wellPlaced.misplaced).toEqual([]);
+
+  // 語の途中の <wbr> は、そこで折り返さない幅でも位置が誤りと分かる。折り返した幅では折り返しも咎める
+  const compound = await breaksOf("書き<wbr>込めませんでした");
+  expect(compound.misplaced).toEqual(["書き|込めま"]);
+  expect(compound.breaks).toContain("き|込");
+  expect((await breaksOf("届か<wbr>ないページ")).misplaced).toEqual(["届か|ないペ"]);
+  expect((await breaksOf("読み込みを<wbr>ー覧にします")).misplaced).toEqual(["込みを|ー覧に"]);
+  expect((await breaksOf("受け<wbr>付けました")).misplaced, "活用語尾で終わる語").toEqual([
+    "受け|付けま",
+  ]);
+  expect((await breaksOf("変更　保存しました")).breaks, "全角の空白の後ろ").toEqual([]);
+  expect((await breaksOf("開いたときは、<wbr>「保存」を押す")).misplaced, "開き括弧の手前").toEqual(
+    [],
   );
-  expect(violations).toEqual([]);
+
+  expect((await breaksOf("「公開設定」のページ")).breaks, "閉じ括弧と助詞の間").toContain("」|の");
+  expect((await breaksOf("「公開設定」ページ")).breaks, "閉じ括弧の後ろの片仮名").not.toContain(
+    "」|ペ",
+  );
 });
+
+/** 通知の幅を、中身を作り直さずに変える（折り返しだけを振る）。 */
+async function setNoticeWidth(section: Locator, width: number): Promise<void> {
+  await section.evaluate((element, w) => {
+    element.style.width = `${w}px`;
+  }, width);
+  const box = await section.boundingBox();
+  expect(box?.width, `${width}px に変えられていない`).toBeCloseTo(width, 0);
+}
+
+const NOTICE_PARTS = [".notice-title", ".notice-text"] as const;
+
+/**
+ * 通知の見出しと本文の <wbr> が、文節の切れ目だけにあるか。<wbr> が 1 つも無ければ、置いていないのか、
+ * 置く必要が無い描画（auto-phrase を解釈する描画）なのか分からないので、解釈しない描画では wrapped に要る。
+ */
+async function expectWbrsAtPhraseSeams(
+  notice: Locator,
+  wrapped: (typeof NOTICE_PARTS)[number],
+): Promise<void> {
+  expect(
+    (await phraseSeams(notice.locator(wrapped))).length,
+    `${wrapped} に <wbr> が無い`,
+  ).toBeGreaterThan(0);
+  for (const selector of NOTICE_PARTS) {
+    const part = notice.locator(selector);
+    if ((await part.count()) === 0) continue;
+    expect(await misplacedWbrs(part), `${selector} の <wbr> が文節の切れ目にない`).toEqual([]);
+  }
+}
+
+/**
+ * 本番の DOM の通知（Notice が <wbr> と .phrased を当てたもの）の見出しと本文が、幅を振っても行頭に禁則の文字が来ず、
+ * 解釈しない描画では語の途中で折り返さず、<wbr> が文節の切れ目だけにあるか。
+ * 1 行より長い文節は overflow-wrap: anywhere が禁則を無視して切るので、どの文節も 1 行に収まる幅だけを振る。
+ */
+async function expectWellWrappedAcrossWidths(
+  page: Page,
+  notice: Locator,
+  widths: readonly number[],
+  wrapped: (typeof NOTICE_PARTS)[number],
+): Promise<void> {
+  await expect(notice).toBeVisible();
+  const section = page.locator(".notice").filter({ has: notice });
+  const autoPhrase = await isAutoPhraseRendering(page);
+  let wrappedOnce = false;
+  for (const width of widths) {
+    await setNoticeWidth(section, width);
+    for (const selector of NOTICE_PARTS) {
+      const part = notice.locator(selector);
+      if ((await part.count()) === 0) continue;
+      const lines = await lineTexts(part);
+      if (selector === wrapped) wrappedOnce ||= lines.length > 1;
+      const heads = lines
+        .map((line) => line.slice(0, 1))
+        .filter((head) => `${LINE_HEAD_PROHIBITED}」』）】`.includes(head));
+      expect(heads, `${selector} ${width}px で行頭に来た文字`).toEqual([]);
+      if (!autoPhrase) {
+        expect(
+          await midPhraseBreaks(part),
+          `${selector} ${width}px で語の途中で折り返している`,
+        ).toEqual([]);
+      }
+    }
+  }
+  expect(wrappedOnce, `${wrapped} が折り返していないので測れていない`).toBe(true);
+  if (!autoPhrase) await expectWbrsAtPhraseSeams(notice, wrapped);
+}
 
 /**
  * 通知の見出し（と、あれば本文）が、句読点、空白、文節の切れ目でだけ折り返すか。
@@ -72,25 +135,24 @@ test("通知の見出しと本文は、どの幅でも小さい仮名、長音�
 async function expectBreaksOnlyAtPhrases(
   page: Page,
   notice: Locator,
-  wrapped: ".notice-title" | ".notice-text",
+  wrapped: (typeof NOTICE_PARTS)[number],
 ): Promise<void> {
-  test.skip(
-    await page.evaluate(() => CSS.supports("word-break", "auto-phrase")),
-    "auto-phrase を解釈する描画は文節で切る",
-  );
+  test.skip(await isAutoPhraseRendering(page), "auto-phrase を解釈する描画は文節で切る");
   await expect(notice).toBeVisible();
   expect(
     (await lineTexts(notice.locator(wrapped))).length,
     `${wrapped} が折り返していないので測れていない`,
   ).toBeGreaterThan(1);
-  for (const selector of [".notice-title", ".notice-text"]) {
+  for (const selector of NOTICE_PARTS) {
     const part = notice.locator(selector);
     if ((await part.count()) === 0) continue;
     expect(await midPhraseBreaks(part), `${selector} が語の途中で折り返している`).toEqual([]);
   }
+  await expectWbrsAtPhraseSeams(notice, wrapped);
 }
 
-test("固定の文言の通知は、語の途中で折り返さない", async ({ page, api }, testInfo) => {
+/** 保存が 401 で止まった通知（ログインの期限が切れました）を出す。 */
+async function openAuthLostNotice(page: Page, api: OwnerApi, testInfo: TestInfo): Promise<Locator> {
   const created = await api.createPage({
     title: uniqueTitle(testInfo, "401 の折り返し"),
     body: "本文",
@@ -109,7 +171,32 @@ test("固定の文言の通知は、語の途中で折り返さない", async ({
   );
   await bodyEditor(page).click();
   await page.keyboard.type("あ");
-  const notice = page.getByRole("alert").filter({ hasText: "ログインの期限が切れました" });
+  return page.getByRole("alert").filter({ hasText: "ログインの期限が切れました" });
+}
+
+/**
+ * 本文の wikilink を押して、title の URL にできない title の「まだありません」の通知を出す。
+ * title の URL にできる title は空のページへ移るので、予約語（p/）で始まる title を使う。
+ */
+async function openMissingLinkNotice(
+  page: Page,
+  api: OwnerApi,
+  testInfo: TestInfo,
+  userTitle: string,
+): Promise<Locator> {
+  const missing = `p/${userTitle}`;
+  const source = await api.createPage({
+    title: uniqueTitle(testInfo, "リンク元の折り返し"),
+    body: `[[${missing}]]`,
+  });
+  await page.goto(`/p/${source.id}`);
+  await expect(saveState(page)).toHaveText("保存済み");
+  await bodyEditor(page).locator(".cm-wikilink", { hasText: missing }).click();
+  return page.getByRole("alert").filter({ hasText: `「${missing}」のページはまだありません` });
+}
+
+test("固定の文言の通知は、語の途中で折り返さない", async ({ page, api }, testInfo) => {
+  const notice = await openAuthLostNotice(page, api, testInfo);
   await expectBreaksOnlyAtPhrases(page, notice, ".notice-text");
 });
 
@@ -152,17 +239,48 @@ test("部品の中の長い title は、幅を振っても行頭に禁則の文�
 });
 
 test("利用者の入力を含む通知も、語の途中で折り返さない", async ({ page, api }, testInfo) => {
-  // title の URL にできる title は空のページへ移るので、予約語で始まる title で通知を出す
-  const missing = `p/${uniqueTitle(testInfo, "公開設定の見直しを進めるための下書き")}`;
-  const source = await api.createPage({
-    title: uniqueTitle(testInfo, "リンク元の折り返し"),
-    body: `[[${missing}]]`,
-  });
-  await page.goto(`/p/${source.id}`);
-  await expect(saveState(page)).toHaveText("保存済み");
-  await bodyEditor(page).locator(".cm-wikilink", { hasText: missing }).click();
-  const notice = page
-    .getByRole("alert")
-    .filter({ hasText: `「${missing}」のページはまだありません` });
+  const notice = await openMissingLinkNotice(
+    page,
+    api,
+    testInfo,
+    uniqueTitle(testInfo, "公開設定の見直しを進めるための下書き"),
+  );
   await expectBreaksOnlyAtPhrases(page, notice, ".notice-title");
+});
+
+// どの文節も 1 行に収まる幅。見出しは 16px で、最も長い文節（11 字ほど）に左右の余白と先頭の点を足した幅から
+const WIDTHS = Array.from({ length: 36 }, (_, index) => 260 + index * 4);
+
+test("利用者の入力を含む見出しは、本番の DOM でどの幅でも禁則を守り、文節の切れ目だけで折り返す", async ({
+  page,
+  api,
+}, testInfo) => {
+  // 小さい仮名と長音を含む片仮名の語を、助詞でつないだ title。閉じ括弧の直後の助詞は、行頭に離れてはならない
+  const notice = await openMissingLinkNotice(
+    page,
+    api,
+    testInfo,
+    "ショートカットのキャンセルをニュースのシャッターでフェッチしたデータをコーヒーでリフレッシュ",
+  );
+  await expectWellWrappedAcrossWidths(page, notice, WIDTHS, ".notice-title");
+  test.skip(await isAutoPhraseRendering(page), "auto-phrase を解釈する描画は <wbr> を置かない");
+  const seams = await phraseSeams(notice.locator(".notice-title"));
+  expect([(seams[0] as { before: string }).before, ...seams.map((seam) => seam.after)]).toEqual([
+    "「p/ショートカットの",
+    "キャンセルを",
+    "ニュースの",
+    "シャッターで",
+    "フェッチしたデータを",
+    "コーヒーで",
+    "リフレッシュ」の",
+    "ページはまだありません",
+  ]);
+});
+
+test("固定の文言の本文は、本番の DOM でどの幅でも禁則を守り、文節の切れ目だけで折り返す", async ({
+  page,
+  api,
+}, testInfo) => {
+  const notice = await openAuthLostNotice(page, api, testInfo);
+  await expectWellWrappedAcrossWidths(page, notice, WIDTHS, ".notice-text");
 });
