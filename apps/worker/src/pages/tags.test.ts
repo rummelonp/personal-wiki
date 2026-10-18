@@ -82,6 +82,7 @@ describe("excerpt と tags", () => {
         id: page.id,
         title: "p",
         visibility: "draft",
+        version: 2,
         updatedAt: expect.any(Number),
         excerpt: "次の本文",
         tags: ["new"],

@@ -30,6 +30,9 @@ import { defineTool, toolError, toolResult } from "./tool";
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false } as const;
 
+const VERSION_NOTE =
+  "各件の version は read_page の version と同じ値で、update_page と edit_page の version にそのまま渡せる。ページの保存、公開範囲の切り替え、別のページの title の変更に伴うリンクの書き換えなどで進む。オーナーがブラウザで続けて保存して版の履歴が 1 つにまとまっても、保存ごとに進む。リンクの書き換えは title の変更より遅れて進むので、誰も保存していないページの version が後から進むことがある。ローカルの写しと照合するときは、read_page で 1 件ずつ読まずに、この version を写しを取ったときの値と比べる。";
+
 /** limit の範囲は REST の limit クエリと同じ。範囲外は schema の検証で弾く */
 const limitSchema = (fallback: number, max: number) =>
   z.number().int().min(1).max(max).optional().describe(`返す件数。既定 ${fallback}、上限 ${max}`);
@@ -62,8 +65,9 @@ export const searchTool = defineTool({
   scope: "read",
   title: "ページを探す",
   description: [
-    "title と本文の部分一致でページを探し、id、title、本文の抜粋、tags を返す。draft も含む。",
+    "title と本文の部分一致でページを探し、id、title、version、本文の抜粋、tags を返す。draft も含む。",
     "excerpt は一致した位置の周辺の本文で、tags はページに付いたタグの表記。",
+    VERSION_NOTE,
     "title に語を含むページが先。その中と残りは、3 文字以上は全文検索で関連度の順、2 文字以下は部分一致で更新が新しい順。短い語で見つからなければ語を足す。",
     "全角半角と、英字の大文字小文字は区別しない。",
     `query は ${SEARCH_MAX_QUERY_CHARS} 文字まで。改行やタブなどの制御文字を含めると invalid_field になる。`,
@@ -99,6 +103,7 @@ export const listRecentTool = defineTool({
   description: [
     "ページを更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
     "各件に tags（ページに付いたタグの表記）と、本文の先頭の excerpt を付ける。本文が空のページと、抜粋を作り直す前のページには excerpt が無い。",
+    VERSION_NOTE,
     "tag を渡すと、そのタグが付いたページだけに絞る。親のタグには子のタグのページも含まれる（`work` は `work/project` が付いたページにも一致する）。全角半角と大文字小文字は区別せず、先頭の `#` はあってもなくてもよい。タグでまとめたページを見渡すのに使う。cursor を渡すときは、前の呼び出しと同じ tag を渡す。",
     `tag は表記をそろえた後で ${TAG_MAX_LENGTH} 文字まで。`,
   ].join("\n"),
@@ -140,6 +145,7 @@ export const listBacklinksTool = defineTool({
     "本文の `[[title]]` でそのページへリンクしているページを、更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
     "id と title はどちらか一方だけを指定する。title で引くと、まだ作られていないページ（`[[title]]` のリンク先が無いもの）のリンク元も返る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "id で引くとき、id のページが無ければ not_found。",
+    VERSION_NOTE,
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema.optional(),

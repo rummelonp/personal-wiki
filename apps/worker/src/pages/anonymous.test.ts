@@ -226,8 +226,20 @@ describe("匿名の読み取り", () => {
     expect(draftTitle.status).toBe(200);
     expect(JSON.parse(draftTitle.body)).toEqual({
       pages: [
-        { id: both.id, title: "Both", visibility: "public", updatedAt: both.updatedAt },
-        { id: open.id, title: "Open Note", visibility: "public", updatedAt: open.updatedAt },
+        {
+          id: both.id,
+          title: "Both",
+          visibility: "public",
+          version: both.version,
+          updatedAt: both.updatedAt,
+        },
+        {
+          id: open.id,
+          title: "Open Note",
+          visibility: "public",
+          version: open.version,
+          updatedAt: open.updatedAt,
+        },
       ],
       nextCursor: null,
     });

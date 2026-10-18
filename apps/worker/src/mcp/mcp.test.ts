@@ -6,6 +6,7 @@ import { createApp } from "../app";
 import { MAX_REQUEST_BYTES, type WriteMetric } from "../pages/operations";
 import { parseActor } from "../pages/revision-history";
 import { UNRESOLVED_SOURCES_PER_TITLE } from "../pages/search";
+import { setVisibility as switchVisibility } from "../pages/store";
 import { buildClient, linksFrom, snapshotDb, T0, tagsOf } from "../test/pages";
 import { insertApiToken } from "../test/tokens";
 import { createWikiMcpServer } from "./server";
@@ -1533,6 +1534,7 @@ describe("検索と一覧の tool", () => {
             id: a.id,
             title: "Alpha",
             visibility: "public",
+            version: 1,
             updatedAt: T0,
             excerpt: "検索の対象の本文",
             tags: [],
@@ -1619,6 +1621,52 @@ describe("検索と一覧の tool", () => {
       isError: true,
       json: { error: "invalid_field", field: "limit", max: 100, message: "100 以下で渡す" },
     });
+  });
+
+  it("search、list_recent、list_backlinks の各件の version は read_page と同じで、そのまま update_page に渡せる", async () => {
+    const { call, clock } = await mcpClient();
+    const { json: a } = await call("create_page", { title: "Alpha", body: "検索の対象の本文" });
+    clock.now += 1000;
+    const { json: b } = await call("create_page", { title: "Beta", body: "[[Alpha]]" });
+    await call("update_page", { id: a.id, version: 1, title: "Alpha", body: "検索の対象の本文 2" });
+    // 公開範囲の切り替えも version を進める
+    clock.now += 1000;
+    const switched = await switchVisibility(env.DB, {
+      id: a.id as string,
+      visibility: "public",
+      now: clock.now,
+    });
+    expect(switched.ok).toBe(true);
+    expect((await call("read_page", { id: a.id })).json.version).toBe(3);
+
+    const versionOf = (json: Record<string, unknown>, key: string, id: unknown) =>
+      (json[key] as { id: string; version: number }[]).find((page) => page.id === id)?.version;
+    // FTS（3 文字以上）と LIKE（2 文字以下）のどちらの経路にも version が付く
+    const results = [
+      (await call("search", { query: "対象の本文" })).json,
+      (await call("search", { query: "Al" })).json,
+    ];
+    for (const json of results) expect(versionOf(json, "results", a.id)).toBe(3);
+    expect(versionOf((await call("list_recent", {})).json, "pages", a.id)).toBe(3);
+    expect(versionOf((await call("list_recent", {})).json, "pages", b.id)).toBe(1);
+    expect(versionOf((await call("list_backlinks", { title: "Alpha" })).json, "pages", b.id)).toBe(
+      1,
+    );
+    expect(versionOf((await call("list_backlinks", { id: a.id })).json, "pages", b.id)).toBe(1);
+
+    // 一覧の version で保存でき、保存すると一覧の version も進む。古い version は conflict になる
+    const listed = versionOf((await call("list_recent", {})).json, "pages", a.id);
+    const saved = await call("update_page", {
+      id: a.id,
+      version: listed,
+      title: "Alpha",
+      body: "検索の対象の本文 3",
+    });
+    expect(saved).toMatchObject({ isError: false, json: { version: 4 } });
+    expect(versionOf((await call("list_recent", {})).json, "pages", a.id)).toBe(4);
+    expect(
+      await call("update_page", { id: a.id, version: listed, title: "Alpha", body: "古い版" }),
+    ).toMatchObject({ isError: true, json: { error: "version_conflict" } });
   });
 
   it("list_recent の tag は親で子も拾い、表記を畳み、cursor で続きを取れる", async () => {

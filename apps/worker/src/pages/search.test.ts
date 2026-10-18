@@ -38,6 +38,7 @@ describe("GET /api/search", () => {
         id: page.id,
         title: "料理メモ",
         visibility: "draft",
+        version: 1,
         updatedAt: T0,
         excerpt: expect.stringContaining("隠し味"),
         tags: [],
@@ -384,12 +385,13 @@ describe("GET /api/pages/recent", () => {
         id: a.id,
         title: "a",
         visibility: "draft",
+        version: 2,
         updatedAt: T0 + 3000,
         excerpt: "更新",
         tags: [],
       },
       // 本文が空のページは excerpt を返さない
-      { id: c.id, title: "c", visibility: "draft", updatedAt: T0 + 2000, tags: [] },
+      { id: c.id, title: "c", visibility: "draft", version: 1, updatedAt: T0 + 2000, tags: [] },
     ]);
     expect(body.nextCursor).toBeNull();
   });
@@ -586,8 +588,8 @@ describe("GET /api/pages/:id/backlinks", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       pages: [
-        { id: second.id, title: "second", visibility: "draft", updatedAt: T0 + 1000 },
-        { id: first.id, title: "first", visibility: "draft", updatedAt: T0 },
+        { id: second.id, title: "second", visibility: "draft", version: 1, updatedAt: T0 + 1000 },
+        { id: first.id, title: "first", visibility: "draft", version: 1, updatedAt: T0 },
       ],
       nextCursor: null,
     });
@@ -704,8 +706,8 @@ describe("GET /api/pages/by-title/backlinks", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       pages: [
-        { id: second.id, title: "second", visibility: "draft", updatedAt: T0 + 1000 },
-        { id: first.id, title: "first", visibility: "draft", updatedAt: T0 },
+        { id: second.id, title: "second", visibility: "draft", version: 1, updatedAt: T0 + 1000 },
+        { id: first.id, title: "first", visibility: "draft", version: 1, updatedAt: T0 },
       ],
       nextCursor: null,
     });

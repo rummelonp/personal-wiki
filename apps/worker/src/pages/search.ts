@@ -21,8 +21,16 @@ export interface PageSummary {
   updatedAt: number;
 }
 
+/**
+ * version を持つ一覧の 1 件。ページを 1 件読んだときの version と同じ値で、保存の照合（REST の If-Match の ETag、MCP の update_page など）に使える。
+ * 保存のほか、公開範囲の切り替えと、title の変更に伴うリンクの書き換えでも進む。
+ */
+export interface VersionedSummary extends PageSummary {
+  version: number;
+}
+
 /** 最近の更新の 1 件。 */
-export interface ListedPage extends PageSummary {
+export interface ListedPage extends VersionedSummary {
   /**
    * 本文の先頭の抜粋。保存時に作った派生データで、それより前から在るページは rebuild するまで無い。
    * 本文が空のページにも無い。
@@ -32,7 +40,7 @@ export interface ListedPage extends PageSummary {
   tags: string[];
 }
 
-export interface SearchHit extends PageSummary {
+export interface SearchHit extends VersionedSummary {
   /**
    * 一致した位置の周辺の抜粋。ListedPage.excerpt（本文の先頭）と違い、検索語がどこに当たったかを見せる。
    * NFKC 後の plainText から作るので、元の本文の表記（全角英数や半角カナ）と異なりうる
@@ -54,7 +62,11 @@ interface SummaryRow {
   updated_at: number;
 }
 
-interface ExcerptRow extends SummaryRow {
+interface VersionedRow extends SummaryRow {
+  version: number;
+}
+
+interface ExcerptRow extends VersionedRow {
   /** page_excerpts の行が無いページは null */
   excerpt: string | null;
 }
@@ -64,6 +76,11 @@ const toSummary = (row: SummaryRow): PageSummary => ({
   title: row.title,
   visibility: row.visibility,
   updatedAt: row.updated_at,
+});
+
+const toVersioned = (row: VersionedRow): VersionedSummary => ({
+  ...toSummary(row),
+  version: row.version,
 });
 
 export const LIST_DEFAULT_LIMIT = 20;
@@ -119,10 +136,10 @@ function afterCursor(cursor: Cursor | null, alias: string): string {
 }
 
 /** limit + 1 件取った行から、limit 件と続きの cursor を作る。 */
-function pageOf<T extends PageSummary>(
-  rows: SummaryRow[],
+function pageOf<R extends SummaryRow, T extends PageSummary>(
+  rows: R[],
   limit: number,
-  map: (row: SummaryRow) => T,
+  map: (row: R) => T,
 ): PageList<T> {
   const pages = rows.slice(0, limit).map(map);
   const last = pages.at(-1);
@@ -224,7 +241,7 @@ export async function listRecentPages(
 ): Promise<PageList<ListedPage>> {
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.visibility, p.updated_at, e.excerpt
+      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at, e.excerpt
        FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE p.deleted_at IS NULL AND (?7 = 0 OR p.visibility = 'public')
          AND (?8 IS NULL OR p.visibility = ?8)
@@ -244,7 +261,7 @@ export async function listRecentPages(
       visibility,
     )
     .all<ExcerptRow>();
-  const list = pageOf(results, limit, toSummary);
+  const list = pageOf(results, limit, toVersioned);
   const excerpts = new Map(results.map((row) => [row.id, row.excerpt]));
   const tags = await tagsByPage(
     db,
@@ -365,7 +382,7 @@ export async function listBacklinks(
     cursor,
     readable,
   }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
-): Promise<PageList | null> {
+): Promise<PageList<VersionedSummary> | null> {
   const exists = await db
     .prepare("SELECT 1 AS found FROM pages WHERE id = ?1 AND deleted_at IS NULL")
     .bind(pageId)
@@ -373,7 +390,7 @@ export async function listBacklinks(
   if (exists === null) return null;
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.visibility, p.updated_at
+      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at
        FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
        WHERE l.target_page_id = ?1 AND p.id <> ?1 AND p.deleted_at IS NULL
          AND (?5 = 0 OR p.visibility = 'public')
@@ -387,8 +404,8 @@ export async function listBacklinks(
       limit + 1,
       publicOnlyFlag(readable),
     )
-    .all<SummaryRow>();
-  return pageOf(results, limit, toSummary);
+    .all<VersionedRow>();
+  return pageOf(results, limit, toVersioned);
 }
 
 /**
@@ -406,12 +423,12 @@ export async function listBacklinksByTitle(
     cursor,
     readable,
   }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
-): Promise<PageList | null> {
+): Promise<PageList<VersionedSummary> | null> {
   const key = normalizeTitleKey(title);
   if (!key.ok) return null;
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.visibility, p.updated_at
+      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at
        FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
        WHERE l.target_title_key = ?1 AND p.title_key <> ?1 AND p.deleted_at IS NULL
          AND (?5 = 0 OR p.visibility = 'public')
@@ -425,8 +442,8 @@ export async function listBacklinksByTitle(
       limit + 1,
       publicOnlyFlag(readable),
     )
-    .all<SummaryRow>();
-  return pageOf(results, limit, toSummary);
+    .all<VersionedRow>();
+  return pageOf(results, limit, toVersioned);
 }
 
 /** 行き先の無いリンク 1 種類（title_key 1 つ）と、そのリンク元。 */
@@ -537,11 +554,11 @@ export function searchQueryErrorFields(reason: Extract<SearchQuery, { ok: false 
   };
 }
 
-interface FtsRow extends SummaryRow {
+interface FtsRow extends VersionedRow {
   excerpt: string;
 }
 
-interface LikeRow extends SummaryRow {
+interface LikeRow extends VersionedRow {
   excerpt: string;
   start: number;
   length: number;
@@ -582,10 +599,10 @@ export async function searchPages(
     // 置き、MATCH の全件を走査する結合の順にしないために付ける。
     const { results } = await db
       .prepare(
-        `SELECT hit.id, hit.title, hit.visibility, hit.updated_at,
+        `SELECT hit.id, hit.title, hit.visibility, hit.version, hit.updated_at,
                 snippet(pages_fts, 1, '', '', ?3, ?4) AS excerpt
          FROM (
-           SELECT p.seq, p.id, p.title, p.visibility, p.updated_at,
+           SELECT p.seq, p.id, p.title, p.visibility, p.version, p.updated_at,
                   pages_fts.rowid IN (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?6) AS in_title,
                   bm25(pages_fts, 4.0, 1.0) AS score
            FROM pages_fts JOIN pages AS p ON p.seq = pages_fts.rowid
@@ -612,7 +629,7 @@ export async function searchPages(
       results.map((row) => row.id),
     );
     return results.map((row) => ({
-      ...toSummary(row),
+      ...toVersioned(row),
       excerpt: compact(row.excerpt),
       tags: tags.get(row.id) ?? [],
     }));
@@ -621,10 +638,10 @@ export async function searchPages(
   const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
   const { results } = await db
     .prepare(
-      `SELECT id, title, visibility, updated_at, start, length,
+      `SELECT id, title, visibility, version, updated_at, start, length,
               substr(body, start, ?4) AS excerpt
        FROM (
-         SELECT p.id, p.title, p.visibility, p.updated_at, f.body AS body,
+         SELECT p.id, p.title, p.visibility, p.version, p.updated_at, f.body AS body,
                 f.title LIKE ?1 ESCAPE '\\' AS in_title,
                 max(1, instr(lower(f.body), lower(?2)) - ?5) AS start,
                 length(f.body) AS length
@@ -645,7 +662,7 @@ export async function searchPages(
     const head = row.start > 1 ? ELLIPSIS : "";
     const tail = row.start + EXCERPT_CHARS - 1 < row.length ? ELLIPSIS : "";
     return {
-      ...toSummary(row),
+      ...toVersioned(row),
       excerpt: `${head}${compact(row.excerpt)}${tail}`,
       tags: tags.get(row.id) ?? [],
     };
