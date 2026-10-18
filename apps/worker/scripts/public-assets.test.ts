@@ -9,6 +9,8 @@ import { stripJsonc } from "./deploy-config.mjs";
 
 const PUBLIC_DIR = new URL("../../web/public/", import.meta.url);
 const WRANGLER_PATH = new URL("../wrangler.jsonc", import.meta.url);
+const INDEX_HTML_PATH = new URL("../../web/index.html", import.meta.url);
+const OAUTH_ROUTES_PATH = new URL("../src/auth/oauth-routes.ts", import.meta.url);
 
 // public にあって Worker を通すファイル（CSP などのヘッダーを Worker が付けるもの）。
 // run_worker_first の除外には入れない。title の予約語には、Worker を通す場合も入れる
@@ -43,6 +45,37 @@ function excludedFileNames(): string[] {
     .filter((p) => p.startsWith("!/") && p !== "!/assets/*")
     .map((p) => p.slice("!/".length));
 }
+
+/** `rel` が icon か apple-touch-icon の `<link>` の href。属性の並びには依らない。 */
+function iconHrefsOf(html: string): string[] {
+  return [...html.matchAll(/<link\s[^>]*>/g)]
+    .map((match) => match[0])
+    .filter((tag) => /\brel="(?:apple-touch-)?icon"/.test(tag))
+    .map((tag) => /\bhref="([^"]+)"/.exec(tag)?.[1] ?? "");
+}
+
+/**
+ * OAuth の画面の `ICON_LINKS`。oauth-routes.ts は workerd 専用の import（CSS と cloudflare:workers）を
+ * 持ち、この node のテストでは読み込めないので、ソースから定数の本文を取り出す。
+ */
+function oauthIconLinks(): string {
+  const source = readFileSync(OAUTH_ROUTES_PATH, "utf8");
+  const body = /\bconst ICON_LINKS = `([^`]*)`/.exec(source)?.[1];
+  expect(body, "oauth-routes.ts に ICON_LINKS の定義が見つからない").toBeDefined();
+  expect(body).not.toContain("${");
+  return body ?? "";
+}
+
+describe("OAuth の画面の icon の link", () => {
+  it("SPA の index.html の icon と、run_worker_first の除外の両方に含まれる", () => {
+    const hrefs = iconHrefsOf(oauthIconLinks());
+    expect(hrefs).not.toEqual([]);
+    const spa = iconHrefsOf(readFileSync(INDEX_HTML_PATH, "utf8"));
+    expect(hrefs.filter((href) => !spa.includes(href))).toEqual([]);
+    const excluded = excludedFileNames().map((name) => `/${name}`);
+    expect(hrefs.filter((href) => !excluded.includes(href))).toEqual([]);
+  });
+});
 
 describe("apps/web/public と RESERVED_TITLE_SEGMENTS、run_worker_first の対応", () => {
   it("run_worker_first の除外は、public にあって Worker を通さないファイルを 1 つずつ指す", () => {
