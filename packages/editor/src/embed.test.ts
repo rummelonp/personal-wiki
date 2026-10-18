@@ -1690,17 +1690,29 @@ describe("edit button", () => {
     });
 
     it("follows the last line when the editor width changes", async () => {
-      const { embed, button, expectedLeft } = hoverSetup("前の文です。");
+      const { v, embed, button, expectedLeft } = hoverSetup("前の文です。");
       embed.dispatchEvent(new PointerEvent("pointerenter"));
-      const shifts = new Set<number>();
-      for (const width of [300, 220, 160, 260, 340]) {
-        if (host) host.style.width = `${width}px`;
-        await vi.waitFor(() =>
-          expect(button.getBoundingClientRect().left, `${width}px`).toBeCloseTo(expectedLeft(), 0),
-        );
-        shifts.add(Math.round(Number.parseFloat(button.style.left) || 0));
+      // CodeMirror も幅の変化を拾うが、直前の更新から 75ms 以内の変化は見送る。Date.now を固定して、
+      // 更新の直後に幅が変わる場面を毎回作る。embed が自分で幅を見なければ、測り直しは起きない
+      const now = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      try {
+        v.dispatch({ changes: { from: v.state.doc.length, insert: "あ" } });
+        await settled(v);
+        const shifts = new Set<number>();
+        for (const width of [300, 220, 160, 260, 340]) {
+          if (host) host.style.width = `${width}px`;
+          // 測り直しは幅の変化を見た次のフレームで行われる。測りの要求は CodeMirror の幅の検知を
+          // 起こしてしまうので、フレームだけ待つ
+          for (let frame = 0; frame < 3; frame += 1) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+          }
+          expect(button.getBoundingClientRect().left, `${width}px`).toBeCloseTo(expectedLeft(), 0);
+          shifts.add(Math.round(Number.parseFloat(button.style.left) || 0));
+        }
+        expect(shifts.size).toBeGreaterThan(1);
+      } finally {
+        now.mockRestore();
       }
-      expect(shifts.size).toBeGreaterThan(1);
     });
 
     it("stops measuring once the pointer leaves", async () => {
