@@ -356,16 +356,18 @@ export const rewriteLinksTool = defineTool({
   description: [
     "update_page で title を変えたあとに待っている、他のページの `[[旧 title]]` の書き換えを、リンク元 1 ページ分だけ進める。書き換えの規則はオーナーの画面や定期実行と同じで、書き換えたページには版が積まれる。",
     "1 回の呼び出しで書き換えるリンク元は 1 ページ（そのページの待っているリンクをまとめて 1 つの版にする）。remaining（待っているリンク元の数）が 0 になるまで、続けて呼ぶ。1 回で終えないのは、1 リクエストで使える D1 のクエリと CPU に収めるため。",
-    "targetPageId に title を変えたページの id を渡すと、そのページの改題で待っている分だけを進める。省くと、待っている全部から古い順に選ぶ。連作の改題をまとめて済ませるときは、省いて remaining が 0 になるまで呼べばよい。",
+    "targetPageId に title を変えたページの id を渡すと、そのページの改題を待っているリンク元から選ぶ。選んだリンク元の、ほかのページの改題で待っているリンクも一緒に書き換える。remaining はそのページを待つリンク元だけを数える。省くと、待っている全部から古い順に選ぶ。連作の改題をまとめて済ませるときは、省いて remaining が 0 になるまで呼べばよい。",
     "返す値: processed は書き換えたリンク元（id、title、visibility、version（書き換えたあとの版）、rewritten（書き換えたリンクの数））。このリンク元を開いていたら read_page で読み直す。書き換えるものが無ければ null。",
-    "conflict が true なら、読んだあとにリンク元が保存されたか、対象が改題か削除された。何も書かれておらず、待っている分も残るので、そのまま呼び直す。",
+    "conflict が true なら、読んだあとにリンク元が保存されたか、対象が改題か削除された。本文は変わらず、待っている分も残るので、そのまま呼び直す。",
     "failed は、書き換えるとほかのリンクやタグが変わる、本文が上限を超える、処理が 3 回続けて終わらないのどれかで、書き換えずに待ちから外したリンク元（id と title）。本文の旧 title のリンクは残るので、read_page で読んで update_page で手で直す。title が null のときは、読む前に外した。",
     "待っているものが無ければ processed が null、remaining が 0 で、何も書かない。",
   ].join("\n"),
   inputSchema: z.strictObject({
     targetPageId: pageIdSchema
       .optional()
-      .describe("title を変えたページの id。省くと、待っている全部から選ぶ"),
+      .describe(
+        "title を変えたページの id。そのページの改題を待つリンク元から選ぶ。省くと、待っている全部から選ぶ",
+      ),
   }),
   annotations: {
     readOnlyHint: false,

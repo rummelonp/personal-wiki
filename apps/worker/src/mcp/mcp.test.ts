@@ -359,7 +359,13 @@ describe("tools/list", () => {
     expect(Object.keys(byName.rewrite_links?.inputSchema.properties ?? {})).toEqual([
       "targetPageId",
     ]);
-    for (const rule of ["remaining が 0 になるまで", "conflict が true なら", "failed は"]) {
+    for (const rule of [
+      "remaining が 0 になるまで",
+      "ほかのページの改題で待っているリンクも一緒に書き換える",
+      "conflict が true なら",
+      "本文は変わらず",
+      "failed は",
+    ]) {
       expect(byName.rewrite_links?.description).toContain(rule);
     }
     expect(byName.update_page?.description).toContain("edit_page");
