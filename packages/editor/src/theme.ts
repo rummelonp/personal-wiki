@@ -508,6 +508,23 @@ export const livePreviewTheme = EditorView.baseTheme({
   ".cm-block-ref-highlight": {
     backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 24%, transparent)",
   },
+  // 丸の直径は本文の文字の大きさに比例させ、文字の「•」より大きくして項目の頭を見分けやすくする。
+  // 文字の「•」は幅を残すだけで描かない（ListBulletWidget）。丸は行の高さの中央に置く。
+  ".cm-lp-list-bullet": {
+    position: "relative",
+    display: "inline-block",
+    color: "transparent",
+  },
+  ".cm-lp-list-dot": {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    width: "0.4em",
+    height: "0.4em",
+    transform: "translate(-50%, -50%)",
+    borderRadius: "50%",
+    backgroundColor: "var(--ui-color-muted)",
+  },
   ".cm-lp-hr": {
     display: "inline-block",
     width: "100%",

@@ -74,6 +74,59 @@ describe("list bullet decoration", () => {
   });
 });
 
+describe("list bullet size", () => {
+  const DOC = "- 項目";
+  const rects = (v: EditorView) => {
+    const bullet = v.contentDOM.querySelector(".cm-lp-list-bullet");
+    const dot = v.contentDOM.querySelector(".cm-lp-list-dot");
+    const line = v.contentDOM.querySelector(".cm-line");
+    if (!bullet || !dot || !line) throw new Error("bullet is not drawn");
+    return {
+      bullet: bullet.getBoundingClientRect(),
+      dot: dot.getBoundingClientRect(),
+      line: line.getBoundingClientRect(),
+      fontSize: Number.parseFloat(getComputedStyle(line).fontSize),
+    };
+  };
+
+  it("draws a round dot sized to the text, centered in the line", () => {
+    const v = mount(DOC);
+    const { bullet, dot, line, fontSize } = rects(v);
+    // 本文の文字の「•」（おおむね 0.3 倍以下）より目で見て分かる大きさで、本文の文字より目立ちすぎない
+    expect(dot.width / fontSize).toBeGreaterThanOrEqual(0.35);
+    expect(dot.width / fontSize).toBeLessThanOrEqual(0.45);
+    expect(dot.width).toBeCloseTo(dot.height, 1);
+    expect(
+      getComputedStyle(v.contentDOM.querySelector(".cm-lp-list-dot") as Element).borderRadius,
+    ).toBe("50%");
+    expect(dot.left + dot.width / 2).toBeCloseTo(bullet.left + bullet.width / 2, 1);
+    expect(dot.top + dot.height / 2).toBeCloseTo(line.top + line.height / 2, 0);
+  });
+
+  it("paints the dot with the muted color, weaker than the text", () => {
+    const v = mount(DOC);
+    const probe = document.createElement("span");
+    probe.style.color = "var(--ui-color-muted)";
+    v.contentDOM.append(probe);
+    const muted = getComputedStyle(probe).color;
+    probe.remove();
+    const dot = v.contentDOM.querySelector(".cm-lp-list-dot") as Element;
+    expect(getComputedStyle(dot).backgroundColor).toBe(muted);
+    expect(muted).not.toBe(
+      getComputedStyle(v.contentDOM.querySelector(".cm-line") as Element).color,
+    );
+  });
+
+  it("keeps the width of the bullet to the width of the text bullet", () => {
+    const v = mount(DOC);
+    const { bullet } = rects(v);
+    const canvas = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D;
+    const style = getComputedStyle(v.contentDOM);
+    canvas.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    expect(bullet.width).toBeCloseTo(canvas.measureText("•").width, 1);
+  });
+});
+
 describe("list bullet reveal", () => {
   const DOC = "- 項目";
 

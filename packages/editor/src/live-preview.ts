@@ -35,12 +35,21 @@ const continuedHeadingLines = [1, 2, 3, 4, 5, 6].map((level) =>
   Decoration.line({ class: `cm-lp-heading cm-lp-h${level} cm-lp-heading-continued` }),
 );
 
-/** 箇条書きの `-`/`*`/`+` を置き換える記号。番号付きリストの `1.` 等は対象外。 */
+/**
+ * 箇条書きの `-`/`*`/`+` を置き換える記号。番号付きリストの `1.` 等は対象外。
+ *
+ * 見える丸は子の span が描き、「•」の文字は透明にして幅の担当に残す。ぶら下げインデントが
+ * 「•」の字幅で行頭の幅を見積もる（list-indent.ts）ので、丸の大きさを文字の font-size で変えると
+ * 見積もりと実際の幅がずれ、折り返した行が本文の始まりとそろわなくなる。
+ */
 class ListBulletWidget extends WidgetType {
   override toDOM(): HTMLElement {
     const bullet = document.createElement("span");
     bullet.className = "cm-lp-list-bullet";
     bullet.textContent = "•";
+    const dot = document.createElement("span");
+    dot.className = "cm-lp-list-dot";
+    bullet.append(dot);
     return bullet;
   }
 
