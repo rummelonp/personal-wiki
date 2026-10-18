@@ -63,7 +63,7 @@ export function EntryRow({
           {entry.tags.map((tag) => (
             <li key={tag}>
               <Link className="chip chip-link" href={listHref({ tag, visibility })}>
-                {tag}
+                <span className="chip-label">{tag}</span>
               </Link>
             </li>
           ))}

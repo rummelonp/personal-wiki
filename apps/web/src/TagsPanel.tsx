@@ -88,7 +88,7 @@ export function TagsPanel({
                   aria-current={selected ? "page" : undefined}
                   title={selected ? "タグの絞り込みを外す" : undefined}
                 >
-                  {tag}
+                  <span className="chip-label">{tag}</span>
                   {count !== null && <span className="chip-count">{count}</span>}
                 </Link>
               </li>

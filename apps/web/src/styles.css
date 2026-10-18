@@ -269,6 +269,7 @@ a {
   position: sticky;
   top: var(--header-height);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: var(--space-5);
   max-height: var(--rail-max-height);
@@ -278,6 +279,7 @@ a {
 
 .rail-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   min-width: 0;
 }
@@ -1011,10 +1013,21 @@ a.segmented-option {
   list-style: none;
 }
 
+.chips > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/*
+ * 長いタグは 1 行のまま末尾を省略する。折り返すと丸い地の端に文字がかかり、押す箱の高さの計算も崩れる。
+ * 省略するのは名前（.chip-label）だけで、件数（.chip-count）は残す。
+ * 親（li、一覧の行、右の欄）も縮められるようにしておかないと、チップの幅が行や欄を押し広げる。
+ */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  max-width: 100%;
   padding: 0 var(--space-3);
   font-size: var(--font-size-chip);
   line-height: var(--line-height);
@@ -1028,6 +1041,12 @@ a.segmented-option {
 .chip-link[aria-current="page"] {
   color: var(--color-accent-fg);
   background-color: var(--color-accent);
+}
+
+.chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 濃さだけで文字より一段控える。これより薄いとチップの地に対し 4.5:1 を割る */
@@ -1605,6 +1624,7 @@ a.segmented-option {
 .entry,
 .skeleton-entry {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   padding: var(--space-4) 0;
   border-bottom: var(--border-width) solid var(--color-border);
