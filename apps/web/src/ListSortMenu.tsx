@@ -80,6 +80,10 @@ export function ListSortMenu({
       return;
     }
     if (event.key === "Tab") {
+      // 項目は既定の動作より先に消えるので、Chromium では Shift+Tab が項目の位置から前の要素を探して
+      // ボタンに止まる。ボタンに焦点を置いてから既定の動作に任せ、ボタンから押したのと同じ移動先にする。
+      // 移動先を自分で探すと、順次の移動の規則を持つことになる。ボタンへは仮に置くだけなので画面を動かさない
+      button.current?.focus({ preventScroll: true });
       setOpen(false);
       return;
     }

@@ -33,6 +33,21 @@ const button = () => {
 };
 const menu = () => container?.querySelector<HTMLElement>("[role='menu']") ?? null;
 
+describe("ListSortMenu の Tab", () => {
+  it("Tab で閉じる前にボタンへ焦点を戻し、移動の既定の動作は止めない", () => {
+    render();
+    act(() => button().click());
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitemradio");
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    act(() => {
+      document.activeElement?.dispatchEvent(event);
+    });
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(button());
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
 describe("ListSortMenu の外側を押して閉じる", () => {
   it("焦点を持たない外側を押すと、焦点をボタンに戻し、並びは変えない", async () => {
     const outside = document.createElement("div");
