@@ -59,7 +59,7 @@ export const pageIdSchema = z.string().describe("ページの id（read_page な
 /** REST の If-Match が受け付ける 15 桁と同じ上限。Number で誤差なく表せる範囲に収まる */
 const MAX_VERSION = 999_999_999_999_999;
 
-/** 1 回の edit_page で受ける edits の件数。本文の上限（64KB）に対して十分で、一致の検索を数える回数を抑える */
+/** 1 回の edit_page で受ける edits の件数。本文の上限（64KB）に対して十分で、old の一致を探す回数を抑える */
 const MAX_EDITS = 100;
 
 const versionSchema = z.number().int().positive().max(MAX_VERSION);
@@ -276,7 +276,8 @@ function describeEditFailure(failure: BodyEditFailure): BodyEditFailure & { mess
     case "ambiguous":
       return {
         ...failure,
-        message: `old が本文の ${failure.matches} か所に一致する。前後の文字を足して 1 か所だけに一致する文字列にする`,
+        message:
+          "old が本文の 2 か所以上に一致する。前後の文字を足して 1 か所だけに一致する文字列にする",
       };
     case "overlap":
       return {
@@ -294,7 +295,7 @@ export const editPageTool = defineTool({
     "ページの本文のうち、一意に決まる文字列を置き換える。数行の修正で body 全体を送り直さずに済む。title は変わらない。メモや調べた結果の追加は append_to_page、構成を直すときは update_page を使う。",
     "read_page で取った version が必須。edits の各件は、本文にちょうど 1 か所だけ現れる文字列 old と、置き換え後の new。new を空文字にすると old を消す。",
     `edits は ${MAX_EDITS} 件まで。old は edits を適用する前の本文に対して数え、完全一致（大文字小文字、全角半角、空白、改行を区別する）で探す。ある edit の new に別の edit の old が現れても、その new には一致しない。edits の順序で結果は変わらない。`,
-    "old が本文に無い、2 か所以上に一致する、ほかの edit の old と本文の同じ範囲で重なるときは、1 件も適用せず何も保存せずに edit_failed を返す。failures に、失敗した edit の index（0 始まり）、reason（not_found、ambiguous、overlap）、ambiguous の matches（一致した数）、overlap の with（重なる相手の index）、message が入る。old を直して送り直す。",
+    "old が本文に無い、2 か所以上に一致する、ほかの edit の old と本文の同じ範囲で重なるときは、1 件も適用せず何も保存せずに edit_failed を返す。failures に、失敗した edit の index（0 始まり）、reason（not_found、ambiguous、overlap）、ambiguous の matches（一致が 2 か所以上なら 2。数は 2 で打ち切る）、overlap の with（重なる相手の index）、message が入る。old を直して送り直す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して edits を作り直し、current.version で保存し直す。上書きで押し切らない。",
     "置き換えた結果が今の本文と同じなら何も保存せず、changed が false で今の version を返す。",
     "frontmatter の中も置き換えられる。保存は update_page と同じ規則で、公開範囲は変わらない（frontmatter に書いても反映されない）。",

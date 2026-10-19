@@ -7,6 +7,7 @@ export interface BodyEdit {
 export type BodyEditFailure =
   | { index: number; reason: "empty_old" }
   | { index: number; reason: "not_found" }
+  /** matches は一致の数を 2 で打ち切った値で、2 は「2 か所以上」を表す */
   | { index: number; reason: "ambiguous"; matches: number }
   /** with は、本文でこの edit より先に始まった edit のうち、最も後ろまで届くものの index */
   | { index: number; reason: "overlap"; with: number };
@@ -60,12 +61,12 @@ function byIndex(a: BodyEditFailure, b: BodyEditFailure): number {
   return a.index - b.index;
 }
 
-function countMatches(body: string, needle: string): { count: number; first: number } {
-  let count = 0;
-  let first = -1;
-  for (let at = body.indexOf(needle); at !== -1; at = body.indexOf(needle, at + 1)) {
-    if (count === 0) first = at;
-    count += 1;
-  }
-  return { count, first };
+/**
+ * 一致を 2 件目で数えるのをやめる。1 件か 2 件以上かが分かれば足り、重なる一致をすべて数えると
+ * 同じ文字が続く本文と長い old で 本文長 × old 長 の時間がかかる。
+ */
+export function countMatches(body: string, needle: string): { count: 0 | 1 | 2; first: number } {
+  const first = body.indexOf(needle);
+  if (first === -1) return { count: 0, first };
+  return { count: body.indexOf(needle, first + 1) === -1 ? 1 : 2, first };
 }

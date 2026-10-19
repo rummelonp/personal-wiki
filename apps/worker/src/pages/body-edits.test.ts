@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyBodyEdits } from "./body-edits";
+import { applyBodyEdits, countMatches } from "./body-edits";
 
 describe("applyBodyEdits", () => {
   it("一意に一致する old を、本文の位置の順に new へ置き換える", () => {
@@ -34,6 +34,18 @@ describe("applyBodyEdits", () => {
       ok: false,
       failures: [{ index: 0, reason: "ambiguous", matches: 2 }],
     });
+  });
+
+  it("一致が多数ある本文でも、数えるのは 2 件目で止める", () => {
+    const body = "a".repeat(1000);
+    expect(applyBodyEdits(body, [{ old: "a", new: "b" }])).toEqual({
+      ok: false,
+      failures: [{ index: 0, reason: "ambiguous", matches: 2 }],
+    });
+    expect(countMatches(body, "a")).toEqual({ count: 2, first: 0 });
+    expect(countMatches("xaay", "a")).toEqual({ count: 2, first: 1 });
+    expect(countMatches("xay", "a")).toEqual({ count: 1, first: 1 });
+    expect(countMatches("xy", "a")).toMatchObject({ count: 0 });
   });
 
   it("空の old は無限に一致しないよう empty_old で拒む", () => {
