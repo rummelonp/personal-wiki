@@ -24,7 +24,7 @@ pnpm workspace の構成で、アプリは `apps/*`、共有パッケージは `
 - [docs/operations.md](./docs/operations.md): API token、派生データの作り直し、リンクの書き換え、バックアップと復元
 - [docs/attachments.md](./docs/attachments.md): 添付（R2）の API と公開範囲
 - [docs/design.md](./docs/design.md): 画面の見た目と使い心地の原則、対象の環境と幅、守る条件、確かめ方
-- [docs/crawlers.md](./docs/crawlers.md): `robots.txt` の各行の理由（学習用の bot を断る、チャットの取得と検索を止めない、描画で読む API を許す、Content-Signal、charset）と、変えるときに合わせて直す場所
+- [docs/crawlers.md](./docs/crawlers.md): `robots.txt` の各行の理由（学習用の bot を断る、チャットの取得と検索を止めない、描画で読む API を許す、Content-Signal、charset）、JS を実行しない読み手への一覧（トップ、ページのリンク先、llms.txt）と、変えるときに合わせて直す場所
 
 ## コマンド
 

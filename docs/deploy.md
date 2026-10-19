@@ -64,7 +64,7 @@ cp deploy.env.example deploy.env
 - `WIKI_HOSTNAME`: 公開するホスト名（スキームとパスは含めない）
 - `D1_DATABASE_ID`: 手順 2 の `database_id`
 
-そのほかの項目（サイト名、R2、OAuth、Cron、owner のログイン、複数アカウントのときの `CLOUDFLARE_ACCOUNT_ID`）は `deploy.env.example` のコメントに書いてあり、後の「任意の機能」で使う。
+そのほかの項目（サイト名、サイトの説明文、R2、OAuth、Cron、owner のログイン、複数アカウントのときの `CLOUDFLARE_ACCOUNT_ID`）は `deploy.env.example` のコメントに書いてあり、後の「任意の機能」で使う。
 `R2_BUCKET_NAME` と `OAUTH_KV_NAMESPACE_ID` が空なら、その binding を付けずにデプロイする。
 
 ### 4. migration とデプロイ
@@ -264,6 +264,18 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
 シェルに `VITE_SITE_NAME` が残っていても、`pnpm dev`、E2E、web のテストはそれを使わない。
 `apps/web/.env*` に `VITE_SITE_NAME` を書いても、ビルドは使わない（`<title>` と画面と Worker の値が分かれないよう、環境変数だけで決める）。
 
+### サイトの説明文
+
+`deploy.env` の `SITE_DESCRIPTION` に書いた文が、`/llms.txt` の H1（サイト名）の下に blockquote で出る。
+AI のエージェントに wiki の中身を伝える 1〜2 文の要約を想定する。
+空のままなら blockquote を出さない。
+
+説明文は前後の空白を除き、200 文字以内（サロゲートペアは 1 文字）にする。
+使えない文字と、`#` を含むときに `"` で囲むことは、サイト名と同じである。
+`pnpm deploy:remote` は規則を満たさない説明文を止め、Worker も規則を満たさない説明文を出さない。
+説明文は Worker だけが読み、web には埋め込まない。
+変えたら `pnpm deploy:remote` を実行し直す。
+
 ## ゾーンの WAF、レート制限、Bot の設定
 
 ゾーン単位の WAF のルール、レート制限、Bot の設定は wrangler の外にあり、このリポジトリは作りも変えもしない。
@@ -272,6 +284,8 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
 - MCP のクライアントと OAuth の接続は、challenge を解けない。
   国や IP で challenge をかけるルールでは、`/mcp`、`/.well-known/`、`/_auth/oauth/token`、`/_auth/oauth/register` を除く。
   `/_auth/oauth/authorize` の同意画面はブラウザで開くので、challenge を受けても進める
+- AI のエージェントが `/llms.txt` を取るときも、challenge を解けない。
+  challenge をかけるルールでは、`/llms.txt` も除く
 - Bot Fight Mode は、パスを除いて外すことができず、MCP と API への接続も challenge する。
   MCP や REST をエージェントから使うなら無効にする
 - `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続したリクエストも当たる。

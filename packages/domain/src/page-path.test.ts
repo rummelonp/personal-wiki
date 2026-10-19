@@ -104,6 +104,15 @@ describe("titlePath", () => {
     expect(titlePath("auth_")).toBe("/auth_");
   });
 
+  it("llms.txt は大文字小文字と全角半角を問わず予約語で、llms.txt.md などは予約語でない", () => {
+    for (const title of ["llms.txt", "LLMS.TXT", "ｌｌｍｓ．ｔｘｔ", "llms.txt/x"]) {
+      expect(titlePath(title), title).toBeNull();
+      expect(parsePagePath(`/${encodeURIComponent(title)}`), title).toBeNull();
+    }
+    expect(titlePath("llms.txt.md")).toBe("/llms.txt.md");
+    expect(titlePath("llms txt")).toBe("/llms_txt");
+  });
+
   it("Worker がレスポンスを返す segment はすべて予約語に入っている", () => {
     for (const segment of WORKER_PATH_SEGMENTS) {
       expect(RESERVED_TITLE_SEGMENTS).toContain(segment);

@@ -11,6 +11,7 @@ import {
 import { registerOAuthRoutes } from "./auth/oauth-routes";
 import { registerAuthRoutes } from "./auth/routes";
 import type { AppEnv } from "./env";
+import { registerLlmsTxtRoutes } from "./llms-txt";
 import { registerMcpRoutes } from "./mcp/server";
 import { logWriteMetric, type WriteMetric } from "./pages/operations";
 import { registerAdminRoutes, registerPageRoutes } from "./pages/routes";
@@ -56,6 +57,7 @@ export function createApp({
   registerAttachmentRoutes(app, { now });
   registerAdminRoutes(app, { recordWrite });
   registerMcpRoutes(app, { now, recordWrite });
+  registerLlmsTxtRoutes(app);
   registerSpaRoutes(app);
   return app;
 }

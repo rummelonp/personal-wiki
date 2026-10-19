@@ -11,6 +11,7 @@ import { foldKeepingUnderscore, foldTitle } from "./title";
  *   JSON の解析に失敗する
  * - `assets`: Static Assets のハッシュ付きファイルの置き場。`/assets/*` は普段 Worker を通らないが、
  *   `/assets` そのものや run_worker_first の設定が変わったときにも HTML を返さない
+ * - `llms.txt`: D1 の public のページから作るので、apps/web/public に置けず Worker が返す
  */
 export const WORKER_PATH_SEGMENTS: readonly string[] = [
   "api",
@@ -18,6 +19,7 @@ export const WORKER_PATH_SEGMENTS: readonly string[] = [
   "_auth",
   ".well-known",
   "assets",
+  "llms.txt",
 ];
 
 /**

@@ -30,6 +30,7 @@ export const HELP = `usage:
        KV を作ったときだけ OAUTH_KV_NAMESPACE_ID に表示された id を書く。空のままなら OAuth は閉じる
        ホスト名の DNS ゾーンが、ログインしたアカウントにあること（custom_domain の前提）
        サイト名を変えるときだけ SITE_NAME に書く。空のままなら personal-wiki
+       /llms.txt にサイトの説明文を出すときだけ SITE_DESCRIPTION に書く
        MCP 経由の rename で積んだリンクの書き換えを自動で進めるときだけ、LINK_REWRITE_CRON に cron 式を書く
          空のままなら Cron は付けない。アカウント全体で Cron Trigger は 5 本までなので、既定は空にしてある
          推奨は * * * * * か */5 * * * *。1 回の発火で 1 リンク元を進め、積んだ分が無ければ D1 の読み取りは数行で済む

@@ -21,10 +21,6 @@ robots.txt は、守る bot にだけ効く申告である。
 public のページの HTML は、本文を `<pre>` と、実行されない `<script type="application/json">` に入れて返す（`apps/worker/src/page-html.ts`）。
 JS を実行しない取得でも本文が読めるので、学習への利用は取得の側では防げず、robots.txt で断る。
 
-本文の下には、本文がリンクするページのうち public で削除されていないもの（自分自身を除き、多くて 100 件）を、正規の URL（絶対 URL）の `<a>` の一覧にして入れる（`apps/worker/src/page-html.ts` の `rewritePageHtml`、引く条件は `apps/worker/src/pages/link-targets.ts`）。
-`<pre>` の中の `[[...]]` はリンクにならないので、JS を実行しない取得でもリンク先をたどれるようにするためである。
-draft のページとまだ無いページへのリンクは出さず、draft のページの HTML には一覧そのものを入れない。
-
 名前が当たるグループがある bot は、`*` のグループに従わない（`*` を使うのは、名前の当たるグループが無いときだけである）。
 このグループに挙げた bot には、`*` のグループの `Allow` と `Content-Signal` は適用されない。
 学習用の bot を足すときは、このグループに `User-agent:` の行を足す。
@@ -75,6 +71,40 @@ robots.txt は取得への申告で、検索結果に載るかは HTML 側の指
 - トップと public のページだけ、この `noindex` を外す（`apps/worker/src/spa.ts`）
 - `/_auth/` の HTML は `withHtmlHeaders` を通らず、OAuth のルートが個別に `X-Robots-Tag: noindex` を付ける（`apps/worker/src/auth/oauth-routes.ts`）
 - draft のページは、id で開けても `<meta name="robots" content="noindex">` を HTML に入れる（`apps/worker/src/page-html.ts`）
+
+## JS を実行しない読み手への一覧
+
+JS を実行しない読み手が public のページへたどれるよう、トップの HTML、public のページの HTML、`/llms.txt` に一覧を置く。
+どちらも public で削除されていないページを、更新日時の新しい順に多くて 100 件並べる（`apps/worker/src/pages/search.ts` の `listPublicPages`、件数は `apps/worker/src/page-html.ts` の `ROOT_PAGE_LIST_LIMIT`）。
+ページ送りは無い。
+owner や API token で取っても、draft は入らない。
+
+クエリの無い `/` の HTML は、`#root` にサイト名と各ページへのリンクを差し込んで返す（`apps/worker/src/spa.ts` の `rootHtml`、`page-html.ts` の `rewriteRootHtml`）。
+ブラウザでは SPA の描画が置き換えるので、人には見えない。
+`/?tag=` や `/?q=` のようにクエリの付いた `/` は絞り込みの画面なので、一覧を差し込まない。
+一覧の取得が失敗したら、一覧を差し込まない HTML を 503 で返す（`spa.ts` の `unavailable`）。
+一覧の無い 200 だと、public のページが 1 つも無いと読まれ、検索エンジンもその版を覚える。
+
+public のページの HTML は、本文の下に、本文がリンクするページのうち public で削除されていないもの（自分自身を除き、多くて 100 件）を、正規の URL（絶対 URL）の `<a>` の一覧にして入れる（`apps/worker/src/page-html.ts` の `rewritePageHtml`、引く条件は `apps/worker/src/pages/link-targets.ts`）。
+`<pre>` の中の `[[...]]` はリンクにならないので、JS を実行しない取得でもリンク先をたどれるようにするためである。
+draft のページとまだ無いページへのリンクは出さず、draft のページの HTML には一覧そのものを入れない。
+
+`/llms.txt` は、llmstxt.org の書式で wiki の概要と各ページへの入口を AI のエージェントに渡す（`apps/worker/src/llms-txt.ts`）。
+H1 にサイト名、`SITE_DESCRIPTION` を書いたときは blockquote に説明文、`## Pages` の下に `- [title](URL)` を並べ、抜粋は入れない。
+public のページが無いときは、`## Pages` の節ごと出さない。
+title の中の `[`、`]`、`\`、文字参照に見える `&` などはリンクが崩れたり化けたりしないよう escape し、URL の `(` と `)` は percent-encoding にする（`packages/markdown/src/markdown-link.ts`）。
+本文は Markdown だが、ブラウザでその場で読めるよう `text/plain; charset=utf-8` で返す。
+クエリは見ない。
+一覧の取得が失敗したら、空の一覧の 200 でなく 503 を返す。
+一覧は取得のたびに D1 から引き、匿名の応答にも `no-store` を付けて写しを使い回させないので、draft に戻したページは次の取得で一覧から消える。
+`X-Robots-Tag: noindex` を付ける（`llms-txt.ts`）。
+中身はトップの一覧と同じなので、検索の結果からは各ページの HTML に入らせる。
+
+robots.txt は `/llms.txt` を `*` のグループで断っていない。
+名指しの学習用の bot には `Disallow: /` で `/llms.txt` も断っている。
+`/llms.txt` を読むのは利用者の依頼で動く AI のエージェントで、`ChatGPT-User` などを名乗って `*` のグループに当たるので、学習用の bot に開ける理由が無い。
+ページの title の `llms.txt` は Worker のパスと重なる予約語で、その title のページへのリンクは `/p/<id>` になる（`packages/domain/src/page-path.ts` の `WORKER_PATH_SEGMENTS`）。
+パスを変えるときは、`llms-txt.ts` の `LLMS_TXT_PATH` と `WORKER_PATH_SEGMENTS` を合わせて直す。
 
 ## robots.txt の Content-Type
 

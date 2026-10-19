@@ -233,7 +233,7 @@ function fillLinkList(rewriter: HTMLRewriter, pages: LinkTarget[], origin: strin
   });
 }
 
-/** `/` の HTML に入れる public のページの件数。ページ送りは作らない。 */
+/** `/` の HTML と `/llms.txt` に入れる public のページの件数。ページ送りは作らない。 */
 export const ROOT_PAGE_LIST_LIMIT = 100;
 
 /**

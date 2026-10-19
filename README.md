@@ -33,6 +33,9 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
   claude.ai などのカスタムコネクタと、Claude Code や Codex などのコーディングエージェントからは OAuth でも接続できる
 - ブラウザで閲覧と編集をする owner のログイン（Cloudflare Access）
 - 全ページの派生データの作り直し（`derived:rebuild`）と、手元へのバックアップ（`backup`）
+- AI のエージェント向けの `/llms.txt`。
+  サイト名、説明文、public のページへのリンクを、更新日時の新しい順に 100 件まで並べる。
+  draft は、owner や API token で取っても入らない
 
 一人用の設計である。
 ログインできるのは `OWNER_EMAILS` に書いたメールアドレスだけで、複数人での共同編集は想定していない。
