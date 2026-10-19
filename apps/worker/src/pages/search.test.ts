@@ -3,6 +3,7 @@ import { MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { buildClient, type PageJson, T0 } from "../test/pages";
+import { bodySha256 } from "./body-hash";
 import { listTagCounts, listUnresolvedLinks, searchPages } from "./search";
 
 interface Hit {
@@ -40,6 +41,7 @@ describe("GET /api/search", () => {
         title: "料理メモ",
         visibility: "draft",
         version: 1,
+        bodySha256: await bodySha256(page.body),
         updatedAt: T0,
         excerpt: expect.stringContaining("隠し味"),
         tags: [],
@@ -387,17 +389,19 @@ describe("GET /api/pages/recent", () => {
         title: "a",
         visibility: "draft",
         version: 2,
+        bodySha256: await bodySha256("更新"),
         createdAt: T0,
         updatedAt: T0 + 3000,
         excerpt: "更新",
         tags: [],
       },
-      // 本文が空のページは excerpt を返さない
+      // 本文が空のページは excerpt を返さないが、空の本文のハッシュは返す
       {
         id: c.id,
         title: "c",
         visibility: "draft",
         version: 1,
+        bodySha256: await bodySha256(""),
         createdAt: T0 + 2000,
         updatedAt: T0 + 2000,
         tags: [],
@@ -751,8 +755,22 @@ describe("GET /api/pages/:id/backlinks", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       pages: [
-        { id: second.id, title: "second", visibility: "draft", version: 1, updatedAt: T0 + 1000 },
-        { id: first.id, title: "first", visibility: "draft", version: 1, updatedAt: T0 },
+        {
+          id: second.id,
+          title: "second",
+          visibility: "draft",
+          version: 1,
+          bodySha256: await bodySha256(second.body),
+          updatedAt: T0 + 1000,
+        },
+        {
+          id: first.id,
+          title: "first",
+          visibility: "draft",
+          version: 1,
+          bodySha256: await bodySha256(first.body),
+          updatedAt: T0,
+        },
       ],
       nextCursor: null,
     });
@@ -869,8 +887,22 @@ describe("GET /api/pages/by-title/backlinks", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       pages: [
-        { id: second.id, title: "second", visibility: "draft", version: 1, updatedAt: T0 + 1000 },
-        { id: first.id, title: "first", visibility: "draft", version: 1, updatedAt: T0 },
+        {
+          id: second.id,
+          title: "second",
+          visibility: "draft",
+          version: 1,
+          bodySha256: await bodySha256(second.body),
+          updatedAt: T0 + 1000,
+        },
+        {
+          id: first.id,
+          title: "first",
+          visibility: "draft",
+          version: 1,
+          bodySha256: await bodySha256(first.body),
+          updatedAt: T0,
+        },
       ],
       nextCursor: null,
     });

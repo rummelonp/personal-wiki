@@ -231,6 +231,7 @@ describe("匿名の読み取り", () => {
           title: "Both",
           visibility: "public",
           version: both.version,
+          bodySha256: expect.stringMatching(/^[0-9a-f]{64}$/),
           updatedAt: both.updatedAt,
         },
         {
@@ -238,6 +239,7 @@ describe("匿名の読み取り", () => {
           title: "Open Note",
           visibility: "public",
           version: open.version,
+          bodySha256: expect.stringMatching(/^[0-9a-f]{64}$/),
           updatedAt: open.updatedAt,
         },
       ],

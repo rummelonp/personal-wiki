@@ -25,6 +25,7 @@ import {
 } from "../pages/search";
 import { findPageByTitle, pageExists } from "../pages/store";
 import { pageUrls } from "../pages/urls";
+import { LISTED_BODY_SHA256_NOTE } from "./body-hash";
 import { pageIdSchema } from "./page-tools";
 import { defineTool, toolError, toolResult } from "./tool";
 
@@ -65,9 +66,10 @@ export const searchTool = defineTool({
   scope: "read",
   title: "ページを探す",
   description: [
-    "title と本文の部分一致でページを探し、id、title、version、本文の抜粋、tags を返す。draft も含む。",
+    "title と本文の部分一致でページを探し、id、title、version、bodySha256、本文の抜粋、tags を返す。draft も含む。",
     "excerpt は一致した位置の周辺の本文で、tags はページに付いたタグの表記。",
     VERSION_NOTE,
+    LISTED_BODY_SHA256_NOTE,
     "title に語を含むページが先。その中と残りは、3 文字以上は全文検索で関連度の順、2 文字以下は部分一致で更新が新しい順。短い語で見つからなければ語を足す。",
     "全角半角と、英字の大文字小文字は区別しない。",
     `query は ${SEARCH_MAX_QUERY_CHARS} 文字まで。改行やタブなどの制御文字を含めると invalid_field になる。`,
@@ -104,6 +106,7 @@ export const listRecentTool = defineTool({
     "ページを更新が新しい順に返す。draft も含む。nextCursor が null でなければ、cursor に渡して続きを取る。",
     "各件に tags（ページに付いたタグの表記）、createdAt（ページを作った時刻。UNIX エポックのミリ秒で、更新しても変わらない）、本文の先頭の excerpt を付ける。本文が空のページと、抜粋を作り直す前のページには excerpt が無い。",
     VERSION_NOTE,
+    LISTED_BODY_SHA256_NOTE,
     "tag を渡すと、そのタグが付いたページだけに絞る。親のタグには子のタグのページも含まれる（`work` は `work/project` が付いたページにも一致する）。全角半角と大文字小文字は区別せず、先頭の `#` はあってもなくてもよい。タグでまとめたページを見渡すのに使う。cursor を渡すときは、前の呼び出しと同じ tag を渡す。",
     `tag は表記をそろえた後で ${TAG_MAX_LENGTH} 文字まで。`,
   ].join("\n"),
@@ -146,6 +149,7 @@ export const listBacklinksTool = defineTool({
     "id と title はどちらか一方だけを指定する。title で引くと、まだ作られていないページ（`[[title]]` のリンク先が無いもの）のリンク元も返る。title は大文字小文字と全角半角を区別せず、`_` と空白を同じ文字として扱う。",
     "id で引くとき、id のページが無ければ not_found。",
     VERSION_NOTE,
+    LISTED_BODY_SHA256_NOTE,
   ].join("\n"),
   inputSchema: z.strictObject({
     id: pageIdSchema.optional(),

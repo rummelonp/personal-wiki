@@ -1108,6 +1108,120 @@ describe("bodySha256", () => {
       bodySha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     });
   });
+
+  describe("一覧の各件", () => {
+    type Listed = { id: string; bodySha256?: string };
+    type Call = Awaited<ReturnType<typeof mcpClient>>["call"];
+
+    /** list_recent、search、list_backlinks の各件の bodySha256。id ごとに、出てこなかった tool は数えない */
+    async function listedHashes(call: Call, targetId: string) {
+      const recent = (await call("list_recent", {})).json.pages as Listed[];
+      const found = (await call("search", { query: "照合" })).json.results as Listed[];
+      const backlinks = (await call("list_backlinks", { id: targetId })).json.pages as Listed[];
+      return { recent, search: found, backlinks };
+    }
+
+    async function expectListsMatchReadPage(call: Call, targetId: string, ids: string[]) {
+      const lists = await listedHashes(call, targetId);
+      for (const id of ids) {
+        const expected = (await call("read_page", { id })).json.bodySha256;
+        expect(expected).toMatch(SHA256_HEX);
+        for (const [tool, pages] of Object.entries(lists)) {
+          const item = pages.find((page) => page.id === id);
+          expect(item, `${tool} ${id}`).toBeDefined();
+          expect(item?.bodySha256, `${tool} ${id}`).toBe(expected);
+        }
+      }
+    }
+
+    it("list_recent、search、list_backlinks は、書いた経路によらず read_page と同じ bodySha256 を返す", async () => {
+      const { call } = await mcpClient();
+      const { json: target } = await call("create_page", { title: "Target", body: "照合の先" });
+      const targetId = target.id as string;
+      const { json: a } = await call("create_page", { title: "A", body: "[[Target]] 照合 a" });
+      const { json: b } = await call("create_page", { title: "B", body: "[[Target]] 照合 b" });
+      const ids = [a.id as string, b.id as string];
+      await expectListsMatchReadPage(call, targetId, ids);
+
+      await call("update_page", {
+        id: a.id,
+        version: 1,
+        title: "A",
+        body: "[[Target]] 照合 a 更新",
+      });
+      await call("edit_page", { id: b.id, version: 1, edits: [{ old: "b", new: "b 編集" }] });
+      await expectListsMatchReadPage(call, targetId, ids);
+
+      await call("append_to_page", { id: a.id, text: "追記" });
+      await expectListsMatchReadPage(call, targetId, ids);
+
+      // title を変えると、リンク元の本文を rewrite_links が書き換える
+      await call("update_page", { id: targetId, version: 1, title: "Renamed", body: "照合の先" });
+      expect(await call("rewrite_links", {})).toMatchObject({
+        json: { processed: expect.anything() },
+      });
+      expect(await call("rewrite_links", {})).toMatchObject({
+        json: { processed: expect.anything() },
+      });
+      expect((await call("read_page", { id: a.id })).json.body).toContain("[[Renamed]]");
+      expect((await call("read_page", { id: b.id })).json.body).toContain("[[Renamed]]");
+      await expectListsMatchReadPage(call, targetId, ids);
+    });
+
+    it("ハッシュを作り直す前のページは bodySha256 を省き、rebuild の後は read_page と同じ値を返す", async () => {
+      const { call, request } = await mcpClient();
+      const { json: target } = await call("create_page", { title: "Target", body: "照合の先" });
+      const targetId = target.id as string;
+      const { json: kept } = await call("create_page", { title: "Kept", body: "[[Target]] 照合" });
+      const { json: nulled } = await call("create_page", {
+        title: "Null",
+        body: "[[Target]] 照合",
+      });
+      const { json: missing } = await call("create_page", {
+        title: "Missing",
+        body: "[[Target]] 照合",
+      });
+      await env.DB.batch([
+        env.DB.prepare("UPDATE page_excerpts SET body_sha256 = NULL WHERE page_id = ?1").bind(
+          nulled.id,
+        ),
+        env.DB.prepare("DELETE FROM page_excerpts WHERE page_id = ?1").bind(missing.id),
+      ]);
+
+      for (const [tool, pages] of Object.entries(await listedHashes(call, targetId))) {
+        const byId = new Map(pages.map((page) => [page.id, page]));
+        expect(byId.get(kept.id as string)?.bodySha256, tool).toBe(kept.bodySha256);
+        expect(byId.get(nulled.id as string), tool).not.toHaveProperty("bodySha256");
+        expect(byId.get(missing.id as string), tool).not.toHaveProperty("bodySha256");
+      }
+
+      let after: string | null = null;
+      do {
+        const res = await request("/api/admin/derived/rebuild", {
+          method: "POST",
+          json: { after },
+        });
+        expect(res.status).toBe(200);
+        after = (await res.json<{ next: string | null }>()).next;
+      } while (after !== null);
+      await expectListsMatchReadPage(call, targetId, [
+        kept.id as string,
+        nulled.id as string,
+        missing.id as string,
+      ]);
+    });
+
+    it("一覧の tool の description は、bodySha256 が無いときに read_page で確かめるよう書く", async () => {
+      const { rpc } = await mcpClient();
+      const { result } = await rpc("tools/list");
+      const tools = (result?.tools ?? []) as { name: string; description: string }[];
+      for (const name of ["list_recent", "search", "list_backlinks"]) {
+        const description = tools.find((tool) => tool.name === name)?.description ?? "";
+        expect(description, name).toContain("bodySha256");
+        expect(description, name).toContain("無いページは read_page で確かめる");
+      }
+    });
+  });
 });
 
 describe("edit_page", () => {
@@ -1547,6 +1661,7 @@ describe("検索と一覧の tool", () => {
             title: "Alpha",
             visibility: "public",
             version: 1,
+            bodySha256: a.bodySha256,
             updatedAt: T0,
             excerpt: "検索の対象の本文",
             tags: [],

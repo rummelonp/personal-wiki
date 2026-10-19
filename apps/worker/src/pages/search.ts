@@ -30,6 +30,12 @@ export interface PageSummary {
  */
 export interface VersionedSummary extends PageSummary {
   version: number;
+  /**
+   * 保存されている本文全体のハッシュ（body-hash.ts。ページを 1 件読んだときの bodySha256 と同じ値）。
+   * 保存のたびに作る派生データ（page_excerpts.body_sha256）で、それより前から在るページは rebuild するまで無い。
+   * 抜粋と違い、本文が空のページにもある。
+   */
+  bodySha256?: string;
 }
 
 /** 最近の更新の 1 件。 */
@@ -68,6 +74,8 @@ interface SummaryRow {
 
 interface VersionedRow extends SummaryRow {
   version: number;
+  /** page_excerpts から LEFT JOIN で読む。行が無いか作り直す前のページは null */
+  body_sha256: string | null;
 }
 
 interface ExcerptRow extends VersionedRow {
@@ -88,6 +96,7 @@ const toSummary = (row: SummaryRow): PageSummary => ({
 const toVersioned = (row: VersionedRow): VersionedSummary => ({
   ...toSummary(row),
   version: row.version,
+  ...(row.body_sha256 === null ? {} : { bodySha256: row.body_sha256 }),
 });
 
 export const LIST_DEFAULT_LIMIT = 20;
@@ -345,7 +354,7 @@ export async function listRecentPages(
   const { results } = await db
     .prepare(
       `SELECT p.id, p.title, p.title_key, p.visibility, p.version, p.created_at, p.updated_at,
-              e.excerpt
+              e.excerpt, e.body_sha256
        FROM pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE p.deleted_at IS NULL AND (?7 = 0 OR p.visibility = 'public')
          AND (?8 IS NULL OR p.visibility = ?8)
@@ -498,8 +507,9 @@ export async function listBacklinks(
   if (exists === null) return null;
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at
+      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at, e.body_sha256
        FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
+         LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE l.target_page_id = ?1 AND p.id <> ?1 AND p.deleted_at IS NULL
          AND (?5 = 0 OR p.visibility = 'public')
          AND (?2 IS NULL OR p.updated_at < ?2 OR (p.updated_at = ?2 AND p.id < ?3))
@@ -536,8 +546,9 @@ export async function listBacklinksByTitle(
   if (!key.ok) return null;
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at
+      `SELECT p.id, p.title, p.visibility, p.version, p.updated_at, e.body_sha256
        FROM links AS l JOIN pages AS p ON p.id = l.source_page_id
+         LEFT JOIN page_excerpts AS e ON e.page_id = p.id
        WHERE l.target_title_key = ?1 AND p.title_key <> ?1 AND p.deleted_at IS NULL
          AND (?5 = 0 OR p.visibility = 'public')
          AND (?2 IS NULL OR p.updated_at < ?2 OR (p.updated_at = ?2 AND p.id < ?3))
@@ -701,13 +712,14 @@ export async function searchPages(
   const publicOnly = publicOnlyFlag(readable);
   if ([...query].length >= TRIGRAM_MIN_CHARS) {
     const phrase = `"${query.replaceAll('"', '""')}"`;
-    // snippet() は一致した全行で作ると高くつくので、内側で並べて LIMIT した行にだけ外側で作る。
+    // snippet() は一致した全行で作ると高くつくので、内側で並べて LIMIT した行にだけ外側で作る。page_excerpts の
+    // ハッシュも、一致した全行の分を読まないよう外側で引く。
     // snippet() は MATCH の走査の中でしか使えないので、外側では pages_fts を rowid と MATCH の両方で
     // 引き直す（EXPLAIN QUERY PLAN では INDEX 0:=M2）。CROSS JOIN は、planner が pages_fts を外側のループに
     // 置き、MATCH の全件を走査する結合の順にしないために付ける。
     const { results } = await db
       .prepare(
-        `SELECT hit.id, hit.title, hit.visibility, hit.version, hit.updated_at,
+        `SELECT hit.id, hit.title, hit.visibility, hit.version, hit.updated_at, e.body_sha256,
                 snippet(pages_fts, 1, '', '', ?3, ?4) AS excerpt
          FROM (
            SELECT p.seq, p.id, p.title, p.visibility, p.version, p.updated_at,
@@ -719,6 +731,7 @@ export async function searchPages(
            ORDER BY in_title DESC, score, p.updated_at DESC, p.id DESC LIMIT ?2
          ) AS hit
          CROSS JOIN pages_fts ON pages_fts.rowid = hit.seq
+         LEFT JOIN page_excerpts AS e ON e.page_id = hit.id
          WHERE pages_fts MATCH ?1
          ORDER BY hit.in_title DESC, hit.score, hit.updated_at DESC, hit.id DESC`,
       )
@@ -746,8 +759,8 @@ export async function searchPages(
   const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
   const { results } = await db
     .prepare(
-      `SELECT id, title, visibility, version, updated_at, start, length,
-              substr(body, start, ?4) AS excerpt
+      `SELECT hit.id, hit.title, hit.visibility, hit.version, hit.updated_at, e.body_sha256,
+              hit.start, hit.length, substr(hit.body, hit.start, ?4) AS excerpt
        FROM (
          SELECT p.id, p.title, p.visibility, p.version, p.updated_at, f.body AS body,
                 f.title LIKE ?1 ESCAPE '\\' AS in_title,
@@ -757,8 +770,9 @@ export async function searchPages(
          WHERE (f.title LIKE ?1 ESCAPE '\\' OR f.body LIKE ?1 ESCAPE '\\') AND p.deleted_at IS NULL
            AND (?6 = 0 OR p.visibility = 'public')
          ORDER BY in_title DESC, p.updated_at DESC, p.id DESC LIMIT ?3
-       )
-       ORDER BY in_title DESC, updated_at DESC, id DESC`,
+       ) AS hit
+       LEFT JOIN page_excerpts AS e ON e.page_id = hit.id
+       ORDER BY hit.in_title DESC, hit.updated_at DESC, hit.id DESC`,
     )
     .bind(pattern, query, limit, EXCERPT_CHARS, EXCERPT_LEAD_CHARS, publicOnly)
     .all<LikeRow>();

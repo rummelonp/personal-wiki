@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { buildClient } from "../test/pages";
+import { bodySha256 } from "./body-hash";
 
 type Client = Awaited<ReturnType<typeof buildClient>>;
 
@@ -83,6 +84,7 @@ describe("excerpt と tags", () => {
         title: "p",
         visibility: "draft",
         version: 2,
+        bodySha256: await bodySha256("次の本文 #new"),
         createdAt: expect.any(Number),
         updatedAt: expect.any(Number),
         excerpt: "次の本文",
