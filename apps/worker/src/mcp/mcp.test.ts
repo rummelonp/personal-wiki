@@ -1211,6 +1211,29 @@ describe("bodySha256", () => {
       ]);
     });
 
+    it("search は、3 文字以上の語（FTS の経路）でも、ハッシュが無いページの bodySha256 を省く", async () => {
+      const { call } = await mcpClient();
+      // 2 文字以下の語は LIKE の経路になるので、FTS の経路（3 文字以上）を通る語で引く
+      const query = "照合テスト";
+      const { json: kept } = await call("create_page", { title: "Kept", body: query });
+      const { json: nulled } = await call("create_page", { title: "Null", body: query });
+      const { json: missing } = await call("create_page", { title: "Missing", body: query });
+      await env.DB.batch([
+        env.DB.prepare("UPDATE page_excerpts SET body_sha256 = NULL WHERE page_id = ?1").bind(
+          nulled.id,
+        ),
+        env.DB.prepare("DELETE FROM page_excerpts WHERE page_id = ?1").bind(missing.id),
+      ]);
+
+      const { results } = (await call("search", { query })).json as { results: Listed[] };
+      const byId = new Map(results.map((page) => [page.id, page]));
+      expect(byId.get(kept.id as string)?.bodySha256).toBe(kept.bodySha256);
+      expect(byId.get(nulled.id as string)).toBeDefined();
+      expect(byId.get(nulled.id as string)).not.toHaveProperty("bodySha256");
+      expect(byId.get(missing.id as string)).toBeDefined();
+      expect(byId.get(missing.id as string)).not.toHaveProperty("bodySha256");
+    });
+
     it("一覧の tool の description は、bodySha256 が無いときに read_page で確かめるよう書く", async () => {
       const { rpc } = await mcpClient();
       const { result } = await rpc("tools/list");
