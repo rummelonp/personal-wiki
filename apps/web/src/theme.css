@@ -94,7 +94,7 @@
 
   /* 寸法 */
   --prose-width: 44.5rem; /* 本文の幅。エディタの 16px で、行の左右の padding（8px）を除いて全角 44 字。em にすると .note の 15px で測られて 37 字になる */
-  --list-width: 42.5rem; /* トップの一覧の幅。本文の幅（--prose-width）以下 */
+  --list-width: var(--prose-width); /* トップの一覧の幅。右端を本文の右端にそろえる */
   --header-search-width: 26rem; /* ヘッダーの検索欄の幅 */
   --header-brand-min-width: 3rem; /* 検索語を出す狭い幅で、ロゴが縮む下限。語に幅を譲りつつ、ロゴだと分かる長さを残す */
   --header-skeleton-width: 5rem; /* ログイン状態が分かるまでヘッダーの右に空ける場所の、操作 1 つ分の幅。広い画面で 3 つ並べた幅が owner の操作の列（新規作成、接続、ログアウト）に近い */

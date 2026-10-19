@@ -129,6 +129,35 @@ test.describe("本文の左端 @widths", () => {
     }
   });
 
+  test("一覧の右端がページの本文の右端にそろう", async ({ page, seedIds }) => {
+    const rightOf = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().right);
+    // 本文の幅（712px）が収まらない幅（1000px 前後と 768px、375px）でも、両方が同じ列に収まって右端が一致する
+    for (const width of [375, 768, 1000, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+
+      await page.goto("/");
+      await expect(page.locator(".entries .entry").first()).toBeVisible();
+      const listRight = await rightOf(".home");
+      const sortRight = await rightOf(".list-sort-button");
+
+      await page.goto(`/p/${seedIds[SEED.server]}`);
+      await expect(page.locator(".title-input")).toHaveText(SEED.server);
+      const noteRight = await rightOf(".note");
+
+      expect(
+        Math.abs(listRight - noteRight),
+        `${width}px の一覧の右端（${listRight}）が本文の右端（${noteRight}）とずれている`,
+      ).toBeLessThan(TOLERANCE);
+      expect(sortRight, `${width}px の並び順のボタンが一覧の右端を越えている`).toBeLessThanOrEqual(
+        listRight + TOLERANCE,
+      );
+    }
+  });
+
   test("owner の読み込み中", async ({ page, seedIds }) => {
     // スケルトンは遅れて描く。描かれるまで（visible になるまで）待ってから、最初のスケルトンの箱の左端を測る
     const firstBand = page.locator(".main .skeleton").first();
