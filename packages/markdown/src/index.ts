@@ -24,6 +24,7 @@ export {
 export { Highlight, highlightNodes } from "./highlight";
 export { type LineSyntax, type SyntaxRange, syntaxByLine } from "./line-syntax";
 export { extractLinkTargets, type LinkTargetBlock, type LinkTargets } from "./link-targets";
+export { markdownLink } from "./markdown-link";
 export { extractPlainText } from "./plain-text";
 export { rewriteWikiLinkTargets } from "./rewrite-links";
 export { extractTags, frontmatterTagName, Tag, tagNodes } from "./tag";
