@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
-import { splitNumbers } from "./support/line-breaks";
+import { splitNumbers, splitNumbersAcrossWidths } from "./support/line-breaks";
 
 /*
  * 画面の文言は数と単位を詰めて書く（「3文字以上」「2バイト」）。詰めると、文節で切らない描画（iPhone の WebKit）は
@@ -34,15 +34,9 @@ test("測る道具は、数と単位の間の折り返しを見つけ、WORD JOI
     await page.setContent(
       `<div id="probe" lang="ja" style="font:16px sans-serif;word-break:normal">${text}</div>`,
     );
-    const found = new Set<string>();
     // 「約20」は幅 2 字ほどまで狭めないと、その中で折り返さない
-    for (let width = 20; width <= 300; width += 2) {
-      await probe.evaluate((element, w) => {
-        element.style.width = `${w}px`;
-      }, width);
-      for (const split of await splitNumbers(probe)) found.add(split);
-    }
-    return [...found];
+    const widths = Array.from({ length: 141 }, (_, index) => 20 + index * 2);
+    return splitNumbersAcrossWidths(probe, widths);
   };
 
   const sentence = "一致するタイトルはありません。3文字以上で、本文からも検索できます。";
@@ -57,14 +51,28 @@ test.describe("匿名", () => {
   test.use({ role: "anonymous" });
 
   test("quick switcher の検索の文字数の案内", async ({ page }) => {
+    // 候補の取得が済む前は、取得中の案内（.switcher-pending）が文字数の案内と並ぶ。負荷で取得が遅れた状態を、
+    // 取得を止めて必ず作る
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/pages/titles*", async (route) => {
+      await held;
+      await route.continue();
+    });
     await page.setViewportSize({ width: NARROWEST, height: 800 });
     await page.goto("/");
     await page.getByRole("button", { name: "ページを検索" }).click();
     const switcher = page.getByRole("dialog", { name: "ページを検索" });
     await switcher.getByRole("combobox", { name: "検索語" }).fill("ほげ");
-    const note = switcher.locator(".switcher-heading");
+    await expect(switcher.locator(".switcher-pending")).toHaveCount(1);
+    const note = switcher.locator(".switcher-heading:not(.switcher-pending)");
     await expect(note).toContainText("文字以上で、本文からも検索できます。");
     expect(await numberSplitsAcrossWidths(page, note)).toEqual([]);
+    release();
+    await expect(switcher.locator(".switcher-pending")).toHaveCount(0);
+    await expect(note).toContainText("文字以上で、本文からも検索できます。");
   });
 
   test("検索結果の、文字数が足りない案内", async ({ page }) => {

@@ -68,77 +68,97 @@ function isPhraseBoundary(boundary: Boundary): boolean {
 /**
  * 要素の本文を、描画が実際に選んだ折り返しで行に分け、<wbr> の前後の文節も集める。文字ごとの Range の位置で測る。
  * 同じ行かは、top の差が文字の高さの半分以内かで決める（小数の丸めや上付きの文字で揺れない）。
+ * widths を渡すと、要素の style.width をその順に変えながら測る。幅を振る測定を 1 回の evaluate にまとめるため。
+ * 幅ごとに evaluate を往復すると、並列の E2E で負荷が高いとき、往復の遅れが幅の数だけ積もってテストの時間切れになる。
+ * null は幅を変えずに測る。
  */
-async function measure(locator: Locator): Promise<{ lines: Line[]; seams: Seam[] }> {
-  return locator.evaluate((element) => {
-    const lines: Line[] = [];
-    // <wbr> の前後の文節。兄弟の文字列と span（nobreak）を、隣の <wbr> まで集める
-    const around = (wbr: Element, step: "previousSibling" | "nextSibling"): string => {
-      let text = "";
-      for (
-        let sibling = wbr[step];
-        sibling !== null && (sibling as Element).tagName !== "WBR";
-        sibling = sibling[step]
-      ) {
-        text =
-          step === "previousSibling"
-            ? (sibling.textContent ?? "") + text
-            : text + (sibling.textContent ?? "");
-      }
-      return text;
-    };
-    const wbrs = [...element.querySelectorAll("wbr")];
-    const seams = wbrs.map((wbr) => ({
-      before: around(wbr, "previousSibling"),
-      after: around(wbr, "nextSibling"),
-    }));
-    let previous: { char: string; top: number; node: Text; index: number } | null = null;
-    let skippedSpace = false;
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    for (
-      let node = walker.nextNode() as Text | null;
-      node !== null;
-      node = walker.nextNode() as Text | null
-    ) {
-      const data = node.data;
-      for (let index = 0; index < data.length; index++) {
-        const range = document.createRange();
-        range.setStart(node, index);
-        range.setEnd(node, index + 1);
-        const rect = range.getBoundingClientRect();
-        const char = data[index] as string;
-        if (rect.width === 0) {
-          if (/\s/.test(char)) skippedSpace = true;
-          continue;
-        }
-        if (previous === null || Math.abs(rect.top - previous.top) > rect.height / 2) {
-          let boundary: Boundary | null = null;
-          if (previous !== null) {
-            const between = previous;
-            const at = wbrs.findIndex(
-              (candidate) =>
-                between.node.compareDocumentPosition(candidate) &
-                  Node.DOCUMENT_POSITION_FOLLOWING &&
-                node.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_PRECEDING,
-            );
-            boundary = {
-              space: skippedSpace,
-              wbr: at === -1 ? null : (seams[at] as Seam),
-              previousChar: previous.char,
-              nextChar: char,
-            };
+async function measureAcrossWidths(
+  locator: Locator,
+  widths: readonly (number | null)[],
+): Promise<{ lines: Line[]; seams: Seam[] }[]> {
+  return locator.evaluate(
+    (element, widthList) => {
+      const measureOnce = (): { lines: Line[]; seams: Seam[] } => {
+        const lines: Line[] = [];
+        // <wbr> の前後の文節。兄弟の文字列と span（nobreak）を、隣の <wbr> まで集める
+        const around = (wbr: Element, step: "previousSibling" | "nextSibling"): string => {
+          let text = "";
+          for (
+            let sibling = wbr[step];
+            sibling !== null && (sibling as Element).tagName !== "WBR";
+            sibling = sibling[step]
+          ) {
+            text =
+              step === "previousSibling"
+                ? (sibling.textContent ?? "") + text
+                : text + (sibling.textContent ?? "");
           }
-          lines.push({ text: "", boundary });
+          return text;
+        };
+        const wbrs = [...element.querySelectorAll("wbr")];
+        const seams = wbrs.map((wbr) => ({
+          before: around(wbr, "previousSibling"),
+          after: around(wbr, "nextSibling"),
+        }));
+        let previous: { char: string; top: number; node: Text; index: number } | null = null;
+        let skippedSpace = false;
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (
+          let node = walker.nextNode() as Text | null;
+          node !== null;
+          node = walker.nextNode() as Text | null
+        ) {
+          const data = node.data;
+          for (let index = 0; index < data.length; index++) {
+            const range = document.createRange();
+            range.setStart(node, index);
+            range.setEnd(node, index + 1);
+            const rect = range.getBoundingClientRect();
+            const char = data[index] as string;
+            if (rect.width === 0) {
+              if (/\s/.test(char)) skippedSpace = true;
+              continue;
+            }
+            if (previous === null || Math.abs(rect.top - previous.top) > rect.height / 2) {
+              let boundary: Boundary | null = null;
+              if (previous !== null) {
+                const between = previous;
+                const at = wbrs.findIndex(
+                  (candidate) =>
+                    between.node.compareDocumentPosition(candidate) &
+                      Node.DOCUMENT_POSITION_FOLLOWING &&
+                    node.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_PRECEDING,
+                );
+                boundary = {
+                  space: skippedSpace,
+                  wbr: at === -1 ? null : (seams[at] as Seam),
+                  previousChar: previous.char,
+                  nextChar: char,
+                };
+              }
+              lines.push({ text: "", boundary });
+            }
+            (lines[lines.length - 1] as Line).text += char;
+            skippedSpace = false;
+            previous = { char, top: rect.top, node, index };
+          }
         }
-        (lines[lines.length - 1] as Line).text += char;
-        skippedSpace = false;
-        previous = { char, top: rect.top, node, index };
-      }
-    }
-    // 改行しない空白（U+00A0）は行末でも本文の一部なので残す
-    for (const line of lines) line.text = line.text.replace(/[^\S\u00a0]+$/, "");
-    return { lines, seams };
-  });
+        // 改行しない空白（U+00A0）は行末でも本文の一部なので残す
+        for (const line of lines) line.text = line.text.replace(/[^\S\u00a0]+$/, "");
+        return { lines, seams };
+      };
+      return widthList.map((width) => {
+        if (width !== null) (element as HTMLElement).style.width = `${width}px`;
+        return measureOnce();
+      });
+    },
+    [...widths],
+  );
+}
+
+async function measure(locator: Locator): Promise<{ lines: Line[]; seams: Seam[] }> {
+  const [measured] = await measureAcrossWidths(locator, [null]);
+  return measured as { lines: Line[]; seams: Seam[] };
 }
 
 async function layoutLines(locator: Locator): Promise<Line[]> {
@@ -155,13 +175,7 @@ export async function lineTexts(locator: Locator): Promise<string[]> {
   return (await layoutLines(locator)).map((line) => line.text);
 }
 
-/**
- * 要素の本文の折り返しのうち、数とそれに続く単位（「3|文字」）や、「約」と数（「約|3」）を別の行に分けたものを
- * 「前の行の末尾の文字|次の行の先頭の文字」で返す。数の中の区切り（「65,|536」「19:|09」「1/|3」）と、
- * 日付と時刻の間の空白での折り返しは数どうしなので返さない。
- */
-export async function splitNumbers(locator: Locator): Promise<string[]> {
-  const lines = await layoutLines(locator);
+function splitNumbersOf(lines: readonly Line[]): string[] {
   const splits: string[] = [];
   for (let index = 1; index < lines.length; index++) {
     const before = (lines[index - 1] as Line).text.slice(-1);
@@ -172,12 +186,7 @@ export async function splitNumbers(locator: Locator): Promise<string[]> {
   return splits;
 }
 
-/**
- * 要素の本文の折り返しのうち、句読点、空白、正しい位置の <wbr> でないものを「前の行の末尾の文字|次の行の先頭の文字」で返す。
- * 語の途中で切れていれば空でなくなる。閉じ括弧の直後は、助詞が続くときも文節の途中として返す。
- */
-export async function midPhraseBreaks(locator: Locator): Promise<string[]> {
-  const lines = await layoutLines(locator);
+function midPhraseBreaksOf(lines: readonly Line[]): string[] {
   const breaks: string[] = [];
   for (let index = 1; index < lines.length; index++) {
     const line = lines[index] as Line;
@@ -185,6 +194,41 @@ export async function midPhraseBreaks(locator: Locator): Promise<string[]> {
     breaks.push(`${(lines[index - 1] as Line).text.slice(-1)}|${line.text.slice(0, 1)}`);
   }
   return breaks;
+}
+
+/**
+ * 要素の本文の折り返しのうち、数とそれに続く単位（「3|文字」）や、「約」と数（「約|3」）を別の行に分けたものを
+ * 「前の行の末尾の文字|次の行の先頭の文字」で返す。数の中の区切り（「65,|536」「19:|09」「1/|3」）と、
+ * 日付と時刻の間の空白での折り返しは数どうしなので返さない。
+ */
+export async function splitNumbers(locator: Locator): Promise<string[]> {
+  return splitNumbersOf((await measure(locator)).lines);
+}
+
+/** 要素の幅を振り、splitNumbers に当たる折り返しを重複なしで集める。幅は 1 回の evaluate で振る。 */
+export async function splitNumbersAcrossWidths(
+  locator: Locator,
+  widths: readonly number[],
+): Promise<string[]> {
+  const measured = await measureAcrossWidths(locator, widths);
+  return [...new Set(measured.flatMap(({ lines }) => splitNumbersOf(lines)))];
+}
+
+/**
+ * 要素の本文の折り返しのうち、句読点、空白、正しい位置の <wbr> でないものを「前の行の末尾の文字|次の行の先頭の文字」で返す。
+ * 語の途中で切れていれば空でなくなる。閉じ括弧の直後は、助詞が続くときも文節の途中として返す。
+ */
+export async function midPhraseBreaks(locator: Locator): Promise<string[]> {
+  return midPhraseBreaksOf((await measure(locator)).lines);
+}
+
+/** 要素の幅を振り、midPhraseBreaks に当たる折り返しを重複なしで集める。幅は 1 回の evaluate で振る。 */
+export async function midPhraseBreaksAcrossWidths(
+  locator: Locator,
+  widths: readonly number[],
+): Promise<string[]> {
+  const measured = await measureAcrossWidths(locator, widths);
+  return [...new Set(measured.flatMap(({ lines }) => midPhraseBreaksOf(lines)))];
 }
 
 /**

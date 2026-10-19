@@ -1,7 +1,13 @@
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import type { OwnerApi } from "./support/api";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
-import { lineTexts, midPhraseBreaks, misplacedWbrs, phraseSeams } from "./support/line-breaks";
+import {
+  lineTexts,
+  midPhraseBreaks,
+  midPhraseBreaksAcrossWidths,
+  misplacedWbrs,
+  phraseSeams,
+} from "./support/line-breaks";
 
 /*
  * 通知の見出しと本文の折り返し。小さい仮名（ゃ、っ）、長音（ー）、句読点を行頭に置かない。
@@ -25,14 +31,11 @@ test("測る道具は、語の途中の <wbr> と、閉じ括弧と助詞の間�
     await page.setContent(
       `<div id="probe" style="font:16px sans-serif;line-break:strict;word-break:keep-all">${html}</div>`,
     );
-    const breaks = new Set<string>();
-    for (let width = 40; width <= 200; width += 4) {
-      await probe.evaluate((element, w) => {
-        element.style.width = `${w}px`;
-      }, width);
-      for (const found of await midPhraseBreaks(probe)) breaks.add(found);
-    }
-    return { breaks: [...breaks], misplaced: await misplacedWbrs(probe) };
+    const widths = Array.from({ length: 41 }, (_, index) => 40 + index * 4);
+    return {
+      breaks: await midPhraseBreaksAcrossWidths(probe, widths),
+      misplaced: await misplacedWbrs(probe),
+    };
   };
 
   const wellPlaced = await breaksOf("画像を<wbr>添付できませんでした");
