@@ -9,6 +9,7 @@ import {
   setReadOnly,
 } from "@personal-wiki/editor";
 import { type Ref, useId, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { focusAndRevealCaret } from "./focus-reveal";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
 import { scrollBelowStickyHeaderWith } from "./sticky-header";
 
@@ -29,7 +30,7 @@ export interface TitleEditorHandle {
    * エディタを破棄したときも resolve する（待つ側が止まり続けないように）。
    */
   whenSettled: () => Promise<void>;
-  /** 入力欄にカーソルを置く。選択範囲は前のまま。 */
+  /** 入力欄にカーソルを置く。選択範囲は前のまま。カーソルが見えていなければ、見える位置へスクロールする */
   focus: () => void;
   /** 編集できる要素（contentDOM）が node を含むか。要素そのものも含む */
   contains: (node: Node) => boolean;
@@ -182,7 +183,8 @@ export function TitleEditor({
       });
     },
     focus() {
-      view.current?.focus();
+      const editor = view.current;
+      if (editor !== null) focusAndRevealCaret(editor);
     },
     contains(node) {
       return view.current?.contentDOM.contains(node) ?? false;

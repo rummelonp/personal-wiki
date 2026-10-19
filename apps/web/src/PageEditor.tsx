@@ -36,6 +36,7 @@ import {
   saveStatusOf,
   type WriteRejection,
 } from "./editor-session";
+import { focusAndRevealCaret } from "./focus-reveal";
 import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
@@ -351,7 +352,10 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       frame.tabIndex = -1;
       frame.addEventListener("blur", () => frame.removeAttribute("tabindex"), { once: true });
       frame.focus({ preventScroll: true });
-    } else editor.current?.view()?.focus();
+    } else {
+      const view = editor.current?.view();
+      if (view) focusAndRevealCaret(view);
+    }
   }
   // title を直す場面で、title の欄へ移す。タッチ端末は、本文と同じ理由でキーボードを開かない枠へ移す
   function focusTitleOrBodyOrFrame(toTitle: boolean) {
