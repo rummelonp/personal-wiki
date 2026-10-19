@@ -157,6 +157,11 @@ export async function updatePageAs(
   return withExisting(ctx, input.title, result, input.id);
 }
 
+export interface EditSuccess extends UpdateSuccess {
+  /** 本文を書き換えて保存したか。false は置き換えた結果が今の本文と同じで、何も書いていない */
+  changed: boolean;
+}
+
 export type EditPageError =
   | WriteError
   | { ok: false; reason: "edit_failed"; failures: BodyEditFailure[] };
@@ -170,7 +175,7 @@ export type EditPageError =
 export async function editPageAs(
   ctx: PageWriteContext,
   input: { id: string; expectedVersion: number; edits: readonly BodyEdit[] },
-): Promise<UpdateSuccess | EditPageError> {
+): Promise<EditSuccess | EditPageError> {
   const page = await findPageByInputId(ctx.db, input.id);
   if (page === null) return { ok: false, reason: "not_found" };
   if (page.version !== input.expectedVersion) {
@@ -179,14 +184,15 @@ export async function editPageAs(
   const applied = applyBodyEdits(page.body, input.edits);
   if (!applied.ok) return { ok: false, reason: "edit_failed", failures: applied.failures };
   if (applied.body === page.body) {
-    return { ok: true, page, rowsWritten: 0, linkRewrites: { queued: 0 } };
+    return { ok: true, page, rowsWritten: 0, linkRewrites: { queued: 0 }, changed: false };
   }
-  return updatePageAs(ctx, {
+  const saved = await updatePageAs(ctx, {
     id: input.id,
     expectedVersion: input.expectedVersion,
     title: page.title,
     body: applied.body,
   });
+  return saved.ok ? { ...saved, changed: true } : saved;
 }
 
 export type RestoreError = WriteError | { ok: false; reason: "revision_not_found" };

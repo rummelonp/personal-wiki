@@ -297,7 +297,7 @@ export const editPageTool = defineTool({
     `edits は ${MAX_EDITS} 件まで。old は edits を適用する前の本文に対して数え、完全一致（大文字小文字、全角半角、空白、改行を区別する）で探す。ある edit の new に別の edit の old が現れても、その new には一致しない。edits の順序で結果は変わらない。`,
     "old が本文に無い、2 か所以上に一致する、ほかの edit の old と本文の同じ範囲で重なるときは、1 件も適用せず何も保存せずに edit_failed を返す。failures に、失敗した edit の index（0 始まり）、reason（not_found、ambiguous、overlap）、ambiguous の matches（一致が 2 か所以上なら 2。数は 2 で打ち切る）、overlap の with（重なる相手の index）、message が入る。old を直して送り直す。",
     "version が合わないと version_conflict になり、current に最新の title、body、version が返る。current を読み直して edits を作り直し、current.version で保存し直す。上書きで押し切らない。",
-    "置き換えた結果が今の本文と同じなら何も保存せず、changed が false で今の version を返す。",
+    "置き換えた結果が今の本文と同じなら何も保存せず、changed が false で今の version を返す。保存したときは changed が true で、version が 1 つ進む。",
     "frontmatter の中も置き換えられる。保存は update_page と同じ規則で、公開範囲は変わらない（frontmatter に書いても反映されない）。",
     "保存後の本文が上限を超えると body_too_large、NUL を含むと invalid_field（位置は置き換えた後の本文で数える）になる。",
     WRITE_HASH,
@@ -334,8 +334,7 @@ export const editPageTool = defineTool({
     if (result.ok) {
       return toolResult({
         ...(await pageSummary(result.page, ctx.origin)),
-        changed: result.rowsWritten > 0,
-        applied: edits.length,
+        changed: result.changed,
       });
     }
     if (result.reason === "edit_failed") {

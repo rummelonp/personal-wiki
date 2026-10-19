@@ -1136,7 +1136,6 @@ describe("edit_page", () => {
         url: expect.stringContaining(`/p/${id}`),
         titleUrl: null,
         changed: true,
-        applied: 1,
       },
     });
     expect((await call("read_page", { id })).json.body).toBe(
@@ -1164,7 +1163,7 @@ describe("edit_page", () => {
     const forward = await created(body, "Forward");
     expect(await forward.call("edit_page", { id: forward.id, version: 1, edits })).toMatchObject({
       isError: false,
-      json: { version: 2, applied: 3 },
+      json: { version: 2, changed: true },
     });
     // 1 件目の new に現れた "beta" は、3 件目の old には一致しない
     expect((await forward.call("read_page", { id: forward.id })).json.body).toBe("beta\nBETA\n\n");
@@ -1306,9 +1305,14 @@ describe("edit_page", () => {
     const { call, metrics, id } = await created("same");
     const before = await snapshotDb();
     const metricsBefore = metrics.length;
-    expect(
-      await call("edit_page", { id, version: 1, edits: [{ old: "same", new: "same" }] }),
-    ).toMatchObject({ isError: false, json: { version: 1, changed: false, applied: 1 } });
+    const result = await call("edit_page", {
+      id,
+      version: 1,
+      edits: [{ old: "same", new: "same" }],
+    });
+    expect(result).toMatchObject({ isError: false, json: { version: 1, changed: false } });
+    // edits の件数は呼び出し元が知っている値で、保存の有無と取り違えるので返さない
+    expect(result.json).not.toHaveProperty("applied");
     expect(await snapshotDb()).toEqual(before);
     expect(metrics).toHaveLength(metricsBefore);
   });
@@ -1391,7 +1395,7 @@ describe("edit_page", () => {
     const edits = letters.map((old) => ({ old, new: "x" }));
     expect(await call("edit_page", { id, version: 1, edits })).toMatchObject({
       isError: false,
-      json: { applied: 100 },
+      json: { version: 2, changed: true },
     });
   });
 });
