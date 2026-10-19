@@ -113,6 +113,15 @@ describe("titlePath", () => {
     expect(titlePath("llms txt")).toBe("/llms_txt");
   });
 
+  it("sitemap.xml は大文字小文字と全角半角を問わず予約語で、sitemap.xml.md などは予約語でない", () => {
+    for (const title of ["sitemap.xml", "SITEMAP.XML", "ｓｉｔｅｍａｐ．ｘｍｌ", "sitemap.xml/x"]) {
+      expect(titlePath(title), title).toBeNull();
+      expect(parsePagePath(`/${encodeURIComponent(title)}`), title).toBeNull();
+    }
+    expect(titlePath("sitemap.xml.md")).toBe("/sitemap.xml.md");
+    expect(titlePath("sitemap")).toBe("/sitemap");
+  });
+
   it("Worker がレスポンスを返す segment はすべて予約語に入っている", () => {
     for (const segment of WORKER_PATH_SEGMENTS) {
       expect(RESERVED_TITLE_SEGMENTS).toContain(segment);

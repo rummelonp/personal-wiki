@@ -3,7 +3,7 @@ import { type Principal, readableVisibilityOf } from "./auth/principal";
 import type { LinkTarget } from "./pages/link-targets";
 import type { PublicPageEntry } from "./pages/search";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
-import { pageUrls } from "./pages/urls";
+import { pageUrls, publicPageUrl } from "./pages/urls";
 
 /** SPA の index.html に差し込むページのメタ情報と本文。 */
 export interface PageMeta {
@@ -226,8 +226,7 @@ function fillLinkList(rewriter: HTMLRewriter, pages: LinkTarget[], origin: strin
     element(element) {
       const page = pages[next++];
       if (page === undefined) return;
-      const urls = pageUrls(origin, { ...page, visibility: "public" });
-      element.setAttribute("href", attributeValue(urls.titleUrl ?? urls.url));
+      element.setAttribute("href", attributeValue(publicPageUrl(origin, page)));
       element.setInnerContent(page.title);
     },
   });

@@ -16,6 +16,7 @@ import { registerMcpRoutes } from "./mcp/server";
 import { logWriteMetric, type WriteMetric } from "./pages/operations";
 import { registerAdminRoutes, registerPageRoutes } from "./pages/routes";
 import { securityHeaders } from "./security-headers";
+import { registerSitemapXmlRoutes } from "./sitemap-xml";
 import { registerSpaRoutes } from "./spa";
 
 export interface AppOptions {
@@ -58,6 +59,7 @@ export function createApp({
   registerAdminRoutes(app, { recordWrite });
   registerMcpRoutes(app, { now, recordWrite });
   registerLlmsTxtRoutes(app);
+  registerSitemapXmlRoutes(app);
   registerSpaRoutes(app);
   return app;
 }

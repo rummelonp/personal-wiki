@@ -4,7 +4,7 @@ import { allowAnonymous } from "./auth/middleware";
 import type { AppEnv } from "./env";
 import { ROOT_PAGE_LIST_LIMIT } from "./page-html";
 import { listPublicPages, type PublicPageEntry } from "./pages/search";
-import { pageUrls } from "./pages/urls";
+import { publicPageUrl } from "./pages/urls";
 import { siteDescriptionOf, siteNameOf } from "./site-name";
 
 export const LLMS_TXT_PATH = "/llms.txt";
@@ -35,8 +35,7 @@ export function renderLlmsTxt({
   if (pages.length > 0) {
     lines.push("## Pages", "");
     for (const page of pages) {
-      const urls = pageUrls(origin, { ...page, visibility: "public" });
-      lines.push(`- ${markdownLink(page.title, urls.titleUrl ?? urls.url)}`);
+      lines.push(`- ${markdownLink(page.title, publicPageUrl(origin, page))}`);
     }
     lines.push("");
   }

@@ -19,3 +19,12 @@ export function pageUrls(
     titleUrl: path === null ? null : `${origin}${path}`,
   };
 }
+
+/**
+ * public と分かっているページの正規の URL。title が予約語と重なれば `/p/<id>`。
+ * JS を実行しない読み手への一覧が使う。
+ */
+export function publicPageUrl(origin: string, page: Pick<Page, "id" | "title">): string {
+  const urls = pageUrls(origin, { ...page, visibility: "public" });
+  return urls.titleUrl ?? urls.url;
+}

@@ -651,6 +651,7 @@ describe("匿名向けのレスポンスの総当たり", () => {
         `/api/pages/${open.id}/attachments/x.svg`,
       ],
       "GET /llms.txt": ["/llms.txt", "/llms.txt?visibility=draft"],
+      "GET /sitemap.xml": ["/sitemap.xml", "/sitemap.xml?visibility=draft"],
       "GET /*": [
         "/",
         `/${encodeURIComponent("Hidden Plan")}`,
