@@ -265,33 +265,32 @@ async function dockCutsRail(page: Page): Promise<string | null> {
 }
 
 /**
- * 通知の左端がロゴの左端にそろい、幅が本文の幅と、右の余白を除いた残りの小さい方になっているか。
- * ドックを画面の右端まで伸ばす幅でも、通知の幅と左右の位置は変わらない。
- * 期待する幅は、通知の中に置いた probe で CSS の token を px にして求める。
+ * 通知の左端がロゴの左端に、左右の端が本文（.note）の左右の端にそろっているか。
+ * 本文は右の欄の分だけ縮む幅があるので、通知の幅は固定の幅でなく、本文の実際の幅に追従する。
  */
 async function noticeProblem(page: Page): Promise<string | null> {
   const brand = await brandLeft(page);
   return page.evaluate(async (brandLeftX) => {
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    const notice = document.querySelector(".notice-dock > .notice") as HTMLElement;
-    const probe = document.createElement("div");
-    probe.style.cssText =
-      "position:absolute;visibility:hidden;height:0;box-sizing:content-box;width:var(--prose-width);padding-left:var(--gutter)";
-    notice.append(probe);
-    const gutter = Number.parseFloat(getComputedStyle(probe).paddingLeft);
-    const prose = probe.getBoundingClientRect().width - gutter;
-    probe.remove();
-    const box = notice.getBoundingClientRect();
-    const available = document.documentElement.clientWidth - box.left - gutter;
-    const expected = Math.min(prose, available);
+    const notice = (
+      document.querySelector(".notice-dock > .notice") as HTMLElement
+    ).getBoundingClientRect();
+    const note = (document.querySelector(".note") as HTMLElement).getBoundingClientRect();
     const problems: string[] = [];
-    if (Math.abs(box.left - brandLeftX) > 0.75) {
+    if (Math.abs(notice.left - brandLeftX) > 0.75) {
       problems.push(
-        `通知の左端 ${box.left.toFixed(1)} がロゴの左端 ${brandLeftX.toFixed(1)} とずれている`,
+        `通知の左端 ${notice.left.toFixed(1)} がロゴの左端 ${brandLeftX.toFixed(1)} とずれている`,
       );
     }
-    if (Math.abs(box.width - expected) > 0.75) {
-      problems.push(`通知の幅 ${box.width.toFixed(1)} が期待する幅 ${expected.toFixed(1)} と違う`);
+    if (Math.abs(notice.left - note.left) > 0.75) {
+      problems.push(
+        `通知の左端 ${notice.left.toFixed(1)} が本文の左端 ${note.left.toFixed(1)} とずれている`,
+      );
+    }
+    if (Math.abs(notice.right - note.right) > 0.75) {
+      problems.push(
+        `通知の右端 ${notice.right.toFixed(1)} が本文の右端 ${note.right.toFixed(1)} とずれている`,
+      );
     }
     return problems.length === 0 ? null : problems.join("、");
   }, brand);
@@ -329,7 +328,7 @@ test("横向きの iPhone で通知のドックが出ても、右の欄の文字
   expect(straddling, "ドックの右の縁をまたぐ欄の文字がある").toEqual([]);
 });
 
-test("通知のドックの右端は、右の欄の文字を切る位置で止まらず、通知の幅と左端は動かない @widths", async ({
+test("通知は幅によらず本文の左右の端にそろい、ドックの右端は右の欄の文字を切らない @widths", async ({
   page,
   api,
 }, testInfo) => {
@@ -338,8 +337,10 @@ test("通知のドックの右端は、右の欄の文字を切る位置で止�
     body: "短い本文",
   });
   await showSaveFailureDock(page, created.id, { width: 641, height: 600 });
-  // 境目（ドックの最大幅が欄に届く 994px 前後）と、本文の下に欄が回る幅の直前を含める
-  const widths = [641, 667, 700, 768, 800, 850, 900, 960, 992, 993, 994, 995, 996, 1000, 1280];
+  // 本文の列が欄の分だけ縮み始める幅（1022px）の前後、本文の下に欄が回る幅（640px）の前後、その間を含める
+  const widths = [
+    375, 640, 641, 667, 700, 768, 800, 850, 900, 960, 994, 996, 1000, 1021, 1022, 1023, 1280,
+  ];
   const cut: string[] = [];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 600 });

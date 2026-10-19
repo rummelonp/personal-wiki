@@ -1283,7 +1283,7 @@ a.segmented-option {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: calc(var(--prose-width) + 2 * var(--space-3));
+  max-width: calc(var(--note-width) + 2 * var(--space-3));
   max-height: calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio));
   /* 影が overflow で切れないよう、ドックの内側に余白を取り、その分だけ外へ出して通知の左端を本文の列に合わせる */
   margin: 0 calc(var(--gutter) - var(--space-3)) 0
@@ -1304,31 +1304,18 @@ a.segmented-option {
 }
 
 /*
- * 本文の列が右の欄（.rail）の分だけ縮む幅では、ドックの右端が欄の中に入り、欄の文字を縦の線で切る
- * （地の色の端から、はみ出した「ー」だけが残る）。この幅ではドックを画面の右端まで伸ばし、欄の下を覆いきる。
- * 通知の幅と左右の位置は変えず、ドックの max-width の代わりに通知に上限を付ける。
- * 幅の境目は、ドックの右端が欄の左端に届く画面の幅で、ドックの最大幅（--prose-width と左右の padding）、
- * ドックの左の余白、--rail-width、--gutter の上限の和で決まる。これらの token を変えたら計算し直す。
- * media query は var() を使えないので数値で持つ。E2E の幅の掃引は、境目が小さすぎる方へのずれだけを拾う。
- * 欄が本文の下に回る狭い幅にも当たるが、そこではドックが元から画面の幅に収まるので、通知の幅と位置は変わらない。
- *
- * media query はスクロールバーを含む幅で判定し、欄の配置はスクロールバーを除いた幅で決まる。常に表示される
- * スクロールバー（幅 S）では、境目の上の S - 1px の幅でドックの右端が欄の左端に最大 S - 1px 食い込む。
- * 欄の中身は左端から線（--border-width）と padding（--space-4）の内側で始まるので、S が 18px 以下
- * （Windows と macOS の常時表示は 15〜17px）なら文字は切れず、覆うのは欄の左の線の一部だけで済む。
- * スクロールバーを除いた幅で判定するコンテナクエリは、コンテナの layout containment が fixed の基準を
- * 変えるので使えない。実害が無いので、直さずこの制約を受け入れる。
- * E2E の headless はスクロールバーを隠すので、この食い込みは E2E に現れない。
+ * ドックの幅（max-width）は、本文（.note）の実際の幅から導く。本文の列は、右の欄（.rail）が横に並ぶ幅では欄の分だけ縮む
+ * （.rail-layout）ので、--prose-width のままだと通知が本文の右端を越え、ドックの右端が欄の中に入って欄の文字を切る。
+ * 通知の左端は本文の列の左端（--frame-start と --gutter）で、右端は本文の右端にそろう。
+ * ドックは fixed で、% はスクロールバーを除いた画面の幅を指す。.rail-layout の列の判定と同じ基準になる。
+ * 欄が本文の下に回る幅（40rem 以下）では列の式から欄の幅が消えるので、ドックを画面の右端まで伸ばし、
+ * 通知は右の余白（--gutter）を除いた幅にする。
  */
-@media (max-width: 62.125rem) {
+@media (max-width: 40rem) {
   .notice-dock {
     max-width: none;
     margin-right: 0;
     padding-right: var(--gutter);
-  }
-
-  .notice-dock > .notice {
-    max-width: var(--prose-width);
   }
 }
 

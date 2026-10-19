@@ -122,6 +122,8 @@
   ); /* 本文の列と右の欄を並べた幅。広い画面ではこれを中央に置く */
   /* 画面の左端から、列と欄を並べた枠の左端までの距離。使う側の padding / margin の % が画面の幅を指す要素で使う */
   --frame-start: max(0px, calc((100% - var(--frame-width)) / 2));
+  /* 本文（.note）の実際の幅。欄が本文の右に並ぶ幅では、列が欄の分だけ縮む。% が画面の幅を指す要素（fixed のドックなど）で使う。欄が下に回る幅では使わない */
+  --note-width: min(var(--prose-width), 100% - var(--rail-width) - 2 * var(--gutter));
   --control-height: 2.25rem; /* ボタンと 1 行の入力欄の高さ */
   --control-height-sm: 2rem; /* ヘッダーの操作の高さ */
   --header-control-visual: 2rem; /* ヘッダーの操作の見た目の大きさ。タッチ端末では当たり判定が --tap-size に上がり、差は透明な border で埋める */
