@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { OwnerApi } from "./support/api";
 import {
+  bodyEditor,
   expect,
   expectNoHorizontalScroll,
   saveState,
@@ -132,6 +133,7 @@ test("公開範囲のメニューは、キーボードで選べ、Escape と外�
   await expect(menu(page)).toBeVisible();
   await page.locator(".body-editor").click();
   await expect(menu(page)).toHaveCount(0);
+  await expect(bodyEditor(page)).toBeFocused();
   await expect(confirmDialog(page)).toHaveCount(0);
   await expectShown(page, "draft");
 
@@ -144,6 +146,48 @@ test("公開範囲のメニューは、キーボードで選べ、Escape と外�
   await expect(confirmDialog(page).getByRole("button", { name: "やめる" })).toBeFocused();
   await page.keyboard.press("Escape");
   expect(await anonymousSees(title)).toBe(false);
+});
+
+// 外側を押したときの焦点は、mousedown の既定の動作と焦点が移る順序がエンジンごとに違う。
+// 主の環境のほかに、Firefox とデスクトップの Safari でも @smoke で確かめる
+test("公開範囲のメニューを外側で押して閉じると、焦点は押した先の入力欄に残り、焦点を持たない場所なら印へ戻る @smoke", async ({
+  page,
+  api,
+  hasTouch,
+}, testInfo) => {
+  // 狭い幅ではメニューが本文の先頭の行に重なるので、メニューの下まで届く行数にする
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "外側の押下の焦点"),
+    body: Array.from({ length: 30 }, (_, index) => `焦点の検査の ${index + 1} 行目`).join("\n\n"),
+  });
+  await page.goto(`/p/${created.id}`);
+  await expect(pill(page)).toBeVisible();
+  // 押す操作は端末に合わせる。タッチの端末ではタップから作られる event の順で届く
+  const press = (target: ReturnType<Page["locator"]>, corner = false) => {
+    const options = corner ? { position: { x: 2, y: 2 } } : {};
+    return hasTouch ? target.tap(options) : target.click(options);
+  };
+
+  await pill(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(menu(page)).toBeVisible();
+  await press(bodyEditor(page).locator(".cm-line").last());
+  await expect(menu(page)).toHaveCount(0);
+  await expect(bodyEditor(page)).toBeFocused();
+
+  // 焦点を持たない場所（ヘッダーの余白）を押す。本文の近くの余白は、Chromium が最も近い入力欄へ焦点を移す
+  await pill(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(menu(page)).toBeVisible();
+  await press(page.locator(".header"), true);
+  await expect(menu(page)).toHaveCount(0);
+  await expect(pill(page)).toBeFocused();
+  // 閉じた後も、キーボードで続けられる
+  await page.keyboard.press("Enter");
+  await expect(menu(page)).toBeVisible();
+  await expect(menuItem(page, "下書き")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expectShown(page, "draft");
 });
 
 test("確認を開いている間に他で内容が変わったら、確認を閉じる", async ({ page, api }, testInfo) => {
