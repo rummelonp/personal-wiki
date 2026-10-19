@@ -25,14 +25,28 @@ export function ListSortMenu({
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const refocusTimer = useRef<number | undefined>(undefined);
 
-  // 外側を押して閉じるときは、焦点をボタンに戻さず押した先に任せる
+  useEffect(() => () => window.clearTimeout(refocusTimer.current), []);
+
+  // 開いたら選択中の項目に焦点を移す。外側を押したら閉じ、押した先が焦点を持たない場所ならボタンに戻す
   useEffect(() => {
     const wrapper = root.current;
     if (!open || wrapper === null) return;
     menu.current?.querySelector<HTMLElement>("[aria-checked='true']")?.focus();
     function onPointerDown(event: PointerEvent) {
-      if (!wrapper?.contains(event.target as Node)) setOpen(false);
+      if (wrapper?.contains(event.target as Node)) return;
+      setOpen(false);
+      // マウスでは焦点が pointerdown の後の mousedown の既定の動作で移るので、次のタスクで押した先が
+      // 決まった後に見る。body に落ちていたときだけ戻し、入力欄などへ移っていたら奪わない。
+      // 開いたままスクロールするとボタンが画面の外にあるので、戻すときに画面を動かさない
+      window.clearTimeout(refocusTimer.current);
+      refocusTimer.current = window.setTimeout(() => {
+        const active = document.activeElement;
+        if (active === null || active === document.body) {
+          button.current?.focus({ preventScroll: true });
+        }
+      }, 0);
     }
     // Safari はボタンを押しても焦点を移さず、項目を押す間に行き先の無い focusout が起きる。
     // 行き先の分かる移動（Tab など）だけで閉じ、押したときは外側の pointerdown に任せる
