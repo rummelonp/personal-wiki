@@ -3,16 +3,19 @@ import { type Principal, readableVisibilityOf } from "./auth/principal";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
 import { pageUrls } from "./pages/urls";
 
-/** SPA の index.html に差し込むページのメタ情報。本文は読まない。 */
+/** SPA の index.html に差し込むページのメタ情報と本文。 */
 export interface PageMeta {
   id: string;
   title: string;
   visibility: Visibility;
   /** page_excerpts の行が無いページは null、本文が空なら空文字列 */
   excerpt: string | null;
+  /** public のページの本文（Markdown）。draft は D1 から読まずに null にする */
+  body: string | null;
 }
 
-const META_COLUMNS = "p.id, p.title, p.visibility, e.excerpt";
+const META_COLUMNS =
+  "p.id, p.title, p.visibility, e.excerpt, CASE WHEN p.visibility = 'public' THEN p.body END AS body";
 const META_FROM = "pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id";
 
 /**
@@ -59,12 +62,17 @@ function attributeValue(value: string): string {
 }
 
 /**
- * index.html の head にページのメタ情報を差し込む。
+ * index.html の head にページのメタ情報を、public のページなら `#root` に title と本文を差し込む。
  *
  * HTMLRewriter は自分で挿入したマークアップを解析し直さないので、2 段に分ける。1 段目は値を持たない
- * 固定のタグだけを挿入し、2 段目がそのタグに setAttribute で値を入れる。ページの title や抜粋を
- * HTML の文字列に連結せず、エスケープを HTMLRewriter に任せるため（`&` だけは attributeValue）。
- * og:image は既定の画像を持たないので出さない。
+ * 固定のタグだけを挿入し、2 段目がそのタグに setAttribute や setInnerContent で値を入れる。ページの
+ * title や抜粋、本文を HTML の文字列に連結せず、エスケープを HTMLRewriter に任せるため（属性値の `&`
+ * だけは attributeValue）。og:image は既定の画像を持たないので出さない。
+ *
+ * 本文は JS を実行しない読み手（AI のエージェントやクローラー）向けで、Markdown を変換せずにテキストのまま
+ * `<pre>` に入れる。Markdown の解析は本文の大きさに比例して CPU を使い、大きな本文では Workers Free の
+ * 10ms を超えうる（MAX_BODY_BYTES の測定）ので、表示のたびには行わない。
+ * ブラウザでは styles.css が隠し、SPA の createRoot が `#root` の中身を置き換える。
  */
 export function rewritePageHtml(index: Response, page: PageMeta, origin: string): Response {
   const urls = pageUrls(origin, page);
@@ -80,6 +88,7 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
   ];
   if (description !== null) tags.push('<meta property="og:description">');
   if (page.visibility === "draft") tags.push('<meta name="robots" content="noindex">');
+  const body = page.visibility === "public" ? page.body : null;
 
   const structure = new HTMLRewriter()
     .on("head", {
@@ -92,6 +101,15 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
         element.prepend(`${page.title} - `);
       },
     });
+  if (body !== null) {
+    structure.on("#root", {
+      element(element) {
+        element.setInnerContent('<article class="page-text"><h1></h1><pre></pre></article>', {
+          html: true,
+        });
+      },
+    });
+  }
   const values = new HTMLRewriter()
     .on('meta[property="og:title"]', {
       element(element) {
@@ -114,6 +132,20 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
         element.setAttribute("content", attributeValue(description));
       },
     });
+  }
+  if (body !== null) {
+    values
+      .on("#root > article.page-text > h1", {
+        element(element) {
+          element.setInnerContent(page.title);
+        },
+      })
+      .on("#root > article.page-text > pre", {
+        element(element) {
+          // HTML の parser は <pre> の開始タグの直後の改行を 1 つ捨てるので、本文の先頭の改行が残るよう 1 つ足す
+          element.setInnerContent(`\n${body}`);
+        },
+      });
   }
   return values.transform(structure.transform(index));
 }

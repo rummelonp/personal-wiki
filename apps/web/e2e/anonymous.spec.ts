@@ -42,6 +42,15 @@ test("public のページを title の URL で開き、リンクをたどれる 
   await expectNoHorizontalScroll(page);
 });
 
+test("Worker が HTML に入れた本文は、SPA が起動する前もブラウザに見せない", async ({ page }) => {
+  await page.route("**/assets/*.js", (route) => route.abort());
+  await page.goto(titlePath(SEED.welcome));
+  const pageText = page.locator("#root > .page-text");
+  await expect(pageText).toHaveCount(1);
+  await expect(pageText.locator("h1")).toHaveText(SEED.welcome);
+  await expect(pageText).toBeHidden();
+});
+
 test("開いているページを quick switcher で選んでも、履歴を積まない", async ({ page }) => {
   await page.goto(titlePath(SEED.welcome));
   await expect(page.getByRole("heading", { level: 1, name: SEED.welcome })).toBeVisible();

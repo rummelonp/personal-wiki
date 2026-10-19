@@ -51,7 +51,10 @@ const CONTENT_SECURITY_POLICY = [
  * （ASSETS や HTMLRewriter のレスポンス）ので、複製してから付ける。
  * - Cache-Control: no-cache は、デプロイ後に古い index.html が古いハッシュの JS を指し続けないため。
  *   ページの URL の HTML は principal で中身が変わるが、Vary: Authorization, Cookie と毎回の再検証で
- *   足りる。owner と token のレスポンスは resolvePrincipal が後から private, no-store に上書きする
+ *   足りる。owner と token のレスポンスは resolvePrincipal が後から private, no-store に上書きする。
+ *   匿名の public のページの HTML は本文を含むが、ETag を外す（spa.ts）ので再検証は毎回取り直しになり、
+ *   draft に戻した後は title で 404、id で本文の無い no-store が返る。古い本文が残りうるのは、読んだ人の
+ *   ブラウザの戻る、進むの履歴だけ
  * - X-Robots-Tag: noindex は、indexable を指定したレスポンス（トップと public のページ。spa.ts）にだけ付けない。
  *   未知のパスや 404 まで検索エンジンに載せないよう、既定は付ける側に倒す
  */

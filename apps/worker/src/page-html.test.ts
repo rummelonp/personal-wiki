@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 import { SESSION_COOKIE_NAME } from "./auth/session";
+import { findPageForPath, rewritePageHtml } from "./page-html";
 import { ownerCookie, ownerEnv } from "./test/owner";
 import { type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
@@ -100,6 +101,22 @@ function metaOf(html: string) {
   };
 }
 
+/**
+ * `#root` に差し込んだ title と本文を decode して返す。何も差し込んでいなければ null。
+ * 本文は、HTML の parser と同じく <pre> の直後の改行を 1 つ除いて読む。
+ */
+function pageTextOf(html: string) {
+  const root = /<div id="root">([\s\S]*)<\/div><\/body>/.exec(html)?.[1];
+  if (root === undefined) throw new Error("no #root");
+  if (root === "") return null;
+  const match = /^<article class="page-text"><h1>([^<]*)<\/h1><pre>([^<]*)<\/pre><\/article>$/.exec(
+    root,
+  );
+  if (match === null) throw new Error(`unexpected #root: ${root}`);
+  const pre = decodeEntities(match[2] ?? "");
+  return { title: decodeEntities(match[1] ?? ""), body: pre.startsWith("\n") ? pre.slice(1) : pre };
+}
+
 async function snapshot(res: Response) {
   return { status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() };
 }
@@ -126,6 +143,27 @@ describe("public のページの HTML", () => {
       twitterCard: "summary",
       robots: null,
     });
+  });
+
+  it("匿名にも owner にも、#root に title と本文の Markdown をテキストのまま差し込む", async () => {
+    const { navigate, create, cookie } = await seed();
+    const body = "# 見出し\n\n[[Open Note]] へのリンクと **強調**\n\n- 項目";
+    const page = await create("Rich Note", body, "public");
+    for (const headers of [{}, { Cookie: cookie }]) {
+      for (const path of [`/p/${page.id}`, "/Rich_Note"]) {
+        const html = await (await navigate(path, headers)).text();
+        expect(pageTextOf(html), path).toEqual({ title: "Rich Note", body });
+      }
+    }
+  });
+
+  it("本文の先頭の改行と、空の本文もそのまま差し込む", async () => {
+    const { navigate, create } = await seed();
+    for (const body of ["\n\n先頭が空行の本文", ""]) {
+      const page = await create(`Edge ${body.length}`, body, "public");
+      const html = await (await navigate(`/p/${page.id}`)).text();
+      expect(pageTextOf(html)?.body, JSON.stringify(body)).toBe(body);
+    }
   });
 
   it("title は大文字小文字を区別せずに引き、正規の URL は保存された title から作る", async () => {
@@ -273,6 +311,46 @@ describe("draft のページの HTML", () => {
       expect(meta.robots, label).toBe("noindex");
     }
   });
+
+  it("draft の本文は匿名にも owner と token にも差し込まない", async () => {
+    const { navigate, cookie, create } = await seed();
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    const draft = await create("Long Draft", `${"前置き。".repeat(100)}末尾の okapi の話`);
+    for (const [path, headers] of [
+      [`/p/${draft.id}`, {}],
+      [`/p/${draft.id}`, { Cookie: cookie }],
+      [`/${encodeURIComponent("Long Draft")}`, { Cookie: cookie }],
+      [`/${encodeURIComponent("Long Draft")}`, { Authorization: `Bearer ${token}` }],
+    ] as const) {
+      const html = await (await navigate(path, headers)).text();
+      expect(pageTextOf(html), path).toBeNull();
+      expect(html, path).not.toContain("okapi");
+    }
+  });
+
+  it("public から draft に戻すと、id で開いても本文を差し込まない", async () => {
+    const { navigate, setVisibility, open } = await seed();
+    expect(pageTextOf(await (await navigate(`/p/${open.id}`)).text())).not.toBeNull();
+    await setVisibility(open.id, "draft");
+    const html = await (await navigate(`/p/${open.id}`)).text();
+    expect(pageTextOf(html)).toBeNull();
+  });
+
+  it("draft の本文は D1 から読まず、本文を持つ draft を渡されても差し込まない", async () => {
+    const { draft } = await seed();
+    const meta = await findPageForPath(env.DB, `/p/${draft.id}`, { kind: "owner" });
+    expect(meta?.visibility).toBe("draft");
+    expect(meta?.body).toBeNull();
+
+    const index = new Response(INDEX_HTML, { headers: { "Content-Type": "text/html" } });
+    const html = await rewritePageHtml(
+      index,
+      { id: draft.id, title: "Hidden Plan", visibility: "draft", excerpt: null, body: "zebrafish" },
+      ORIGIN,
+    ).text();
+    expect(pageTextOf(html)).toBeNull();
+    expect(html).not.toContain("zebrafish");
+  });
 });
 
 describe("匿名から見た draft の title", () => {
@@ -376,12 +454,16 @@ describe("Accept による分岐", () => {
       const open = await call("/Open%20Note", withAccept(accept));
       expect(open.status, label).toBe(200);
       expect(open.headers.get("X-Robots-Tag"), label).toBeNull();
-      expect(metaOf(await open.text()).ogTitle, label).toBe("Open Note");
+      const openHtml = await open.text();
+      expect(metaOf(openHtml).ogTitle, label).toBe("Open Note");
+      expect(pageTextOf(openHtml)?.body, label).toBe("公開の kangaroo の話");
 
       const byId = await call(`/p/${draft.id}`, withAccept(accept));
       expect(byId.status, label).toBe(200);
       expect(byId.headers.get("X-Robots-Tag"), label).toBe("noindex");
-      expect(metaOf(await byId.text()).ogTitle, label).toBe("Hidden Plan");
+      const byIdHtml = await byId.text();
+      expect(metaOf(byIdHtml).ogTitle, label).toBe("Hidden Plan");
+      expect(pageTextOf(byIdHtml), label).toBeNull();
 
       const init = withAccept(accept);
       const asOwner = await call("/Hidden%20Plan", {
@@ -488,6 +570,15 @@ describe("値のエスケープ", () => {
     expect(meta.ogTitle).toBe(title);
     expect(meta.ogDescription).toBe('1 < 2 & "x" &lt;y&gt;');
     expect(meta.ogUrl).toBe(`${ORIGIN}/${encodeURIComponent(title.replaceAll(" ", "_"))}`);
+  });
+
+  it("本文の </pre> やタグ、文字参照に見える表記は要素にならず、そのまま読める", async () => {
+    const { navigate, create } = await seed();
+    const body = '</pre></article><script>alert(1)</script>\n1 < 2 & "x" &lt;y&gt;\n<!-- c -->';
+    const page = await create("Tricky </h1>", body, "public");
+    const html = await (await navigate(`/p/${page.id}`)).text();
+    expect(html).not.toContain("<script>");
+    expect(pageTextOf(html)).toEqual({ title: "Tricky </h1>", body });
   });
 
   it("抜粋の改行や制御文字も属性値の中に収まる", async () => {

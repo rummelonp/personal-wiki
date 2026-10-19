@@ -29,6 +29,13 @@ body {
   box-sizing: border-box;
 }
 
+/* Worker が public のページの HTML に差し込む title と本文（apps/worker/src/page-html.ts）は、CSS を
+   当てずに HTML を読むエージェントやクローラー向け。ブラウザで SPA の起動前に見せると、本文から
+   スケルトンへ画面が組み変わるので隠す */
+#root > .page-text {
+  display: none;
+}
+
 a {
   color: var(--color-accent);
   text-decoration-thickness: var(--border-width);
