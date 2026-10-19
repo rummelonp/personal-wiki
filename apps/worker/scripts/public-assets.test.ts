@@ -21,12 +21,16 @@ const WORKER_SERVED_PUBLIC_FILES: readonly string[] = [];
 // `index.html` は Static Assets の html_handling が `/` への 307 にするので、`index` と合わせて予約する。
 const NON_FILE_RESERVED = ["p", "index", "index.html"];
 
-/** public の直下のファイル名。ディレクトリは、予約語と除外の対応を決められないので許さない。 */
+// Static Assets の設定として読まれ、自身は配信されないファイル。`/<名前>` は Worker に届くので、
+// 予約語にも run_worker_first の除外にも入れない。
+const ASSET_CONFIG_FILES: readonly string[] = ["_headers"];
+
+/** public の直下で配信されるファイル名。ディレクトリは、予約語と除外の対応を決められないので許さない。 */
 function publicFileNames(): string[] {
   const entries = readdirSync(PUBLIC_DIR, { withFileTypes: true });
   const dirs = entries.filter((e) => !e.isFile()).map((e) => e.name);
   expect(dirs, "apps/web/public の直下はファイルだけにする").toEqual([]);
-  return entries.map((e) => e.name);
+  return entries.map((e) => e.name).filter((name) => !ASSET_CONFIG_FILES.includes(name));
 }
 
 /** ファイル名が塞ぐ `/<title>` の先頭 segment。`.html` は拡張子なしの名前でも開ける。 */
@@ -74,6 +78,24 @@ describe("OAuth の画面の icon の link", () => {
     expect(hrefs.filter((href) => !spa.includes(href))).toEqual([]);
     const excluded = excludedFileNames().map((name) => `/${name}`);
     expect(hrefs.filter((href) => !excluded.includes(href))).toEqual([]);
+  });
+});
+
+/** `_headers` の、パスの行から次のパスの行までに並ぶヘッダーの行。 */
+function headerRulesOf(path: string): string[] {
+  const lines = readFileSync(new URL("_headers", PUBLIC_DIR), "utf8").split("\n");
+  const start = lines.indexOf(path);
+  expect(start, `_headers に ${path} の規則が無い`).not.toBe(-1);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => !/^\s/.test(line));
+  return (end === -1 ? rest : rest.slice(0, end)).map((line) => line.trim());
+}
+
+describe("apps/web/public/_headers", () => {
+  // 本番の Static Assets は .txt を charset なしの text/plain で返し、ブラウザで ASCII でない文字が化ける。
+  // ローカルの wrangler dev は charset を付けて返すので、E2E では確かめられない。
+  it("robots.txt の Content-Type に charset=utf-8 を付ける", () => {
+    expect(headerRulesOf("/robots.txt")).toContain("Content-Type: text/plain; charset=utf-8");
   });
 });
 
