@@ -536,12 +536,26 @@ a {
   overflow-wrap: anywhere;
 }
 
-/* 狭い画面では見出しに幅を譲り、ボタンを縦に積む */
+/* 縮めない。長い title が幅を取り合うと、ボタンが縦に積み重なり、ヘッダーが高くなる */
 .revision-viewer-actions {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/*
+ * 狭い幅では、ボタンを見出しの横に置くと見出しの欄が狭まり、長い title が細かく折れる。
+ * 見出しに幅いっぱいを渡し、ボタンは次の行に並べる。
+ * ボタンは .revision-viewer-actions の justify-content で、広い幅と同じく右に寄る。
+ * DOM の順のまま下に置くので、焦点の順は変わらない
+ */
+@media (max-width: 40rem) {
+  .revision-viewer-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .revision-viewer-status {

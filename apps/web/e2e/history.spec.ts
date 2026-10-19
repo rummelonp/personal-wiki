@@ -350,6 +350,112 @@ test("長い行は折り返して全部を読め、ダイアログも画面も�
   expect(fit.insertHeight).toBeGreaterThan(fit.lineHeight * 2);
 });
 
+test("狭い幅の版のダイアログは、見出しに幅いっぱいを渡し、ボタンを次の 1 行に並べる", async ({
+  page,
+  api,
+}, testInfo) => {
+  // iPhone の WebKit は自分の幅で測り、デスクトップは iPhone の幅（375）に縮めて測る
+  if (testInfo.project.name === "chromium-desktop") {
+    await page.setViewportSize({ width: 375, height: 667 });
+  }
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, `履歴の見出し ${"長い title ".repeat(6)}`),
+    body: "最初の本文",
+    visibility: "public",
+  });
+  await api.updatePage(created, { body: "二つ目の本文" });
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+
+  const measure = () =>
+    viewer(page).evaluate((dialog) => {
+      const box = (selector: string) => {
+        const element = dialog.querySelector(selector);
+        if (!element) throw new Error(`${selector} が無い`);
+        return element.getBoundingClientRect();
+      };
+      const header = dialog.querySelector(".revision-viewer-header") as HTMLElement;
+      const style = getComputedStyle(header);
+      const inner = header.getBoundingClientRect();
+      return {
+        heading: box(".revision-viewer-heading"),
+        actions: box(".revision-viewer-actions"),
+        buttons: [...dialog.querySelectorAll(".revision-viewer-actions button")].map((button) =>
+          button.getBoundingClientRect(),
+        ),
+        innerWidth:
+          inner.width -
+          Number.parseFloat(style.paddingLeft) -
+          Number.parseFloat(style.paddingRight),
+        pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      };
+    });
+  const expectOneRowBelowHeading = (m: Awaited<ReturnType<typeof measure>>, count: number) => {
+    expect(m.buttons).toHaveLength(count);
+    // ボタンは同じ行に並び、見出しの下に置く
+    const tops = m.buttons.map((button) => Math.round(button.top));
+    expect(new Set(tops).size).toBe(1);
+    for (const button of m.buttons) expect(button.top).toBeGreaterThanOrEqual(m.heading.bottom);
+    // 見出しは、ボタンの欄に押されず、ヘッダーの内側の幅いっぱいを使う
+    expect(m.heading.width).toBeCloseTo(m.innerWidth, 0);
+    expect(m.pageOverflows).toBe(false);
+  };
+
+  // 戻す操作が出ない先頭の版は、閉じるだけの 1 つ
+  await entries(page).first().click();
+  await expect(viewer(page).locator(".diff-row").first()).toBeVisible();
+  expectOneRowBelowHeading(await measure(), 1);
+  await closeViewer(page);
+
+  await entries(page).nth(1).click();
+  await expect(viewer(page).locator(".diff-row").first()).toBeVisible();
+  expectOneRowBelowHeading(await measure(), 2);
+
+  // 戻している間も、ラベルが変わるだけで行は崩れない
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**/api/pages/${created.id}/revisions/*/restore`, async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  await viewer(page).getByRole("button", { name: "この版の本文に戻す" }).click();
+  await expect(viewer(page).getByRole("button", { name: "戻し中…" })).toBeVisible();
+  expectOneRowBelowHeading(await measure(), 2);
+  release();
+  await expect(viewer(page).locator(".revision-viewer-status")).toContainText(
+    "この版の本文に戻しました。",
+  );
+});
+
+test("広い幅の版のダイアログは、見出しの右にボタンを 1 行で並べる", async ({
+  page,
+  api,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "デスクトップの幅で測る");
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, `履歴の見出し ${"長い title ".repeat(6)}`),
+    body: "最初の本文",
+    visibility: "public",
+  });
+  await api.updatePage(created, { body: "二つ目の本文" });
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+  await entries(page).nth(1).click();
+  await expect(viewer(page).locator(".diff-row").first()).toBeVisible();
+
+  const boxes = await viewer(page).evaluate((dialog) => ({
+    headingBottom: dialog.querySelector(".revision-viewer-heading")?.getBoundingClientRect().bottom,
+    buttonTops: [...dialog.querySelectorAll(".revision-viewer-actions button")].map((button) =>
+      Math.round(button.getBoundingClientRect().top),
+    ),
+  }));
+  expect(boxes.buttonTops).toHaveLength(2);
+  expect(new Set(boxes.buttonTops).size).toBe(1);
+  expect(boxes.buttonTops[0] ?? Number.NaN).toBeLessThan(boxes.headingBottom ?? 0);
+});
+
 test("差分と全文で高さが違っても切り替えの位置は動かず、全文を末尾までスクロールしても押せる", async ({
   page,
   api,
