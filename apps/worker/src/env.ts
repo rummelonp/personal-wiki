@@ -13,6 +13,11 @@ export interface Bindings {
    * web には同じ値をビルド時に渡す（scripts/deploy.mjs）。
    */
   SITE_NAME?: string;
+  /**
+   * サイトの説明文。deploy.env の SITE_DESCRIPTION から vars に入る。llms.txt の blockquote に出す。
+   * 無いか規則を満たさなければ出さない（site-name.ts）。
+   */
+  SITE_DESCRIPTION?: string;
   /** apps/web のビルド出力 */
   ASSETS: Fetcher;
   /**

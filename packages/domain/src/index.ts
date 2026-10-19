@@ -41,7 +41,13 @@ export {
   searchQueryLength,
   TRIGRAM_MIN_CHARS,
 } from "./search";
-export { DEFAULT_SITE_NAME, isValidSiteName, SITE_NAME_MAX_CHARS } from "./site-name";
+export {
+  DEFAULT_SITE_NAME,
+  isValidSiteDescription,
+  isValidSiteName,
+  SITE_DESCRIPTION_MAX_CHARS,
+  SITE_NAME_MAX_CHARS,
+} from "./site-name";
 export {
   caseFold,
   foldKeepingUnderscore,

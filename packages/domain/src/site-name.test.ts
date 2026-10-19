@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isValidSiteName, SITE_NAME_MAX_CHARS } from "./site-name";
+import {
+  isValidSiteDescription,
+  isValidSiteName,
+  SITE_DESCRIPTION_MAX_CHARS,
+  SITE_NAME_MAX_CHARS,
+} from "./site-name";
 
 describe("isValidSiteName", () => {
   it("空でない 1 行の名前を、40 文字（code point）まで通す", () => {
@@ -34,6 +39,17 @@ describe("isValidSiteName", () => {
     }
     for (const good of ["a\u200d", "\u200c.", "\u200d😀"]) {
       expect(isValidSiteName(good), JSON.stringify(good)).toBe(true);
+    }
+  });
+});
+
+describe("isValidSiteDescription", () => {
+  it("サイト名と同じ文字の規則で、200 文字（code point）まで通す", () => {
+    expect(isValidSiteDescription("一人用の Markdown wiki。")).toBe(true);
+    expect(isValidSiteDescription("😀".repeat(SITE_DESCRIPTION_MAX_CHARS))).toBe(true);
+    expect(isValidSiteDescription("😀".repeat(SITE_DESCRIPTION_MAX_CHARS + 1))).toBe(false);
+    for (const bad of ["", " ", "\u200d", "a\nb", "a\u2028b", "a\u202eb"]) {
+      expect(isValidSiteDescription(bad), JSON.stringify(bad)).toBe(false);
     }
   });
 });

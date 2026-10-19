@@ -1,4 +1,4 @@
-import { DEFAULT_SITE_NAME, isValidSiteName } from "@personal-wiki/domain";
+import { DEFAULT_SITE_NAME, isValidSiteDescription, isValidSiteName } from "@personal-wiki/domain";
 import type { Bindings } from "./env";
 
 /**
@@ -9,4 +9,13 @@ import type { Bindings } from "./env";
 export function siteNameOf(env: Pick<Bindings, "SITE_NAME">): string {
   const name = env.SITE_NAME?.trim();
   return name !== undefined && isValidSiteName(name) ? name : DEFAULT_SITE_NAME;
+}
+
+/**
+ * llms.txt の blockquote に出すサイトの説明文。deploy.env の SITE_DESCRIPTION が無いか、deploy の検査と
+ * 同じ規則（isValidSiteDescription）を満たさなければ null で、blockquote を出さない。
+ */
+export function siteDescriptionOf(env: Pick<Bindings, "SITE_DESCRIPTION">): string | null {
+  const description = env.SITE_DESCRIPTION?.trim();
+  return description !== undefined && isValidSiteDescription(description) ? description : null;
 }

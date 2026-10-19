@@ -2,13 +2,18 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isValidSiteName } from "@personal-wiki/domain";
+import {
+  isValidSiteDescription,
+  isValidSiteName,
+  SITE_DESCRIPTION_MAX_CHARS,
+} from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { deployArgs, extraArgs, generatedSiteName, migrateArgs, webBuildEnv } from "./deploy.mjs";
 import {
   BASE_CONFIG_PATH,
   composeConfig,
   GENERATED_CONFIG_PATH,
+  isValidSiteDescriptionText,
   isValidSiteNameText,
   readDeployValues,
   stripJsonc,
@@ -21,6 +26,7 @@ const KV_ID = "0123456789abcdef0123456789abcdef";
 const VALUES = {
   hostname: "wiki.test.example",
   siteName: undefined,
+  siteDescription: undefined,
   d1DatabaseName: "my-wiki",
   d1DatabaseId: UUID,
   r2BucketName: "my-wiki-files",
@@ -190,6 +196,55 @@ describe("readDeployValues", () => {
     // 別の行のコメントは SITE_NAME に影響しない
     expect(readDeployValues(`${base}# SITE_NAME=a#b\nSITE_NAME=ok\n`)).toMatchObject({
       values: { siteName: "ok" },
+    });
+  });
+
+  it("SITE_DESCRIPTION は前後の空白を除いて読み、空なら使わない。Worker の検査と同じ規則で弾く", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    expect(readDeployValues(`${base}SITE_DESCRIPTION= 一人用の wiki \n`)).toMatchObject({
+      values: { siteDescription: "一人用の wiki" },
+    });
+    expect(readDeployValues(`${base}SITE_DESCRIPTION=\n`)).toMatchObject({
+      values: { siteDescription: undefined },
+    });
+    const descriptions = [
+      "😀".repeat(SITE_DESCRIPTION_MAX_CHARS),
+      "😀".repeat(SITE_DESCRIPTION_MAX_CHARS + 1),
+      "a\nb",
+      "a\u2028b",
+      "a\u202eb",
+      "\u200d",
+      "👨\u200d👩\u200d👧",
+    ];
+    for (const description of descriptions) {
+      const result = readDeployValues(`${base}SITE_DESCRIPTION="${description}"\n`);
+      expect("values" in result, JSON.stringify(description)).toBe(
+        isValidSiteDescription(description),
+      );
+    }
+    expect(isValidSiteDescription("😀".repeat(SITE_DESCRIPTION_MAX_CHARS + 1))).toBe(false);
+    expect(isValidSiteDescription("a\nb")).toBe(false);
+  });
+
+  it("SITE_DESCRIPTION の禁じる文字の規則は、すべての code point で Worker の検査と一致する", () => {
+    const mismatches: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const char = String.fromCodePoint(cp);
+      if (isValidSiteDescriptionText(char) !== isValidSiteDescription(char)) {
+        mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("SITE_DESCRIPTION も、引用符で囲まない # があると黙って切れるので弾く", () => {
+    const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
+    const result = readDeployValues(`${base}SITE_DESCRIPTION=C# のメモ\n`);
+    expect(JSON.stringify(result)).toContain("SITE_DESCRIPTION に # を含めるとき");
+    expect(JSON.stringify(result)).not.toContain("SITE_NAME に # を含めるとき");
+    expect(readDeployValues(`${base}SITE_DESCRIPTION="C# のメモ"\n`)).toMatchObject({
+      values: { siteDescription: "C# のメモ" },
     });
   });
 
@@ -408,6 +463,12 @@ describe("composeConfig", () => {
     expect(composeConfig(BASE, VALUES).vars).toBeUndefined();
     expect(composeConfig(BASE, { ...VALUES, siteName: "rummelonp wiki" }).vars).toEqual({
       SITE_NAME: "rummelonp wiki",
+    });
+  });
+
+  it("siteDescription は指定されたときだけ vars の SITE_DESCRIPTION に入れる", () => {
+    expect(composeConfig(BASE, { ...VALUES, siteDescription: "一人用の wiki" }).vars).toEqual({
+      SITE_DESCRIPTION: "一人用の wiki",
     });
   });
 

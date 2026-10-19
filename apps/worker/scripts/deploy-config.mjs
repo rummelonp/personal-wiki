@@ -21,6 +21,7 @@ const OAUTH_KV_BINDING = "OAUTH_KV";
  * @typedef {{
  *   hostname: string;
  *   siteName: string | undefined;
+ *   siteDescription: string | undefined;
  *   d1DatabaseName: string;
  *   d1DatabaseId: string;
  *   r2BucketName: string | undefined;
@@ -96,6 +97,7 @@ export function stripJsonc(text) {
 const KNOWN_KEYS = new Set([
   "WIKI_HOSTNAME",
   "SITE_NAME",
+  "SITE_DESCRIPTION",
   "D1_DATABASE_ID",
   "D1_DATABASE_NAME",
   "R2_BUCKET_NAME",
@@ -109,22 +111,36 @@ const KNOWN_KEYS = new Set([
 ]);
 const OWNER_AUTH_KEYS = ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "OWNER_EMAILS"];
 const SITE_NAME_MAX_CHARS = 40;
-const SITE_NAME_FORBIDDEN_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/u;
-const SITE_NAME_VISIBLE_PATTERN = /[^\s\u200c\u200d]/u;
+const SITE_DESCRIPTION_MAX_CHARS = 200;
+const SITE_TEXT_FORBIDDEN_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/u;
+const SITE_TEXT_VISIBLE_PATTERN = /[^\s\u200c\u200d]/u;
+const SITE_TEXT_RULE =
+  "制御文字（改行を含む）、U+2028 と U+2029、書式文字（文字の向きを変える文字やゼロ幅空白など。U+200C と U+200D は除く）を含まず、U+200C と U+200D と空白だけにもならない";
 
 /**
- * packages/domain/src/site-name.ts の isValidSiteName と同じ規則。この script は node でそのまま動かす
- * ので TypeScript の domain を読めず、写している（食い違わないことは deploy-config.test.ts が確かめる）。
- * @param {string} name
+ * packages/domain/src/site-name.ts の isValidSiteName、isValidSiteDescription と同じ規則。この script は
+ * node でそのまま動かすので TypeScript の domain を読めず、写している（食い違わないことは
+ * deploy-config.test.ts が確かめる）。
+ * @param {string} text
+ * @param {number} maxChars
  */
-export function isValidSiteNameText(name) {
+function isValidSiteText(text, maxChars) {
   return (
-    SITE_NAME_VISIBLE_PATTERN.test(name) &&
-    [...name].length <= SITE_NAME_MAX_CHARS &&
-    !SITE_NAME_FORBIDDEN_PATTERN.test(name)
+    SITE_TEXT_VISIBLE_PATTERN.test(text) &&
+    [...text].length <= maxChars &&
+    !SITE_TEXT_FORBIDDEN_PATTERN.test(text)
   );
 }
-const SITE_NAME_LINE_PATTERN = /^\s*(?:export\s+)?SITE_NAME\s*=(.*)$/;
+
+/** @param {string} name */
+export function isValidSiteNameText(name) {
+  return isValidSiteText(name, SITE_NAME_MAX_CHARS);
+}
+
+/** @param {string} description */
+export function isValidSiteDescriptionText(description) {
+  return isValidSiteText(description, SITE_DESCRIPTION_MAX_CHARS);
+}
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
@@ -134,10 +150,12 @@ const KV_NAMESPACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
  * `My`、`C#` は `C`）。切れた値は parseEnv の結果から区別できないので、元の行で見つける。
  * 値が `#` で始まるときは、値が空で後ろがコメントなので含めない。
  * @param {string} envText
+ * @param {string} key
  */
-function siteNameHasUnquotedHash(envText) {
+function hasUnquotedHash(envText, key) {
+  const pattern = new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=(.*)$`);
   for (const line of envText.split(/\r?\n/)) {
-    const raw = SITE_NAME_LINE_PATTERN.exec(line)?.[1]?.trim();
+    const raw = pattern.exec(line)?.[1]?.trim();
     if (raw === undefined || /^["'`]/.test(raw)) continue;
     if (raw.indexOf("#") > 0) return true;
   }
@@ -149,6 +167,7 @@ function siteNameHasUnquotedHash(envText) {
  * 必須の値の欠落と形式の誤りは、すべてまとめて problems で返す。
  * SITE_NAME が空なら siteName は undefined になり、web と Worker は既定の名前を使う。長さと使える文字の
  * 規則に反する名前と、引用符で囲まずに # を含む名前（# 以降が黙って切れる）は problems にする。
+ * SITE_DESCRIPTION も同じ規則で読み（長さの上限だけが違う）、空なら siteDescription は undefined になる。
  * R2_BUCKET_NAME が空なら r2BucketName は undefined になり、R2 を使わない構成にする。
  * OAUTH_KV_NAMESPACE_ID が空なら oauthKvNamespaceId は undefined になり、OAuth を閉じた構成にして警告する。
  * OAUTH_REDIRECT_URIS は、Worker が client の登録で完全一致で比べるので、正規化した形でなければ弾く。
@@ -176,15 +195,21 @@ export function readDeployValues(envText) {
   if (siteName !== undefined) {
     // 改行や制御文字は、HTML の title、MCP の表示名、OAuth の画面に混ざると壊れやすい
     if (!isValidSiteNameText(siteName)) {
-      problems.push(
-        `SITE_NAME は制御文字（改行を含む）、U+2028 と U+2029、書式文字（文字の向きを変える文字やゼロ幅空白など。U+200C と U+200D は除く）を含まず、U+200C と U+200D と空白だけにもならない ${SITE_NAME_MAX_CHARS} 文字以内にしてください`,
-      );
+      problems.push(`SITE_NAME は${SITE_TEXT_RULE} ${SITE_NAME_MAX_CHARS} 文字以内にしてください`);
     }
   }
-  if (siteNameHasUnquotedHash(envText)) {
+  const siteDescription = get("SITE_DESCRIPTION");
+  if (siteDescription !== undefined && !isValidSiteDescriptionText(siteDescription)) {
     problems.push(
-      'SITE_NAME に # を含めるときは、値全体を "" で囲んでください（囲まないと、# 以降が行末のコメントとして読み捨てられます）',
+      `SITE_DESCRIPTION は${SITE_TEXT_RULE} ${SITE_DESCRIPTION_MAX_CHARS} 文字以内にしてください`,
     );
+  }
+  for (const key of ["SITE_NAME", "SITE_DESCRIPTION"]) {
+    if (hasUnquotedHash(envText, key)) {
+      problems.push(
+        `${key} に # を含めるときは、値全体を "" で囲んでください（囲まないと、# 以降が行末のコメントとして読み捨てられます）`,
+      );
+    }
   }
   if (hostname === undefined) problems.push("WIKI_HOSTNAME がありません");
   else if (!HOSTNAME_PATTERN.test(hostname)) {
@@ -221,6 +246,7 @@ export function readDeployValues(envText) {
     values: {
       hostname,
       siteName,
+      siteDescription,
       d1DatabaseId,
       d1DatabaseName: get("D1_DATABASE_NAME") ?? "personal-wiki",
       r2BucketName: get("R2_BUCKET_NAME"),
@@ -342,6 +368,7 @@ function readOwnerAuth(get, problems, warnings) {
  * oauthKvNamespaceId が無いときは、OAuth の KV の binding を設定から外す（Worker は OAuth を閉じる）。
  * siteName があれば vars の SITE_NAME に入れる。web には Worker の vars では届かないので、
  * deploy.mjs が生成した設定から読んでビルドに渡す。
+ * siteDescription があれば vars の SITE_DESCRIPTION に入れる。使うのは Worker（llms.txt）だけである。
  * ownerAuth があれば vars に入れる。無ければ vars に入れず、Worker はログインを拒む。
  * oauthRedirectUris があれば vars の OAUTH_REDIRECT_URIS に入れる。
  * linkRewriteCron は triggers.crons に入れる。無いときも空の配列を入れる。wrangler は crons が
@@ -390,6 +417,9 @@ export function composeConfig(base, values) {
   if (values.accountId !== undefined) config.account_id = values.accountId;
   if (values.siteName !== undefined) {
     config.vars = { ...config.vars, SITE_NAME: values.siteName };
+  }
+  if (values.siteDescription !== undefined) {
+    config.vars = { ...config.vars, SITE_DESCRIPTION: values.siteDescription };
   }
   if (values.ownerAuth !== undefined) {
     config.vars = {
