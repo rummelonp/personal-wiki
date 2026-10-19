@@ -8,7 +8,16 @@ import {
   SITE_DESCRIPTION_MAX_CHARS,
 } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
-import { deployArgs, extraArgs, generatedSiteName, migrateArgs, webBuildEnv } from "./deploy.mjs";
+import {
+  deployArgs,
+  extraArgs,
+  generatedHostname,
+  generatedSiteName,
+  migrateArgs,
+  robotsTxtWithSitemap,
+  SITEMAP_PATH,
+  webBuildEnv,
+} from "./deploy.mjs";
 import {
   BASE_CONFIG_PATH,
   composeConfig,
@@ -551,6 +560,50 @@ describe("web のビルドに渡すサイト名", () => {
     expect(webBuildEnv({ PATH: "/bin", VITE_SITE_NAME: "old" }, undefined)).toEqual({
       PATH: "/bin",
     });
+  });
+});
+
+describe("robots.txt の Sitemap の行", () => {
+  const ROBOTS_TXT_PATH = new URL("../../web/public/robots.txt", import.meta.url);
+
+  it("末尾に空行を挟んで絶対 URL の Sitemap の行を足し、元の行は変えない", () => {
+    const text = "User-agent: *\nDisallow: /api/\n";
+    expect(robotsTxtWithSitemap(text, "wiki.test.example")).toBe(
+      "User-agent: *\nDisallow: /api/\n\nSitemap: https://wiki.test.example/sitemap.xml\n",
+    );
+  });
+
+  it("元の末尾の改行が無くても複数でも、同じ形にする", () => {
+    const expected = "Disallow: /\n\nSitemap: https://h.example/sitemap.xml\n";
+    for (const text of ["Disallow: /", "Disallow: /\n", "Disallow: /\n\n\n"]) {
+      expect(robotsTxtWithSitemap(text, "h.example"), JSON.stringify(text)).toBe(expected);
+    }
+  });
+
+  it("repo の robots.txt に足すと、元の行をすべて残し、最後のグループとの間に空行が入る", () => {
+    const text = readFileSync(ROBOTS_TXT_PATH, "utf8");
+    expect(text).not.toMatch(/^sitemap:/im);
+    const result = robotsTxtWithSitemap(text, "wiki.test.example");
+    expect(result.startsWith(text)).toBe(true);
+    expect(result.slice(text.length)).toBe("\nSitemap: https://wiki.test.example/sitemap.xml\n");
+  });
+
+  it("パスは Worker の SITEMAP_XML_PATH と同じ", () => {
+    const source = readFileSync(new URL("../src/sitemap-xml.ts", import.meta.url), "utf8");
+    expect(source).toContain(`export const SITEMAP_XML_PATH = "${SITEMAP_PATH}";`);
+  });
+
+  it("ホスト名は合成した設定の routes から読む", () => {
+    const dir = mkdtempSync(join(tmpdir(), "deploy-hostname-"));
+    const withRoute = join(dir, "with.json");
+    const without = join(dir, "without.json");
+    writeFileSync(
+      withRoute,
+      JSON.stringify(composeConfig(BASE, { ...VALUES, hostname: "wiki.test.example" })),
+    );
+    writeFileSync(without, JSON.stringify({ name: "x" }));
+    expect(generatedHostname(withRoute)).toBe("wiki.test.example");
+    expect(() => generatedHostname(without)).toThrow(without);
   });
 });
 

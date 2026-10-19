@@ -4,7 +4,7 @@
 // 追跡対象の wrangler.jsonc にはデプロイ先の値が無く、wrangler の自動プロビジョニングが書き戻す先も
 // 生成した設定になるので、追跡ファイルは変わらない。
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,45 @@ export function generatedSiteName(configPath) {
 }
 
 /**
+ * 合成した設定の routes からホスト名を読む。deploy.env の読み直しでなく生成した設定から取るのは、
+ * Worker のデプロイ先と同じ値にするため。
+ * @param {string} configPath
+ * @returns {string}
+ */
+export function generatedHostname(configPath) {
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  const hostname = config.routes?.[0]?.pattern;
+  if (typeof hostname !== "string")
+    throw new Error(`${configPath} に routes のホスト名がありません`);
+  return hostname;
+}
+
+/** Worker の sitemap.xml のパス（src/sitemap-xml.ts の SITEMAP_XML_PATH）。 */
+export const SITEMAP_PATH = "/sitemap.xml";
+
+/**
+ * robots.txt の末尾に `Sitemap:` の行を足した本文。`Sitemap:` は RFC 9309 でグループを終わらせず、
+ * どの User-agent にも属さないが、読み手が直前のグループの行と取り違えないよう空行を挟む。
+ * Google の robots.txt の説明と同じく、URL はスキームとホストを含む絶対 URL にする。
+ * @param {string} text
+ * @param {string} hostname
+ */
+export function robotsTxtWithSitemap(text, hostname) {
+  const body = text.replace(/\n*$/, "\n");
+  return `${body}\nSitemap: https://${hostname}${SITEMAP_PATH}\n`;
+}
+
+/**
+ * ビルドした web の robots.txt に `Sitemap:` の行を足す。行に要るホスト名を repo の
+ * apps/web/public/robots.txt には書けないので、デプロイのときだけ dist に足す。
+ * @param {string} hostname
+ */
+function addSitemapToRobotsTxt(hostname) {
+  const path = fileURLToPath(new URL("../../web/dist/robots.txt", import.meta.url));
+  writeFileSync(path, robotsTxtWithSitemap(readFileSync(path, "utf8"), hostname));
+}
+
+/**
  * web のビルドに渡す環境変数。シェルに残っている VITE_SITE_NAME を拾って、Worker に入れる値と
  * 食い違わないよう、siteName が無いときは取り除く。
  * @param {NodeJS.ProcessEnv} base
@@ -173,6 +212,7 @@ function main(argv) {
   if (command === "migrate") return runWrangler(migrateArgs(configPath, extra));
   const built = buildWeb(generatedSiteName(configPath));
   if (built !== 0) return built;
+  addSitemapToRobotsTxt(generatedHostname(configPath));
   return runWrangler(deployArgs(configPath, extra));
 }
 
