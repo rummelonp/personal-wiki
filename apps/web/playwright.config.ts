@@ -5,6 +5,7 @@ import { E2E_ORIGIN } from "./e2e/support/stack";
  * 主の環境（デスクトップの Chromium、iPhone 幅の WebKit）ではすべてのテストを、従の環境では
  * @smoke を付けたテストだけを走らせる。速さの計測（@perf）は、他のテストと CPU を取り合わないよう
  * 機能のテストがすべて終わった後に走らせる。
+ * Tab の移動先をエンジンごとに確かめるテスト（@keyboard）は、WebKit のデスクトップでも走らせる。
  * 幅を変えて調べるテスト（@widths）は、幅を自分で切り替えるのでデスクトップの Chromium だけで走らせる。
  */
 
@@ -56,7 +57,7 @@ export default defineConfig({
     {
       name: "webkit-desktop",
       use: { ...devices["Desktop Safari"], viewport: { width: 1280, height: 800 } },
-      grep: /@smoke/,
+      grep: /@smoke|@keyboard/,
     },
     {
       name: "perf-chromium-desktop",

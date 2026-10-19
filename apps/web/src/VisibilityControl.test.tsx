@@ -145,6 +145,19 @@ describe("メニューの操作", () => {
     }
   });
 
+  it("Tab で閉じる前に印へ焦点を戻し、移動の既定の動作は止めない", () => {
+    render();
+    act(() => pill().click());
+    expect(document.activeElement).toBe(item("下書き"));
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    act(() => {
+      item("下書き").dispatchEvent(event);
+    });
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(pill());
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("外側を押すと閉じ、何も変えない", () => {
     const onChange = vi.fn(async () => {});
     render({ onChange });

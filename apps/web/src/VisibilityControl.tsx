@@ -223,6 +223,10 @@ export function VisibilityControl({
       return;
     }
     if (event.key === "Tab") {
+      // 項目は既定の動作より先に消えるので、Chromium では Shift+Tab が項目の位置から前の要素を探して印に
+      // 止まる。印に焦点を置いてから既定の動作に任せ、印から押したのと同じ移動先にする。
+      // 移動先を自分で探すと、順次の移動の規則を持つことになる。印へは仮に置くだけなので画面を動かさない
+      pill.current?.focus({ preventScroll: true });
       setMenuOpen(false);
       return;
     }
