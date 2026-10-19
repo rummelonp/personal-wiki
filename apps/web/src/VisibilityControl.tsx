@@ -315,7 +315,11 @@ export function VisibilityControl({
           void apply("public");
         }}
         onClose={() => setConfirming(false)}
-        onClosed={() => pill.current?.focus()}
+        onClosed={() => {
+          // close は遅れて届くので、その間に利用者がメニューなどへ焦点を移していたら奪わない
+          const active = document.activeElement;
+          if (active === null || active === document.body) pill.current?.focus();
+        }}
       />
     </div>
   );
@@ -361,6 +365,9 @@ function PublishDialog({
       className="dialog-frame publish-dialog"
       aria-label="公開の確認"
       onClose={() => {
+        // close は閉じた後の別のタスクで届く。素早く開き直した後に届いた前の開きの close は、
+        // 開き直した確認を閉じてしまうので捨てる
+        if (dialogRef.current?.open) return;
         onClose();
         onClosed();
       }}

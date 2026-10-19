@@ -73,6 +73,19 @@ function key(target: Element, name: string) {
   });
 }
 
+/** やめるで確認を閉じ、本物の close が届くまで待つ */
+async function closeAndWait() {
+  const target = dialog();
+  if (target === null) throw new Error("dialog が無い");
+  const closed = new Promise<void>((resolve) =>
+    target.addEventListener("close", () => resolve(), { once: true }),
+  );
+  await act(async () => button("やめる").click());
+  await act(async () => {
+    await closed;
+  });
+}
+
 async function openConfirm() {
   act(() => pill().click());
   await act(async () => item("公開").click());
@@ -506,5 +519,31 @@ describe("公開の確認の、リンクしている下書き", () => {
     await openConfirm();
     expect(find).toHaveBeenCalledTimes(2);
     expect(draftsBox()?.textContent).toBe("");
+  });
+
+  // close は閉じてから別のタスクで届き、届く時刻は負荷で揺れる。本物の close が届くのを待ってから、遅れて届いた
+  // 前の開きの close を合成して届け、到着の順序によらず競合を再現する
+  it("閉じた dialog の close が開き直した後に届いても、開き直した確認を閉じない", async () => {
+    render();
+    await openConfirm();
+    await closeAndWait();
+    await openConfirm();
+    act(() => {
+      dialog()?.dispatchEvent(new Event("close"));
+    });
+    expect(dialog()?.open).toBe(true);
+    expect(button("やめる")).toBe(document.activeElement);
+  });
+
+  it("閉じた dialog の close が遅れて届いても、その間に開いたメニューから焦点を奪わない", async () => {
+    render();
+    await openConfirm();
+    await closeAndWait();
+    act(() => pill().click());
+    expect(document.activeElement).toBe(item("下書き"));
+    act(() => {
+      dialog()?.dispatchEvent(new Event("close"));
+    });
+    expect(document.activeElement).toBe(item("下書き"));
   });
 });
