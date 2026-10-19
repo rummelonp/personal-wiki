@@ -10,6 +10,7 @@ import { listHeading, listTitleClass, VISIBILITY_FILTER_NOUNS } from "./list-hea
 import { useListSort } from "./list-sort";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
+import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout } from "./Rail";
 import { homeHref, tagHref, type VisibilityFilter } from "./route";
 import { SignInNotice } from "./SignInNotice";
@@ -138,7 +139,7 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
       )}
       <div className="home" aria-busy={busy || undefined}>
         <div className="list-head">
-          <h1 className={listTitleClass(heading)}>{heading}</h1>
+          <h1 className={listTitleClass(heading)}>{breakAtPhrases(heading)}</h1>
           {!searching && <ListSortMenu sort={sort} onChange={setSort} />}
         </div>
         {searching && tag !== "" && (

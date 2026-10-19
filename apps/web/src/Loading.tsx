@@ -5,6 +5,7 @@ import { ListSortButtonFace } from "./ListSortMenu";
 import { listHeading, listTitleClass } from "./list-heading";
 import { readStoredListSort } from "./list-sort";
 import { loadingTitleFor, recallTitle } from "./page-titles";
+import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout } from "./Rail";
 import type { Route } from "./route";
 import { useHoldScrollRestore } from "./scroll-restore";
@@ -214,7 +215,7 @@ export function ListSkeleton({
               <span className="skeleton skeleton-text skeleton-heading" />
             </div>
           ) : (
-            <h1 className={listTitleClass(heading)}>{heading}</h1>
+            <h1 className={listTitleClass(heading)}>{breakAtPhrases(heading)}</h1>
           )}
           {sort !== undefined && (
             <div className="list-sort list-sort-placeholder" aria-hidden="true">
@@ -268,7 +269,7 @@ export function PageSkeleton({
               {title === undefined ? (
                 <span className="skeleton skeleton-text skeleton-title" aria-hidden="true" />
               ) : (
-                title
+                breakAtPhrases(title)
               )}
             </div>
           </div>

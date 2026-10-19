@@ -11,6 +11,7 @@ import { InlineOutline, Outline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import { rememberTitle } from "./page-titles";
 import type { Page } from "./pages-api";
+import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout, RailSection } from "./Rail";
 import { missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { useFragmentJump } from "./use-fragment-jump";
@@ -164,7 +165,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
           </Notice>
         )}
         <h1 id={titleId} className="note-title">
-          {page.title}
+          {breakAtPhrases(page.title)}
         </h1>
         <InlineOutline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
         <BodyEditor

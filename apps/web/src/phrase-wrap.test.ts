@@ -1,7 +1,7 @@
 import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { withPhraseBreaks } from "./phrase-wrap";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { breakAtPhrases, withPhraseBreaks } from "./phrase-wrap";
 
 const html = (node: ReactNode): string => renderToStaticMarkup(createElement(Fragment, null, node));
 
@@ -101,5 +101,23 @@ describe("withPhraseBreaks", () => {
     expect(withPhraseBreaks(" ")).toBe(" ");
     expect(withPhraseBreaks(null)).toBeNull();
     expect(withPhraseBreaks(3)).toBe(3);
+  });
+});
+
+describe("breakAtPhrases", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("auto-phrase を解釈しない描画では、見出しの文字列に <wbr> を置く", () => {
+    vi.stubGlobal("CSS", { supports: () => false });
+    expect(html(breakAtPhrases("画像を添付できませんでした"))).toBe(
+      '<span class="phrased">画像を<wbr/>添付できませんでした</span>',
+    );
+  });
+
+  it("auto-phrase を解釈する描画では、文字列のまま返す", () => {
+    vi.stubGlobal("CSS", { supports: () => true });
+    expect(breakAtPhrases("画像を添付できませんでした")).toBe("画像を添付できませんでした");
   });
 });

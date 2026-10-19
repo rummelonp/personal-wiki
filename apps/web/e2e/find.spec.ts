@@ -258,7 +258,8 @@ test("検索結果の見出しは、開き括弧の行頭の空きを詰める",
   await expect
     .poll(() =>
       heading.evaluate((element) => {
-        const text = element.firstChild as Text;
+        // 文節で切る描画では文字列が span に包まれるので、最初の文字列を探す
+        const text = document.createTreeWalker(element, NodeFilter.SHOW_TEXT).nextNode() as Text;
         const range = document.createRange();
         range.setStart(text, 0);
         range.setEnd(text, 1);

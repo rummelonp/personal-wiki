@@ -4,6 +4,7 @@ import { setDocumentTitle } from "./document-title";
 import { EmptyState } from "./EmptyState";
 import { Link } from "./Link";
 import { openNewPage } from "./new-page";
+import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout } from "./Rail";
 import { homeHref } from "./route";
 
@@ -53,7 +54,7 @@ export function MissingPage({ title, owner, onSettled }: MissingPageProps) {
     <RailLayout rail={<Backlinks target={{ title }} hideEmpty={!owner} onSettled={onSettled} />}>
       <article className="note" aria-labelledby={titleId}>
         <h1 id={titleId} className="note-title">
-          {title}
+          {breakAtPhrases(title)}
         </h1>
         {owner ? (
           <>
