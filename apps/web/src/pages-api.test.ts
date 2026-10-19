@@ -608,14 +608,16 @@ describe("版の履歴", () => {
     ];
     const revisions = authors.map((author, i) => ({ ...summary, version: 10 - i, author }));
     const { calls, fetchFn } = recorder(() => Response.json({ revisions, nextCursor: "5" }));
-    expect(await listRevisions(ID, null, fetchFn)).toEqual({
+    expect(await listRevisions(ID, null, {}, fetchFn)).toEqual({
       ok: true,
       value: { revisions, nextCursor: "5" },
     });
-    await listRevisions(ID, "5", fetchFn);
+    await listRevisions(ID, "5", {}, fetchFn);
+    await listRevisions(ID, "5", { limit: 1 }, fetchFn);
     expect(calls.map((call) => call.path)).toEqual([
       `/api/pages/${ID}/revisions`,
       `/api/pages/${ID}/revisions?cursor=5`,
+      `/api/pages/${ID}/revisions?cursor=5&limit=1`,
     ]);
   });
 
@@ -624,7 +626,7 @@ describe("版の履歴", () => {
       const { fetchFn } = recorder(() =>
         Response.json({ revisions: [{ ...summary, author }], nextCursor: null }),
       );
-      expect(await listRevisions(ID, null, fetchFn), JSON.stringify(author)).toMatchObject({
+      expect(await listRevisions(ID, null, {}, fetchFn), JSON.stringify(author)).toMatchObject({
         ok: false,
         reason: "error",
       });

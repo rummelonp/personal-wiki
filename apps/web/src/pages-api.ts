@@ -694,9 +694,13 @@ function isRevisionSummary(value: unknown): value is RevisionSummary {
 export async function listRevisions(
   id: string,
   cursor: string | null,
+  options: { limit?: number } = {},
   fetchFn: Fetch = fetch,
 ): Promise<ApiResult<RevisionList>> {
-  const query = cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+  const params = new URLSearchParams();
+  if (cursor !== null) params.set("cursor", cursor);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.size === 0 ? "" : `?${params}`;
   const res = await request(fetchFn, `/api/pages/${encodeURIComponent(id)}/revisions${query}`);
   if (isFailure(res)) return res;
   if (!res.ok) return failureOf(res);

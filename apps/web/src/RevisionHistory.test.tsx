@@ -615,7 +615,7 @@ describe("RevisionHistory の版の差分", () => {
     serve(NEW, OLD, rev(1, "題", "共通\n古い行\n最初"));
     const dialog = await open(1);
     await vi.waitFor(() => expect(diffRows(dialog)).toHaveLength(4));
-    expect(listRevisions).toHaveBeenLastCalledWith(ID, "2");
+    expect(listRevisions).toHaveBeenLastCalledWith(ID, "2", { limit: 1 });
     expect(getRevision).toHaveBeenLastCalledWith(ID, 1);
     expect(diffRows(dialog)).toEqual([" 共通", " 古い行", "−最初", "＋末尾"]);
   });

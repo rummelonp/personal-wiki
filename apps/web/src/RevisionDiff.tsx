@@ -48,7 +48,9 @@ async function loadPrevious(pageId: string, ref: PreviousRef): Promise<PreviousS
   if (ref.kind === "known") {
     version = ref.version;
   } else {
-    const list = await listRevisions(pageId, ref.cursor);
+    // 必要なのは続きの先頭の 1 件だけ。cursor は一覧の末尾の版の番号で、版の番号は連続しないため、
+    // 本文の取得を並べるには先に一覧を引いて番号を知る必要がある
+    const list = await listRevisions(pageId, ref.cursor, { limit: 1 });
     if (!list.ok) return failed(list);
     const first = list.value.revisions[0];
     if (first === undefined) return { status: "ready", previous: null };
