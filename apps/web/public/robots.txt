@@ -1,6 +1,20 @@
+# AI の学習用のクローラーには読ませない。public のページの HTML は本文を含むので、JS を実行しなくても
+# 本文まで取れる。チャットの取得（ChatGPT-User、Claude-User など）と検索（Googlebot、OAI-SearchBot など）は
+# 別の User-agent なので、この規則を受けない。
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: CCBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: Bytespider
+User-agent: meta-externalagent
+Disallow: /
+
 # JS を実行するクローラーが本文まで読めるよう、ページの描画で読む API だけを許す。
 # API の JSON には X-Robots-Tag: noindex が付くので、JSON 自体は検索結果に載らない。
+# 上に挙げていない学習用のクローラーには、Content-Signal で学習に使わないよう伝える。
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no
 Allow: /api/me
 Allow: /api/pages/
 Allow: /api/tags
