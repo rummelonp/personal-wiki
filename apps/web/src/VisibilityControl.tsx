@@ -364,6 +364,10 @@ function PublishDialog({
       ref={dialogRef}
       className="dialog-frame publish-dialog"
       aria-label="公開の確認"
+      // Escape や戻る操作（cancel）はブラウザが dialog を閉じる。close を待たずに状態を合わせないと、
+      // close が届くまでの「公開」の選び直しは状態が変わらず、確認が開かない。
+      // preventDefault で閉じるのを止めないのは、利用者の操作を挟まずに繰り返すと Chromium が従わなくなるため
+      onCancel={onClose}
       onClose={() => {
         // close は閉じた後の別のタスクで届く。素早く開き直した後に届いた前の開きの close は、
         // 開き直した確認を閉じてしまうので捨てる

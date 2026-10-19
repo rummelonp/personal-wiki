@@ -106,6 +106,70 @@ test("公開の確認を取り消すと、draft のまま匿名に出ない", as
   expect(await anonymousSees(title)).toBe(false);
 });
 
+/*
+ * dialog の close は、閉じた後の別のタスクで届く。届く時刻は負荷で揺れるので、手元では起きにくい順序を、
+ * close を止めて決まった時点で届けることで作る。ページにあるすべての dialog の close を止める。
+ */
+async function holdDialogClose(page: Page) {
+  await page.addInitScript(() => {
+    const held: Element[] = [];
+    const resend = new WeakSet<Event>();
+    window.addEventListener(
+      "close",
+      (event) => {
+        if (resend.has(event) || !(event.target instanceof HTMLDialogElement)) return;
+        event.stopImmediatePropagation();
+        held.push(event.target);
+      },
+      true,
+    );
+    (window as unknown as { releaseDialogClose: () => void }).releaseDialogClose = () => {
+      for (const target of held.splice(0)) {
+        const event = new Event("close");
+        resend.add(event);
+        target.dispatchEvent(event);
+      }
+    };
+  });
+}
+const releaseDialogClose = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { releaseDialogClose: () => void }).releaseDialogClose(),
+  );
+
+test("確認の close が遅れて届いても、開き直した確認とメニューの焦点に触らない", async ({
+  page,
+  api,
+}, testInfo) => {
+  await holdDialogClose(page);
+  const title = uniqueTitle(testInfo, "close の遅れ");
+  await openDraft(page, title, api);
+
+  // 閉じた直後にメニューを開いても、遅れて届いた close が焦点を印へ奪わず、Escape でメニューが閉じる
+  await choose(page, "公開");
+  await expect(confirmDialog(page).getByRole("button", { name: "やめる" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(pill(page)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(menuItem(page, "下書き")).toBeFocused();
+  await releaseDialogClose(page);
+  await expect(menuItem(page, "下書き")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu(page)).toHaveCount(0);
+
+  // Escape で閉じた直後に選び直しても、遅れて届く close の前に確認が開き、その close で閉じない
+  await choose(page, "公開");
+  await expect(confirmDialog(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await choose(page, "公開");
+  await expect(confirmDialog(page)).toBeVisible();
+  await releaseDialogClose(page);
+  await expect(confirmDialog(page).getByRole("button", { name: "やめる" })).toBeFocused();
+  expect(await anonymousSees(title)).toBe(false);
+});
+
 test("公開範囲のメニューは、キーボードで選べ、Escape と外側の押下で何も変えずに閉じる", async ({
   page,
   api,

@@ -300,6 +300,19 @@ describe("公開の確認", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("Escape で閉じた dialog の close が届く前に公開を選び直しても、確認が開く", async () => {
+    render();
+    await openConfirm();
+    // ブラウザの Escape は cancel の後に閉じ、close は別のタスクで届く。その前に選び直す
+    act(() => {
+      dialog()?.dispatchEvent(new Event("cancel", { cancelable: true }));
+      dialog()?.close();
+    });
+    await openConfirm();
+    expect(dialog()?.open).toBe(true);
+    expect(button("やめる")).toBe(document.activeElement);
+  });
+
   it("枠の外を押すと閉じ、中を押しても閉じない", async () => {
     const onChange = vi.fn(async () => {});
     render({ onChange });
