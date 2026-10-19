@@ -269,7 +269,9 @@ export function VisibilityControl({
         aria-controls={menuOpen ? menuId : undefined}
         aria-busy={pending !== null}
         disabled={locked}
-        onClick={() => setMenuOpen((open) => !open)}
+        // Safari は押しても印に焦点を移さないので、開いたメニューを印で閉じると、焦点を持っていた項目が消えて
+        // body に落ちる。外側の押下は印の押下を内側として扱うので、ここで印へ戻す
+        onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
           event.preventDefault();

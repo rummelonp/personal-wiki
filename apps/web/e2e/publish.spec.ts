@@ -295,6 +295,30 @@ test("公開範囲のメニューを外側で押して閉じると、焦点は�
   await expectShown(page, "draft");
 });
 
+// Safari はボタンを押しても焦点を移さないので、開いたメニューを印で閉じると、焦点を持っていた項目が消える。
+// デスクトップの Safari でも @smoke で確かめる
+test("公開範囲のメニューを印を押して閉じると、焦点は印に戻り、続けてキーボードで操作できる @smoke", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "印を押して閉じる"),
+    body: "印を押して閉じる検査の本文",
+  });
+  await page.goto(`/p/${created.id}`);
+  await expect(pill(page)).toBeVisible();
+
+  await pill(page).click();
+  await expect(menuItem(page, "下書き")).toBeFocused();
+  await pill(page).click();
+  await expect(menu(page)).toHaveCount(0);
+  await expect(pill(page)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(menuItem(page, "下書き")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expectShown(page, "draft");
+});
+
 test("確認を開いている間に他で内容が変わったら、確認を閉じる", async ({ page, api }, testInfo) => {
   const title = uniqueTitle(testInfo, "確認中の更新");
   const id = await openDraft(page, title, api);

@@ -200,6 +200,16 @@ describe("メニューの操作", () => {
     }
   });
 
+  it("印を押して閉じたとき、押しても印に焦点が移らなくても、焦点を印に戻す", () => {
+    render();
+    act(() => pill().click());
+    expect(document.activeElement).toBe(item("下書き"));
+    // 焦点を移さない押下（Safari のボタン）を、programmatic な click で再現する
+    act(() => pill().click());
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(pill());
+  });
+
   it("入力欄を押して閉じたときは、焦点を入力欄に残す", async () => {
     const input = document.createElement("input");
     document.body.append(input);
