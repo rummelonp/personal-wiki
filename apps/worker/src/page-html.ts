@@ -1,5 +1,6 @@
 import { normalizeTitleKey, parsePagePath } from "@personal-wiki/domain";
 import { type Principal, readableVisibilityOf } from "./auth/principal";
+import type { LinkTarget } from "./pages/link-targets";
 import type { PublicPageEntry } from "./pages/search";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
 import { pageUrls } from "./pages/urls";
@@ -99,8 +100,17 @@ export function scriptJson(value: unknown): string {
  * public のページは、SPA が `/api/pages/:id` を引かずに初回の表示を出せるよう、同じ形の JSON を head の
  * 実行されない script にも入れる。version は保存の衝突の検出に使うので、本文と同じ行から読んだ値を組にする。
  * `<pre>` の本文を使い回さないのは、HTML の parser が改行の `\r` を畳み、保存されている本文と一致しないため。
+ *
+ * links は本文がリンクする public のページで、本文の下に正規の URL（絶対 URL）の `<a>` の一覧にして入れる。
+ * `<pre>` の中の `[[...]]` は、HTML を Markdown にして読む取得でもリンクにならないので、行き先をたどれるようにする。
+ * 本文を入れないページ（draft）には、links を渡されても入れない。0 件なら `<ul>` を出さない。
  */
-export function rewritePageHtml(index: Response, page: PageMeta, origin: string): Response {
+export function rewritePageHtml(
+  index: Response,
+  page: PageMeta,
+  origin: string,
+  links: LinkTarget[],
+): Response {
   const urls = pageUrls(origin, page);
   const canonical = urls.titleUrl ?? urls.url;
   const description = page.excerpt === null || page.excerpt === "" ? null : page.excerpt;
@@ -131,11 +141,15 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
       },
     });
   if (body !== null) {
+    const list = linkListHtml(links.length);
     structure.on("#root", {
       element(element) {
-        element.setInnerContent('<article class="page-text"><h1></h1><pre></pre></article>', {
-          html: true,
-        });
+        element.setInnerContent(
+          `<article class="page-text"><h1></h1><pre></pre>${list}</article>`,
+          {
+            html: true,
+          },
+        );
       },
     });
   }
@@ -189,8 +203,34 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
           element.setInnerContent(`\n${body}`);
         },
       });
+    fillLinkList(values, links, origin);
   }
   return values.transform(structure.transform(index));
+}
+
+/**
+ * ページの HTML に入れるリンク先の件数。本文のリンクの数は本文の上限でしか抑えられない（64KiB で 1 万件を超えうる）
+ * ので、HTML の大きさと書き換えの CPU を抑える。超えた分は title_key の順の後ろから外す。
+ */
+export const PAGE_LINK_LIST_LIMIT = 100;
+
+/** 件数分の値を持たない `<li><a></a></li>`。0 件なら空文字列で、`<ul>` を出さない。 */
+function linkListHtml(count: number): string {
+  return count === 0 ? "" : `<ul>${"<li><a></a></li>".repeat(count)}</ul>`;
+}
+
+/** linkListHtml で挿入した `<a>` に、文書の順に正規の URL と title を入れる。 */
+function fillLinkList(rewriter: HTMLRewriter, pages: LinkTarget[], origin: string): void {
+  let next = 0;
+  rewriter.on("#root > article.page-text > ul > li > a", {
+    element(element) {
+      const page = pages[next++];
+      if (page === undefined) return;
+      const urls = pageUrls(origin, { ...page, visibility: "public" });
+      element.setAttribute("href", attributeValue(urls.titleUrl ?? urls.url));
+      element.setInnerContent(page.title);
+    },
+  });
 }
 
 /** `/` の HTML に入れる public のページの件数。ページ送りは作らない。 */
@@ -208,7 +248,7 @@ export function rewriteRootHtml(
   index: Response,
   { siteName, pages, origin }: { siteName: string; pages: PublicPageEntry[]; origin: string },
 ): Response {
-  const list = pages.length === 0 ? "" : `<ul>${"<li><a></a></li>".repeat(pages.length)}</ul>`;
+  const list = linkListHtml(pages.length);
   const structure = new HTMLRewriter().on("#root", {
     element(element) {
       element.setInnerContent(`<article class="page-text"><h1></h1>${list}</article>`, {
@@ -216,21 +256,11 @@ export function rewriteRootHtml(
       });
     },
   });
-  let next = 0;
-  const values = new HTMLRewriter()
-    .on("#root > article.page-text > h1", {
-      element(element) {
-        element.setInnerContent(siteName);
-      },
-    })
-    .on("#root > article.page-text > ul > li > a", {
-      element(element) {
-        const page = pages[next++];
-        if (page === undefined) return;
-        const urls = pageUrls(origin, { ...page, visibility: "public" });
-        element.setAttribute("href", attributeValue(urls.titleUrl ?? urls.url));
-        element.setInnerContent(page.title);
-      },
-    });
+  const values = new HTMLRewriter().on("#root > article.page-text > h1", {
+    element(element) {
+      element.setInnerContent(siteName);
+    },
+  });
+  fillLinkList(values, pages, origin);
   return values.transform(structure.transform(index));
 }

@@ -3,7 +3,12 @@ import { DEFAULT_SITE_NAME } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 import { SESSION_COOKIE_NAME } from "./auth/session";
-import { findPageForPath, ROOT_PAGE_LIST_LIMIT, rewritePageHtml } from "./page-html";
+import {
+  findPageForPath,
+  PAGE_LINK_LIST_LIMIT,
+  ROOT_PAGE_LIST_LIMIT,
+  rewritePageHtml,
+} from "./page-html";
 import { ownerCookie, ownerEnv } from "./test/owner";
 import { type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
@@ -111,19 +116,43 @@ function metaOf(html: string) {
 }
 
 /**
- * `#root` に差し込んだ title と本文を decode して返す。何も差し込んでいなければ null。
- * 本文は、HTML の parser と同じく <pre> の直後の改行を 1 つ除いて読む。
+ * `<ul>` の中の `<li><a>` を、href は絶対 URL のまま、title は文字参照を解いて返す。
+ * 正規表現に当たらない li が混ざっていれば、件数がずれて落ちる。
  */
-function pageTextOf(html: string) {
+function listItemsOf(items: string) {
+  const links = [...items.matchAll(/<li><a href="([^"]*)">([^<]*)<\/a><\/li>/g)].map((item) => ({
+    href: decodeEntities(item[1] ?? ""),
+    title: decodeEntities(item[2] ?? ""),
+  }));
+  expect(links.length).toBe(items.split("<li>").length - 1);
+  return links;
+}
+
+/**
+ * `#root` に差し込んだ title、本文、リンク先の一覧を decode して返す。何も差し込んでいなければ null。
+ * 本文は、HTML の parser と同じく <pre> の直後の改行を 1 つ除いて読む。links は `<ul>` が無ければ null。
+ */
+function pageRootOf(html: string) {
   const root = /<div id="root">([\s\S]*)<\/div><\/body>/.exec(html)?.[1];
   if (root === undefined) throw new Error("no #root");
   if (root === "") return null;
-  const match = /^<article class="page-text"><h1>([^<]*)<\/h1><pre>([^<]*)<\/pre><\/article>$/.exec(
-    root,
-  );
+  const match =
+    /^<article class="page-text"><h1>([^<]*)<\/h1><pre>([^<]*)<\/pre>(?:<ul>(.*)<\/ul>)?<\/article>$/.exec(
+      root,
+    );
   if (match === null) throw new Error(`unexpected #root: ${root}`);
   const pre = decodeEntities(match[2] ?? "");
-  return { title: decodeEntities(match[1] ?? ""), body: pre.startsWith("\n") ? pre.slice(1) : pre };
+  return {
+    title: decodeEntities(match[1] ?? ""),
+    body: pre.startsWith("\n") ? pre.slice(1) : pre,
+    links: match[3] === undefined ? null : listItemsOf(match[3]),
+  };
+}
+
+/** `#root` に差し込んだ title と本文。何も差し込んでいなければ null。 */
+function pageTextOf(html: string) {
+  const root = pageRootOf(html);
+  return root === null ? null : { title: root.title, body: root.body };
 }
 
 const INITIAL_PAGE_PATTERN =
@@ -409,8 +438,10 @@ describe("draft のページの HTML", () => {
         updatedAt: T0,
       },
       ORIGIN,
+      [{ id: draft.id, title: "Linked Secret" }],
     ).text();
     expect(pageTextOf(html)).toBeNull();
+    expect(html).not.toContain("Linked Secret");
     expect(initialPageTextOf(html)).toBeNull();
     expect(html).not.toContain("zebrafish");
   });
@@ -704,14 +735,7 @@ function rootListOf(html: string) {
     root,
   );
   if (match === null) throw new Error(`unexpected #root: ${root}`);
-  const items = match[2] ?? "";
-  const links = [...items.matchAll(/<li><a href="([^"]*)">([^<]*)<\/a><\/li>/g)].map((item) => ({
-    href: decodeEntities(item[1] ?? ""),
-    title: decodeEntities(item[2] ?? ""),
-  }));
-  // 正規表現に当たらない li が混ざっていれば、件数がずれて分かる
-  expect(links.length).toBe(items.split("<li>").length - 1);
-  return { siteName: decodeEntities(match[1] ?? ""), links };
+  return { siteName: decodeEntities(match[1] ?? ""), links: listItemsOf(match[2] ?? "") };
 }
 
 describe("トップの HTML", () => {
@@ -858,5 +882,208 @@ describe("トップの HTML", () => {
     const plan = results.map((row) => row.detail).join("\n");
     expect(plan).toContain("pages_alive_updated");
     expect(plan).not.toContain("TEMP B-TREE");
+  });
+});
+
+describe("ページのリンク先の一覧", () => {
+  async function remove(asOwner: Awaited<ReturnType<typeof setup>>["asOwner"], page: PageJson) {
+    const res = await asOwner(`/api/pages/${page.id}`, "DELETE", undefined, {
+      "If-Match": `"${page.version}"`,
+    });
+    expect(res.status).toBe(204);
+  }
+
+  it("public で削除されていないリンク先だけを、匿名にも owner と token にも title_key の順に並べる", async () => {
+    const { navigate, asOwner, create, setVisibility, cookie, open, draft } = await seed();
+    const gamma = await create("Gamma", "", "public");
+    const beta = await create("beta", "", "public");
+    const gone = await create("Gone", "", "public");
+    await remove(asOwner, gone);
+    const reverted = await create("Reverted", "", "public");
+    await setVisibility(reverted.id, "draft");
+    const hub = await create(
+      "Hub",
+      [
+        "[[Gamma]] [[GAMMA|別名]] [[beta]] [[Open Note]] [[open_note#見出し]]",
+        "[[Hidden Plan]] [[Gone]] [[Reverted]] [[Nowhere]] [[hub]] [[Hub]]",
+      ].join("\n"),
+      "public",
+    );
+
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    for (const headers of [{}, { Cookie: cookie }, { Authorization: `Bearer ${token}` }]) {
+      const label = Object.keys(headers)[0] ?? "anonymous";
+      for (const path of ["/Hub", `/p/${hub.id}`]) {
+        const res = await navigate(path, headers);
+        expect(res.status, `${label} ${path}`).toBe(200);
+        const html = await res.text();
+        expect(pageRootOf(html)?.links, `${label} ${path}`).toEqual([
+          { href: `${ORIGIN}/beta`, title: beta.title },
+          { href: `${ORIGIN}/Gamma`, title: gamma.title },
+          { href: `${ORIGIN}/Open_Note`, title: open.title },
+        ]);
+        for (const id of [draft.id, gone.id, reverted.id]) {
+          expect(html, `${label} ${path} ${id}`).not.toContain(id);
+        }
+      }
+    }
+  });
+
+  it("target_page_id が別の title_key の行に残っていても、同じページを 2 度出さない", async () => {
+    const { navigate, create, open } = await seed();
+    const hub = await create("Hub", "[[Open Note]] [[Old Name]]", "public");
+    await env.DB.prepare(
+      "UPDATE links SET target_page_id = ?2 WHERE source_page_id = ?1 AND target_title_key = 'old name'",
+    )
+      .bind(hub.id, open.id)
+      .run();
+    expect(pageRootOf(await (await navigate("/Hub")).text())?.links).toEqual([
+      { href: `${ORIGIN}/Open_Note`, title: open.title },
+    ]);
+  });
+
+  it("target_page_id が削除済みのページに残っていても、そのページを出さない", async () => {
+    const { navigate, asOwner, create, open } = await seed();
+    const gone = await create("Gone", "", "public");
+    const hub = await create("Hub", "[[Open Note]] [[Gone]]", "public");
+    await remove(asOwner, gone);
+    await env.DB.prepare(
+      "UPDATE links SET target_page_id = ?2 WHERE source_page_id = ?1 AND target_title_key = 'gone'",
+    )
+      .bind(hub.id, gone.id)
+      .run();
+    expect(pageRootOf(await (await navigate("/Hub")).text())?.links).toEqual([
+      { href: `${ORIGIN}/Open_Note`, title: open.title },
+    ]);
+  });
+
+  it("予約語と重なる title は /p/<id> へ、/ を含む title は %2F の URL へリンクする", async () => {
+    const { navigate, create } = await setup();
+    const index = await create("index", "", "public");
+    const api = await create("API", "", "public");
+    await create("Slash/", "", "public");
+    await create("Hub", "[[index]] [[API]] [[Slash/]]", "public");
+    expect(pageRootOf(await (await navigate("/Hub")).text())?.links).toEqual([
+      { href: `${ORIGIN}/p/${api.id}`, title: "API" },
+      { href: `${ORIGIN}/p/${index.id}`, title: "index" },
+      { href: `${ORIGIN}/Slash%2F`, title: "Slash/" },
+    ]);
+  });
+
+  it('title の <、"、& と文字参照に見える表記は要素や属性を壊さず、そのまま読める', async () => {
+    const { navigate, create } = await setup();
+    const title = 'A <b> "c" & d &amp; e </a></li>';
+    await create(title, "", "public");
+    await create("Hub", `[[${title}]]`, "public");
+    const html = await (await navigate("/Hub")).text();
+    // og:description の属性値には本文の < がそのまま入るので、要素として現れうる #root の中だけを確かめる
+    expect(html.slice(html.indexOf('<div id="root">'))).not.toContain("<b>");
+    expect(pageRootOf(html)?.links).toEqual([
+      { href: `${ORIGIN}/${encodeURIComponent(title.replaceAll(" ", "_"))}`, title },
+    ]);
+  });
+
+  it("public のリンク先が無ければ <ul> を出さない", async () => {
+    const { navigate, create } = await seed();
+    await create("Lonely", "[[Hidden Plan]] [[Nowhere]] [[Lonely]]", "public");
+    const html = await (await navigate("/Lonely")).text();
+    expect(pageRootOf(html)).toMatchObject({ title: "Lonely", links: null });
+    expect(html).not.toContain("<ul>");
+  });
+
+  it("draft のページには、owner が開いても public のリンク先の一覧を入れない", async () => {
+    const { navigate, create, cookie } = await seed();
+    const page = await create("Draft Hub", "[[Open Note]]");
+    for (const [path, headers] of [
+      [`/p/${page.id}`, {}],
+      [`/p/${page.id}`, { Cookie: cookie }],
+      ["/Draft_Hub", { Cookie: cookie }],
+    ] as const) {
+      const res = await navigate(path, headers);
+      expect(res.status, path).toBe(200);
+      const html = await res.text();
+      expect(pageRootOf(html), path).toBeNull();
+      expect(html, path).not.toContain("Open_Note");
+    }
+  });
+
+  it(`多くて ${PAGE_LINK_LIST_LIMIT} 件で、title_key の順の後ろから外す`, async () => {
+    const { navigate, create } = await setup();
+    const titles: string[] = [];
+    for (let i = 0; i <= PAGE_LINK_LIST_LIMIT; i++) {
+      titles.push((await create(`Page ${String(i).padStart(3, "0")}`, "", "public")).title);
+    }
+    await create("Hub", titles.map((title) => `[[${title}]]`).join("\n"), "public");
+    const links = pageRootOf(await (await navigate("/Hub")).text())?.links;
+    expect(links?.map((link) => link.title)).toEqual(titles.slice(0, PAGE_LINK_LIST_LIMIT));
+  });
+
+  it("リンク先の取得だけが失敗しても、書き換えない index.html を 503 で返す", async () => {
+    await seed();
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "prepare") {
+          return (sql: string) =>
+            sql.includes("FROM links")
+              ? {
+                  bind: () => ({
+                    all: async () => {
+                      throw new Error("D1 is unavailable");
+                    },
+                  }),
+                }
+              : target.prepare(sql);
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const res = await createApp().request(
+      "/Open_Note",
+      { headers: { Accept: HTML_ACCEPT } },
+      { ...ownerEnv(), ASSETS: assets, DB: db },
+    );
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe(INDEX_HTML);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("public のページだけがリンク先を引き、links の主キーと pages の id をたどって並べ替えない", async () => {
+    const { draft, create } = await seed();
+    const hub = await create("Hub", "[[Open Note]]", "public");
+    const statements: string[] = [];
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            statements.push(sql);
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const open = (path: string) =>
+      createApp().request(
+        path,
+        { headers: { Accept: HTML_ACCEPT } },
+        { ...ownerEnv(), ASSETS: assets, DB: db },
+      );
+
+    expect(pageRootOf(await (await open(`/p/${draft.id}`)).text())).toBeNull();
+    expect(statements).toHaveLength(1);
+    statements.length = 0;
+    expect(pageRootOf(await (await open("/Hub")).text())?.links).toHaveLength(1);
+    expect(statements).toHaveLength(2);
+    const sql = statements[1] ?? "";
+    expect(sql).toContain("FROM links");
+    expect(sql).not.toMatch(/body|excerpt/);
+    const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .bind(hub.id, PAGE_LINK_LIST_LIMIT)
+      .all<{ detail: string }>();
+    const plan = results.map((row) => row.detail).join("\n");
+    expect(plan).not.toContain("TEMP B-TREE");
+    expect(plan).not.toMatch(/^SCAN/m);
   });
 });

@@ -21,6 +21,10 @@ robots.txt は、守る bot にだけ効く申告である。
 public のページの HTML は、本文を `<pre>` と、実行されない `<script type="application/json">` に入れて返す（`apps/worker/src/page-html.ts`）。
 JS を実行しない取得でも本文が読めるので、学習への利用は取得の側では防げず、robots.txt で断る。
 
+本文の下には、本文がリンクするページのうち public で削除されていないもの（自分自身を除き、多くて 100 件）を、正規の URL（絶対 URL）の `<a>` の一覧にして入れる（`apps/worker/src/page-html.ts` の `rewritePageHtml`、引く条件は `apps/worker/src/pages/link-targets.ts`）。
+`<pre>` の中の `[[...]]` はリンクにならないので、JS を実行しない取得でもリンク先をたどれるようにするためである。
+draft のページとまだ無いページへのリンクは出さず、draft のページの HTML には一覧そのものを入れない。
+
 名前が当たるグループがある bot は、`*` のグループに従わない（`*` を使うのは、名前の当たるグループが無いときだけである）。
 このグループに挙げた bot には、`*` のグループの `Allow` と `Content-Signal` は適用されない。
 学習用の bot を足すときは、このグループに `User-agent:` の行を足す。

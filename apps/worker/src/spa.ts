@@ -1,13 +1,16 @@
 import type { Hono } from "hono";
 import { allowAnonymous } from "./auth/middleware";
+import type { Principal } from "./auth/principal";
 import type { AppEnv, Bindings } from "./env";
 import {
   findPageForPath,
+  PAGE_LINK_LIST_LIMIT,
   type PageMeta,
   ROOT_PAGE_LIST_LIMIT,
   rewritePageHtml,
   rewriteRootHtml,
 } from "./page-html";
+import { type LinkTarget, listPublicLinkTargets } from "./pages/link-targets";
 import { listPublicPages, type PublicPageEntry } from "./pages/search";
 import { isWorkerPath } from "./paths";
 import { withHtmlHeaders } from "./security-headers";
@@ -69,6 +72,22 @@ async function rootHtml(env: Bindings, url: URL): Promise<Response> {
 }
 
 /**
+ * パスのページと、public ならその本文がリンクする public のページを引く。リンク先はページの行の id で引くので、
+ * 2 回の読み取りは順に行う。本文を入れない draft と、見つからないページでは 2 回目を引かない。
+ */
+async function findPageWithLinks(
+  db: D1Database,
+  pathname: string,
+  principal: Principal,
+): Promise<{ page: PageMeta; links: LinkTarget[] } | null> {
+  const page = await findPageForPath(db, pathname, principal);
+  if (page === null) return null;
+  if (page.visibility !== "public") return { page, links: [] };
+  const links = await listPublicLinkTargets(db, page.id, { limit: PAGE_LINK_LIST_LIMIT });
+  return { page, links };
+}
+
+/**
  * Static Assets のファイルと、SPA の index.html を返す catch-all。他のルートより後ろに登録する。
  *
  * wrangler.jsonc の run_worker_first で `/assets/*` 以外は Worker が先に受ける。
@@ -93,7 +112,10 @@ async function rootHtml(env: Bindings, url: URL): Promise<Response> {
  * - 書き換えたレスポンスと 404 は index.html と中身が違うので、ASSETS の ETag と Content-Length を外す
  * - D1 の検索が失敗したら、書き換えない index.html を 503 で返す。500 にすると SPA が起動できず、
  *   200 にするとメタ情報の無いページがインデックスに載る。2 の一覧の失敗も 503 にする。一覧の無い 200 だと、
- *   JS を実行しない読み手は public のページが 1 つも無いと読み、検索エンジンもその版を覚える
+ *   JS を実行しない読み手は public のページが 1 つも無いと読み、検索エンジンもその版を覚える。
+ *   ページのリンク先の失敗も 503 にする。一覧の無い 200 だと、索引がリンクの欠けた版を覚え、リンク先を
+ *   見つけ直すのが次の巡回まで遅れる。D1 の失敗はページの行の読み取りと同時に起きやすいので、本文まで
+ *   503 にしても失うものは小さい
  */
 export function registerSpaRoutes(app: Hono<AppEnv>) {
   return app.get("*", allowAnonymous(), async (c, next) => {
@@ -106,8 +128,8 @@ export function registerSpaRoutes(app: Hono<AppEnv>) {
     const accept = acceptKindOf(c.req.header("Accept"));
     if (accept === "other") return next();
 
-    const lookup = settle<PageMeta | null>(
-      findPageForPath(c.env.DB, url.pathname, c.get("principal")),
+    const lookup = settle(
+      findPageWithLinks(c.env.DB, url.pathname, c.get("principal")),
       "spa.page_lookup_failed",
     );
     const index = await c.env.ASSETS.fetch(new URL("/", url));
@@ -115,8 +137,7 @@ export function registerSpaRoutes(app: Hono<AppEnv>) {
     const result = await lookup;
 
     if (!result.ok) return unavailable(index);
-    const page = result.value;
-    if (page === null) {
+    if (result.value === null) {
       if (accept === "any") {
         await index.body?.cancel();
         return next();
@@ -127,7 +148,8 @@ export function registerSpaRoutes(app: Hono<AppEnv>) {
       res.headers.delete("ETag");
       return res;
     }
-    const res = withHtmlHeaders(rewritePageHtml(index, page, url.origin), {
+    const { page, links } = result.value;
+    const res = withHtmlHeaders(rewritePageHtml(index, page, url.origin, links), {
       indexable: page.visibility === "public",
     });
     res.headers.delete("ETag");
