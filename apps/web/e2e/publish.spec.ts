@@ -170,6 +170,47 @@ test("確認の close が遅れて届いても、開き直した確認とメニ�
   expect(await anonymousSees(title)).toBe(false);
 });
 
+test("公開の応答を待つ間に閉じた確認が焦点を持っていても、公開が済んだら焦点を印に戻す", async ({
+  page,
+  api,
+}, testInfo) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/pages/*/visibility", async (route) => {
+    await held;
+    return route.fallback();
+  });
+  const title = uniqueTitle(testInfo, "公開の応答待ちの焦点");
+  await openDraft(page, title, api);
+
+  await choose(page, "公開");
+  await confirmDialog(page).getByRole("button", { name: "公開する" }).click();
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(pill(page)).toBeDisabled();
+  // WebKit は押したボタンでなく dialog 自身に焦点を移し、閉じるときに戻し先の印が無効だと、次の描画まで
+  // 閉じた dialog を activeElement に残す。応答がその間に届く順序は描画の時刻で揺れるので、どのエンジンでも
+  // 同じ状態を作る。閉じた dialog はページを開いた時から DOM にあるので、ほかの判定に効かないよう押した後に入れる
+  await page.evaluate(() => {
+    const real = Object.getOwnPropertyDescriptor(Document.prototype, "activeElement")?.get;
+    if (real === undefined) throw new Error("activeElement の getter が無い");
+    Object.defineProperty(document, "activeElement", {
+      configurable: true,
+      get() {
+        const active = real.call(document) as Element | null;
+        const closed = document.querySelector("dialog.publish-dialog:not([open])");
+        return closed !== null && (active === null || active === document.body) ? closed : active;
+      },
+    });
+    // 無効な印は焦点を保てない
+    (document.activeElement as HTMLElement | null)?.blur();
+  });
+  release();
+  await expectShown(page, "public");
+  await expect(pill(page)).toBeFocused();
+});
+
 test("公開範囲のメニューは、キーボードで選べ、Escape と外側の押下で何も変えずに閉じる", async ({
   page,
   api,

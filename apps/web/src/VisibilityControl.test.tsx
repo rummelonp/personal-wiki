@@ -400,6 +400,46 @@ describe("待っている間と結果", () => {
     expect(document.activeElement).toBe(pill());
   });
 
+  it("閉じた確認の dialog が次の描画まで焦点を持っていても、届いたら焦点を印に戻す", async () => {
+    restoreDelay = setLoadingDelay(0);
+    let finish: () => void = () => {};
+    const onChange = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const real = Object.getOwnPropertyDescriptor(Document.prototype, "activeElement")?.get;
+    if (real === undefined) throw new Error("activeElement の getter が無い");
+    try {
+      render({ onChange });
+      await openConfirm();
+      await act(async () => button("公開する").click());
+      // WebKit は押したボタンでなく dialog 自身に焦点を移し、閉じるときに戻し先の印が無効だと、次の描画まで
+      // 閉じた dialog を activeElement に残す。その間に待ちが終わる順序を、描画の時刻に頼らず作る。
+      // 閉じた dialog は描いた時から DOM にあるので、押した後に入れる
+      Object.defineProperty(document, "activeElement", {
+        configurable: true,
+        get() {
+          const active = real.call(document) as Element | null;
+          const closed = dialog();
+          return closed !== null && !closed.open && (active === null || active === document.body)
+            ? closed
+            : active;
+        },
+      });
+      render({ onChange, pending: "public" });
+      // 無効になった印は焦点を保てない（Chromium は無効になった印に焦点を残す）
+      pill().blur();
+      expect(document.activeElement).toBe(dialog());
+      await act(async () => finish());
+      render({ onChange, visibility: "public" });
+      expect(document.activeElement).toBe(pill());
+    } finally {
+      Reflect.deleteProperty(document, "activeElement");
+    }
+  });
+
   it("待つ間に焦点を入力欄へ移していたら、届いても焦点を印に戻さない", async () => {
     restoreDelay = setLoadingDelay(0);
     let finish: () => void = () => {};

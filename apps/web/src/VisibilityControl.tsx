@@ -35,6 +35,17 @@ const DONE_NOTES: Record<Visibility, string> = {
 /** 結果の読み上げを残しておく時間。残しすぎると、前の操作の結果が今の状態のように読める */
 const NOTE_MS = 6_000;
 
+/**
+ * 焦点がどこにも無いか。WebKit は押したボタンでなく dialog 自身に焦点を移し、閉じるときに戻し先の印が
+ * 無効だと、次の描画まで閉じた dialog を activeElement に残す。body に落ちたかだけを見ると、焦点を戻す
+ * 時刻が描画の前か後かで結果が変わる
+ */
+function focusIsAdrift(active: Element | null): boolean {
+  return (
+    active === null || active === document.body || active.closest("dialog:not([open])") !== null
+  );
+}
+
 /** 確認に出すリンク先の draft。失敗の理由は出し分けないので持たない */
 type LinkedDraftsState = { ok: true; value: readonly LinkedDraft[] } | { ok: false };
 const FIND_FAILED: LinkedDraftsState = { ok: false };
@@ -129,8 +140,7 @@ export function VisibilityControl({
   useEffect(() => {
     if (!refocusPill.current || pending !== null) return;
     refocusPill.current = false;
-    const active = document.activeElement;
-    if (active === null || active === document.body) pill.current?.focus();
+    if (focusIsAdrift(document.activeElement)) pill.current?.focus();
   }, [pending]);
 
   useEffect(() => () => window.clearTimeout(refocusTimer.current), []);
@@ -317,8 +327,7 @@ export function VisibilityControl({
         onClose={() => setConfirming(false)}
         onClosed={() => {
           // close は遅れて届くので、その間に利用者がメニューなどへ焦点を移していたら奪わない
-          const active = document.activeElement;
-          if (active === null || active === document.body) pill.current?.focus();
+          if (focusIsAdrift(document.activeElement)) pill.current?.focus();
         }}
       />
     </div>
