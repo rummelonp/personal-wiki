@@ -117,6 +117,20 @@ function pageTextOf(html: string) {
   return { title: decodeEntities(match[1] ?? ""), body: pre.startsWith("\n") ? pre.slice(1) : pre };
 }
 
+const INITIAL_PAGE_PATTERN =
+  /<head>[\s\S]*<script type="application\/json" id="initial-page">([\s\S]*?)<\/script>[\s\S]*<\/head>/;
+
+/** head の初回の表示用の JSON の中身（script の生のテキスト）。無ければ null。 */
+function initialPageTextOf(html: string): string | null {
+  return INITIAL_PAGE_PATTERN.exec(html)?.[1] ?? null;
+}
+
+/** head の初回の表示用の JSON を、ブラウザの textContent と同じく文字参照を解かずに読む。 */
+function initialPageOf(html: string): unknown {
+  const text = initialPageTextOf(html);
+  return text === null ? null : JSON.parse(text);
+}
+
 async function snapshot(res: Response) {
   return { status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() };
 }
@@ -155,6 +169,34 @@ describe("public のページの HTML", () => {
         expect(pageTextOf(html), path).toEqual({ title: "Rich Note", body });
       }
     }
+  });
+
+  it("匿名にも owner にも、head に /api/pages/:id と同じ JSON を入れる", async () => {
+    const { navigate, call, create, cookie } = await seed();
+    const page = await create("Json Note", "# 見出し\n\n本文の emu の話", "public");
+    const json = await (await call(`/api/pages/${page.id}`)).json<PageJson>();
+    expect(json.version).toBe(page.version);
+    for (const headers of [{}, { Cookie: cookie }]) {
+      for (const path of [`/p/${page.id}`, "/Json_Note", "/json%20note"]) {
+        const html = await (await navigate(path, headers)).text();
+        expect(initialPageOf(html), path).toEqual(json);
+      }
+    }
+  });
+
+  it("保存の後は、head の JSON の本文と version が同じ版にそろう", async () => {
+    const { navigate, asOwner, open } = await seed();
+    const res = await asOwner(
+      `/api/pages/${open.id}`,
+      "PUT",
+      { title: open.title, body: "書き換えた wombat の話" },
+      { "If-Match": `"${open.version}"` },
+    );
+    expect(res.status).toBe(200);
+    const saved = await res.json<PageJson>();
+    expect(saved.version).toBe(open.version + 1);
+    const html = await (await navigate(`/p/${open.id}`)).text();
+    expect(initialPageOf(html)).toEqual(saved);
   });
 
   it("本文の先頭の改行と、空の本文もそのまま差し込む", async () => {
@@ -324,6 +366,7 @@ describe("draft のページの HTML", () => {
     ] as const) {
       const html = await (await navigate(path, headers)).text();
       expect(pageTextOf(html), path).toBeNull();
+      expect(initialPageTextOf(html), path).toBeNull();
       expect(html, path).not.toContain("okapi");
     }
   });
@@ -334,6 +377,7 @@ describe("draft のページの HTML", () => {
     await setVisibility(open.id, "draft");
     const html = await (await navigate(`/p/${open.id}`)).text();
     expect(pageTextOf(html)).toBeNull();
+    expect(initialPageTextOf(html)).toBeNull();
   });
 
   it("draft の本文は D1 から読まず、本文を持つ draft を渡されても差し込まない", async () => {
@@ -345,10 +389,20 @@ describe("draft のページの HTML", () => {
     const index = new Response(INDEX_HTML, { headers: { "Content-Type": "text/html" } });
     const html = await rewritePageHtml(
       index,
-      { id: draft.id, title: "Hidden Plan", visibility: "draft", excerpt: null, body: "zebrafish" },
+      {
+        id: draft.id,
+        title: "Hidden Plan",
+        visibility: "draft",
+        excerpt: null,
+        body: "zebrafish",
+        version: 1,
+        createdAt: T0,
+        updatedAt: T0,
+      },
       ORIGIN,
     ).text();
     expect(pageTextOf(html)).toBeNull();
+    expect(initialPageTextOf(html)).toBeNull();
     expect(html).not.toContain("zebrafish");
   });
 });
@@ -579,6 +633,23 @@ describe("値のエスケープ", () => {
     const html = await (await navigate(`/p/${page.id}`)).text();
     expect(html).not.toContain("<script>");
     expect(pageTextOf(html)).toEqual({ title: "Tricky </h1>", body });
+  });
+
+  it("head の JSON は </script> や <!--、文字参照に見える表記、改行の種類を含んでも script を抜けず、元の値に戻る", async () => {
+    const { navigate, create } = await seed();
+    const title = "Script </script><!-- &amp;";
+    const body =
+      '</script><script>alert(1)</script>\r\n<!-- c --> 1 < 2 & "x" &lt;y&gt;\r' +
+      "\u2028行\u2029段落 </SCRIPT ";
+    const page = await create(title, body, "public");
+    const html = await (await navigate(`/p/${page.id}`)).text();
+    const text = initialPageTextOf(html);
+    expect(text).not.toBeNull();
+    expect(text).not.toMatch(/[<>&\u2028\u2029]/);
+    expect(initialPageOf(html)).toMatchObject({ id: page.id, title, body });
+    // 本文の中の </script> が script を閉じていれば、閉じた後の <script> がそのまま HTML に出る
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("</head><body>");
   });
 
   it("抜粋の改行や制御文字も属性値の中に収まる", async () => {

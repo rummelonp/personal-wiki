@@ -12,10 +12,14 @@ export interface PageMeta {
   excerpt: string | null;
   /** public のページの本文（Markdown）。draft は D1 から読まずに null にする */
   body: string | null;
+  version: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 const META_COLUMNS =
-  "p.id, p.title, p.visibility, e.excerpt, CASE WHEN p.visibility = 'public' THEN p.body END AS body";
+  "p.id, p.title, p.visibility, e.excerpt, CASE WHEN p.visibility = 'public' THEN p.body END AS body, " +
+  "p.version, p.created_at AS createdAt, p.updated_at AS updatedAt";
 const META_FROM = "pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id";
 
 /**
@@ -61,18 +65,39 @@ function attributeValue(value: string): string {
   return value.replaceAll("&", "&amp;");
 }
 
+/** SPA の初回の表示に使うページの JSON を入れる要素の id。apps/web/src/initial-page.ts と合わせる。 */
+export const INITIAL_PAGE_ELEMENT_ID = "initial-page";
+
+/**
+ * `<script>` の中身にする JSON。script の中で終わり（`</script>`）や escaped の状態（`<!--`）を作れるのは
+ * `<` だけで、文字参照は解かれないので、HTML のエスケープではなく JSON の `\u003c` で書く。
+ * `>`、`&`、U+2028、U+2029 も `\uXXXX` にするが、JSON.parse で読む値は変わらない。
+ */
+export function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}
+
 /**
  * index.html の head にページのメタ情報を、public のページなら `#root` に title と本文を差し込む。
  *
  * HTMLRewriter は自分で挿入したマークアップを解析し直さないので、2 段に分ける。1 段目は値を持たない
  * 固定のタグだけを挿入し、2 段目がそのタグに setAttribute や setInnerContent で値を入れる。ページの
  * title や抜粋、本文を HTML の文字列に連結せず、エスケープを HTMLRewriter に任せるため（属性値の `&`
- * だけは attributeValue）。og:image は既定の画像を持たないので出さない。
+ * だけは attributeValue、script の中身は scriptJson）。og:image は既定の画像を持たないので出さない。
  *
  * 本文は JS を実行しない読み手（AI のエージェントやクローラー）向けで、Markdown を変換せずにテキストのまま
  * `<pre>` に入れる。Markdown の解析は本文の大きさに比例して CPU を使い、大きな本文では Workers Free の
  * 10ms を超えうる（MAX_BODY_BYTES の測定）ので、表示のたびには行わない。
  * ブラウザでは styles.css が隠し、SPA の createRoot が `#root` の中身を置き換える。
+ *
+ * public のページは、SPA が `/api/pages/:id` を引かずに初回の表示を出せるよう、同じ形の JSON を head の
+ * 実行されない script にも入れる。version は保存の衝突の検出に使うので、本文と同じ行から読んだ値を組にする。
+ * `<pre>` の本文を使い回さないのは、HTML の parser が改行の `\r` を畳み、保存されている本文と一致しないため。
  */
 export function rewritePageHtml(index: Response, page: PageMeta, origin: string): Response {
   const urls = pageUrls(origin, page);
@@ -89,6 +114,9 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
   if (description !== null) tags.push('<meta property="og:description">');
   if (page.visibility === "draft") tags.push('<meta name="robots" content="noindex">');
   const body = page.visibility === "public" ? page.body : null;
+  if (body !== null) {
+    tags.push(`<script type="application/json" id="${INITIAL_PAGE_ELEMENT_ID}"></script>`);
+  }
 
   const structure = new HTMLRewriter()
     .on("head", {
@@ -134,7 +162,21 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
     });
   }
   if (body !== null) {
+    const initial = {
+      id: page.id,
+      title: page.title,
+      body,
+      visibility: page.visibility,
+      version: page.version,
+      createdAt: page.createdAt,
+      updatedAt: page.updatedAt,
+    };
     values
+      .on(`head > script#${INITIAL_PAGE_ELEMENT_ID}`, {
+        element(element) {
+          element.setInnerContent(scriptJson(initial), { html: true });
+        },
+      })
       .on("#root > article.page-text > h1", {
         element(element) {
           element.setInnerContent(page.title);
