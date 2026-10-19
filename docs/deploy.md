@@ -276,6 +276,8 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
   MCP や REST をエージェントから使うなら無効にする
 - `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続したリクエストも当たる。
   当たると `server returned 429` で止まるので、少し待ってから [operations.md](./operations.md) の手順で続きから再開する
+- クローラーと AI の取得への方針は robots.txt にあり、理由は [crawlers.md](./crawlers.md) に書いてある。
+  ゾーンで bot を止めたり通したりするときは、その方針と食い違わないようにする
 
 ## Web Analytics
 
