@@ -45,7 +45,9 @@ read -rs WIKI_TOKEN && export WIKI_TOKEN
 pnpm derived:rebuild [--remote] [--url <base>] [--after <id>]
 ```
 
-links、tags、添付の参照、一覧の抜粋、検索インデックスを、本文から作り直す。
+links、tags、添付の参照、一覧の抜粋、本文のハッシュ、検索インデックスを、本文から作り直す。
+本文のハッシュは、MCP の一覧の tool（`list_recent`、`search`、`list_backlinks`）と REST の一覧（`/api/pages/recent`、`/api/search`、`/api/pages/:id/backlinks`、`/api/pages/by-title/backlinks`）が各件の `bodySha256` として返す値である。
+ハッシュの無いページは、各件の `bodySha256` が省かれる。
 API は `POST /api/admin/derived/rebuild` で、CPU の上限に収まるよう 1 回の呼び出しで 1 ページずつ進める。
 スクリプトは、レスポンスの `next` が null になるまで繰り返して全ページ分を回す。
 
@@ -57,10 +59,11 @@ API は `POST /api/admin/derived/rebuild` で、CPU の上限に収まるよう 
 
 実行するのは次のときである。
 
-- migration が派生データのテーブルを足した更新のあと（[deploy.md](./deploy.md) の「更新」）
+- migration が派生データのテーブルや列を足した更新のあと（[deploy.md](./deploy.md) の「更新」）。
+  本文のハッシュの列を足した migration（`0011_page_excerpts_body_sha256.sql`）の前からあるページは、回すまで一覧に `bodySha256` が無い
 - Worker を前の版に戻して再デプロイしたあと（[deploy.md](./deploy.md) の「前の版に戻す」）
 - バックアップから復元したあと。
-  復元した直後は、一覧の抜粋、backlink、タグ、検索が空で、匿名には画像も 404 になる（配信の判定に使う添付の参照が空のため）
+  復元した直後は、一覧の抜粋と `bodySha256`、backlink、タグ、検索が空で、匿名には画像も 404 になる（配信の判定に使う添付の参照が空のため）
 
 ## リンクの書き換え
 
@@ -111,7 +114,7 @@ pnpm backup load <dir> [--remote]
 `data.sql` は draft の本文を含むので、扱いに気を付ける。
 
 - ダンプするのは `pages`、`revisions`、`attachments` だけである。
-  links、tags、添付の参照、抜粋、検索インデックスは本文から作り直せるので出さない
+  links、tags、添付の参照、抜粋、本文のハッシュ、検索インデックスは本文から作り直せるので出さない
 - 待っているリンクの書き換え（`link_rewrites`）も出さない。
   復元すると、その分は本文に旧 title のリンクとして残る。
   残さないには、`pnpm backup --remote` の前に `pnpm link-rewrites --remote` で残りを 0 にする
@@ -165,7 +168,7 @@ pnpm -s api-token issue <name> --scopes read,write --remote  # --with-tokens で
 pnpm derived:rebuild --remote  # WIKI_TOKEN に write の token を入れて実行する
 ```
 
-- `derived:rebuild` を回すまで、一覧の抜粋、backlink、タグ、検索は空のままである。
+- `derived:rebuild` を回すまで、一覧の抜粋と `bodySha256`、backlink、タグ、検索は空のままである。
   匿名には画像も 404 になる
 - 画像の中身はバックアップに入らないので、R2 にあるものを使う。
   復元後も、前と同じバケットを `R2_BUCKET_NAME` に書く

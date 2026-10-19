@@ -4,5 +4,6 @@
 --
 -- NULL はまだ計算していないことを表し、一覧はハッシュを返さない。この migration の前からある行は
 -- derived:rebuild を回すまで NULL のまま。列を足すだけなので、当てた D1 でも Worker の前の版はそのまま動く
--- （前の版の INSERT はこの列を書かず NULL になる）。
+-- （前の版の INSERT はこの列を書かず NULL になる）。ただし前の版は本文を書き換えてもこの列を直さないので、
+-- 前の版に戻している間に保存したページは、今の版に戻して derived:rebuild を回すまで古い値が残る。
 ALTER TABLE page_excerpts ADD COLUMN body_sha256 TEXT;
