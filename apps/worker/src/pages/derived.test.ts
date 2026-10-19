@@ -10,10 +10,29 @@ import {
   snapshotDerived,
   tagsOf,
 } from "../test/pages";
+import { bodySha256 } from "./body-hash";
 import { REBUILD_MAX_LIMIT } from "./store";
 
 const IMAGE_A = "AAAAAAAAAAAAAAAAAAAAAA.png";
 const IMAGE_B = "BBBBBBBBBBBBBBBBBBBBBB.jpg";
+
+/** 削除されていないページの page_excerpts.body_sha256。行が無ければ null */
+async function storedHashes() {
+  const { results } = await env.DB.prepare(
+    `SELECT p.id, e.body_sha256 AS stored FROM pages AS p
+     LEFT JOIN page_excerpts AS e ON e.page_id = p.id
+     WHERE p.deleted_at IS NULL ORDER BY p.id`,
+  ).all<{ id: string; stored: string | null }>();
+  return results;
+}
+
+/** 削除されていないページの本文を、保存とは別に bodySha256 でハッシュした値 */
+async function expectedHashes() {
+  const { results } = await env.DB.prepare(
+    "SELECT id, body FROM pages WHERE deleted_at IS NULL ORDER BY id",
+  ).all<{ id: string; body: string }>();
+  return Promise.all(results.map(async ({ id, body }) => ({ id, stored: await bodySha256(body) })));
+}
 
 describe("links と tags", () => {
   it("作成で本文から入り、更新で差分だけ書き換わる", async () => {
@@ -182,6 +201,64 @@ async function rebuildAll(request: Awaited<ReturnType<typeof buildClient>>["requ
   }
 }
 
+describe("page_excerpts.body_sha256", () => {
+  it("本文を書くどの経路でも、保存した本文のハッシュを同じ batch で書く", async () => {
+    const { create, update, request } = await buildClient();
+    const expectInSync = async () => expect(await storedHashes()).toEqual(await expectedHashes());
+
+    const target = await create("Target", "リンク先");
+    const source = await create("Source", "[[Target]] から");
+    await create("Empty");
+    await expectInSync();
+    // 空の本文にもハッシュがある（抜粋と違い、空文字列のハッシュは値として返す）
+    expect((await storedHashes()).every((row) => row.stored !== null)).toBe(true);
+
+    expect((await update(source, "Source", "[[Target]] から 更新")).status).toBe(200);
+    await expectInSync();
+
+    const appended = await request(`/api/pages/${source.id}/append`, {
+      method: "POST",
+      json: { text: "追記" },
+    });
+    expect(appended.status).toBe(200);
+    await expectInSync();
+
+    const restored = await request(`/api/pages/${source.id}/revisions/1/restore`, {
+      method: "POST",
+      headers: { "If-Match": '"3"' },
+    });
+    expect(restored.status).toBe(200);
+    await expectInSync();
+
+    // title を変えると、リンク元の本文の `[[Target]]` を書き換える step が本文を書く
+    expect((await update(target, "Renamed", "リンク先")).status).toBe(200);
+    const step = await request("/api/link-rewrites/step", { method: "POST", json: {} });
+    expect(await step.json()).toMatchObject({ processed: { sourcePageId: source.id } });
+    const rewritten = await env.DB.prepare("SELECT body FROM pages WHERE id = ?1")
+      .bind(source.id)
+      .first<{ body: string }>();
+    expect(rewritten?.body).toContain("[[Renamed]]");
+    await expectInSync();
+  });
+
+  it("rebuild は無いハッシュと食い違うハッシュを、保存で書く値に戻す", async () => {
+    const { create, request } = await buildClient();
+    const a = await create("A", "本文 a");
+    const b = await create("B", "本文 b");
+    const expected = await storedHashes();
+    expect(expected).toEqual(await expectedHashes());
+
+    await env.DB.batch([
+      env.DB.prepare("UPDATE page_excerpts SET body_sha256 = NULL WHERE page_id = ?1").bind(a.id),
+      env.DB.prepare("UPDATE page_excerpts SET body_sha256 = 'stale' WHERE page_id = ?1").bind(
+        b.id,
+      ),
+    ]);
+    await rebuildAll(request);
+    expect(await storedHashes()).toEqual(expected);
+  });
+});
+
 describe("POST /api/admin/derived/rebuild", () => {
   it("壊した派生データを、保存で書いたときと同じ行に戻す", async () => {
     const { create, update, request } = await buildClient();
@@ -290,9 +367,9 @@ describe("rows_written の記録", () => {
     expect(update).toBeLessThan(replace as number);
   });
 
-  it("抜粋が変わらない保存では page_excerpts を書き換えない", async () => {
+  it("本文が変わらない保存では page_excerpts を書き換えない", async () => {
     const { create, update } = await buildClient();
-    // 抜粋は先頭の 120 字なので、それより後ろだけを変える更新では値が変わらない
+    // 抜粋は先頭の 120 字なので、それより後ろだけを変える更新では抜粋が変わらず、ハッシュだけが変わる
     const head = "あ".repeat(130);
     const page = await create("p", `${head}\n最初の末尾`);
     // UPDATE の回数を数える。行が変わらない upsert は WHERE で更新を飛ばすので、trigger は動かない
@@ -306,12 +383,15 @@ describe("rows_written の記録", () => {
     const count = async () =>
       (await env.DB.prepare("SELECT count(*) AS n FROM excerpt_updates").first<{ n: number }>())?.n;
 
-    const tailOnly = await update(page, "p", `${head}\n次の末尾`);
-    expect(tailOnly.status).toBe(200);
+    const titleOnly = await update(page, "q", `${head}\n最初の末尾`);
+    expect(titleOnly.status).toBe(200);
     expect(await count()).toBe(0);
 
-    const changed = await update({ id: page.id, version: 2 }, "p", `い${head.slice(1)}\n次の末尾`);
-    expect(changed.status).toBe(200);
+    const tailOnly = await update({ id: page.id, version: 2 }, "q", `${head}\n次の末尾`);
+    expect(tailOnly.status).toBe(200);
     expect(await count()).toBe(1);
+    expect(await storedHashes()).toEqual([
+      { id: page.id, stored: await bodySha256(`${head}\n次の末尾`) },
+    ]);
   });
 });

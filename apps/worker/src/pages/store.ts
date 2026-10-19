@@ -302,7 +302,7 @@ export async function createPage(
       actor: input.actor,
       now: input.now,
     }),
-    ...derivedStatements(db, id, content.titleKey, deriveValues(content.title, content.body)),
+    ...derivedStatements(db, id, content.titleKey, await deriveValues(content.title, content.body)),
     db.prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ?1`).bind(id),
   ];
   let results: D1Result[];
@@ -425,7 +425,7 @@ async function writeContent(
       now: input.now,
       mergeOwnerSaves: input.mergeOwnerSaves,
     }),
-    ...derivedStatements(db, id, content.titleKey, deriveValues(content.title, content.body)),
+    ...derivedStatements(db, id, content.titleKey, await deriveValues(content.title, content.body)),
     db
       .prepare(
         `UPDATE pages SET title = ?3, title_key = ?4, body = ?5, version = version + 1, updated_at = ?6
@@ -679,7 +679,12 @@ export async function rebuildDerived(db: D1Database, input: RebuildInput): Promi
         row.deleted_at === null
           ? [
               guardStatement(db, row.id, row.version),
-              ...derivedStatements(db, row.id, row.title_key, deriveValues(row.title, row.body)),
+              ...derivedStatements(
+                db,
+                row.id,
+                row.title_key,
+                await deriveValues(row.title, row.body),
+              ),
             ]
           : clearDerivedStatements(db, row.id);
       rowsWritten += sumRowsWritten(await db.batch(statements));

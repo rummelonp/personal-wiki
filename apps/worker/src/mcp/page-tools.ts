@@ -3,6 +3,7 @@ import { MAX_BODY_BYTES, MAX_TITLE_BYTES } from "@personal-wiki/domain";
 import * as z from "zod/v4";
 import { readableVisibilityOf } from "../auth/principal";
 import type { BodyEditFailure } from "../pages/body-edits";
+import { bodySha256 } from "../pages/body-hash";
 import { isPageId } from "../pages/id";
 import {
   appendToPageAs,
@@ -18,7 +19,7 @@ import { findRevision, listRevisions, parseRevisionCursor } from "../pages/revis
 import { LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT } from "../pages/search";
 import { type AppendError, findPageByTitle, type Page, type WriteError } from "../pages/store";
 import { pageUrls } from "../pages/urls";
-import { BODY_SHA256_NOTE, bodySha256 } from "./body-hash";
+import { BODY_SHA256_NOTE } from "./body-hash";
 import { defineTool, toolError, toolResult, type WikiToolContext } from "./tool";
 
 const LIMITS = [

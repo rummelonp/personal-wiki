@@ -1,5 +1,6 @@
 import { foldForSearch, isAttachmentName } from "@personal-wiki/domain";
 import { extractDerived } from "@personal-wiki/markdown";
+import { bodySha256 } from "./body-hash";
 
 /** 派生テーブルに入れる値。可変長の links と tags は JSON 1 個にまとめ、D1 の bind 100 個の上限を避ける。 */
 export interface DerivedValues {
@@ -13,6 +14,8 @@ export interface DerivedValues {
   ftsBody: string;
   /** 一覧に出す本文の先頭。NFKC にはかけず、書かれた表記のまま持つ。行末のタグはチップで別に出すので含めない */
   excerpt: string;
+  /** 本文全体のハッシュ（body-hash.ts）。一覧が本文を読まずに返す */
+  bodySha256: string;
 }
 
 /** 抜粋の長さ（文字数）。超えたら末尾に省略記号を付ける。 */
@@ -30,7 +33,7 @@ function excerptOf(plainText: string): string {
   return plainText;
 }
 
-export function deriveValues(title: string, body: string): DerivedValues {
+export async function deriveValues(title: string, body: string): Promise<DerivedValues> {
   const derived = extractDerived(body);
   return {
     linksJson: JSON.stringify(derived.links.map((link) => link.targetTitleKey)),
@@ -40,12 +43,15 @@ export function deriveValues(title: string, body: string): DerivedValues {
     ftsTitle: foldForSearch(title),
     ftsBody: foldForSearch(derived.plainText),
     excerpt: excerptOf(derived.excerptText),
+    bodySha256: await bodySha256(body),
   };
 }
 
 /**
  * ページ 1 件の派生データ（links、tags、attachment_refs、page_excerpts、pages_fts）を、そのページの body から作った値に合わせる文。
  * 作成、更新、作り直しで同じ文を使い、どの経路で書いても同じ行になるようにする。
+ * 本文を書く batch は必ずこの文を含める。page_excerpts.body_sha256 が本文と別の batch で書かれると、
+ * 一覧が古い本文のハッシュを返す。
  *
  * - pages の行がすでにあり、id と seq が変わらないことを前提にする。pages の title や version には依存しない
  *   ので、更新の batch では pages の UPDATE より前に置ける（版の照合は先頭の guard が済ませる）。
@@ -115,14 +121,16 @@ export function derivedStatements(
         "INSERT OR IGNORE INTO attachment_refs (page_id, name) SELECT ?1, value FROM json_each(?2)",
       )
       .bind(pageId, values.attachmentsJson),
-    // 値が変わらない保存では行を書かない
+    // 値が変わらない保存では行を書かない。抜粋は先頭しか見ないので、末尾だけが変わった本文はハッシュの差で書く。
+    // body_sha256 は作り直し前の行で NULL なので、`<>` でなく IS NOT で比べる（`<>` は NULL との比較が NULL になり、作り直しても埋まらない）
     db
       .prepare(
-        `INSERT INTO page_excerpts (page_id, excerpt) VALUES (?1, ?2)
-         ON CONFLICT (page_id) DO UPDATE SET excerpt = excluded.excerpt
-         WHERE excerpt <> excluded.excerpt`,
+        `INSERT INTO page_excerpts (page_id, excerpt, body_sha256) VALUES (?1, ?2, ?3)
+         ON CONFLICT (page_id) DO UPDATE
+           SET excerpt = excluded.excerpt, body_sha256 = excluded.body_sha256
+           WHERE excerpt <> excluded.excerpt OR body_sha256 IS NOT excluded.body_sha256`,
       )
-      .bind(pageId, values.excerpt),
+      .bind(pageId, values.excerpt, values.bodySha256),
     db
       .prepare("DELETE FROM pages_fts WHERE rowid = (SELECT seq FROM pages WHERE id = ?1)")
       .bind(pageId),

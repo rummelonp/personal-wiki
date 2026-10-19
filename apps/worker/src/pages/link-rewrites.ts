@@ -344,13 +344,13 @@ export async function stepLinkRewrites(
   if (utf8ByteLength(rewrite.body) > MAX_BODY_BYTES) {
     return fail("body_too_large", source.title, guards);
   }
-  const values = deriveValues(source.title, rewrite.body);
+  const values = await deriveValues(source.title, rewrite.body);
   const after = keysOf(values);
   // 書き換え前の値は、まず派生データのテーブルから読む（解析を 1 回減らして CPU を抑える）。テーブルが古いと
   // 食い違うので、そのときだけ本文を解析し直して比べ直し、古いテーブルのせいで捨てないようにする
   if (
     unexpectedChange(await readDerivedKeys(db, sourcePageId), after, renames) &&
-    unexpectedChange(keysOf(deriveValues(source.title, source.body)), after, renames)
+    unexpectedChange(keysOf(await deriveValues(source.title, source.body)), after, renames)
   ) {
     return fail("unexpected_derived_change", source.title, guards);
   }
