@@ -94,6 +94,8 @@ export function VisibilityControl({
   latestFind.current = findLinkedDrafts;
   const previousVisibility = useRef(visibility);
   const refocusPill = useRef(false);
+  // メニューを閉じた後も動くので、メニューの effect の掃除では止めない
+  const refocusTimer = useRef<number | undefined>(undefined);
   // 確認を開くごとに 1 回だけ公開を依頼する。閉じる描画の前に届く 2 回目の押下を捨てる
   const publishRequested = useRef(false);
   const menuId = useId();
@@ -131,6 +133,8 @@ export function VisibilityControl({
     if (active === null || active === document.body) pill.current?.focus();
   }, [pending]);
 
+  useEffect(() => () => window.clearTimeout(refocusTimer.current), []);
+
   useEffect(() => {
     if (note === null) return;
     const timer = window.setTimeout(() => setNote(null), NOTE_MS);
@@ -155,13 +159,25 @@ export function VisibilityControl({
     };
   }, [confirming]);
 
-  // 開いたら選択中の項目に焦点を移す。外側を押したら閉じる（焦点は押した先に任せる）
+  // 開いたら選択中の項目に焦点を移す。外側を押したら閉じ、押した先が焦点を持たない場所なら印に戻す
   useEffect(() => {
     const wrapper = root.current;
     if (!menuOpen || wrapper === null) return;
     menu.current?.querySelector<HTMLElement>("[aria-checked='true']")?.focus();
     function onPointerDown(event: PointerEvent) {
-      if (!wrapper?.contains(event.target as Node)) setMenuOpen(false);
+      if (wrapper?.contains(event.target as Node)) return;
+      setMenuOpen(false);
+      // マウスでは焦点が pointerdown の後の mousedown の既定の動作で移るので、次のタスクで押した先が
+      // 決まった後に見る。body に落ちていたときだけ戻し、入力欄などへ移っていたら奪わない。
+      // タッチでは mousedown が指を離した後まで遅れるので先に印へ戻り、入力欄ならその後で焦点が移る。
+      // 開いたままスクロールすると印が画面の外にあるので、戻すときに画面を動かさない
+      window.clearTimeout(refocusTimer.current);
+      refocusTimer.current = window.setTimeout(() => {
+        const active = document.activeElement;
+        if (active === null || active === document.body) {
+          pill.current?.focus({ preventScroll: true });
+        }
+      }, 0);
     }
     // Safari はボタンを押しても焦点を移さず、項目を押す間に行き先の無い focusout が起きる。
     // 行き先の分かる移動（Tab など）だけで閉じ、押したときは外側の pointerdown に任せる

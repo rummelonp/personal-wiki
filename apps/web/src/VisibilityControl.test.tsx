@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { userEvent } from "vitest/browser";
 import { setLoadingDelay } from "./Loading";
 import type { LinkedDraft } from "./linked-drafts";
 import type { ApiResult } from "./pages-api";
@@ -153,6 +154,40 @@ describe("メニューの操作", () => {
     });
     expect(menu()).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("焦点を持たない外側を押して閉じると、焦点を印に戻す", async () => {
+    const outside = document.createElement("div");
+    outside.style.height = "40px";
+    document.body.append(outside);
+    try {
+      render();
+      act(() => pill().click());
+      expect(document.activeElement).toBe(item("下書き"));
+      const focus = vi.spyOn(pill(), "focus");
+      await userEvent.click(outside);
+      expect(menu()).toBeNull();
+      await vi.waitFor(() => expect(document.activeElement).toBe(pill()));
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("入力欄を押して閉じたときは、焦点を入力欄に残す", async () => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    try {
+      render();
+      act(() => pill().click());
+      await userEvent.click(input);
+      expect(menu()).toBeNull();
+      // 印へ戻す判定は setTimeout(0) の後に走るので、それより後に見る
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(document.activeElement).toBe(input);
+    } finally {
+      input.remove();
+    }
   });
 
   it("焦点が外へ移ると閉じる。行き先の無い focusout では閉じない", () => {
