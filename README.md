@@ -36,6 +36,11 @@ Hono の Worker、Vite/React の SPA、D1、R2 で構成し、AI エージェン
 - AI のエージェント向けの `/llms.txt`。
   サイト名、説明文、public のページへのリンクを、更新日時の新しい順に 100 件まで並べる。
   draft は、owner や API token で取っても入らない
+- 検索エンジン向けの `/sitemap.xml`。
+  public のページの URL と更新日時を、50,000 件まで並べる。
+  Free の CPU の上限では、数千件で返せなくなりうる（[docs/crawlers.md](./docs/crawlers.md)）。
+  draft は、owner や API token で取っても入らない。
+  `pnpm deploy:remote` が robots.txt に `Sitemap:` の行を足す
 
 一人用の設計である。
 ログインできるのは `OWNER_EMAILS` に書いたメールアドレスだけで、複数人での共同編集は想定していない。

@@ -284,8 +284,8 @@ AI のエージェントに wiki の中身を伝える 1〜2 文の要約を想�
 - MCP のクライアントと OAuth の接続は、challenge を解けない。
   国や IP で challenge をかけるルールでは、`/mcp`、`/.well-known/`、`/_auth/oauth/token`、`/_auth/oauth/register` を除く。
   `/_auth/oauth/authorize` の同意画面はブラウザで開くので、challenge を受けても進める
-- AI のエージェントが `/llms.txt` を取るときも、challenge を解けない。
-  challenge をかけるルールでは、`/llms.txt` も除く
+- AI のエージェントが `/llms.txt` を、検索エンジンのクローラーが `/sitemap.xml` を取るときも、challenge を解けない。
+  challenge をかけるルールでは、`/llms.txt` と `/sitemap.xml` も除く
 - Bot Fight Mode は、パスを除いて外すことができず、MCP と API への接続も challenge する。
   MCP や REST をエージェントから使うなら無効にする
 - `/api/` にかかるレート制限には、`derived:rebuild --remote` と `link-rewrites --remote` の連続したリクエストも当たる。
@@ -381,6 +381,9 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
   title_key は title を正規化した値で SQL では元の形に作り直せないので、戻さずに前へ進めて直す。
   戻している間は、`_` を含む title のページを保存するたびに（本文だけの保存でも）title_key が `a_b` に戻り、他のページの `[[a_b]]` を書き換えるリンクの書き換えがキューに入る。
   今の版に戻したら、戻している間に保存したページと、その間にキューに入ったリンクの書き換えの key を、「title の `_` と空白をそろえる migration」の項のそろえ直しの SQL でもう一度そろえ、`derived:rebuild` を実行する
+- `/sitemap.xml` を返さない版に戻すと、`/sitemap.xml` は SPA に落ち、本番の robots.txt からも `Sitemap:` の行が消える。
+  検索エンジンは robots.txt を読み直すまで、HTML の `/sitemap.xml` を取り続ける。
+  戻している間は、title が `sitemap.xml` の public のページが `/sitemap.xml` で開く
 - `0009_api_token_names.sql` を当てたまま、API token を id で識別しない版に戻すと、同じ名前の token の書き込みはどれも actor が `token:<name>` になり、どの token が書いたか区別できない。
   前の版の `pnpm api-token revoke <name>` は、同じ名前の有効な token をすべて失効させる。
   戻している間は同じ名前の token を発行せず、失効は今の版のスクリプトの `revoke --id` で行う

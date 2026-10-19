@@ -3,6 +3,7 @@
 `apps/web/public/robots.txt` の各行の理由と、変えるときに合わせて直す場所を書く。
 robots.txt は誰でも開いて読める公開のファイルなので、理由はファイルに書かず、ここに書く。
 ファイルにはコメントを置かない。
+本番の robots.txt の末尾の `Sitemap:` の行は repo のファイルに無く、デプロイのときに足す（「sitemap.xml」の節）。
 
 ## 方針
 
@@ -78,8 +79,10 @@ JS を実行しない読み手が public のページへたどれるよう、ト
 どちらも public で削除されていないページを、更新日時の新しい順に多くて 100 件並べる（`apps/worker/src/pages/search.ts` の `listPublicPages`、件数は `apps/worker/src/page-html.ts` の `ROOT_PAGE_LIST_LIMIT`）。
 ページ送りは無い。
 owner や API token で取っても、draft は入らない。
+100 件より古いページへは、トップの HTML と `/llms.txt` の末尾から指す `/sitemap.xml` でたどらせる（「sitemap.xml」の節）。
 
 クエリの無い `/` の HTML は、`#root` にサイト名と各ページへのリンクを差し込んで返す（`apps/worker/src/spa.ts` の `rootHtml`、`page-html.ts` の `rewriteRootHtml`）。
+一覧の後ろには `/sitemap.xml` へのリンクを置く。
 ブラウザでは SPA の描画が置き換えるので、人には見えない。
 `/?tag=` や `/?q=` のようにクエリの付いた `/` は絞り込みの画面なので、一覧を差し込まない。
 一覧の取得が失敗したら、一覧を差し込まない HTML を 503 で返す（`spa.ts` の `unavailable`）。
@@ -91,7 +94,10 @@ draft のページとまだ無いページへのリンクは出さず、draft �
 
 `/llms.txt` は、llmstxt.org の書式で wiki の概要と各ページへの入口を AI のエージェントに渡す（`apps/worker/src/llms-txt.ts`）。
 H1 にサイト名、`SITE_DESCRIPTION` を書いたときは blockquote に説明文、`## Pages` の下に `- [title](URL)` を並べ、抜粋は入れない。
-public のページが無いときは、`## Pages` の節ごと出さない。
+続く `## Optional` に `/sitemap.xml` へのリンクを置く。
+llmstxt.org で `Optional` は、短い文脈で足りるなら読み飛ばしてよい節の名前で、100 件より古いページまで要るエージェントだけがたどればよい。
+public のページが無いときは、`/sitemap.xml` も空なので、`## Pages` と `## Optional` の節を出さない。
+トップの HTML も、public のページが無ければ `/sitemap.xml` へのリンクを置かない。
 title の中の `[`、`]`、`\`、文字参照に見える `&` などはリンクが崩れたり化けたりしないよう escape し、URL の `(` と `)` は percent-encoding にする（`packages/markdown/src/markdown-link.ts`）。
 本文は Markdown だが、ブラウザでその場で読めるよう `text/plain; charset=utf-8` で返す。
 クエリは見ない。
@@ -106,6 +112,53 @@ robots.txt は `/llms.txt` を `*` のグループで断っていない。
 ページの title の `llms.txt` は Worker のパスと重なる予約語で、その title のページへのリンクは `/p/<id>` になる（`packages/domain/src/page-path.ts` の `WORKER_PATH_SEGMENTS`）。
 パスを変えるときは、`llms-txt.ts` の `LLMS_TXT_PATH` と `WORKER_PATH_SEGMENTS` を合わせて直す。
 
+## sitemap.xml
+
+`/sitemap.xml` は、sitemaps.org の書式で、public で削除されていないページの正規の URL（絶対 URL）と更新日時を検索エンジンに渡す（`apps/worker/src/sitemap-xml.ts`）。
+`<url>` には `<loc>` と `<lastmod>` だけを入れ、`<changefreq>` と `<priority>` は入れない。
+`<lastmod>` は pages の `updated_at` を W3C Datetime（UTC の秒まで）にした値である。
+`updated_at` は本文の保存のほか、公開範囲の切り替えやリンクの書き換えでも進むので、本文が変わっていなくても新しくなることがある。
+URL は `/llms.txt` と同じ関数で作り、予約語と重なる title は `/p/<id>`、`/` を含む title は `%2F` の URL になる（`apps/worker/src/pages/urls.ts` の `publicPageUrl`）。
+URL は title を percent-encoding した後、残る `'` などの XML の特殊文字を文字参照にする。
+sitemaps.org は `<loc>` を 2,048 文字未満と定めるが、長い title の URL は percent-encoding でそれを超えうる（日本語ではおよそ 220 文字を超える title）。
+超えた URL は検索エンジンが読み飛ばしうるが、ほかのページの読み取りは妨げないので、除かずに出す。
+
+draft、削除済みのページは、owner や API token で取っても入らない。
+public のページが無いときは、`<url>` の無い `<urlset>` を 200 で返す。
+sitemaps.org の XSD は `<url>` を 1 つ以上求めるが、404 や 503 にすると、ルートが無いことや D1 の失敗と区別できない。
+
+件数は、sitemaps.org の 1 ファイルの上限の 50,000 件までにする（`sitemap-xml.ts` の `SITEMAP_URL_LIMIT`）。
+sitemap index は作らず、上限を超えた分は更新日時の古いページから出さない。
+一覧は取得のたびに D1 から 1 回で引き、間に挟まる draft の行も含めて全ページの行を読む。
+sitemaps.org の非圧縮 50MB の上限や 50,000 件より先に、XML を組み立てる CPU 時間（Free の 10ms）が効き、見積もりでは数千件で超えうる。
+超えると一部でなく sitemap 全体がエラーで返らない。
+取得ごとに読む行数は D1 の日次の読み取りの上限にも数える。
+
+キャッシュ、クエリ、HEAD、D1 の失敗の扱いは `/llms.txt` と同じである。
+匿名の応答にも `no-store` を付け、draft に戻したページは次の取得で消える。
+クエリは見ない。
+一覧の取得が失敗したら、空の `<urlset>` の 200 でなく 503 を返す。
+空の 200 だと、検索エンジンは public のページが 1 つも無い sitemap を受け取る。
+`Content-Type` は `application/xml; charset=utf-8` にし、`X-Robots-Tag: noindex` を付ける。
+sitemap は巡回の入口で、検索の結果に載せるものではない。
+
+robots.txt は `/sitemap.xml` を `*` のグループで断っていない。
+名指しの学習用の bot には `Disallow: /` で `/sitemap.xml` も断っている。
+ページの title の `sitemap.xml` は Worker のパスと重なる予約語で、その title のページへのリンクは `/p/<id>` になる（`packages/domain/src/page-path.ts` の `WORKER_PATH_SEGMENTS`）。
+パスを変えるときは、`sitemap-xml.ts` の `SITEMAP_XML_PATH`、`WORKER_PATH_SEGMENTS`、`apps/worker/scripts/deploy.mjs` の `SITEMAP_PATH` を合わせて直す。
+
+### robots.txt の Sitemap の行
+
+本番の robots.txt の末尾には、`Sitemap: https://<WIKI_HOSTNAME>/sitemap.xml` の行が入る。
+`Sitemap:` の URL はスキームとホストを含む絶対 URL でなければならず、repo の `apps/web/public/robots.txt` にはホスト名を書けない。
+そのため `pnpm deploy:remote` が web をビルドした後に、`apps/web/dist/robots.txt` の末尾へ足す（`apps/worker/scripts/deploy.mjs` の `robotsTxtWithSitemap`）。
+ホスト名は、Worker のデプロイ先と同じ値にするため、合成した設定の routes から読む。
+`pnpm dev` と E2E のビルドの robots.txt には、この行が入らない。
+`pnpm deploy:remote` の後は、次にビルドし直すまで、手元の dist の robots.txt にも本番の行が残る。
+
+`Sitemap:` の行は、RFC 9309 ではグループを終わらせず、どの `User-agent` にも属さない（Google の説明も同じ）。
+直前のグループの規則と読み違えられないよう、最後のグループとの間に空行を挟む。
+
 ## robots.txt の Content-Type
 
 `apps/web/public/_headers` は、`/robots.txt` の `Content-Type` を `text/plain; charset=utf-8` にする。
@@ -118,7 +171,8 @@ robots.txt は `/llms.txt` を `*` のグループで断っていない。
 
 robots.txt は、Worker を通さず Static Assets が直接返す（`apps/worker/wrangler.jsonc` の `run_worker_first`）。
 Worker のミドルウェアが付けるヘッダーは付かないので、ヘッダーを足すときは `_headers` に書く。
-robots.txt のファイル名を変えるときは、`_headers`、`run_worker_first`、`packages/domain` の `RESERVED_TITLE_SEGMENTS` も合わせて直す。
+robots.txt のファイル名を変えるときは、`_headers`、`run_worker_first`、`packages/domain` の `RESERVED_TITLE_SEGMENTS`、`apps/worker/scripts/deploy.mjs` の `addSitemapToRobotsTxt` も合わせて直す。
+`addSitemapToRobotsTxt` は web の dist のパスを直に持つので、`wrangler.jsonc` の `assets.directory` を変えるときも合わせて直す。
 
 ゾーンの WAF、レート制限、Bot の設定は robots.txt の外にあり、クローラーの取得にも当たる。
 そこで bot を止めたり通したりするときは、この文書の方針と食い違わないようにする。
