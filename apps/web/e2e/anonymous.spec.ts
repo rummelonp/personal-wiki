@@ -73,7 +73,26 @@ test("Worker がトップの HTML に入れたページの一覧は、SPA が起
   await expect(pageText).toHaveCount(1);
   await expect(pageText.locator("a", { hasText: title })).toHaveCount(1);
   await expect(pageText).not.toContainText(draftTitle);
+  await expect(pageText.locator('a[href$="/sitemap.xml"]')).toHaveCount(1);
   await expect(pageText).toBeHidden();
+});
+
+test("/sitemap.xml は Worker が XML で返し、public のページを入れて draft を入れない", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "sitemap に出るページ");
+  await api.createPage({ title, body: "本文", visibility: "public" });
+  const draftTitle = uniqueTitle(testInfo, "sitemap に出ない下書き");
+  const draft = await api.createPage({ title: draftTitle, body: "本文" });
+
+  const res = await page.request.get("/sitemap.xml");
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toBe("application/xml; charset=utf-8");
+  const xml = await res.text();
+  expect(xml).toContain(`/${encodeURIComponent(title.replaceAll(" ", "_"))}</loc>`);
+  expect(xml).not.toContain(encodeURIComponent(draftTitle.replaceAll(" ", "_")));
+  expect(xml).not.toContain(draft.id);
 });
 
 test("開いているページを quick switcher で選んでも、履歴を積まない", async ({ page }) => {
