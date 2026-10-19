@@ -387,6 +387,8 @@ test("狭い幅の版のダイアログは、見出しに幅いっぱいを渡�
           inner.width -
           Number.parseFloat(style.paddingLeft) -
           Number.parseFloat(style.paddingRight),
+        headerOverflows: header.scrollWidth > header.clientWidth,
+        dialogOverflows: dialog.scrollWidth > dialog.clientWidth,
         pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       };
     });
@@ -398,6 +400,8 @@ test("狭い幅の版のダイアログは、見出しに幅いっぱいを渡�
     for (const button of m.buttons) expect(button.top).toBeGreaterThanOrEqual(m.heading.bottom);
     // 見出しは、ボタンの欄に押されず、ヘッダーの内側の幅いっぱいを使う
     expect(m.heading.width).toBeCloseTo(m.innerWidth, 0);
+    expect(m.headerOverflows).toBe(false);
+    expect(m.dialogOverflows).toBe(false);
     expect(m.pageOverflows).toBe(false);
   };
 
@@ -445,15 +449,31 @@ test("広い幅の版のダイアログは、見出しの右にボタンを 1 �
   await entries(page).nth(1).click();
   await expect(viewer(page).locator(".diff-row").first()).toBeVisible();
 
-  const boxes = await viewer(page).evaluate((dialog) => ({
-    headingBottom: dialog.querySelector(".revision-viewer-heading")?.getBoundingClientRect().bottom,
-    buttonTops: [...dialog.querySelectorAll(".revision-viewer-actions button")].map((button) =>
-      Math.round(button.getBoundingClientRect().top),
-    ),
-  }));
+  const boxes = await viewer(page).evaluate((dialog) => {
+    const header = dialog.querySelector(".revision-viewer-header") as HTMLElement;
+    const buttons = [...dialog.querySelectorAll(".revision-viewer-actions button")].map((button) =>
+      button.getBoundingClientRect(),
+    );
+    return {
+      headingBottom:
+        dialog.querySelector(".revision-viewer-heading")?.getBoundingClientRect().bottom ?? 0,
+      headingRight:
+        dialog.querySelector(".revision-viewer-heading")?.getBoundingClientRect().right ?? 0,
+      buttonTops: buttons.map((button) => Math.round(button.top)),
+      buttonLefts: buttons.map((button) => button.left),
+      headerOverflows: header.scrollWidth > header.clientWidth,
+      dialogOverflows: dialog.scrollWidth > dialog.clientWidth,
+      pageOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    };
+  });
   expect(boxes.buttonTops).toHaveLength(2);
   expect(new Set(boxes.buttonTops).size).toBe(1);
-  expect(boxes.buttonTops[0] ?? Number.NaN).toBeLessThan(boxes.headingBottom ?? 0);
+  expect(boxes.buttonTops[0] ?? Number.NaN).toBeLessThan(boxes.headingBottom);
+  // 長い title がある間も、ボタンは見出しの右に置かれ、ヘッダーとダイアログは横にあふれない
+  expect(Math.min(...boxes.buttonLefts)).toBeGreaterThanOrEqual(boxes.headingRight);
+  expect(boxes.headerOverflows).toBe(false);
+  expect(boxes.dialogOverflows).toBe(false);
+  expect(boxes.pageOverflows).toBe(false);
 });
 
 test("差分と全文で高さが違っても切り替えの位置は動かず、全文を末尾までスクロールしても押せる", async ({
