@@ -1,13 +1,14 @@
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { discardInitialPage, readInitialPage } from "./initial-page";
 import { PageView } from "./PageView";
 import { forgetTitles, rememberTitle } from "./page-titles";
-import { type ApiResult, getPage, type Page } from "./pages-api";
+import { type ApiResult, findPageByTitle, getPage, type Page } from "./pages-api";
 
 vi.mock("./pages-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pages-api")>();
-  return { ...actual, getPage: vi.fn() };
+  return { ...actual, getPage: vi.fn(), findPageByTitle: vi.fn() };
 });
 
 type Shown = (page: Pick<Page, "id" | "title" | "visibility">) => void;
@@ -45,9 +46,12 @@ let container: HTMLElement | null = null;
 beforeEach(() => {
   shown = null;
   vi.mocked(getPage).mockResolvedValue(ok(PAGE));
+  vi.mocked(findPageByTitle).mockResolvedValue(ok(PAGE));
 });
 
 afterEach(() => {
+  discardInitialPage();
+  document.getElementById("initial-page")?.remove();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -207,5 +211,94 @@ describe("PageView の取得の失敗", () => {
     await act(async () => reload()?.click());
     await vi.waitFor(() => expect(container?.querySelector(".reader-stub")).not.toBeNull());
     expect(getPage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("PageView の HTML に入っていたページ", () => {
+  type Target = Parameters<typeof PageView>[0]["target"];
+
+  /** Worker が head に入れる要素を置き、起動時と同じく読み込ませる。 */
+  function embed(page: unknown, text = JSON.stringify(page)) {
+    const script = document.createElement("script");
+    script.type = "application/json";
+    script.id = "initial-page";
+    script.textContent = text;
+    document.head.append(script);
+    readInitialPage("navigate");
+  }
+
+  async function mount(target: Target, { strict = false } = {}) {
+    container = document.createElement("div");
+    document.body.append(container);
+    const mounted = createRoot(container);
+    root = mounted;
+    const view = <PageView target={target} owner={false} attachments={false} />;
+    await act(async () => mounted.render(strict ? <StrictMode>{view}</StrictMode> : view));
+    return mounted;
+  }
+
+  const readerShown = () => container?.querySelector(".reader-stub") !== null;
+
+  it("id でも title でも、URL と同じページなら取得せずに出す", async () => {
+    for (const [path, target] of [
+      [`/p/${PAGE.id}`, { by: "id", id: PAGE.id }],
+      [`/${encodeURIComponent(PAGE.title)}`, { by: "title", title: PAGE.title }],
+    ] as const) {
+      history.replaceState(null, "", path);
+      embed(PAGE);
+      await mount(target);
+      expect(readerShown(), path).toBe(true);
+      act(() => root?.unmount());
+      container?.remove();
+    }
+    expect(getPage).not.toHaveBeenCalled();
+    expect(findPageByTitle).not.toHaveBeenCalled();
+  });
+
+  it("StrictMode で描画と effect が 2 度動いても取得しない", async () => {
+    history.replaceState(null, "", `/p/${PAGE.id}`);
+    embed(PAGE);
+    await mount({ by: "id", id: PAGE.id }, { strict: true });
+    expect(readerShown()).toBe(true);
+    expect(getPage).not.toHaveBeenCalled();
+  });
+
+  it("別のページのものか、壊れているときは取得する", async () => {
+    for (const text of [JSON.stringify({ ...PAGE, id: "BBBBBBBBBBBBBBBBBBBBBB" }), "{"]) {
+      history.replaceState(null, "", `/p/${PAGE.id}`);
+      embed(null, text);
+      await mount({ by: "id", id: PAGE.id });
+      await vi.waitFor(() => expect(readerShown(), text).toBe(true));
+      expect(getPage, text).toHaveBeenCalledWith(PAGE.id);
+      act(() => root?.unmount());
+      container?.remove();
+      vi.mocked(getPage).mockClear();
+    }
+  });
+
+  it("使った後に同じページへ戻ったときと、作り直した画面では取得する", async () => {
+    history.replaceState(null, "", `/p/${PAGE.id}`);
+    embed(PAGE);
+    const mounted = await mount({ by: "id", id: PAGE.id });
+    expect(getPage).not.toHaveBeenCalled();
+
+    const other = "BBBBBBBBBBBBBBBBBBBBBB";
+    history.pushState(null, "", `/p/${other}`);
+    const render = (id: string) =>
+      act(async () =>
+        mounted.render(<PageView target={{ by: "id", id }} owner={false} attachments={false} />),
+      );
+    await render(other);
+    expect(getPage).toHaveBeenLastCalledWith(other);
+    history.pushState(null, "", `/p/${PAGE.id}`);
+    await render(PAGE.id);
+    expect(getPage).toHaveBeenLastCalledWith(PAGE.id);
+
+    // ログイン状態が変わって key で作り直すときも、捨てた後なので取得する
+    act(() => mounted.unmount());
+    container?.remove();
+    vi.mocked(getPage).mockClear();
+    await mount({ by: "id", id: PAGE.id });
+    expect(getPage).toHaveBeenCalledWith(PAGE.id);
   });
 });

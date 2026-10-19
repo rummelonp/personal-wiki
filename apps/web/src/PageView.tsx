@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
+import { discardInitialPage, initialPageFor } from "./initial-page";
 import { PageSkeleton } from "./Loading";
 import { MissingPage, NotFound } from "./NotFound";
 import { Notice } from "./Notice";
@@ -75,6 +76,8 @@ interface PageViewProps {
  * ページの URL を開く。取得の後、アドレスバーを正の URL（public は `/<title>`、draft は `/p/<id>`）に
  * 置き換え、title と公開範囲が変わればまた置き換える。
  *
+ * 直接開いた public のページは、取得せずに HTML に入っていたページで出す（initial-page.ts）。
+ *
  * 置き換えた URL は同じページを指すので、その後のルートの変化では取り直さない。取り直すと
  * 編集中のエディタが作り直され、変換中の文字が消える。
  *
@@ -83,11 +86,11 @@ interface PageViewProps {
  * 作る前の編集の画面をそのまま使い続ける。
  */
 export function PageView({ target, owner, attachments, onOpenPage }: PageViewProps) {
-  const [state, setState] = useState<State>(() =>
-    target.by === "new"
-      ? { status: "new", serial: target.serial, title: target.title }
-      : { status: "loading" },
-  );
+  const [state, setState] = useState<State>(() => {
+    if (target.by === "new") return { status: "new", serial: target.serial, title: target.title };
+    const initial = initialPageFor(target);
+    return initial === null ? { status: "loading" } : { status: "ready", page: initial };
+  });
   /** 取得の失敗から再読み込みで取り直すたびに進める */
   const [attempt, setAttempt] = useState(0);
   /** 表示中のページの正の URL のパス。アドレスバーがこれと同じなら、ルートが変わっても取り直さない */
@@ -98,6 +101,11 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
       : target.by === "title"
         ? `title:${target.title}`
         : `new:${target.serial}`;
+  /**
+   * HTML に入っていたページで表示した target。この target の間は取得しない。StrictMode が effect を
+   * 2 度動かしても取得しないよう、target が変わるまで残す。
+   */
+  const initialKey = useRef(state.status === "ready" ? targetKey : null);
   /** 最後に描いた target。子の effect は描いた後に動くので、その時点の target と URL を突き合わせる */
   const shownTarget = useRef(target);
   useLayoutEffect(() => {
@@ -115,11 +123,14 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: target の中身は targetKey が表し、attempt は再読み込みの印
   useEffect(() => {
+    discardInitialPage();
     if (target.by === "new") {
       shownPath.current = null;
       onOpenPage?.(null);
       return;
     }
+    if (initialKey.current === targetKey) return;
+    initialKey.current = null;
     if (shownPath.current !== null && shownPath.current === window.location.pathname) return;
     shownPath.current = null;
     onOpenPage?.(null);

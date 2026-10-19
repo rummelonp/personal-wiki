@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect, test, uniqueTitle } from "./support/fixtures";
+import { bodyEditor, expect, test, uniqueTitle } from "./support/fixtures";
 import { lineTexts, midPhraseBreaks, misplacedWbrs, phraseSeams } from "./support/line-breaks";
 
 /*
@@ -114,11 +114,20 @@ test.describe("匿名", () => {
   test("読み込み中のスケルトンの title と一覧の見出しも、語の途中で折り返さない", async ({
     page,
     api,
-  }) => {
+  }, testInfo) => {
     const title = longText();
     await api.createPage({ title, body: "本文", visibility: "public" });
+    // public のページは直接開くと HTML に入っていたページで出て取得しないので、リンクを押して SPA の中で移る
+    const start = await api.createPage({
+      title: uniqueTitle(testInfo, "リンク元"),
+      body: `[[${title}]]`,
+      visibility: "public",
+    });
+    await page.goto(titlePath(start.title));
+    const link = bodyEditor(page).getByText(title, { exact: true });
+    await expect(link).toBeVisible();
     const release = await holdResponses(page, (url) => url.pathname === "/api/pages/by-title");
-    await page.goto(titlePath(title));
+    await link.click();
     const heading = page.locator(".note[aria-busy='true'] .note-title");
     await expect(heading).toHaveText(title);
     test.skip(await isAutoPhraseRendering(page), "auto-phrase を解釈する描画は文節で切る");

@@ -180,11 +180,12 @@ test.describe("本文の左端 @widths", () => {
       list.release();
       await page.unrouteAll({ behavior: "ignoreErrors" });
 
+      // public のページは直接開くと HTML に入っていたページで出て取得しないので、draft で読み込み中を出す
       const target = await holdResponses(
         page,
-        (url) => url.pathname === `/api/pages/${seedIds[SEED.server]}`,
+        (url) => url.pathname === `/api/pages/${seedIds[SEED.todo]}`,
       );
-      await page.goto(`/p/${seedIds[SEED.server]}`, { waitUntil: "commit" });
+      await page.goto(`/p/${seedIds[SEED.todo]}`, { waitUntil: "commit" });
       await expect(firstBand).toBeVisible();
       await expectAligned(page, ".main .skeleton", "ページの読み込み中", boxLeft);
       target.release();

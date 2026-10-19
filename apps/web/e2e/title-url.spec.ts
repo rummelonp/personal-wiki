@@ -14,6 +14,20 @@ const canonical = (page: Page) => page.locator('link[rel="canonical"]').getAttri
 /** 空白を含まず `_` を含む title。 */
 const snakeTitle = (testInfo: TestInfo) => uniqueTitle(testInfo, "下線_入り").replace(/\s+/g, "_");
 
+/**
+ * 一覧を開いてから、SPA の中で path へ移る。ブラウザが同じ文書の中で進むときと同じく popstate で移り、
+ * 一覧の行やリンクの onClick（移る前に title の表記を覚える）を通らない。
+ * public のページを直接開くと HTML に入っていたページで出て取得しないので、取得中の画面はこの経路で出す。
+ */
+async function openInApp(page: Page, path: string): Promise<void> {
+  await page.goto("/");
+  await expect(page.locator(".entries .entry").first()).toBeVisible();
+  await page.evaluate((next) => {
+    history.pushState(null, "", next);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, path);
+}
+
 test.describe("owner", () => {
   test("空白を含む title の公開ページは、空白を `_` にした URL になる", async ({
     page,
@@ -77,7 +91,7 @@ test.describe("anonymous", () => {
     }
   });
 
-  test("直接開いた取得中のスケルトンは `_` でつないだ URL を空白にした title で出し、取得後は本当の title になる", async ({
+  test("覚えていない title の URL へ移った取得中のスケルトンは `_` でつないだ URL を空白にした title で出し、取得後は本当の title になる", async ({
     page,
     api,
   }, testInfo) => {
@@ -98,8 +112,9 @@ test.describe("anonymous", () => {
       },
     );
 
-    await page.goto(underscored(spaced), { waitUntil: "commit" });
-    await expect(page.locator(".note-title")).toHaveText(spaced);
+    const skeletonTitle = (target: Page) => target.locator(".note[aria-busy='true'] .note-title");
+    await openInApp(page, underscored(spaced));
+    await expect(skeletonTitle(page)).toHaveText(spaced);
 
     // `_` を含む title も、覚えていなければ取得中は空白で出て、取得後に本当の title になる
     const reopened = await page.context().newPage();
@@ -110,10 +125,12 @@ test.describe("anonymous", () => {
         await route.continue().catch(() => {});
       },
     );
-    await reopened.goto(`/${encodeURIComponent(snake)}`, { waitUntil: "commit" });
-    await expect(reopened.locator(".note-title")).toHaveText(snake.replaceAll("_", " "));
+    await openInApp(reopened, `/${encodeURIComponent(snake)}`);
+    await expect(skeletonTitle(reopened)).toHaveText(snake.replaceAll("_", " "));
 
     release();
+    await expect(skeletonTitle(page)).toHaveCount(0);
+    await expect(skeletonTitle(reopened)).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1, name: spaced, exact: true })).toBeVisible();
     await expect(
       reopened.getByRole("heading", { level: 1, name: snake, exact: true }),

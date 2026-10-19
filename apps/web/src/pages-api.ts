@@ -263,7 +263,7 @@ async function failureOf(res: Response, sent?: SentPage): Promise<ApiFailure> {
   return { ok: false, reason: "error", message: ERROR_MESSAGES[code] ?? statusMessage(res.status) };
 }
 
-function isPage(value: unknown): value is Page {
+export function isPage(value: unknown): value is Page {
   const v = recordOf(value);
   return (
     typeof v.id === "string" &&

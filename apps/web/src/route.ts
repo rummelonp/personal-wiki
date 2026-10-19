@@ -121,7 +121,8 @@ export function openTag(tag: { readonly name: string }): void {
   navigate(tagHref(tag.name));
 }
 
-function subscribe(listener: () => void): () => void {
+/** URL が変わるたび（navigate、戻る、進む）に listener を呼ぶ。返り値で止める。 */
+export function subscribe(listener: () => void): () => void {
   window.addEventListener("popstate", listener);
   window.addEventListener(NAVIGATE_EVENT, listener);
   return () => {
