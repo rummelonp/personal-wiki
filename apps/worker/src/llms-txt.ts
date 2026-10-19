@@ -6,6 +6,7 @@ import { ROOT_PAGE_LIST_LIMIT } from "./page-html";
 import { listPublicPages, type PublicPageEntry } from "./pages/search";
 import { publicPageUrl } from "./pages/urls";
 import { siteDescriptionOf, siteNameOf } from "./site-name";
+import { SITEMAP_XML_PATH } from "./sitemap-xml";
 
 export const LLMS_TXT_PATH = "/llms.txt";
 
@@ -17,7 +18,10 @@ const LLMS_TXT_HEADERS = {
 /**
  * llms.txt（llmstxt.org）の本文。H1 にサイト名、説明文があれば blockquote、`## Pages` の下に public の
  * ページへのリンクを並べる。サイト名と説明文は deploy の検査を通った 1 行の設定値で、owner が Markdown を
- * 書けるよう escape しない。public のページが無ければ `## Pages` の節ごと出さない。
+ * 書けるよう escape しない。
+ * `## Pages` は ROOT_PAGE_LIST_LIMIT で切るので、続く `## Optional` に sitemap.xml へのリンクを置き、残りの
+ * ページへもたどらせる。llmstxt.org で `Optional` は、短い文脈で足りるなら読み飛ばしてよい節である。
+ * public のページが無ければ、sitemap.xml も空なので、どちらの節も出さない。
  */
 export function renderLlmsTxt({
   siteName,
@@ -37,7 +41,11 @@ export function renderLlmsTxt({
     for (const page of pages) {
       lines.push(`- ${markdownLink(page.title, publicPageUrl(origin, page))}`);
     }
-    lines.push("");
+    lines.push("", "## Optional", "");
+    lines.push(
+      `- ${markdownLink("sitemap.xml", `${origin}${SITEMAP_XML_PATH}`)}: all public pages with their last-modified times`,
+      "",
+    );
   }
   return lines.join("\n");
 }

@@ -4,6 +4,7 @@ import type { LinkTarget } from "./pages/link-targets";
 import type { PublicPageEntry } from "./pages/search";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
 import { pageUrls, publicPageUrl } from "./pages/urls";
+import { SITEMAP_XML_PATH } from "./sitemap-xml";
 
 /** SPA の index.html に差し込むページのメタ情報と本文。 */
 export interface PageMeta {
@@ -238,6 +239,8 @@ export const ROOT_PAGE_LIST_LIMIT = 100;
 /**
  * トップの index.html の `#root` に、サイト名と public のページへのリンクの一覧を差し込む。
  * JS を実行しない読み手が、最初の 1 ページへたどれるようにするため。リンクは各ページの正規の URL にする。
+ * 一覧の後ろに sitemap.xml へのリンクを置き、ROOT_PAGE_LIST_LIMIT で切った残りのページへもたどらせる。
+ * public のページが無ければ sitemap.xml も空なので、リンクを置かない。
  *
  * rewritePageHtml と同じく 2 段に分け、1 段目は値を持たない固定のタグだけを件数分挿入し、2 段目が
  * 文書の順にリンクを埋める。title を HTML の文字列に連結しない。
@@ -248,18 +251,25 @@ export function rewriteRootHtml(
   { siteName, pages, origin }: { siteName: string; pages: PublicPageEntry[]; origin: string },
 ): Response {
   const list = linkListHtml(pages.length);
+  const sitemap = pages.length === 0 ? "" : "<p><a>sitemap.xml</a></p>";
   const structure = new HTMLRewriter().on("#root", {
     element(element) {
-      element.setInnerContent(`<article class="page-text"><h1></h1>${list}</article>`, {
+      element.setInnerContent(`<article class="page-text"><h1></h1>${list}${sitemap}</article>`, {
         html: true,
       });
     },
   });
-  const values = new HTMLRewriter().on("#root > article.page-text > h1", {
-    element(element) {
-      element.setInnerContent(siteName);
-    },
-  });
+  const values = new HTMLRewriter()
+    .on("#root > article.page-text > h1", {
+      element(element) {
+        element.setInnerContent(siteName);
+      },
+    })
+    .on("#root > article.page-text > p > a", {
+      element(element) {
+        element.setAttribute("href", attributeValue(`${origin}${SITEMAP_XML_PATH}`));
+      },
+    });
   fillLinkList(values, pages, origin);
   return values.transform(structure.transform(index));
 }

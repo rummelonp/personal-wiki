@@ -725,17 +725,22 @@ describe("値のエスケープ", () => {
 
 /**
  * トップの `#root` に差し込んだサイト名とリンクを decode して返す。何も差し込んでいなければ null。
- * href は絶対 URL のまま、title は文字参照を解いて返す。
+ * href は絶対 URL のまま、title は文字参照を解いて返す。sitemap は一覧の後ろの sitemap.xml へのリンクの href。
  */
 function rootListOf(html: string) {
   const root = /<div id="root">([\s\S]*)<\/div><\/body>/.exec(html)?.[1];
   if (root === undefined) throw new Error("no #root");
   if (root === "") return null;
-  const match = /^<article class="page-text"><h1>([^<]*)<\/h1>(?:<ul>(.*)<\/ul>)?<\/article>$/.exec(
-    root,
-  );
+  const match =
+    /^<article class="page-text"><h1>([^<]*)<\/h1>(?:<ul>(.*)<\/ul>)?(?:<p><a href="([^"]*)">sitemap\.xml<\/a><\/p>)?<\/article>$/.exec(
+      root,
+    );
   if (match === null) throw new Error(`unexpected #root: ${root}`);
-  return { siteName: decodeEntities(match[1] ?? ""), links: listItemsOf(match[2] ?? "") };
+  return {
+    siteName: decodeEntities(match[1] ?? ""),
+    links: listItemsOf(match[2] ?? ""),
+    sitemap: match[3] ?? null,
+  };
 }
 
 describe("トップの HTML", () => {
@@ -769,6 +774,7 @@ describe("トップの HTML", () => {
           { href: `${ORIGIN}/Open_Note`, title: "Open Note" },
           { href: `${ORIGIN}/Second`, title: second.title },
         ],
+        sitemap: `${ORIGIN}/sitemap.xml`,
       });
       for (const word of [draft.id, "Hidden Plan", gone.id, "Gone", reverted.id, "Reverted"]) {
         expect(html, `${label} ${word}`).not.toContain(word);
@@ -776,7 +782,7 @@ describe("トップの HTML", () => {
     }
   });
 
-  it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外す`, async () => {
+  it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外し、外したページへは sitemap.xml でたどらせる`, async () => {
     const { navigate, create } = await setup();
     const titles: string[] = [];
     for (let i = 0; i <= ROOT_PAGE_LIST_LIMIT; i++) {
@@ -784,6 +790,9 @@ describe("トップの HTML", () => {
     }
     const list = rootListOf(await (await navigate("/")).text());
     expect(list?.links.map((link) => link.title)).toEqual(titles.slice(1).reverse());
+    expect(list?.sitemap).toBe(`${ORIGIN}/sitemap.xml`);
+    const sitemap = await (await navigate("/sitemap.xml")).text();
+    expect(sitemap).toContain(`<loc>${ORIGIN}/Page_0</loc>`);
   });
 
   it('title の <、"、& と文字参照に見える表記は要素や属性を壊さず、そのまま読める', async () => {
@@ -809,12 +818,13 @@ describe("トップの HTML", () => {
     ]);
   });
 
-  it("public のページが無ければサイト名だけを差し込む", async () => {
+  it("public のページが無ければサイト名だけを差し込み、sitemap.xml へのリンクも置かない", async () => {
     const { navigate, create } = await setup();
     await create("Hidden Plan", "下書き");
     const html = await (await navigate("/")).text();
-    expect(rootListOf(html)).toEqual({ siteName: DEFAULT_SITE_NAME, links: [] });
+    expect(rootListOf(html)).toEqual({ siteName: DEFAULT_SITE_NAME, links: [], sitemap: null });
     expect(html).not.toContain("<ul>");
+    expect(html).not.toContain("sitemap.xml");
   });
 
   it("匿名には no-cache で ETag を付けず、noindex を付けない。owner には private, no-store", async () => {

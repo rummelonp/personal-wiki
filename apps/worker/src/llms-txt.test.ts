@@ -46,14 +46,20 @@ async function setup(overrides: { SITE_NAME?: string; SITE_DESCRIPTION?: string 
   return { cookie, call, asOwner, create, setVisibility };
 }
 
+const OPTIONAL = [
+  "## Optional",
+  "",
+  `- [sitemap.xml](${ORIGIN}/sitemap.xml): all public pages with their last-modified times`,
+  "",
+];
+
 /** `## Pages` の下のリンクの行。節が無ければ空。 */
 function pageLines(text: string): string[] {
   const start = text.indexOf("\n## Pages\n\n");
   if (start === -1) return [];
-  return text
-    .slice(start + "\n## Pages\n\n".length)
-    .split("\n")
-    .filter((line) => line !== "");
+  const rest = text.slice(start + "\n## Pages\n\n".length);
+  const end = rest.indexOf("\n## ");
+  return (end === -1 ? rest : rest.slice(0, end)).split("\n").filter((line) => line !== "");
 }
 
 describe("/llms.txt", () => {
@@ -92,6 +98,7 @@ describe("/llms.txt", () => {
           `- [Open Note](${ORIGIN}/Open_Note)`,
           `- [Second](${ORIGIN}/Second)`,
           "",
+          ...OPTIONAL,
         ].join("\n"),
       );
       for (const word of [draft.id, "Hidden Plan", gone.id, "Gone", reverted.id, "Reverted"]) {
@@ -146,6 +153,7 @@ describe("/llms.txt", () => {
         "",
         `- [Open Note](${ORIGIN}/Open_Note)`,
         "",
+        ...OPTIONAL,
       ].join("\n"),
     );
     for (const description of ["a\nb", "a\u202eb", "😀".repeat(201), " "]) {
@@ -178,19 +186,27 @@ describe("/llms.txt", () => {
     ]);
   });
 
-  it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外す`, async () => {
+  it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外し、外したページへは ## Optional の sitemap.xml でたどらせる`, async () => {
     const { call, create } = await setup();
     const titles: string[] = [];
     for (let i = 0; i <= ROOT_PAGE_LIST_LIMIT; i++) {
       titles.push((await create(`Page ${i}`, "public")).title);
     }
-    const lines = pageLines(await (await call("/llms.txt")).text());
-    expect(lines).toEqual(
+    const text = await (await call("/llms.txt")).text();
+    expect(pageLines(text)).toEqual(
       titles
         .slice(1)
         .reverse()
         .map((title) => `- [${title}](${ORIGIN}/${title.replace(" ", "_")})`),
     );
+    expect(text.endsWith(`\n\n${OPTIONAL.join("\n")}`)).toBe(true);
+    expect(await (await call("/sitemap.xml")).text()).toContain(`<loc>${ORIGIN}/Page_0</loc>`);
+  });
+
+  it("public のページが無ければ H1 と説明文だけを返し、## Pages と ## Optional の節を出さない", async () => {
+    const { call, create } = await setup({ SITE_DESCRIPTION: "一人用の wiki。" });
+    await create("Hidden Plan");
+    expect(await (await call("/llms.txt")).text()).toBe("# personal-wiki\n\n> 一人用の wiki。\n");
   });
 
   it("クエリが付いても同じ本文を返し、HEAD は GET と同じステータスとヘッダーを本文なしで返す", async () => {
