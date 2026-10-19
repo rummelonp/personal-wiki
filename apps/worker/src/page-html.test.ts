@@ -1,8 +1,9 @@
 import { env } from "cloudflare:workers";
+import { DEFAULT_SITE_NAME } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 import { SESSION_COOKIE_NAME } from "./auth/session";
-import { findPageForPath, rewritePageHtml } from "./page-html";
+import { findPageForPath, ROOT_PAGE_LIST_LIMIT, rewritePageHtml } from "./page-html";
 import { ownerCookie, ownerEnv } from "./test/owner";
 import { type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
@@ -18,12 +19,20 @@ const INDEX_HTML =
   '<!doctype html><html lang="ja"><head><meta charset="UTF-8" /><title>wiki</title></head>' +
   '<body><div id="root"></div></body></html>';
 
+// Static Assets と同じく、ETag が合う条件付きのリクエストには 304 を返す。
 const assets = {
   fetch: async (input: RequestInfo | URL) => {
     const { pathname } = new URL(String(input instanceof Request ? input.url : input));
     if (pathname !== "/") return new Response("not found", { status: 404 });
+    if (input instanceof Request && input.headers.get("If-None-Match") === '"index"') {
+      return new Response(null, { status: 304, headers: { ETag: '"index"' } });
+    }
     return new Response(INDEX_HTML, {
-      headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"index"' },
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        ETag: '"index"',
+        "Content-Length": String(new TextEncoder().encode(INDEX_HTML).length),
+      },
     });
   },
 } as unknown as Fetcher;
@@ -572,13 +581,16 @@ describe("D1 や ASSETS の失敗", () => {
         first: async () => {
           throw new Error("D1 is unavailable");
         },
+        all: async () => {
+          throw new Error("D1 is unavailable");
+        },
       }),
     }),
   } as unknown as D1Database;
 
   it("D1 の検索が失敗したら、書き換えない index.html を 503、noindex、no-store で返す", async () => {
     const app = createApp();
-    for (const path of ["/Open%20Note", "/p/AAAAAAAAAAAAAAAAAAAAAA"]) {
+    for (const path of ["/Open%20Note", "/p/AAAAAAAAAAAAAAAAAAAAAA", "/"]) {
       const res = await app.request(
         path,
         { headers: { Accept: HTML_ACCEPT } },
@@ -677,5 +689,174 @@ describe("値のエスケープ", () => {
       expect(html, page.title).not.toContain("og:description");
       expect(metaOf(html).ogTitle, page.title).toBe(page.title);
     }
+  });
+});
+
+/**
+ * トップの `#root` に差し込んだサイト名とリンクを decode して返す。何も差し込んでいなければ null。
+ * href は絶対 URL のまま、title は文字参照を解いて返す。
+ */
+function rootListOf(html: string) {
+  const root = /<div id="root">([\s\S]*)<\/div><\/body>/.exec(html)?.[1];
+  if (root === undefined) throw new Error("no #root");
+  if (root === "") return null;
+  const match = /^<article class="page-text"><h1>([^<]*)<\/h1>(?:<ul>(.*)<\/ul>)?<\/article>$/.exec(
+    root,
+  );
+  if (match === null) throw new Error(`unexpected #root: ${root}`);
+  const items = match[2] ?? "";
+  const links = [...items.matchAll(/<li><a href="([^"]*)">([^<]*)<\/a><\/li>/g)].map((item) => ({
+    href: decodeEntities(item[1] ?? ""),
+    title: decodeEntities(item[2] ?? ""),
+  }));
+  // 正規表現に当たらない li が混ざっていれば、件数がずれて分かる
+  expect(links.length).toBe(items.split("<li>").length - 1);
+  return { siteName: decodeEntities(match[1] ?? ""), links };
+}
+
+describe("トップの HTML", () => {
+  it("public で削除されていないページだけを、匿名にも owner と token にも更新日時の新しい順に並べる", async () => {
+    const { navigate, asOwner, create, setVisibility, cookie, open, draft } = await seed();
+    const second = await create("Second", "", "public");
+    const gone = await create("Gone", "", "public");
+    const deleted = await asOwner(`/api/pages/${gone.id}`, "DELETE", undefined, {
+      "If-Match": `"${gone.version}"`,
+    });
+    expect(deleted.status).toBe(204);
+    const reverted = await create("Reverted", "", "public");
+    await setVisibility(reverted.id, "draft");
+    const updated = await asOwner(
+      `/api/pages/${open.id}`,
+      "PUT",
+      { title: open.title, body: "x" },
+      { "If-Match": `"${open.version}"` },
+    );
+    expect(updated.status).toBe(200);
+
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    for (const headers of [{}, { Cookie: cookie }, { Authorization: `Bearer ${token}` }]) {
+      const label = Object.keys(headers)[0] ?? "anonymous";
+      const res = await navigate("/", headers);
+      expect(res.status, label).toBe(200);
+      const html = await res.text();
+      expect(rootListOf(html), label).toEqual({
+        siteName: DEFAULT_SITE_NAME,
+        links: [
+          { href: `${ORIGIN}/Open_Note`, title: "Open Note" },
+          { href: `${ORIGIN}/Second`, title: second.title },
+        ],
+      });
+      for (const word of [draft.id, "Hidden Plan", gone.id, "Gone", reverted.id, "Reverted"]) {
+        expect(html, `${label} ${word}`).not.toContain(word);
+      }
+    }
+  });
+
+  it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外す`, async () => {
+    const { navigate, create } = await setup();
+    const titles: string[] = [];
+    for (let i = 0; i <= ROOT_PAGE_LIST_LIMIT; i++) {
+      titles.push((await create(`Page ${i}`, "", "public")).title);
+    }
+    const list = rootListOf(await (await navigate("/")).text());
+    expect(list?.links.map((link) => link.title)).toEqual(titles.slice(1).reverse());
+  });
+
+  it('title の <、"、& と文字参照に見える表記は要素や属性を壊さず、そのまま読める', async () => {
+    const { navigate, create } = await setup();
+    const title = 'A <b> "c" & d &amp; e </a></li>';
+    await create(title, "", "public");
+    const html = await (await navigate("/")).text();
+    expect(html).not.toContain("<b>");
+    expect(rootListOf(html)?.links).toEqual([
+      { href: `${ORIGIN}/${encodeURIComponent(title.replaceAll(" ", "_"))}`, title },
+    ]);
+  });
+
+  it("予約語と重なる title は /p/<id> へ、/ を含む title は %2F の URL へリンクする", async () => {
+    const { navigate, create } = await setup();
+    const index = await create("index", "", "public");
+    const api = await create("API", "", "public");
+    await create("Slash/", "", "public");
+    expect(rootListOf(await (await navigate("/")).text())?.links).toEqual([
+      { href: `${ORIGIN}/Slash%2F`, title: "Slash/" },
+      { href: `${ORIGIN}/p/${api.id}`, title: "API" },
+      { href: `${ORIGIN}/p/${index.id}`, title: "index" },
+    ]);
+  });
+
+  it("public のページが無ければサイト名だけを差し込む", async () => {
+    const { navigate, create } = await setup();
+    await create("Hidden Plan", "下書き");
+    const html = await (await navigate("/")).text();
+    expect(rootListOf(html)).toEqual({ siteName: DEFAULT_SITE_NAME, links: [] });
+    expect(html).not.toContain("<ul>");
+  });
+
+  it("匿名には no-cache で ETag を付けず、noindex を付けない。owner には private, no-store", async () => {
+    const { navigate, cookie } = await seed();
+    const anonymous = await navigate("/");
+    expect(anonymous.headers.get("Cache-Control")).toBe("no-cache");
+    expect(anonymous.headers.get("ETag")).toBeNull();
+    expect(anonymous.headers.get("Content-Length")).toBeNull();
+    expect(anonymous.headers.get("X-Robots-Tag")).toBeNull();
+    expect(anonymous.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+    const owner = await navigate("/", { Cookie: cookie });
+    expect(owner.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("index.html の ETag で条件付きに開いても、304 にせず一覧を入れて返す", async () => {
+    const { navigate } = await seed();
+    const res = await navigate("/", { "If-None-Match": '"index"' });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("ETag")).toBeNull();
+    expect(rootListOf(await res.text())?.links).toHaveLength(1);
+  });
+
+  it("Accept が無いか JSON でも一覧を差し込み、クエリ付きのトップには差し込まない", async () => {
+    const { call, navigate } = await seed();
+    for (const init of [{}, { headers: { Accept: "application/json" } }]) {
+      const res = await call("/", init);
+      expect(res.status).toBe(200);
+      expect(rootListOf(await res.text())?.links).toHaveLength(1);
+    }
+    for (const path of ["/?tag=x", "/?q=Open"]) {
+      const res = await navigate(path);
+      expect(res.status, path).toBe(200);
+      expect(rootListOf(await res.text()), path).toBeNull();
+      expect(res.headers.get("X-Robots-Tag"), path).toBe("noindex");
+    }
+  });
+
+  it("一覧は本文を読まず、pages_alive_updated をたどって並べ替えない", async () => {
+    await seed();
+    const statements: string[] = [];
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            statements.push(sql);
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const res = await createApp().request(
+      "/",
+      { headers: { Accept: HTML_ACCEPT } },
+      { ...ownerEnv(), ASSETS: assets, DB: db },
+    );
+    expect(rootListOf(await res.text())?.links).toHaveLength(1);
+    expect(statements).toHaveLength(1);
+    const sql = statements[0] ?? "";
+    expect(sql).not.toMatch(/body|excerpt/);
+    const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .bind(ROOT_PAGE_LIST_LIMIT)
+      .all<{ detail: string }>();
+    const plan = results.map((row) => row.detail).join("\n");
+    expect(plan).toContain("pages_alive_updated");
+    expect(plan).not.toContain("TEMP B-TREE");
   });
 });

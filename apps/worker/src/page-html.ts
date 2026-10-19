@@ -1,5 +1,6 @@
 import { normalizeTitleKey, parsePagePath } from "@personal-wiki/domain";
 import { type Principal, readableVisibilityOf } from "./auth/principal";
+import type { PublicPageEntry } from "./pages/search";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
 import { pageUrls } from "./pages/urls";
 
@@ -189,5 +190,47 @@ export function rewritePageHtml(index: Response, page: PageMeta, origin: string)
         },
       });
   }
+  return values.transform(structure.transform(index));
+}
+
+/** `/` の HTML に入れる public のページの件数。ページ送りは作らない。 */
+export const ROOT_PAGE_LIST_LIMIT = 100;
+
+/**
+ * トップの index.html の `#root` に、サイト名と public のページへのリンクの一覧を差し込む。
+ * JS を実行しない読み手が、最初の 1 ページへたどれるようにするため。リンクは各ページの正規の URL にする。
+ *
+ * rewritePageHtml と同じく 2 段に分け、1 段目は値を持たない固定のタグだけを件数分挿入し、2 段目が
+ * 文書の順にリンクを埋める。title を HTML の文字列に連結しない。
+ * ブラウザでは styles.css が隠し、SPA の createRoot が `#root` の中身を置き換える。
+ */
+export function rewriteRootHtml(
+  index: Response,
+  { siteName, pages, origin }: { siteName: string; pages: PublicPageEntry[]; origin: string },
+): Response {
+  const list = pages.length === 0 ? "" : `<ul>${"<li><a></a></li>".repeat(pages.length)}</ul>`;
+  const structure = new HTMLRewriter().on("#root", {
+    element(element) {
+      element.setInnerContent(`<article class="page-text"><h1></h1>${list}</article>`, {
+        html: true,
+      });
+    },
+  });
+  let next = 0;
+  const values = new HTMLRewriter()
+    .on("#root > article.page-text > h1", {
+      element(element) {
+        element.setInnerContent(siteName);
+      },
+    })
+    .on("#root > article.page-text > ul > li > a", {
+      element(element) {
+        const page = pages[next++];
+        if (page === undefined) return;
+        const urls = pageUrls(origin, { ...page, visibility: "public" });
+        element.setAttribute("href", attributeValue(urls.titleUrl ?? urls.url));
+        element.setInnerContent(page.title);
+      },
+    });
   return values.transform(structure.transform(index));
 }

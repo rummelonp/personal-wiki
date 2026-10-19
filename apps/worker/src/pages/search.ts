@@ -422,6 +422,34 @@ export async function listPageTitles(
   return pageOf(results, limit, toSummary);
 }
 
+/** listPublicPages の 1 件。JS を実行しない読み手に向けた一覧（トップの HTML のリンクなど）に使う。 */
+export interface PublicPageEntry {
+  id: string;
+  title: string;
+  updatedAt: number;
+}
+
+/**
+ * public で削除されていないページを、更新日時の降順で多くて limit 件返す。principal に関係なく draft を
+ * 含めない（owner に返す HTML にも draft の title を入れない）。本文と抜粋は読まない。
+ * 並びは pages_alive_updated をたどるが、visibility はインデックスに無く行ごとに照合するので、間に挟まる
+ * draft の行も読む。
+ */
+export async function listPublicPages(
+  db: D1Database,
+  { limit }: { limit: number },
+): Promise<PublicPageEntry[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT p.id, p.title, p.updated_at AS updatedAt FROM pages AS p
+       WHERE p.deleted_at IS NULL AND p.visibility = 'public'
+       ORDER BY ${LIST_ORDER_SQL.updated.orderBy} LIMIT ?1`,
+    )
+    .bind(limit)
+    .all<PublicPageEntry>();
+  return results;
+}
+
 /** タグの表記と、そのタグ（子のタグを含む）が付いたページの数。 */
 export interface TagCount {
   tag: string;

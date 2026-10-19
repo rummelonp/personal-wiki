@@ -54,7 +54,8 @@ const CONTENT_SECURITY_POLICY = [
  *   足りる。owner と token のレスポンスは resolvePrincipal が後から private, no-store に上書きする。
  *   匿名の public のページの HTML は本文を含むが、ETag を外す（spa.ts）ので再検証は毎回取り直しになり、
  *   draft に戻した後は title で 404、id で本文の無い no-store が返る。古い本文が残りうるのは、読んだ人の
- *   ブラウザの戻る、進むの履歴だけ
+ *   ブラウザの戻る、進むの履歴だけ。トップの HTML も public のページの title の一覧を含むので、同じく ETag を
+ *   外し、draft に戻したページは次の取得で一覧から消える
  * - X-Robots-Tag: noindex は、indexable を指定したレスポンス（トップと public のページ。spa.ts）にだけ付けない。
  *   未知のパスや 404 まで検索エンジンに載せないよう、既定は付ける側に倒す
  */

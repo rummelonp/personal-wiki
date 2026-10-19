@@ -51,6 +51,31 @@ test("Worker が HTML に入れた本文は、SPA が起動する前もブラウ
   await expect(pageText).toBeHidden();
 });
 
+test("Worker がトップの HTML に入れたページの一覧は、SPA が起動する前も見せず、起動後は SPA の一覧に置き換わる", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "トップの HTML の一覧");
+  await api.createPage({ title, body: "本文", visibility: "public" });
+  const draftTitle = uniqueTitle(testInfo, "トップの HTML に出ない下書き");
+  await api.createPage({ title: draftTitle, body: "本文" });
+  const pageText = page.locator("#root > .page-text");
+
+  await page.goto("/");
+  await expect(
+    page.locator(".entries").getByRole("link", { name: title, exact: true }),
+  ).toBeVisible();
+  await expect(pageText).toHaveCount(0);
+
+  // WebKit は JS を止めて開いた後に止めずに読み込み直しても SPA を起動しないので、止める側を後に回す
+  await page.route("**/assets/*.js", (route) => route.abort());
+  await page.goto("/");
+  await expect(pageText).toHaveCount(1);
+  await expect(pageText.locator("a", { hasText: title })).toHaveCount(1);
+  await expect(pageText).not.toContainText(draftTitle);
+  await expect(pageText).toBeHidden();
+});
+
 test("開いているページを quick switcher で選んでも、履歴を積まない", async ({ page }) => {
   await page.goto(titlePath(SEED.welcome));
   await expect(page.getByRole("heading", { level: 1, name: SEED.welcome })).toBeVisible();
