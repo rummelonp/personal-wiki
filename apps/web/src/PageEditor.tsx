@@ -996,7 +996,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
                 </button>
               }
             >
-              <p>通信を確かめて、もう一度クリックしてください。</p>
+              <p>もう一度リンクを押してください。</p>
             </Notice>
           ) : (
             // 作成へ進める案内なので info。行き止まりになる PageReader の同じ通知は warn

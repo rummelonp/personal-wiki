@@ -104,7 +104,7 @@ const KEEPALIVE_MAX_BYTES = 60_000;
  * サーバーの不調は、利用者の操作や端末のせいでないと読めるよう、起きた場所を書く。入力のエラーは、直す点を示す。
  */
 const RETRY_LATER = "時間をおいて、もう一度試してください。";
-const RELOAD = "ページを再読み込みしてから、もう一度試してください。";
+const RELOAD = "再読み込みしてから、もう一度試してください。";
 
 /**
  * failureMessage の fallback に渡す、取得の失敗の文。message を持たない失敗は待てば通ることが多い。
@@ -331,7 +331,7 @@ async function request(
     return {
       ok: false,
       reason: "error",
-      message: `接続できません。通信を確かめて、もう一度試してください。`,
+      message: `接続できません。通信環境を確かめて、もう一度試してください。`,
     };
   }
 }

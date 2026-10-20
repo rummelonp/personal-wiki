@@ -168,7 +168,7 @@ describe("失敗の分類", () => {
       throw new TypeError("Failed to fetch");
     };
     expect(await getPage(ID, offline)).toMatchObject({
-      message: "接続できません。通信を確かめて、もう一度試してください。",
+      message: "接続できません。通信環境を確かめて、もう一度試してください。",
     });
   });
 
@@ -303,7 +303,7 @@ describe("失敗の分類", () => {
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
       message:
-        "操作を受け付けられませんでした（HTTP 403）。ページを再読み込みしてから、もう一度試してください。",
+        "操作を受け付けられませんでした（HTTP 403）。再読み込みしてから、もう一度試してください。",
     });
   });
 
@@ -315,8 +315,7 @@ describe("失敗の分類", () => {
     });
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
-      message:
-        "操作を受け付けられませんでした。ページを再読み込みしてから、もう一度試してください。",
+      message: "操作を受け付けられませんでした。再読み込みしてから、もう一度試してください。",
     });
   });
 
@@ -325,7 +324,7 @@ describe("失敗の分類", () => {
     expect(await getPage(ID, fetchFn)).toMatchObject({
       ok: false,
       message:
-        "操作を受け付けられませんでした（HTTP 400）。ページを再読み込みしてから、もう一度試してください。",
+        "操作を受け付けられませんでした（HTTP 400）。再読み込みしてから、もう一度試してください。",
     });
   });
 

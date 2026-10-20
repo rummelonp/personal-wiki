@@ -61,14 +61,14 @@ function noticeFor(kind: UploadFailureKind, file: File): UploadNotice {
     case "forbidden":
       return {
         kind,
-        message: `${subject}を添付できませんでした（拒否されました）。ページを再読み込みするか、ログインし直してください。`,
+        message: `${subject}を添付できませんでした（拒否されました）。再読み込みするか、ログインし直してください。`,
       };
     case "unavailable":
       return { kind, message: "この環境では添付を使えません。" };
     case "error":
       return {
         kind,
-        message: `${subject}を添付できませんでした。通信を確かめて、もう一度添付してください。直らないときはページを再読み込みしてください。`,
+        message: `${subject}を添付できませんでした。通信を確かめて、もう一度添付してください。直らないときは再読み込みしてください。`,
       };
   }
 }

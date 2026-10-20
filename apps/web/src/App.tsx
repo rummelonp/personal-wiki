@@ -171,9 +171,7 @@ export function App() {
           {session.status === "error" && (
             <RailLayout rail={null}>
               <Notice inline tone="error" title="ログインの状態を取得できませんでした">
-                <p>
-                  通信が戻ると自動で取り直します。戻らないときは、ページを再読み込みしてください。
-                </p>
+                <p>通信が戻ると自動で取り直します。戻らないときは、再読み込みしてください。</p>
               </Notice>
             </RailLayout>
           )}

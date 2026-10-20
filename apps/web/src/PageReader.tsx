@@ -159,7 +159,7 @@ export function PageReader({ page, attachments = false, onShown }: PageReaderPro
           >
             <p>
               {linkNotice.kind === "error"
-                ? "通信を確かめて、もう一度クリックしてください。"
+                ? "もう一度リンクを押してください。"
                 : "まだ作られていないか、公開されていないページです。"}
             </p>
           </Notice>

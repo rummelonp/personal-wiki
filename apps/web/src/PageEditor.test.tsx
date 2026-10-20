@@ -313,7 +313,7 @@ describe("PageEditor と本文のエディタ", () => {
       vi.mocked(updatePage).mockResolvedValueOnce({
         ok: false,
         reason: "error",
-        message: "ページを再読み込みしてから、もう一度保存してください。",
+        message: "再読み込みしてから、もう一度保存してください。",
       });
       const { view } = renderPage();
       view().focus();
@@ -322,7 +322,7 @@ describe("PageEditor と本文のエディタ", () => {
       await flushAsync();
       const paragraphs = paragraphsOfAlert();
       expect(paragraphs[0]).toContain("この画面にしか残っていません");
-      expect(paragraphs[1]).toBe("ページを再読み込みしてから、もう一度保存してください。");
+      expect(paragraphs[1]).toBe("再読み込みしてから、もう一度保存してください。");
     });
 
     it("入力の規則の通知も、コピーを勧める段落を先に出す", async () => {
