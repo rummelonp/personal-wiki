@@ -1232,6 +1232,19 @@ a.segmented-option {
   text-align: center;
 }
 
+/*
+ * 通知の操作は、狭い幅では行いっぱいに広げ、押しやすくする。
+ * 通知の幅は本文の列にそろう（--note-width）ので、右の欄が本文の横に並ぶ 40rem 超の幅でも、衝突の通知の 2 つの操作は
+ * 46.4375rem（743px）以下で 1 行に収まらない。広げないと、折り返した 2 つ目が自然な幅のまま左に寄る。
+ * 折り返しに追従して広げる書き方は CSS に無いので、境目は 2 つの操作の幅の合計と通知の幅が一致する幅に固定する。
+ * 操作の文言や通知の幅の決め方を変えたら、notice-actions.spec.ts が境目のずれを知らせるので、値を測り直す。
+ */
+@media (max-width: 46.4375rem) {
+  .notice .actions .button {
+    flex: 1 1 auto;
+  }
+}
+
 /* 操作の前の確認。問いは操作の上に 1 行で置き、キーボードで本文を畳んでも残す */
 .notice-question {
   flex: 1 0 100%;
@@ -2388,11 +2401,6 @@ a.segmented-option {
 
   .header {
     padding-inline-end: var(--gutter);
-  }
-
-  /* 通知の操作は行いっぱいに広げ、押しやすくする。入りきらなければ次の行に回る */
-  .notice .actions .button {
-    flex: 1 1 auto;
   }
 }
 
