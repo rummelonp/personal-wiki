@@ -27,6 +27,7 @@ import {
   VISIBILITY_NOT_ALLOWED_MESSAGE,
   type WriteMetric,
 } from "./operations";
+import { pageJson } from "./page-json";
 import {
   clientNameLookup,
   findRevision,
@@ -101,19 +102,7 @@ function pageResponse(
   extra: Record<string, unknown> = {},
 ): Response {
   c.header("ETag", etagOf(page.version));
-  return c.json(
-    {
-      id: page.id,
-      title: page.title,
-      body: page.body,
-      visibility: page.visibility,
-      version: page.version,
-      createdAt: page.createdAt,
-      updatedAt: page.updatedAt,
-      ...extra,
-    },
-    status,
-  );
+  return c.json({ ...pageJson(page), ...extra }, status);
 }
 
 function writeErrorResponse(

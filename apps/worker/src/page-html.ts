@@ -1,6 +1,7 @@
 import { normalizeTitleKey, parsePagePath } from "@personal-wiki/domain";
 import { type Principal, readableVisibilityOf } from "./auth/principal";
 import type { LinkTarget } from "./pages/link-targets";
+import { pageJson } from "./pages/page-json";
 import type { PublicPageEntry } from "./pages/search";
 import { publicOnlyFlag, type Visibility } from "./pages/store";
 import { pageUrls, publicPageUrl } from "./pages/urls";
@@ -98,8 +99,8 @@ export function scriptJson(value: unknown): string {
  * 10ms を超えうる（MAX_BODY_BYTES の測定）ので、表示のたびには行わない。
  * ブラウザでは styles.css が隠し、SPA の createRoot が `#root` の中身を置き換える。
  *
- * public のページは、SPA が `/api/pages/:id` を引かずに初回の表示を出せるよう、同じ形の JSON を head の
- * 実行されない script にも入れる。version は保存の衝突の検出に使うので、本文と同じ行から読んだ値を組にする。
+ * public のページは、SPA が `/api/pages/:id` を引かずに初回の表示を出せるよう、同じ pageJson で作った JSON を
+ * head の実行されない script にも入れる。version は保存の衝突の検出に使うので、本文と同じ行から読んだ値を組にする。
  * `<pre>` の本文を使い回さないのは、HTML の parser が改行の `\r` を畳み、保存されている本文と一致しないため。
  *
  * links は本文がリンクする public のページで、本文の下に正規の URL（絶対 URL）の `<a>` の一覧にして入れる。
@@ -178,15 +179,7 @@ export function rewritePageHtml(
     });
   }
   if (body !== null) {
-    const initial = {
-      id: page.id,
-      title: page.title,
-      body,
-      visibility: page.visibility,
-      version: page.version,
-      createdAt: page.createdAt,
-      updatedAt: page.updatedAt,
-    };
+    const initial = pageJson({ ...page, body });
     values
       .on(`head > script#${INITIAL_PAGE_ELEMENT_ID}`, {
         element(element) {
