@@ -8,6 +8,7 @@ export {
   isAttachmentName,
   matchesAttachmentMagic,
 } from "./attachment";
+export { INITIAL_PAGE_ELEMENT_ID } from "./initial-page";
 export { DEFAULT_LIST_SORT, isListSort, LIST_SORTS, type ListSort } from "./list-sort";
 export {
   type CharAt,

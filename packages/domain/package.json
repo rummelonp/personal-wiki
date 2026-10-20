@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./attachment": "./src/attachment.ts",
+    "./initial-page": "./src/initial-page.ts",
     "./list-sort": "./src/list-sort.ts",
     "./page-input": "./src/page-input.ts",
     "./page-path": "./src/page-path.ts",

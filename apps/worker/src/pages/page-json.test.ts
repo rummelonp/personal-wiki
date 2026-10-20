@@ -1,5 +1,6 @@
+import { INITIAL_PAGE_ELEMENT_ID } from "@personal-wiki/domain";
 import { describe, expect, it } from "vitest";
-import { INITIAL_PAGE_ELEMENT_ID, type PageMeta, rewritePageHtml } from "../page-html";
+import { type PageMeta, rewritePageHtml } from "../page-html";
 import { pageJson } from "./page-json";
 
 /*

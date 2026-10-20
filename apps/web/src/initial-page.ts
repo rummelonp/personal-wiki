@@ -1,9 +1,7 @@
+import { INITIAL_PAGE_ELEMENT_ID } from "@personal-wiki/domain/initial-page";
 import { normalizeTitleKey } from "@personal-wiki/domain/title";
 import { isPage, type Page } from "./pages-api";
 import { subscribe } from "./route";
-
-/** Worker の INITIAL_PAGE_ELEMENT_ID（apps/worker/src/page-html.ts）。 */
-const ELEMENT_ID = "initial-page";
 
 /** 初回の表示に使えるかを突き合わせる、ページの URL が指すもの。 */
 export type InitialPageTarget = { by: "id"; id: string } | { by: "title"; title: string };
@@ -26,7 +24,7 @@ function currentNavigationType(): string | undefined {
  */
 export function readInitialPage(navigationType = currentNavigationType()): void {
   discardInitialPage();
-  const element = document.getElementById(ELEMENT_ID);
+  const element = document.getElementById(INITIAL_PAGE_ELEMENT_ID);
   if (element === null) return;
   element.remove();
   if (navigationType === "back_forward") return;

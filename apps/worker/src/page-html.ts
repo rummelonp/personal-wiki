@@ -1,4 +1,4 @@
-import { normalizeTitleKey, parsePagePath } from "@personal-wiki/domain";
+import { INITIAL_PAGE_ELEMENT_ID, normalizeTitleKey, parsePagePath } from "@personal-wiki/domain";
 import { type Principal, readableVisibilityOf } from "./auth/principal";
 import type { LinkTarget } from "./pages/link-targets";
 import { pageJson } from "./pages/page-json";
@@ -68,9 +68,6 @@ export async function findPageForPath(
 function attributeValue(value: string): string {
   return value.replaceAll("&", "&amp;");
 }
-
-/** SPA の初回の表示に使うページの JSON を入れる要素の id。apps/web/src/initial-page.ts と合わせる。 */
-export const INITIAL_PAGE_ELEMENT_ID = "initial-page";
 
 /**
  * `<script>` の中身にする JSON。script の中で終わり（`</script>`）や escaped の状態（`<!--`）を作れるのは
