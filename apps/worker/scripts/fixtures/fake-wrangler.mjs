@@ -6,7 +6,7 @@
 // - FAKE_WRANGLER_IGNORE_SIGTERM=1: SIGTERM で終わらない
 // - FAKE_WRANGLER_SKIP_ENV_FILE=1: --env-file を読まず、owner の経路が閉じる
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { OWNER_EMAIL } from "../local-dev.mjs";
 import { mintSessionValue, SESSION_COOKIE_NAME } from "../session-cookie.mjs";
@@ -52,7 +52,10 @@ const grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]
 });
 const pidFile = process.env.FAKE_WRANGLER_PID_FILE;
 if (pidFile !== undefined) {
-  writeFileSync(pidFile, JSON.stringify([process.pid, grandchild.pid]));
+  // テストはこのファイルが在ることを起動の完了の合図にして中身を読む。書きかけを読ませないよう、
+  // 書き終えてから名前を付ける。
+  writeFileSync(`${pidFile}.tmp`, JSON.stringify([process.pid, grandchild.pid]));
+  renameSync(`${pidFile}.tmp`, pidFile);
 }
 
 http
