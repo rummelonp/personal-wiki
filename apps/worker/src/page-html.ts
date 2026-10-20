@@ -93,6 +93,26 @@ function appendDescriptionTag(structure: HTMLRewriter): void {
   });
 }
 
+/** apps/web の build（src/page-view-preload.ts）が index.html の head に置く印の属性。 */
+const PAGE_VIEW_PRELOAD_ATTRIBUTE = "data-page-view-preload";
+
+/**
+ * 印の `<link>` を、ページの画面の chunk の modulepreload にする。getAttribute が返す生の値をそのまま
+ * 書き戻すので、attributeValue を通さない。
+ */
+function preloadPageView(rewriter: HTMLRewriter): void {
+  rewriter.on(`head > link[${PAGE_VIEW_PRELOAD_ATTRIBUTE}]`, {
+    element(element) {
+      const href = element.getAttribute(PAGE_VIEW_PRELOAD_ATTRIBUTE);
+      // 空の href は文書の URL を module として取り直させる
+      if (!href) return;
+      element.removeAttribute(PAGE_VIEW_PRELOAD_ATTRIBUTE);
+      element.setAttribute("rel", "modulepreload");
+      element.setAttribute("href", href);
+    },
+  });
+}
+
 function fillDescription(values: HTMLRewriter, description: string): void {
   values.on('meta[name="description"]', {
     element(element) {
@@ -124,6 +144,12 @@ function fillDescription(values: HTMLRewriter, description: string): void {
  * links は本文がリンクする public のページで、本文の下に正規の URL（絶対 URL）の `<a>` の一覧にして入れる。
  * `<pre>` の中の `[[...]]` は、HTML を Markdown にして読む取得でもリンクにならないので、行き先をたどれるようにする。
  * 本文を入れないページ（draft）には、links を渡されても入れない。0 件なら `<ul>` を出さない。
+ *
+ * ページの画面（エディタ）の chunk は、入口の chunk が実行されてから動的 import で取り始めるので、build が
+ * head に置いた印を modulepreload にし、入口の chunk と並べて取らせる。draft のページも owner が開いて編集するので
+ * 同じにする。chunk の名前は build の出力で公開されているもので、公開範囲にかかわる情報を増やさない。
+ * トップと、ASSETS の index.html をそのまま返す画面（クエリ付きのトップ、404、503）は印のままで、エディタを取らない。
+ * 入口の動的 import は modulepreload と同じ URL の module を使うので、chunk を二度は取らない。
  */
 export function rewritePageHtml(
   index: Response,
@@ -162,6 +188,7 @@ export function rewritePageHtml(
         element.prepend(`${page.title} - `);
       },
     });
+  preloadPageView(structure);
   if (body !== null) {
     const list = linkListHtml(links.length);
     structure.on("#root", {

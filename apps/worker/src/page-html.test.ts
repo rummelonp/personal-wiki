@@ -20,9 +20,12 @@ import { insertToken } from "./test/tokens";
 
 const ORIGIN = "http://localhost";
 const HTML_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
+// apps/web の build が head に置く、ページの画面の chunk の印
+const PAGE_VIEW_CHUNKS = ["/assets/PageView-test.js", "/assets/dist-test.js"];
 const INDEX_HTML =
-  '<!doctype html><html lang="ja"><head><meta charset="UTF-8" /><title>wiki</title></head>' +
-  '<body><div id="root"></div></body></html>';
+  '<!doctype html><html lang="ja"><head><meta charset="UTF-8" /><title>wiki</title>' +
+  PAGE_VIEW_CHUNKS.map((href) => `<link data-page-view-preload="${href}" crossorigin>`).join("") +
+  '</head><body><div id="root"></div></body></html>';
 
 // Static Assets と同じく、ETag が合う条件付きのリクエストには 304 を返す。
 const assets = {
@@ -1256,5 +1259,47 @@ describe("ページのリンク先の一覧", () => {
     const plan = results.map((row) => row.detail).join("\n");
     expect(plan).not.toContain("TEMP B-TREE");
     expect(plan).not.toMatch(/^SCAN/m);
+  });
+});
+
+/** head の `<link>` のうち modulepreload のものの href を、文書の順に返す。 */
+function modulePreloadsOf(html: string): string[] {
+  return [...html.matchAll(/<link\b[^>]*>/g)]
+    .map((match) => match[0])
+    .filter((tag) => /\brel="modulepreload"/.test(tag))
+    .map((tag) => {
+      expect(tag).toMatch(/\scrossorigin[\s>]/);
+      return /\bhref="([^"]*)"/.exec(tag)?.[1] ?? "";
+    });
+}
+
+describe("ページの画面の chunk の modulepreload", () => {
+  it("public と draft のページの URL は、印を文書の順に modulepreload にし、印を残さない", async () => {
+    const { navigate, cookie, draft } = await seed();
+    for (const [path, headers] of [
+      [`/${encodeURIComponent("Open Note")}`, {}],
+      [`/p/${draft.id}`, {}],
+      [`/${encodeURIComponent("Hidden Plan")}`, { Cookie: cookie }],
+    ] as const) {
+      const res = await navigate(path, headers);
+      expect(res.status, path).toBe(200);
+      const html = await res.text();
+      expect(modulePreloadsOf(html), path).toEqual(PAGE_VIEW_CHUNKS);
+      expect(html, path).not.toContain("data-page-view-preload");
+    }
+  });
+
+  it("トップ、クエリ付きのトップ、見つからないページ、匿名から見た draft は印のままにし、modulepreload を出さない", async () => {
+    const { navigate } = await seed();
+    for (const path of [
+      "/",
+      "/?q=Open",
+      `/${encodeURIComponent("Missing Page")}`,
+      `/${encodeURIComponent("Hidden Plan")}`,
+    ]) {
+      const html = await (await navigate(path)).text();
+      expect(modulePreloadsOf(html), path).toEqual([]);
+      expect(html.match(/data-page-view-preload=/g), path).toHaveLength(PAGE_VIEW_CHUNKS.length);
+    }
   });
 });

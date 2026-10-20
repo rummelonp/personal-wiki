@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, type ProxyOptions } from "vite";
+import { pageViewPreload } from "./src/page-view-preload";
 import { siteNameTitle } from "./src/site-name-title";
 
 // 開発中は Worker（wrangler dev の既定のポート）へ API とログインを中継する。
@@ -32,7 +33,7 @@ const toWorker: ProxyOptions = {
 const SITE_NAME = process.env.VITE_SITE_NAME?.trim() ?? "";
 
 export default defineConfig({
-  plugins: [react(), siteNameTitle(SITE_NAME)],
+  plugins: [react(), siteNameTitle(SITE_NAME), pageViewPreload("src/PageView.tsx")],
   define: { "import.meta.env.VITE_SITE_NAME": JSON.stringify(SITE_NAME) },
   server: {
     proxy: {
