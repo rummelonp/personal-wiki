@@ -167,7 +167,7 @@ describe("dev-owner の後片付け", { timeout: 20_000 }, () => {
     const run = await startDevOwner({ FAKE_WRANGLER_NEVER_READY: "1" });
     await spawned(run);
     run.child.kill("SIGINT");
-    expect(await run.exited).toBe(0);
+    expect(await run.exited, run.output()).toBe(0);
     await expectNothingLeft(run);
   });
 

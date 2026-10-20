@@ -176,6 +176,28 @@ function portInUse(port) {
 }
 
 /**
+ * fetch を使わないのは、undici が接続直後に呼ぶ setTypeOfService が macOS で EINVAL を投げることがあり、
+ * その例外はソケットのイベントの中で投げられて fetch の try/catch に届かず、dev-owner が 1 で落ちるため。
+ * 起動を待つ間に wrangler dev を止めると、この確認の途中で起きる。http のクライアントは
+ * TOS を設定せず、ソケットのエラーも error のイベントで受けられる。
+ * @param {number} port
+ * @returns {Promise<boolean>}
+ */
+function isHealthy(port) {
+  return new Promise((done) => {
+    const req = http.get(
+      { host: "127.0.0.1", port, path: "/api/healthz", timeout: 5000 },
+      (res) => {
+        res.resume();
+        done(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300);
+      },
+    );
+    req.once("timeout", () => req.destroy());
+    req.once("error", () => done(false));
+  });
+}
+
+/**
  * @param {import("node:child_process").ChildProcess} child
  * @param {number} port
  */
@@ -186,12 +208,7 @@ async function waitForHealthy(child, port) {
     if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
       throw new Error("wrangler dev exited before it became ready");
     }
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/healthz`);
-      if (res.ok) return;
-    } catch {
-      // 起動中
-    }
+    if (await isHealthy(port)) return;
     await new Promise((done) => setTimeout(done, 250));
   }
   throw new Error("wrangler dev did not become ready within 60 seconds");
