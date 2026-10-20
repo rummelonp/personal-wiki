@@ -68,17 +68,20 @@ function isPhraseBoundary(boundary: Boundary): boolean {
 /**
  * 要素の本文を、描画が実際に選んだ折り返しで行に分け、<wbr> の前後の文節も集める。文字ごとの Range の位置で測る。
  * 同じ行かは、top の差が文字の高さの半分以内かで決める（小数の丸めや上付きの文字で揺れない）。
- * widths を渡すと、要素の style.width をその順に変えながら測る。幅を振る測定を 1 回の evaluate にまとめるため。
+ * widths を渡すと、locator の要素の style.width をその順に変えながら測る。幅を振る測定を 1 回の evaluate にまとめるため。
  * 幅ごとに evaluate を往復すると、並列の E2E で負荷が高いとき、往復の遅れが幅の数だけ積もってテストの時間切れになる。
  * null は幅を変えずに測る。
+ * parts を渡すと、幅を変える要素（locator）の中の、セレクターに当たる要素を幅ごとに測る（当たらなければ null）。
+ * 渡さなければ locator の要素そのものを測る。
  */
 async function measureAcrossWidths(
   locator: Locator,
   widths: readonly (number | null)[],
-): Promise<{ lines: Line[]; seams: Seam[] }[]> {
+  parts: readonly string[] | null = null,
+): Promise<{ appliedWidth: number; parts: ({ lines: Line[]; seams: Seam[] } | null)[] }[]> {
   return locator.evaluate(
-    (element, widthList) => {
-      const measureOnce = (): { lines: Line[]; seams: Seam[] } => {
+    (container, { widthList, selectors }) => {
+      const measureOnce = (element: Element): { lines: Line[]; seams: Seam[] } => {
         const lines: Line[] = [];
         // <wbr> の前後の文節。兄弟の文字列と span（nobreak）を、隣の <wbr> まで集める
         const around = (wbr: Element, step: "previousSibling" | "nextSibling"): string => {
@@ -148,17 +151,56 @@ async function measureAcrossWidths(
         return { lines, seams };
       };
       return widthList.map((width) => {
-        if (width !== null) (element as HTMLElement).style.width = `${width}px`;
-        return measureOnce();
+        if (width !== null) (container as HTMLElement).style.width = `${width}px`;
+        const appliedWidth = container.getBoundingClientRect().width;
+        const targets =
+          selectors === null
+            ? [container]
+            : selectors.map((selector) => container.querySelector(selector));
+        return {
+          appliedWidth,
+          parts: targets.map((target) => (target === null ? null : measureOnce(target))),
+        };
       });
     },
-    [...widths],
+    { widthList: [...widths], selectors: parts === null ? null : [...parts] },
   );
 }
 
 async function measure(locator: Locator): Promise<{ lines: Line[]; seams: Seam[] }> {
   const [measured] = await measureAcrossWidths(locator, [null]);
-  return measured as { lines: Line[]; seams: Seam[] };
+  return measured?.parts[0] as { lines: Line[]; seams: Seam[] };
+}
+
+/** 幅を振って測った、1 つの幅での結果。 */
+export interface WrapAtWidth {
+  /** 実際に当たった container の幅。指定の幅に変えられたかを確かめる */
+  appliedWidth: number;
+  /** parts と同じ順。セレクターに当たる要素が無ければ null */
+  parts: ({ lineTexts: string[]; midPhraseBreaks: string[] } | null)[];
+}
+
+/**
+ * container の幅を振り、その中の parts の要素ごとに、描画された行の文字列と、語の途中の折り返しを返す。
+ * 通知のように、測る要素（見出しと本文）とは別の要素（通知の枠）の幅を変えるときに使う。幅は 1 回の evaluate で振る。
+ */
+export async function wrapAcrossWidths(
+  container: Locator,
+  parts: readonly string[],
+  widths: readonly number[],
+): Promise<WrapAtWidth[]> {
+  const measured = await measureAcrossWidths(container, widths, parts);
+  return measured.map(({ appliedWidth, parts: measuredParts }) => ({
+    appliedWidth,
+    parts: measuredParts.map((part) =>
+      part === null
+        ? null
+        : {
+            lineTexts: part.lines.map((line) => line.text),
+            midPhraseBreaks: midPhraseBreaksOf(part.lines),
+          },
+    ),
+  }));
 }
 
 async function layoutLines(locator: Locator): Promise<Line[]> {
@@ -211,7 +253,11 @@ export async function splitNumbersAcrossWidths(
   widths: readonly number[],
 ): Promise<string[]> {
   const measured = await measureAcrossWidths(locator, widths);
-  return [...new Set(measured.flatMap(({ lines }) => splitNumbersOf(lines)))];
+  return [
+    ...new Set(
+      measured.flatMap(({ parts }) => parts.flatMap((part) => splitNumbersOf(part?.lines ?? []))),
+    ),
+  ];
 }
 
 /**
@@ -228,7 +274,13 @@ export async function midPhraseBreaksAcrossWidths(
   widths: readonly number[],
 ): Promise<string[]> {
   const measured = await measureAcrossWidths(locator, widths);
-  return [...new Set(measured.flatMap(({ lines }) => midPhraseBreaksOf(lines)))];
+  return [
+    ...new Set(
+      measured.flatMap(({ parts }) =>
+        parts.flatMap((part) => midPhraseBreaksOf(part?.lines ?? [])),
+      ),
+    ),
+  ];
 }
 
 /**

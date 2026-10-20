@@ -7,6 +7,7 @@ import {
   midPhraseBreaksAcrossWidths,
   misplacedWbrs,
   phraseSeams,
+  wrapAcrossWidths,
 } from "./support/line-breaks";
 
 /*
@@ -62,15 +63,6 @@ test("測る道具は、語の途中の <wbr> と、閉じ括弧と助詞の間�
   );
 });
 
-/** 通知の幅を、中身を作り直さずに変える（折り返しだけを振る）。 */
-async function setNoticeWidth(section: Locator, width: number): Promise<void> {
-  await section.evaluate((element, w) => {
-    element.style.width = `${w}px`;
-  }, width);
-  const box = await section.boundingBox();
-  expect(box?.width, `${width}px に変えられていない`).toBeCloseTo(width, 0);
-}
-
 const NOTICE_PARTS = [".notice-title", ".notice-text"] as const;
 
 /**
@@ -106,26 +98,27 @@ async function expectWellWrappedAcrossWidths(
   await expect(notice).toBeVisible();
   const section = page.locator(".notice").filter({ has: notice });
   const autoPhrase = await isAutoPhraseRendering(page);
+  // 幅を変える（通知の枠）のは、中身を作り直さず折り返しだけを振るため。幅ごとに往復せず、1 回の evaluate で振る
+  const results = await wrapAcrossWidths(section, NOTICE_PARTS, widths);
   let wrappedOnce = false;
-  for (const width of widths) {
-    await setNoticeWidth(section, width);
-    for (const selector of NOTICE_PARTS) {
-      const part = notice.locator(selector);
-      if ((await part.count()) === 0) continue;
-      const lines = await lineTexts(part);
-      if (selector === wrapped) wrappedOnce ||= lines.length > 1;
-      const heads = lines
+  results.forEach((result, step) => {
+    const width = widths[step] as number;
+    expect(result.appliedWidth, `${width}px に変えられていない`).toBeCloseTo(width, 0);
+    NOTICE_PARTS.forEach((selector, index) => {
+      const part = result.parts[index];
+      if (part === null || part === undefined) return;
+      if (selector === wrapped) wrappedOnce ||= part.lineTexts.length > 1;
+      const heads = part.lineTexts
         .map((line) => line.slice(0, 1))
         .filter((head) => `${LINE_HEAD_PROHIBITED}」』）】`.includes(head));
       expect(heads, `${selector} ${width}px で行頭に来た文字`).toEqual([]);
       if (!autoPhrase) {
-        expect(
-          await midPhraseBreaks(part),
-          `${selector} ${width}px で語の途中で折り返している`,
-        ).toEqual([]);
+        expect(part.midPhraseBreaks, `${selector} ${width}px で語の途中で折り返している`).toEqual(
+          [],
+        );
       }
-    }
-  }
+    });
+  });
   expect(wrappedOnce, `${wrapped} が折り返していないので測れていない`).toBe(true);
   if (!autoPhrase) await expectWbrsAtPhraseSeams(notice, wrapped);
 }
