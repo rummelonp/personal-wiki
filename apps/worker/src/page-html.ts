@@ -83,6 +83,24 @@ export function scriptJson(value: unknown): string {
     .replaceAll("\u2029", "\\u2029");
 }
 
+const DESCRIPTION_TAG = '<meta name="description">';
+
+function appendDescriptionTag(structure: HTMLRewriter): void {
+  structure.on("head", {
+    element(element) {
+      element.append(DESCRIPTION_TAG, { html: true });
+    },
+  });
+}
+
+function fillDescription(values: HTMLRewriter, description: string): void {
+  values.on('meta[name="description"]', {
+    element(element) {
+      element.setAttribute("content", attributeValue(description));
+    },
+  });
+}
+
 /**
  * index.html の head にページのメタ情報を、public のページなら `#root` に title と本文を差し込む。
  *
@@ -90,6 +108,9 @@ export function scriptJson(value: unknown): string {
  * 固定のタグだけを挿入し、2 段目がそのタグに setAttribute や setInnerContent で値を入れる。ページの
  * title や抜粋、本文を HTML の文字列に連結せず、エスケープを HTMLRewriter に任せるため（属性値の `&`
  * だけは attributeValue、script の中身は scriptJson）。og:image は既定の画像を持たないので出さない。
+ *
+ * 抜粋は og:description と `name="description"` に同じ値で出す。`name="description"` は検索結果の
+ * 説明文の候補になり、indexable でない draft に出しても使われないので、public のページにだけ足す。
  *
  * 本文は JS を実行しない読み手（AI のエージェントやクローラー）向けで、Markdown を変換せずにテキストのまま
  * `<pre>` に入れる。Markdown の解析は本文の大きさに比例して CPU を使い、大きな本文では Workers Free の
@@ -122,6 +143,8 @@ export function rewritePageHtml(
     '<meta name="twitter:card" content="summary">',
   ];
   if (description !== null) tags.push('<meta property="og:description">');
+  const searchDescription = page.visibility === "public" ? description : null;
+  if (searchDescription !== null) tags.push(DESCRIPTION_TAG);
   if (page.visibility === "draft") tags.push('<meta name="robots" content="noindex">');
   const body = page.visibility === "public" ? page.body : null;
   if (body !== null) {
@@ -175,6 +198,7 @@ export function rewritePageHtml(
       },
     });
   }
+  if (searchDescription !== null) fillDescription(values, searchDescription);
   if (body !== null) {
     const initial = pageJson({ ...page, body });
     values
@@ -238,7 +262,12 @@ export const ROOT_PAGE_LIST_LIMIT = 100;
  */
 export function rewriteRootHtml(
   index: Response,
-  { siteName, pages, origin }: { siteName: string; pages: PublicPageEntry[]; origin: string },
+  {
+    siteName,
+    description,
+    pages,
+    origin,
+  }: { siteName: string; description: string | null; pages: PublicPageEntry[]; origin: string },
 ): Response {
   const list = linkListHtml(pages.length);
   const sitemap = pages.length === 0 ? "" : "<p><a>sitemap.xml</a></p>";
@@ -249,6 +278,7 @@ export function rewriteRootHtml(
       });
     },
   });
+  if (description !== null) appendDescriptionTag(structure);
   const values = new HTMLRewriter()
     .on("#root > article.page-text > h1", {
       element(element) {
@@ -260,6 +290,7 @@ export function rewriteRootHtml(
         element.setAttribute("href", attributeValue(`${origin}${SITEMAP_XML_PATH}`));
       },
     });
+  if (description !== null) fillDescription(values, description);
   fillLinkList(values, pages, origin);
   return values.transform(structure.transform(index));
 }

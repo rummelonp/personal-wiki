@@ -111,6 +111,7 @@ function metaOf(html: string) {
     ogType: attr(/<meta property="og:type" content="([^"]*)">/),
     canonical: attr(/<link rel="canonical" href="([^"]*)">/),
     twitterCard: attr(/<meta name="twitter:card" content="([^"]*)">/),
+    description: attr(/<meta name="description" content="([^"]*)">/),
     robots: attr(/<meta name="robots" content="([^"]*)">/),
   };
 }
@@ -185,16 +186,31 @@ describe("public のページの HTML", () => {
     expect(res.headers.get("Vary")).toContain("Cookie");
     expect(res.headers.get("ETag")).toBeNull();
     expect(res.headers.get("Content-Length")).toBeNull();
-    expect(metaOf(await res.text())).toEqual({
+    const html = await res.text();
+    expect(html.match(/name="description"/g)).toHaveLength(1);
+    expect(metaOf(html)).toEqual({
       title: "Open Note - wiki",
       ogTitle: "Open Note",
       ogDescription: "公開の kangaroo の話",
+      description: "公開の kangaroo の話",
       ogUrl: `${ORIGIN}/Open_Note`,
       ogType: "article",
       canonical: `${ORIGIN}/Open_Note`,
       twitterCard: "summary",
       robots: null,
     });
+  });
+
+  it("SITE_DESCRIPTION を設定していても、ページの description はサイトの説明文でなく抜粋にする", async () => {
+    const { open } = await seed();
+    const res = await createApp().request(
+      `/p/${open.id}`,
+      { headers: { Accept: HTML_ACCEPT } },
+      { ...ownerEnv({ SITE_DESCRIPTION: "サイトの説明文" }), ASSETS: assets },
+    );
+    const html = await res.text();
+    expect(metaOf(html).description).toBe("公開の kangaroo の話");
+    expect(html).not.toContain("サイトの説明文");
   });
 
   it("匿名にも owner にも、#root に title と本文の Markdown をテキストのまま差し込む", async () => {
@@ -368,6 +384,7 @@ describe("draft のページの HTML", () => {
       title: "Hidden Plan - wiki",
       ogTitle: "Hidden Plan",
       ogDescription: "下書きの zebrafish の話",
+      description: null,
       ogUrl: `${ORIGIN}/p/${draft.id}`,
       ogType: "article",
       canonical: `${ORIGIN}/p/${draft.id}`,
@@ -389,6 +406,15 @@ describe("draft のページの HTML", () => {
       expect(meta.ogTitle, label).toBe("Hidden Plan");
       expect(meta.ogUrl, label).toBe(`${ORIGIN}/p/${draft.id}`);
       expect(meta.robots, label).toBe("noindex");
+    }
+  });
+
+  it("draft には抜粋があっても description を出さず、owner が開いても同じ", async () => {
+    const { navigate, draft, cookie } = await seed();
+    for (const headers of [{}, { Cookie: cookie }]) {
+      const html = await (await navigate(`/p/${draft.id}`, headers)).text();
+      expect(metaOf(html).ogDescription).toBe("下書きの zebrafish の話");
+      expect(html).not.toContain('name="description"');
     }
   });
 
@@ -679,6 +705,7 @@ describe("値のエスケープ", () => {
     expect(meta.title).toBe(`${title} - wiki`);
     expect(meta.ogTitle).toBe(title);
     expect(meta.ogDescription).toBe('1 < 2 & "x" &lt;y&gt;');
+    expect(meta.description).toBe('1 < 2 & "x" &lt;y&gt;');
     expect(meta.ogUrl).toBe(`${ORIGIN}/${encodeURIComponent(title.replaceAll(" ", "_"))}`);
   });
 
@@ -718,11 +745,12 @@ describe("値のエスケープ", () => {
     const html = await (await navigate(`/p/${page.id}`)).text();
     const meta = metaOf(html);
     expect(meta.ogDescription).toBe(excerpt);
+    expect(meta.description).toBe(excerpt);
     expect(meta.ogTitle).toBe("Multiline");
     expect(html).toContain("</head><body>");
   });
 
-  it("抜粋が空か無いページは og:description を出さない", async () => {
+  it("抜粋が空か無いページは og:description と description を出さない", async () => {
     const { navigate, create } = await seed();
     const empty = await create("Empty", "", "public");
     const unbuilt = await create("Unbuilt", "まだ抜粋の無い話", "public");
@@ -731,6 +759,7 @@ describe("値のエスケープ", () => {
       const html = await (await navigate(`/p/${page.id}`)).text();
       expect(metaOf(html).ogDescription, page.title).toBeNull();
       expect(html, page.title).not.toContain("og:description");
+      expect(html, page.title).not.toContain('name="description"');
       expect(metaOf(html).ogTitle, page.title).toBe(page.title);
     }
   });
@@ -924,6 +953,74 @@ describe("トップの HTML", () => {
       expect(rootListOf(await res.text()), path).toBeNull();
       expect(res.headers.get("X-Robots-Tag"), path).toBe("noindex");
     }
+  });
+
+  describe("サイトの説明文", () => {
+    const DESCRIPTION = "一人用の wiki。kangaroo のメモ";
+    const withDescription =
+      (SITE_DESCRIPTION: string | undefined, init: RequestInit = {}) =>
+      (path: string) =>
+        createApp().request(
+          path,
+          { headers: { Accept: HTML_ACCEPT }, ...init },
+          {
+            ...ownerEnv(SITE_DESCRIPTION === undefined ? {} : { SITE_DESCRIPTION }),
+            ASSETS: assets,
+          },
+        );
+
+    it("head に description を 1 つ出し、一覧は変えない", async () => {
+      await seed();
+      const res = await withDescription(` ${DESCRIPTION} `)("/");
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(metaOf(html).description).toBe(DESCRIPTION);
+      expect(html).toMatch(/<head>.*<meta name="description" content="[^"]*">.*<\/head>/);
+      expect(html).toContain("<title>wiki</title>");
+      expect(html.match(/name="description"/g)).toHaveLength(1);
+      expect(rootListOf(html)?.links).toHaveLength(1);
+    });
+
+    it("無いか、空か、deploy の検査を通らない説明文なら出さない", async () => {
+      await seed();
+      for (const description of [undefined, "", "  ", "a\u202eb", "😀".repeat(201)]) {
+        const html = await (await withDescription(description)("/")).text();
+        expect(html, JSON.stringify(description?.slice(0, 4))).not.toContain('name="description"');
+      }
+    });
+
+    it('説明文の <、"、& と文字参照に見える表記は属性を壊さず、そのまま読める', async () => {
+      await seed();
+      const description = 'A <b> & "c" &amp; d "><script>';
+      const html = await (await withDescription(description)("/")).text();
+      // 属性値の中の < や > は要素にならないので、値が属性を抜けていないことを確かめる
+      expect(html).toContain('content="A <b> &amp; &quot;c&quot; &amp;amp; d &quot;><script>">');
+      expect(html).toContain("</head><body>");
+      expect(metaOf(html).description).toBe(description);
+    });
+
+    it("HEAD は GET と同じステータスとヘッダーで本文を空にする", async () => {
+      await seed();
+      const get = await withDescription(DESCRIPTION)("/");
+      const head = await withDescription(DESCRIPTION, {
+        method: "HEAD",
+        headers: { Accept: HTML_ACCEPT },
+      })("/");
+      expect(head.status).toBe(200);
+      expect(Object.fromEntries(head.headers)).toEqual(Object.fromEntries(get.headers));
+      expect(await head.text()).toBe("");
+    });
+
+    it("クエリ付きのトップは説明文があっても書き換えず、ASSETS の応答（ETag と 304）をそのまま通す", async () => {
+      await seed();
+      const res = await withDescription(DESCRIPTION)("/?q=Open");
+      expect(res.headers.get("ETag")).toBe('"index"');
+      expect(await res.text()).toBe(INDEX_HTML);
+      const conditional = await withDescription(DESCRIPTION, {
+        headers: { Accept: HTML_ACCEPT, "If-None-Match": '"index"' },
+      })("/?q=Open");
+      expect(conditional.status).toBe(304);
+    });
   });
 
   it("一覧は本文を読まず、pages_alive_updated をたどって並べ替えない", async () => {

@@ -73,6 +73,12 @@ robots.txt は取得への申告で、検索結果に載るかは HTML 側の指
 - `/_auth/` の HTML は `withHtmlHeaders` を通らず、OAuth のルートが個別に `X-Robots-Tag: noindex` を付ける（`apps/worker/src/auth/oauth-routes.ts`）
 - draft のページは、id で開けても `<meta name="robots" content="noindex">` を HTML に入れる（`apps/worker/src/page-html.ts`）
 
+検索結果の説明文の候補として、HTML の head に `<meta name="description">` を入れる。
+
+- public のページには、`og:description` と同じ抜粋を入れる。抜粋が無いか空のページには入れない（`apps/worker/src/page-html.ts` の `rewritePageHtml`）。draft のページは索引に載せないので入れない
+- トップには `SITE_DESCRIPTION` を入れる。値は `/llms.txt` の blockquote と同じで、無いか規則を満たさなければ入れない（`apps/worker/src/site-name.ts` の `siteDescriptionOf`）
+- `/?tag=` や `/?q=` のようなクエリ付きの `/` は、`noindex` の絞り込みの画面なので入れない
+
 ## JS を実行しない読み手への一覧
 
 JS を実行しない読み手が public のページへたどれるよう、トップの HTML、public のページの HTML、`/llms.txt` に一覧を置く。

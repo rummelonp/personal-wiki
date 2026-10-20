@@ -267,8 +267,9 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
 ### サイトの説明文
 
 `deploy.env` の `SITE_DESCRIPTION` に書いた文が、`/llms.txt` の H1（サイト名）の下に blockquote で出る。
+トップの HTML には、`<meta name="description">` として同じ文が入る。
 AI のエージェントに wiki の中身を伝える 1〜2 文の要約を想定する。
-空のままなら blockquote を出さない。
+空のままなら blockquote も `<meta name="description">` も出さない。
 
 説明文は前後の空白を除き、200 文字以内（サロゲートペアは 1 文字）にする。
 使えない文字と、`#` を含むときに `"` で囲むことは、サイト名と同じである。

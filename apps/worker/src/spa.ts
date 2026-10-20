@@ -14,7 +14,7 @@ import { type LinkTarget, listPublicLinkTargets } from "./pages/link-targets";
 import { listPublicPages, type PublicPageEntry } from "./pages/search";
 import { isWorkerPath } from "./paths";
 import { withHtmlHeaders } from "./security-headers";
-import { siteNameOf } from "./site-name";
+import { siteDescriptionOf, siteNameOf } from "./site-name";
 
 // - html: HTML を明示して受け付ける（ブラウザのナビゲーション）
 // - any: Accept が無いか */* だけ。リンクプレビューのクローラーがこの形で来る
@@ -63,7 +63,12 @@ async function rootHtml(env: Bindings, url: URL): Promise<Response> {
   const result = await lookup;
   if (!result.ok) return unavailable(index);
   const res = withHtmlHeaders(
-    rewriteRootHtml(index, { siteName: siteNameOf(env), pages: result.value, origin: url.origin }),
+    rewriteRootHtml(index, {
+      siteName: siteNameOf(env),
+      description: siteDescriptionOf(env),
+      pages: result.value,
+      origin: url.origin,
+    }),
     { indexable: true },
   );
   res.headers.delete("ETag");
