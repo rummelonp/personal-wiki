@@ -48,6 +48,19 @@ describe("ListSortMenu の Tab", () => {
   });
 });
 
+describe("ListSortMenu のボタンを押して閉じる", () => {
+  it("押しても焦点が移らないブラウザでも、閉じたら焦点をボタンに置く", async () => {
+    render();
+    act(() => button().click());
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitemradio");
+    // Safari のボタンは押しても焦点を取らない
+    button().addEventListener("mousedown", (event) => event.preventDefault());
+    await userEvent.click(button());
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(button());
+  });
+});
+
 describe("ListSortMenu の外側を押して閉じる", () => {
   it("焦点を持たない外側を押すと、焦点をボタンに戻し、並びは変えない", async () => {
     const outside = document.createElement("div");

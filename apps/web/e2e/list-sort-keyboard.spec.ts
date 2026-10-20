@@ -3,9 +3,10 @@ import type { OwnerApi } from "./support/api";
 import { expect, test, uniqueTitle } from "./support/fixtures";
 
 /*
- * 並び順のメニューを、デスクトップのキーボードで閉じたときの焦点の移動先。
+ * 並び順のメニューを、デスクトップで閉じたときの焦点の移動先。
  * メニューを閉じる Tab の keydown では、既定の動作より先に項目が消える。
  * 移動先がブラウザの扱いに任されるので、実際のキーの経路で、ボタンから同じキーを押したのと同じ所かを確かめる。
+ * ボタンを押して閉じるときは、押しても焦点が移らない Safari で焦点がボタンに戻るかを確かめる。
  */
 
 const sortButton = (page: Page) => page.getByRole("button", { name: /^並び順：/ });
@@ -84,4 +85,20 @@ test("2 つ目の項目に移ってからの Tab も、ボタンの次へ移る 
 
   await expect(menu(page)).toHaveCount(0);
   expect(await isActive(page, destination)).toBe(true);
+});
+
+test("開いたメニューを並び順のボタンを押して閉じると、焦点がボタンに戻る @keyboard", async ({
+  page,
+  api,
+}, testInfo) => {
+  await openList(page, api, uniqueTitle(testInfo, "並び順の焦点 ボタンで閉じる"));
+
+  await sortButton(page).click();
+  await expect(menu(page)).toBeVisible();
+  await expect(menuItem(page, "更新日時")).toBeFocused();
+  await sortButton(page).click();
+
+  await expect(menu(page)).toHaveCount(0);
+  await expect(sortButton(page)).toBeFocused();
+  await expect(sortButton(page)).toHaveAccessibleName("並び順：更新日時");
 });

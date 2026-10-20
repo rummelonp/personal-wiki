@@ -113,7 +113,9 @@ export function ListSortMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((value) => !value)}
+        // Safari はボタンを押しても焦点が移らず、項目が持つ焦点は項目が消えると body に落ちる。
+        // 開閉を切り替えるだけにせず、閉じるときは焦点をボタンに戻す
+        onClick={() => (open ? close() : setOpen(true))}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
           event.preventDefault();
