@@ -53,12 +53,20 @@ test("quick switcher から作り、すぐ書いた本文が再読み込みで�
 }, testInfo) => {
   const title = uniqueTitle(testInfo, "switcher で作成");
   const text = "quick switcher から作ったページの本文";
+  // 負荷の高い機械で起きる、エディタの chunk の読み込みの遅れを固定で再現する
+  await page.route("**/assets/PageView-*.js", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.continue();
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "ページを検索" }).click();
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
   await switcher.getByRole("combobox", { name: "検索語" }).fill(title);
   await switcher.getByRole("option", { name: `「${title}」を作成` }).click();
   await expect(switcher).toBeHidden();
+  // chunk が来るまで画面はスケルトンで、本文の欄が無い。その間に打った文字は落ちるので、
+  // 利用者と同じく caret が本文に入ったのを見てから打つ（作成のレスポンスは待たない）
+  await expect(bodyEditor(page)).toBeFocused();
   await typeRightAwayAndSave(page, text);
   await expectKeptAfterReload(page, title, text);
 });
