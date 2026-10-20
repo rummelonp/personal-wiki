@@ -144,6 +144,9 @@
   --outline-max-height: 40vh; /* 狭い画面の畳んだ目次の高さの上限（超えると目次の中でスクロール）。右の列の目次には上限を置かず、列の中でスクロールする */
   --editor-min-height: 50vh; /* 本文の編集欄の最低の高さ */
   --viewport-height: 100dvh; /* 見えている高さの既定。通知のドックが visual viewport の高さを知らせるまで、それに代わる */
+  --notice-dock-shadow-room: var(
+    --space-5
+  ); /* 通知のドックの左右の余白。ドックは overflow で内側を切るので、影 --shadow-popover のぼかし半径（24px）以上にして、縁で影を切らない */
   --notice-dock-ratio: 0.6; /* 通知のドックの高さの上限を、見えている高さに対する割合で表す。超えるとドックの中でスクロールし、本文を覆いきらない */
   --notice-with-details-min-height: 24rem; /* details を持つ通知の高さの上限の下限。低い画面でドックの上限が縮んでも、見出し、理由、操作と、差分を読める高さの details が収まる */
   --notice-dock-ratio-with-details: 0.85; /* details を持つ通知があるドックの上限の、さらに上の限り。通知の下限の高さがちょうど収まる高さまでドックを広げ、ドックの中が数十 px だけスクロールするのを避ける */

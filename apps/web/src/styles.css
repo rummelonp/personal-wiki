@@ -1296,12 +1296,16 @@ a.segmented-option {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: calc(var(--note-width) + 2 * var(--space-3));
+  max-width: calc(var(--note-width) + 2 * var(--notice-dock-shadow-room));
   max-height: calc(var(--notice-room, var(--viewport-height)) * var(--notice-dock-ratio));
-  /* 影が overflow で切れないよう、ドックの内側に余白を取り、その分だけ外へ出して通知の左端を本文の列に合わせる */
-  margin: 0 calc(var(--gutter) - var(--space-3)) 0
-    calc(var(--frame-start) + var(--gutter) - var(--space-3));
-  padding: var(--space-3);
+  /*
+   * 影が overflow で切れないよう、左右はドックの内側に影のぼかし以上の余白を取り、その分だけ外へ出して
+   * 通知の左端を本文の列に合わせる。--gutter は広い画面（40rem を超える幅）で 32px 以上なので、
+   * 右の端も欄の線を越えない。上下は影が届く前に薄れ、下は画面の下端で止まるので、広げない。
+   */
+  margin: 0 calc(var(--gutter) - var(--notice-dock-shadow-room)) 0
+    calc(var(--frame-start) + var(--gutter) - var(--notice-dock-shadow-room));
+  padding: var(--space-3) var(--notice-dock-shadow-room);
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--color-bg);
@@ -1322,13 +1326,16 @@ a.segmented-option {
  * 通知の左端は本文の列の左端（--frame-start と --gutter）で、右端は本文の右端にそろう。
  * ドックは fixed で、% はスクロールバーを除いた画面の幅を指す。.rail-layout の列の判定と同じ基準になる。
  * 欄が本文の下に回る幅（40rem 以下）では列の式から欄の幅が消えるので、ドックを画面の右端まで伸ばし、
- * 通知は右の余白（--gutter）を除いた幅にする。
+ * 通知は左右の余白（--gutter）を除いた幅にする。--gutter は影の余白（--notice-dock-shadow-room）より
+ * 小さくなりうるので、負の margin で画面の外へ出さず、ドックの端を画面の端に合わせる。
  */
 @media (max-width: 40rem) {
   .notice-dock {
     max-width: none;
     margin-right: 0;
+    margin-left: 0;
     padding-right: var(--gutter);
+    padding-left: var(--gutter);
   }
 }
 
