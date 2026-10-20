@@ -103,7 +103,7 @@
   --switcher-list-max-height: 20rem; /* quick switcher の候補の高さの上限（超えるとスクロール） */
   --revision-viewer-width: 47rem; /* 履歴の版を開くダイアログの幅。左右の padding と枠を除いて本文の幅（--prose-width）が収まる */
   --publish-dialog-width: 30rem; /* 公開の確認のダイアログの幅。確認の文が 3 行ほどに収まる */
-  --visibility-menu-width: 14.5rem; /* 公開範囲のメニューの幅。選択肢の説明が 1〜2 行に収まる */
+  --visibility-menu-width: 9rem; /* 公開範囲のメニューの幅。選択肢の名前と印が 1 行に収まる */
   --visibility-pill-height: 1.625rem; /* title の右の公開範囲の印の見た目の高さ。タッチ端末では当たり判定だけを --tap-size に広げる */
   --list-sort-height: 1.625rem; /* 一覧の見出しの右の並び順のボタンの見た目の高さ。見出しの 1 行に収め、タッチ端末では当たり判定だけを --tap-size に広げる */
   --list-sort-menu-width: 9rem; /* 並び順のメニューの幅。いちばん長い選択肢と印が 1 行に収まる */

@@ -94,7 +94,7 @@ async function openConfirm() {
 describe("印", () => {
   it("今の公開範囲を名前に含め、メニューを開くボタンだと伝える", () => {
     render({ visibility: "public" });
-    expect(pill().getAttribute("aria-label")).toBe("公開範囲：公開");
+    expect(pill().getAttribute("aria-label")).toBe("公開範囲: 公開");
     expect(pill().dataset.visibility).toBe("public");
     expect(pill().getAttribute("aria-haspopup")).toBe("menu");
     expect(pill().getAttribute("aria-expanded")).toBe("false");
@@ -280,7 +280,7 @@ describe("公開の確認", () => {
     await openConfirm();
     const text = dialog()?.querySelector(".publish-dialog-head > p");
     expect(text?.textContent).toBe(
-      "誰でもこのページを読めるようになり、最近の更新、検索、タグの一覧にも載ります。下書きに戻しても、すでに読まれた内容は取り消せません。",
+      "誰でもこのページを読めるようになり、一覧、検索、タグにも載ります。下書きに戻しても、すでに読まれた内容は取り消せません。",
     );
     expect(text?.id).not.toBe("");
     expect(button("公開する").getAttribute("aria-describedby")).toBe(text?.id);
@@ -382,7 +382,7 @@ describe("待っている間と結果", () => {
     restoreDelay = setLoadingDelay(0);
     render({ pending: "public" });
     expect(pill().dataset.visibility).toBe("public");
-    expect(pill().getAttribute("aria-label")).toBe("公開範囲：公開");
+    expect(pill().getAttribute("aria-label")).toBe("公開範囲: 公開");
     expect(pill().getAttribute("aria-busy")).toBe("true");
     expect(pill().disabled).toBe(true);
     expect(container?.querySelector(".visibility-spinner")).not.toBeNull();

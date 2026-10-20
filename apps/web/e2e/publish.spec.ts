@@ -9,6 +9,7 @@ import {
   typeAtBodyEnd,
   uniqueTitle,
 } from "./support/fixtures";
+import { lineTexts, midPhraseBreaks } from "./support/line-breaks";
 import { E2E_ORIGIN } from "./support/stack";
 
 /*
@@ -61,16 +62,47 @@ async function openDraft(page: Page, title: string, api: OwnerApi) {
   return created.id;
 }
 
+test("公開の確認の本文は、デスクトップの幅で最後の行が 1 字と句読点だけにならない", async ({
+  page,
+  api,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "デスクトップの幅で測る");
+  await openDraft(page, uniqueTitle(testInfo, "公開の確認の折り返し"), api);
+  await choose(page, "公開");
+  const text = confirmDialog(page).locator(".publish-dialog-head > p");
+  await expect(text).toBeVisible();
+  const lines = await lineTexts(text);
+  expect(lines.length, "本文が折り返していないので測れていない").toBeGreaterThan(1);
+  // 句読点は行頭に来ないので、「ん。」のように 1 字と句点だけの行も 1 字の行として数える
+  const lastLine = lines.at(-1) ?? "";
+  expect(
+    lastLine.replace(/[、。]/g, "").length,
+    `最後の行「${lastLine}」の字数`,
+  ).toBeGreaterThanOrEqual(2);
+});
+
+test("公開の確認の本文は、iPhone の幅で語の途中で折り返さない", async ({ page, api }, testInfo) => {
+  test.skip(testInfo.project.name !== "webkit-iphone", "auto-phrase を解釈しない描画で測る");
+  await openDraft(page, uniqueTitle(testInfo, "公開の確認の文節"), api);
+  await choose(page, "公開");
+  const text = confirmDialog(page).locator(".publish-dialog-head > p");
+  await expect(text).toBeVisible();
+  expect((await lineTexts(text)).length, "本文が折り返していないので測れていない").toBeGreaterThan(
+    1,
+  );
+  expect(await midPhraseBreaks(text), "語の途中で折り返している").toEqual([]);
+});
+
 test("公開の確認を取り消すと、draft のまま匿名に出ない", async ({ page, api }, testInfo) => {
   const title = uniqueTitle(testInfo, "公開の取り消し");
   await openDraft(page, title, api);
   await expectShown(page, "draft");
-  await expect(pill(page)).toHaveAccessibleName("公開範囲：下書き");
+  await expect(pill(page)).toHaveAccessibleName("公開範囲: 下書き");
   await expect(page.getByRole("button", { name: "URL をコピー" })).toHaveCount(0);
 
   await choose(page, "公開");
   await expect(menu(page)).toHaveCount(0);
-  await expect(confirmDialog(page)).toContainText("最近の更新、検索、タグの一覧にも載ります");
+  await expect(confirmDialog(page)).toContainText("一覧、検索、タグにも載ります");
   // 開いた直後の焦点は、確定でなく「やめる」に置く
   await expect(confirmDialog(page).getByRole("button", { name: "やめる" })).toBeFocused();
   // 確認の最中は、まだ何も変わっていない
@@ -225,7 +257,6 @@ test("公開範囲のメニューは、キーボードで選べ、Escape と外�
   // 開いたら選択中の項目に焦点を置く
   await expect(menuItem(page, "下書き")).toBeFocused();
   await expect(menuItem(page, "下書き")).toHaveAttribute("aria-checked", "true");
-  await expect(menuItem(page, "下書き")).toHaveAccessibleDescription("一覧、検索、タグに出さない");
   await page.keyboard.press("ArrowDown");
   await expect(menuItem(page, "公開")).toBeFocused();
 
@@ -377,7 +408,7 @@ test("確認して公開すると匿名の一覧に出て、結果が知らさ�
   await confirmDialog(page).getByRole("button", { name: "公開する" }).click();
   await expect(confirmDialog(page)).toHaveCount(0);
   await expectShown(page, "public");
-  await expect(pill(page)).toHaveAccessibleName("公開範囲：公開");
+  await expect(pill(page)).toHaveAccessibleName("公開範囲: 公開");
   // 差し色は公開中の印。draft は中立の色
   expect(await pillColor()).not.toBe(draftColor);
   await expect(notice(page)).toHaveText("公開しました。");

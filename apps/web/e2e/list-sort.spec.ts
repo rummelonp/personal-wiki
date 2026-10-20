@@ -35,7 +35,7 @@ async function seedSorted(api: OwnerApi, testInfo: TestInfo, visibility: "draft"
 }
 
 function listSortControls(page: Page) {
-  const sortButton = page.getByRole("button", { name: /^並び順：/ });
+  const sortButton = page.getByRole("button", { name: /^並び順: / });
   return {
     rows: page.locator(".entries .entry-title"),
     sortButton,
@@ -60,11 +60,11 @@ test("並びを選び直すと一覧と見出しが変わり、選んだ並び�
   await page.goto(`/?tag=${tag}`);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(`タグ「${tag}」`);
   await expect(rows).toHaveText(byUpdated);
-  await expect(sortButton).toHaveAccessibleName("並び順：更新日時");
+  await expect(sortButton).toHaveAccessibleName("並び順: 更新日時");
 
   await choose("作成日時");
   await expect(rows).toHaveText(byCreated);
-  await expect(sortButton).toHaveAccessibleName("並び順：作成日時");
+  await expect(sortButton).toHaveAccessibleName("並び順: 作成日時");
   await expect(sortButton).toBeFocused();
   expect(new URL(page.url()).search).toBe(`?tag=${tag}`);
 
@@ -78,13 +78,13 @@ test("並びを選び直すと一覧と見出しが変わり、選んだ並び�
   await expect(page).toHaveURL(/\/p\//);
   await page.goBack();
   await expect(rows).toHaveText(byCreated);
-  await expect(sortButton).toHaveAccessibleName("並び順：作成日時");
+  await expect(sortButton).toHaveAccessibleName("並び順: 作成日時");
 
   await choose("タイトル");
   await expect(rows).toHaveText(byTitle);
   await page.reload();
   await expect(rows).toHaveText(byTitle);
-  await expect(sortButton).toHaveAccessibleName("並び順：タイトル");
+  await expect(sortButton).toHaveAccessibleName("並び順: タイトル");
 
   // 絞らない一覧は、更新日時の順でなければ「すべてのページ」と呼ぶ
   await page.goto("/");

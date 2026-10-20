@@ -260,7 +260,7 @@ describe("App の匿名の画面", () => {
       [...(main()?.querySelectorAll("button") ?? [])].map((button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["並び順：更新日時"]);
+    ).toEqual(["並び順: 更新日時"]);
     expect(headerButtons()).toEqual(["ページを検索"]);
     expect(header()?.textContent).not.toContain("新規作成");
     expect(header()?.querySelector("a[href^='/_auth/login']")?.textContent).toBe("ログイン");

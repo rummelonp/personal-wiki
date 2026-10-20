@@ -235,6 +235,17 @@ test.describe("タップ対象", () => {
     await pill.tap();
     await expect(page.getByRole("menu", { name: "公開範囲" })).toBeVisible();
     await expectTapTargets(page, [".visibility-option"]);
+    // 44px に広げた行の中で、印と名前が上下の中央に来る（baseline のままだと上に寄る）
+    const offsets = await page.locator(".visibility-option").evaluateAll((options) =>
+      options.map((option) => {
+        const row = option.getBoundingClientRect();
+        const label = document.createRange();
+        label.selectNodeContents(option.querySelector(".visibility-option-label") as Element);
+        const text = label.getBoundingClientRect();
+        return Math.abs(text.top + text.height / 2 - (row.top + row.height / 2));
+      }),
+    );
+    for (const offset of offsets) expect(offset, "名前が行の中央").toBeLessThanOrEqual(2);
     await page.getByRole("menuitemradio", { name: "公開", exact: true }).tap();
     await expect(page.getByRole("dialog", { name: "公開の確認" })).toBeVisible();
     await expectTapTargets(page, [".publish-dialog .button"]);

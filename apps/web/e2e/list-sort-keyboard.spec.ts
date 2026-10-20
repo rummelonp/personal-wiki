@@ -9,7 +9,7 @@ import { expect, test, uniqueTitle } from "./support/fixtures";
  * ボタンを押して閉じるときは、押しても焦点が移らない Safari で焦点がボタンに戻るかを確かめる。
  */
 
-const sortButton = (page: Page) => page.getByRole("button", { name: /^並び順：/ });
+const sortButton = (page: Page) => page.getByRole("button", { name: /^並び順: / });
 const menu = (page: Page) => page.getByRole("menu", { name: "並び順" });
 const menuItem = (page: Page, label: string) =>
   page.getByRole("menuitemradio", { name: label, exact: true });
@@ -63,7 +63,7 @@ for (const key of ["Tab", "Shift+Tab"]) {
 
     await expect(menu(page)).toHaveCount(0);
     expect(await isActive(page, destination)).toBe(true);
-    await expect(sortButton(page)).toHaveAccessibleName("並び順：更新日時");
+    await expect(sortButton(page)).toHaveAccessibleName("並び順: 更新日時");
   });
 }
 
@@ -100,5 +100,5 @@ test("開いたメニューを並び順のボタンを押して閉じると、�
 
   await expect(menu(page)).toHaveCount(0);
   await expect(sortButton(page)).toBeFocused();
-  await expect(sortButton(page)).toHaveAccessibleName("並び順：更新日時");
+  await expect(sortButton(page)).toHaveAccessibleName("並び順: 更新日時");
 });

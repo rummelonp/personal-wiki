@@ -840,7 +840,7 @@ describe("HomeView の並び順", () => {
   it("見出しの右に今の並びの名前を出し、選び直すとその並びで取り直して見出しも変える", async () => {
     await renderHome("");
     expect(heading()).toBe("最近の更新");
-    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順：更新日時");
+    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順: 更新日時");
     expect(sortButton()?.closest(".list-head")?.querySelector("h1")).not.toBeNull();
     expect(sortOf(0)).toBe("updated");
 
@@ -858,7 +858,7 @@ describe("HomeView の並び順", () => {
     await act(async () => (items[2] as HTMLButtonElement).click());
     expect(container?.querySelector("[role='menu']")).toBeNull();
     expect(document.activeElement).toBe(sortButton());
-    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順：タイトル");
+    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順: タイトル");
     expect(heading()).toBe("すべてのページ");
     await vi.waitFor(() => expect(sortOf(1)).toBe("title"));
   });
@@ -873,7 +873,7 @@ describe("HomeView の並び順", () => {
     await mountHome("", true, "x", "public");
     await vi.waitFor(() => expect(container?.querySelector(".entries")).not.toBeNull());
     expect(sortOf(0)).toBe("created");
-    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順：作成日時");
+    expect(sortButton()?.getAttribute("aria-label")).toBe("並び順: 作成日時");
     expect(heading()).toBe("タグ「x」の公開ページ");
     // URL には載せない
     expect(window.location.search).not.toContain("sort");

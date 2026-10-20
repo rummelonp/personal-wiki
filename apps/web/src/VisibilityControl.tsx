@@ -10,15 +10,16 @@ import { useDelayedWhile } from "./Loading";
 import type { LinkedDraft } from "./linked-drafts";
 import { rememberTitle } from "./page-titles";
 import type { ApiResult } from "./pages-api";
+import { breakAtPhrases } from "./phrase-wrap";
 import { pageHref } from "./route";
 import { focusIsAdrift, useModalDialog } from "./use-modal-dialog";
 import { VisibilityPillFace } from "./VisibilityPillFace";
 
 type Visibility = "draft" | "public";
 
-const OPTIONS: ReadonlyArray<{ value: Visibility; label: string; note: string }> = [
-  { value: "draft", label: "下書き", note: "一覧、検索、タグに出さない" },
-  { value: "public", label: "公開", note: "ログインしていない人の一覧、検索、タグに載る" },
+const OPTIONS: ReadonlyArray<{ value: Visibility; label: string }> = [
+  { value: "draft", label: "下書き" },
+  { value: "public", label: "公開" },
 ];
 
 const LABELS: Record<Visibility, string> = { draft: "下書き", public: "公開" };
@@ -253,7 +254,7 @@ export function VisibilityControl({
         type="button"
         className="visibility-pill"
         data-visibility={shownVisibility}
-        aria-label={`公開範囲：${LABELS[shownVisibility]}`}
+        aria-label={`公開範囲: ${LABELS[shownVisibility]}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
@@ -279,27 +280,20 @@ export function VisibilityControl({
           aria-label="公開範囲"
           onKeyDown={onMenuKeyDown}
         >
-          {OPTIONS.map(({ value, label, note: optionNote }) => (
+          {OPTIONS.map(({ value, label }) => (
             <button
               key={value}
               type="button"
               className="visibility-option"
               role="menuitemradio"
               aria-checked={shownVisibility === value}
-              aria-labelledby={`${menuId}-${value}`}
-              aria-describedby={`${menuId}-${value}-note`}
               tabIndex={-1}
               onClick={() => choose(value)}
             >
               <span className="visibility-option-check" aria-hidden="true">
                 {shownVisibility === value ? "✓" : ""}
               </span>
-              <span id={`${menuId}-${value}`} className="visibility-option-label">
-                {label}
-              </span>
-              <span id={`${menuId}-${value}-note`} className="visibility-option-note">
-                {optionNote}
-              </span>
+              <span className="visibility-option-label">{label}</span>
             </button>
           ))}
         </div>
@@ -366,7 +360,9 @@ function PublishDialog({
           <div className="publish-dialog-head">
             {/* 焦点は「やめる」に置くので、どちらの操作にも何が起きるかを結び付けて読ませる */}
             <p id={confirmTextId}>
-              誰でもこのページを読めるようになり、最近の更新、検索、タグの一覧にも載ります。下書きに戻しても、すでに読まれた内容は取り消せません。
+              {breakAtPhrases(
+                "誰でもこのページを読めるようになり、一覧、検索、タグにも載ります。下書きに戻しても、すでに読まれた内容は取り消せません。",
+              )}
             </p>
             <div className="actions">
               <button

@@ -860,7 +860,7 @@ a.segmented-option {
 .visibility-option {
   display: grid;
   grid-template-columns: var(--space-4) 1fr;
-  gap: var(--space-1) var(--space-1);
+  gap: var(--space-1);
   align-items: baseline;
   padding: var(--space-2);
   font: inherit;
@@ -888,18 +888,11 @@ a.segmented-option {
 }
 
 .visibility-option-check {
-  grid-row: span 2;
   color: var(--color-accent);
 }
 
 .visibility-option-label {
   font-weight: var(--font-weight-medium);
-}
-
-.visibility-option-note {
-  grid-column: 2;
-  font-size: var(--font-size-xs);
-  color: var(--color-fg-muted);
 }
 
 /*
@@ -917,8 +910,12 @@ a.segmented-option {
   padding: var(--space-4);
 }
 
+/* 通知の本文（.notice-text）と同じ折り返し。WebKit では breakAtPhrases が文節の切れ目を決める */
 .publish-dialog-head > p {
   margin: 0 0 var(--space-4);
+  line-break: strict;
+  word-break: auto-phrase;
+  text-wrap: pretty;
 }
 
 .publish-drafts {
@@ -2703,8 +2700,9 @@ a.segmented-option {
   }
 
   .visibility-option {
+    align-items: center;
     min-height: var(--tap-size);
-    padding-block: var(--space-2);
+    padding-block: 0;
   }
 
   .list-sort-button {

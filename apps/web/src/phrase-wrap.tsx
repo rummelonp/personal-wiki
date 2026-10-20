@@ -125,7 +125,7 @@ export function withPhraseBreaks(node: ReactNode): ReactNode {
 }
 
 /**
- * 見出しや title の文字列を、文節で切る必要がある描画のときだけ withPhraseBreaks にかける。
+ * 固定の文字列や title を、文節で切る必要がある描画のときだけ withPhraseBreaks にかける。
  * 文字列を span に包むので、flex の親の直下に置いても 1 つの項目になる。
  */
 export function breakAtPhrases(text: string): ReactNode {

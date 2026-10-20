@@ -22,7 +22,7 @@ test("長いタグの見出しは、どの幅でも語の途中で折り返さ�
   await expect(heading).toHaveText(`タグ「${tag}」`);
 
   const head = page.locator(".list-head");
-  const sort = page.getByRole("button", { name: /^並び順：/ });
+  const sort = page.getByRole("button", { name: /^並び順: / });
   // 見出しの 1 行に収まる語（4 字）が収まらない幅は振らない。1 行より長い語は、折り返しが語の中に入る
   for (let width = 220; width <= 640; width += 7) {
     await head.evaluate((element, w) => {

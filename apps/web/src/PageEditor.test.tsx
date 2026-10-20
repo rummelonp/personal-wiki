@@ -1739,7 +1739,7 @@ describe("まだ作っていないページ（page が null）", () => {
     await flushAsync();
     expect(createPage).toHaveBeenCalledTimes(1);
     const pill = container?.querySelector(".title-row > .visibility .visibility-pill");
-    expect(pill?.getAttribute("aria-label")).toBe("公開範囲：下書き");
+    expect(pill?.getAttribute("aria-label")).toBe("公開範囲: 下書き");
   });
 
   it("title を渡されたら、開いてすぐ作り、本文にフォーカスする", async () => {

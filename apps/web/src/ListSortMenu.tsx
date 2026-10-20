@@ -109,7 +109,7 @@ export function ListSortMenu({
         ref={button}
         type="button"
         className="list-sort-button"
-        aria-label={`並び順：${LIST_SORT_LABELS[sort]}`}
+        aria-label={`並び順: ${LIST_SORT_LABELS[sort]}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
