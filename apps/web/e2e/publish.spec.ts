@@ -319,6 +319,35 @@ test("公開範囲のメニューを印を押して閉じると、焦点は印�
   await expectShown(page, "draft");
 });
 
+// Escape で閉じたときの焦点は、アプリが印へ戻すのが焦点の無いときだけで、通常はエンジンの既定
+// （dialog を開いた時の焦点へ戻す）に任せている。確認を開く前に印へ焦点を置くので、既定の戻し先も印になる。
+// どのエンジンでも印へ戻ることを確かめる
+test("公開の確認を Escape で閉じると、焦点は印に戻り、続けてキーボードで操作できる @smoke", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "確認を Escape で閉じる");
+  await openDraft(page, title, api);
+
+  await choose(page, "公開");
+  await expect(confirmDialog(page).getByRole("button", { name: "やめる" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(pill(page)).toBeFocused();
+
+  // 戻った印から、キーボードだけでもう一度開いて閉じられる
+  await page.keyboard.press("Enter");
+  await expect(menuItem(page, "下書き")).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await expect(confirmDialog(page).getByRole("button", { name: "やめる" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(pill(page)).toBeFocused();
+  await expectShown(page, "draft");
+  expect(await anonymousSees(title)).toBe(false);
+});
+
 test("確認を開いている間に他で内容が変わったら、確認を閉じる", async ({ page, api }, testInfo) => {
   const title = uniqueTitle(testInfo, "確認中の更新");
   const id = await openDraft(page, title, api);
