@@ -571,15 +571,16 @@ test.describe("公開範囲の印の配置 @widths", () => {
     });
   }
 
-  test("読み込みの間も印の幅を空けておき、読み込んだ後に title が折り返し直さない（幅 1280）", async ({
-    page,
-    api,
-  }) => {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    // 印の横では折り返し、印が無ければ 1 行に収まる長さ。読み込んだ後に、この前提が崩れていないかも確かめる
-    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}の長い題`;
-    // public は HTML に入っていたページで出て by-title を引かず、取得中のスケルトンが出ないので draft にする
-    await api.createPage({ title, body: "上端をそろえる本文", visibility: "draft" });
+  /**
+   * 取得の間のスケルトンと読み込んだ後のページで、title の高さと本文の上端が同じかを確かめる。
+   * 印の横では折り返し、印が無ければ 1 行に収まる title で測る。読み込んだ後に、この前提が崩れていないかも確かめる。
+   * 取得（by-title）は `open` が始める前から止めておき、スケルトンを測ってから放す。
+   */
+  async function expectNoShiftWhileLoading(
+    page: Page,
+    title: string,
+    open: () => Promise<void>,
+  ): Promise<void> {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -591,7 +592,7 @@ test.describe("公開範囲の印の配置 @widths", () => {
         await route.continue().catch(() => {});
       },
     );
-    await page.goto(titlePath(title));
+    await open();
     // 起動時は owner か分からないので、ログインの状態が届いた後のスケルトンを測る
     await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
     await expect(page.locator(".note[aria-busy='true'] .note-title")).toHaveText(title);
@@ -627,6 +628,32 @@ test.describe("公開範囲の印の配置 @widths", () => {
     expect(loaded.withoutPill, "印が無ければ 1 行に収まる title").toBeLessThan(loaded.height);
     expect(loaded.height).toBeCloseTo(skeleton.height, 0);
     expect(loaded.body).toBeCloseTo(skeleton.body, 0);
+  }
+
+  test("読み込みの間も印の幅を空けておき、読み込んだ後に title が折り返し直さない（幅 1280）", async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}の長い題`;
+    // public を直接開くと HTML に入ったページで出て by-title を引かず、取得中のスケルトンが出ないので draft にする
+    await api.createPage({ title, body: "上端をそろえる本文", visibility: "draft" });
+    await expectNoShiftWhileLoading(page, title, async () => {
+      await page.goto(titlePath(title));
+    });
+  });
+
+  test("一覧から移って開く public のページも、読み込みの間に印の幅を空けておく（幅 1280）", async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}の長い題`;
+    await api.createPage({ title, body: "上端をそろえる本文", visibility: "public" });
+    await expectNoShiftWhileLoading(page, title, async () => {
+      await page.goto("/");
+      await page.locator(".entries .entry-title", { hasText: title }).click();
+    });
   });
 
   for (const width of [320, 375, 1280]) {
