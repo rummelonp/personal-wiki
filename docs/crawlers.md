@@ -177,3 +177,22 @@ robots.txt のファイル名を変えるときは、`_headers`、`run_worker_fi
 ゾーンの WAF、レート制限、Bot の設定は robots.txt の外にあり、クローラーの取得にも当たる。
 そこで bot を止めたり通したりするときは、この文書の方針と食い違わないようにする。
 併用するときの注意は、[deploy.md](./deploy.md) の「ゾーンの WAF、レート制限、Bot の設定」にある。
+
+## Cloudflare の managed robots.txt
+
+Cloudflare には、AI の bot 向けの robots.txt をゾーンの `/robots.txt` の応答に足す機能（managed robots.txt）がある。
+ゾーンの Bot の設定で Bot Preference Sync を有効にし、AI の学習への方針を Block か Disallow にしたときに働く。
+足されるのは、Content Signals の説明のコメント、`Content-Signal` と `Allow: /` を持つ `*` のグループ、主な AI の学習用 bot への `Disallow: /` のグループである。
+オリジンが 200 で robots.txt を返すときは、この管理された内容をオリジンの内容の前に置き、1 つの応答にして返す（[Cloudflare の文書](https://developers.cloudflare.com/bots/additional-configurations/managed-robots-txt/)）。
+文書は Worker や Static Assets が返す robots.txt を扱っていないので、重なるかどうかは応答を見て確かめる。
+
+有効かどうかは、本番の `/robots.txt` の応答の先頭に、Content Signals の説明のコメントなど、この repo のファイルに無い行が付いているかで分かる。
+2026-10-20 に確かめた本番の応答では無効で、応答は `apps/web/public/robots.txt` に「sitemap.xml」の節の `Sitemap:` の行を足したものと同じだった。
+
+有効にすると、応答では次の点がこの文書の説明と食い違う。
+
+- `*` のグループが 2 つになり、`Content-Signal` の行も 2 本並ぶ。管理された側は `use=reference` を持ち、`ai-input` を書かない。クローラーが 2 つをどう合わせるかは決まっておらず、この文書の方針どおりに読まれる保証が無い
+- 管理された `*` のグループの `Allow: /` が加わる。`Allow` と `Disallow` が重なるときはパスの長い規則が勝つので、`/api/` などの断りは効くはずだが、2 つのグループを合わせるかどうかは読み手の実装による
+- 学習用の bot の `Disallow: /` のグループが、ファイルの名指しの一覧とは別に付く。管理された側の一覧には Amazonbot も入っており、ファイルの一覧に無い bot も断られる
+
+有効にするときは、応答を取り直して上の 3 点を確かめ、方針と食い違うなら、ファイルの側を直すか、有効にしない。
