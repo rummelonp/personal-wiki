@@ -635,20 +635,33 @@ describe("D1 や ASSETS の失敗", () => {
     }
   });
 
+  const brokenAssets = {
+    fetch: async (input: RequestInfo | URL) => {
+      const { pathname } = new URL(String(input instanceof Request ? input.url : input));
+      if (pathname !== "/") return new Response("not found", { status: 404 });
+      throw new Error("assets are unavailable");
+    },
+  } as unknown as Fetcher;
+
   it("ASSETS の取得も失敗したときは 500 で、D1 の失敗を未処理の拒否として残さない", async () => {
-    const brokenAssets = {
-      fetch: async (input: RequestInfo | URL) => {
-        const { pathname } = new URL(String(input instanceof Request ? input.url : input));
-        if (pathname !== "/") return new Response("not found", { status: 404 });
-        throw new Error("assets are unavailable");
-      },
-    } as unknown as Fetcher;
     const res = await createApp().request(
       "/Open%20Note",
       { headers: { Accept: HTML_ACCEPT } },
       { ...ownerEnv(), ASSETS: brokenAssets, DB: failingDb },
     );
     expect(res.status).toBe(500);
+  });
+
+  it("トップでも、ASSETS の取得が失敗したときは 500 で、D1 の失敗を未処理の拒否として残さない", async () => {
+    await seed();
+    for (const DB of [failingDb, env.DB]) {
+      const res = await createApp().request(
+        "/",
+        { headers: { Accept: HTML_ACCEPT } },
+        { ...ownerEnv(), ASSETS: brokenAssets, DB },
+      );
+      expect(res.status, DB === failingDb ? "D1 も失敗" : "D1 は成功").toBe(500);
+    }
   });
 });
 
@@ -804,6 +817,57 @@ describe("トップの HTML", () => {
     expect(rootListOf(html)?.links).toEqual([
       { href: `${ORIGIN}/${encodeURIComponent(title.replaceAll(" ", "_"))}`, title },
     ]);
+  });
+
+  it("サイト名の <、&、文字参照に見える表記は h1 の要素を壊さず、そのまま読める", async () => {
+    const siteName = 'A <b> & "c" &amp; d </h1><i>';
+    const { create } = await setup();
+    await create("Open Note", "", "public");
+    const res = await createApp().request(
+      "/",
+      { headers: { Accept: HTML_ACCEPT } },
+      { ...ownerEnv({ SITE_NAME: ` ${siteName} ` }), ASSETS: assets },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("<h1>A &lt;b&gt; &amp; ");
+    expect(html).not.toContain("<b>");
+    expect(html).not.toContain("<i>");
+    expect(rootListOf(html)).toMatchObject({ siteName, links: [{ title: "Open Note" }] });
+  });
+
+  it("HEAD は GET と同じステータスとヘッダーで本文を空にし、一覧のために D1 を 1 回引く", async () => {
+    await seed();
+    const statements: string[] = [];
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            statements.push(sql);
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const request = (method: string) =>
+      createApp().request(
+        "/",
+        { method, headers: { Accept: HTML_ACCEPT } },
+        { ...ownerEnv(), ASSETS: assets, DB: db },
+      );
+
+    const get = await request("GET");
+    expect(rootListOf(await get.text())?.links).toHaveLength(1);
+    expect(statements).toHaveLength(1);
+
+    statements.length = 0;
+    const head = await request("HEAD");
+    expect(head.status).toBe(200);
+    expect(Object.fromEntries(head.headers)).toEqual(Object.fromEntries(get.headers));
+    expect(await head.text()).toBe("");
+    expect(statements).toHaveLength(1);
   });
 
   it("予約語と重なる title は /p/<id> へ、/ を含む title は %2F の URL へリンクする", async () => {
