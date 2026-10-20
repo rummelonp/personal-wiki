@@ -11,3 +11,12 @@ export function charRect(line: Element, char: string): DOMRect {
   }
   throw new Error(`${char} is not rendered`);
 }
+
+/**
+ * 2 つの矩形が同じ表示行にあるか。top は書体ごとの content area の高さと padding でずれるので
+ * 比べず、縦の中心の差を小さい方の高さの半分と比べる（別の行なら差は行の高さほど開く）
+ */
+export function onSameVisualLine(a: DOMRect, b: DOMRect): boolean {
+  const center = (r: DOMRect) => r.top + r.height / 2;
+  return Math.abs(center(a) - center(b)) < Math.min(a.height, b.height) / 2;
+}

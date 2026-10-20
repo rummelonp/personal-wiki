@@ -3,7 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "./create-editor";
 import { invalidateDecorations } from "./decoration-plugin";
-import { charRect } from "./test-geometry";
+import { charRect, onSameVisualLine } from "./test-geometry";
 
 const DOC = "前置き [[Amazon Web Services|AWS]] と [[日本語ページ]] の後ろ\n\n2 行目";
 const LINK = "[[Amazon Web Services|AWS]]";
@@ -478,7 +478,7 @@ describe("WikiLink and line wrapping", () => {
       const rects = link.getClientRects();
       const edge = side === "after" ? rects[rects.length - 1] : rects[0];
       const mark = charRect(line, char);
-      if (edge && Math.abs(mark.top - edge.top) > 2) failures.push(`${width}px`);
+      if (edge && !onSameVisualLine(mark, edge)) failures.push(`${width}px`);
     }
     return failures;
   }

@@ -3,7 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 import { createEditor } from "./create-editor";
 import { colorOf, contrastRatio, MIN_CONTRAST, resolve } from "./test-contrast";
-import { charRect } from "./test-geometry";
+import { charRect, onSameVisualLine } from "./test-geometry";
 import { resetEditorHue, resetScheme, setEditorHue, setScheme } from "./test-tokens";
 
 let view: EditorView | null = null;
@@ -185,7 +185,7 @@ describe("inline code and line wrapping", () => {
       const rects = code.getClientRects();
       const last = rects[rects.length - 1];
       const mark = charRect(line, char);
-      if (last && Math.abs(mark.top - last.top) > 2) failures.push(`${width}px`);
+      if (last && !onSameVisualLine(mark, last)) failures.push(`${width}px`);
     }
 
     expect(failures).toEqual([]);
@@ -207,7 +207,7 @@ describe("inline code and line wrapping", () => {
       host.style.width = `${width}px`;
       const first = code.getClientRects()[0];
       const mark = charRect(line, char);
-      if (first && Math.abs(mark.top - first.top) > 2) failures.push(`${width}px`);
+      if (first && !onSameVisualLine(mark, first)) failures.push(`${width}px`);
     }
 
     expect(failures).toEqual([]);
