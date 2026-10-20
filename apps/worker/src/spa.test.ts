@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
+import { buildClient } from "./test/pages";
 
 const INDEX_HTML = "<!doctype html><title>wiki</title>";
 const PUBLIC_FILE = "fake-image";
@@ -167,5 +168,71 @@ describe("SPA の配信", () => {
     );
     expect(res.status).toBe(404);
     expect(requested).toHaveLength(0);
+  });
+
+  describe("D1 の読み取りの失敗のログ", () => {
+    // 503 の原因を本番のログで見分けるため、読み取りごとにイベント名が違う
+    function dbFailingOn(match: (sql: string) => boolean): D1Database {
+      return new Proxy(env.DB, {
+        get(target, prop) {
+          if (prop === "prepare") {
+            return (sql: string) =>
+              match(sql)
+                ? {
+                    bind: () => ({
+                      first: async () => {
+                        throw new Error("D1 is unavailable");
+                      },
+                      all: async () => {
+                        throw new Error("D1 is unavailable");
+                      },
+                    }),
+                  }
+                : target.prepare(sql);
+          }
+          const value = Reflect.get(target, prop, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    }
+
+    async function loggedEvents(path: string, db: D1Database) {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const { assets } = fakeAssets();
+        const res = await createApp().request(
+          path,
+          { headers: { Accept: HTML_ACCEPT } },
+          { ...env, ASSETS: assets, DB: db },
+        );
+        expect(res.status).toBe(503);
+        return spy.mock.calls.map(
+          ([line]) => (JSON.parse(String(line)) as { event: string }).event,
+        );
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    it("ページの行の読み取りが失敗したら spa.page_row_failed だけを記録する", async () => {
+      const events = await loggedEvents(
+        "/Some_Page",
+        dbFailingOn((sql) => sql.includes("FROM pages")),
+      );
+      expect(events).toEqual(["spa.page_row_failed"]);
+    });
+
+    it("リンク先の読み取りだけが失敗したら spa.page_links_failed だけを記録する", async () => {
+      const { create } = await buildClient();
+      const page = await create("Hub", "[[Other]]");
+      await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
+        .bind(page.id)
+        .run();
+      const events = await loggedEvents(
+        "/Hub",
+        dbFailingOn((sql) => sql.includes("FROM links")),
+      );
+      expect(events).toEqual(["spa.page_links_failed"]);
+    });
   });
 });

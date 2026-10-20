@@ -74,17 +74,24 @@ async function rootHtml(env: Bindings, url: URL): Promise<Response> {
 /**
  * パスのページと、public ならその本文がリンクする public のページを引く。リンク先はページの行の id で引くので、
  * 2 回の読み取りは順に行う。本文を入れない draft と、見つからないページでは 2 回目を引かない。
+ * 失敗はログに残して Lookup で返す。ログのイベント名を読み取りごとに分け、503 の原因がどちらかを見分けられるようにする。
  */
 async function findPageWithLinks(
   db: D1Database,
   pathname: string,
   principal: Principal,
-): Promise<{ page: PageMeta; links: LinkTarget[] } | null> {
-  const page = await findPageForPath(db, pathname, principal);
-  if (page === null) return null;
-  if (page.visibility !== "public") return { page, links: [] };
-  const links = await listPublicLinkTargets(db, page.id, { limit: PAGE_LINK_LIST_LIMIT });
-  return { page, links };
+): Promise<Lookup<{ page: PageMeta; links: LinkTarget[] } | null>> {
+  const found = await settle(findPageForPath(db, pathname, principal), "spa.page_row_failed");
+  if (!found.ok) return found;
+  const page = found.value;
+  if (page === null) return { ok: true, value: null };
+  if (page.visibility !== "public") return { ok: true, value: { page, links: [] } };
+  const links = await settle(
+    listPublicLinkTargets(db, page.id, { limit: PAGE_LINK_LIST_LIMIT }),
+    "spa.page_links_failed",
+  );
+  if (!links.ok) return links;
+  return { ok: true, value: { page, links: links.value } };
 }
 
 /**
@@ -128,10 +135,7 @@ export function registerSpaRoutes(app: Hono<AppEnv>) {
     const accept = acceptKindOf(c.req.header("Accept"));
     if (accept === "other") return next();
 
-    const lookup = settle(
-      findPageWithLinks(c.env.DB, url.pathname, c.get("principal")),
-      "spa.page_lookup_failed",
-    );
+    const lookup = findPageWithLinks(c.env.DB, url.pathname, c.get("principal"));
     const index = await c.env.ASSETS.fetch(new URL("/", url));
     if (!index.ok) return withHtmlHeaders(index);
     const result = await lookup;
