@@ -31,7 +31,7 @@ export function authorLabel(author: RevisionAuthor): string {
     case "token":
       return author.name;
     case "oauth":
-      return author.name === null ? "登録が消えた接続" : author.name;
+      return author.name === null ? "登録が消えたアプリ" : author.name;
     case "other":
       return author.actor;
   }

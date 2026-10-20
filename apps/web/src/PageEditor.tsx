@@ -144,7 +144,7 @@ const keptContent = (backupFailed: boolean, held = false) =>
   backupFailed
     ? "入力した内容は、この画面にしか残っていません。再読み込みや画面の移動をする前に、内容をコピーしてください。"
     : held
-      ? "入力した内容は、入力が止まってからこの端末に残します。"
+      ? "入力した内容は、打つのが止まってからこの端末に残します。"
       : "入力した内容は、この端末に残してあります。";
 
 /**
@@ -195,7 +195,7 @@ const PROGRESS_TITLES = {
   saving: "保存中…",
   visibility: "公開範囲を変更中…",
   deleting: "削除中…",
-  restoring: "版を戻し中…",
+  restoring: "本文を戻し中…",
 } as const;
 
 function retryLabel(op: FailedOp): string {

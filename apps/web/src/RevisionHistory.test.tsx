@@ -112,12 +112,12 @@ const stamps = () =>
   );
 
 describe("authorLabel", () => {
-  it("owner は「Web」、token と接続は名前だけを出し、登録が消えた接続には決まった文を出す", () => {
+  it("owner は「Web」、token と接続は名前だけを出し、登録が消えたアプリには決まった文を出す", () => {
     expect(authorLabel(owner)).toBe("Web");
     expect(authorLabel(agent)).toBe("air-claude");
     expect(authorLabel({ kind: "token", tokenId: null, name: "old" })).toBe("old");
     expect(authorLabel({ kind: "oauth", clientId: "c", name: "Claude" })).toBe("Claude");
-    expect(authorLabel({ kind: "oauth", clientId: "c", name: null })).toBe("登録が消えた接続");
+    expect(authorLabel({ kind: "oauth", clientId: "c", name: null })).toBe("登録が消えたアプリ");
     expect(authorLabel({ kind: "other", actor: "system" })).toBe("system");
   });
 });

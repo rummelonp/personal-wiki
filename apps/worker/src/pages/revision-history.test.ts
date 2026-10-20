@@ -316,7 +316,7 @@ describe("OAuth の接続の名前", () => {
     expect(looked).toEqual([client.clientId]);
   });
 
-  it("登録が消えた接続と、OAuth を閉じた環境では name が null", async () => {
+  it("登録が消えたアプリと、OAuth を閉じた環境では name が null", async () => {
     const client = await registerClient("Gone");
     const page = await oauthRevision(client.clientId);
     const bindings = ownerEnv();

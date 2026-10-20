@@ -1091,7 +1091,7 @@ describe("保存の前の検査の表示", () => {
     );
     // 退避は打つのが止まってから書くので、通知の時点では書いたとは言わず、書く時機を添える
     expect(alertNotice()?.textContent).toContain(
-      "入力した内容は、入力が止まってからこの端末に残します。",
+      "入力した内容は、打つのが止まってからこの端末に残します。",
     );
     expect(alertNotice()?.textContent).not.toContain("残してあります");
     // 数は打つたびに変わるので、通知自体は読み上げず、原因だけを status で伝える

@@ -1676,7 +1676,7 @@ describe("一覧の取り消しボタンと wiki へ戻る導線", () => {
     expect(button).toContain("…");
   });
 
-  it("登録が消えた接続のボタンには、その旨を添える", async () => {
+  it("登録が消えたアプリのボタンには、その旨を添える", async () => {
     const { request } = setup();
     const { client } = await connect(request, "read");
     // deleteClient は grant も道連れに失効させるので、登録の KV だけを消して「登録が消えたアプリ」を作る
