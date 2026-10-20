@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backup, BackupStore } from "./draft-backup";
-import {
-  bindLifecycle,
-  registerEditor,
-  SAVE_ALL_TIMEOUT_MS,
-  saveAllEditors,
-  type VisibilitySource,
-} from "./editor-lifecycle";
+import { bindLifecycle, type VisibilitySource } from "./editor-lifecycle";
+import { registerEditor, SAVE_ALL_TIMEOUT_MS, saveAllEditors } from "./editor-registry";
 import { type EditorApi, EditorSession } from "./editor-session";
 import type { ApiResult, Page } from "./pages-api";
 

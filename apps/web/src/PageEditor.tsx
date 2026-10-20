@@ -22,7 +22,8 @@ import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
-import { bindLifecycle, registerEditor } from "./editor-lifecycle";
+import { bindLifecycle } from "./editor-lifecycle";
+import { registerEditor } from "./editor-registry";
 import {
   type EditorApi,
   EditorSession,
@@ -46,7 +47,8 @@ import { focusAfterInput } from "./input-modality";
 import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
-import { createLinkTargetSource, createTitleIndex } from "./link-sources";
+import { createTitleIndex } from "./link-sources";
+import { createLinkTargetSource } from "./link-target-source";
 import { findLinkedDrafts } from "./linked-drafts";
 import { Notice } from "./Notice";
 import { openNewPage, registerNewPageScreen } from "./new-page";

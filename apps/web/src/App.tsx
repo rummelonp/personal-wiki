@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { fetchMe, logout, NO_FEATURES } from "./api";
 import { setDocumentTitle } from "./document-title";
-import { saveAllEditors } from "./editor-lifecycle";
+import { saveAllEditors } from "./editor-registry";
 import { forgetEntryShape } from "./entry-shape";
 import { Header, type SessionState } from "./Header";
 import { HomeView } from "./HomeView";

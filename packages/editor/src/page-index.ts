@@ -1,3 +1,4 @@
+// web の入口の chunk に入るので、CodeMirror と Markdown の解析器に依存させない（apps/web の entry-chunk.test.ts が検査する）
 import { collapseConfusables, isOneEditAway } from "./title-similarity";
 
 export interface PageCandidate {

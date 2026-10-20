@@ -1,7 +1,7 @@
 import { parsePagePath } from "@personal-wiki/domain/page-path";
 import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
 import { foldTitle } from "@personal-wiki/domain/title";
-import type { PageCandidate } from "@personal-wiki/editor";
+import type { PageCandidate } from "@personal-wiki/editor/page-index";
 import {
   type KeyboardEvent,
   useEffect,
