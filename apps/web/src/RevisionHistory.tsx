@@ -15,6 +15,7 @@ import {
 import { RailSection } from "./Rail";
 import { type PreviousRef, previousOf, RevisionDiff } from "./RevisionDiff";
 import { useIntersecting } from "./use-intersecting";
+import { useModalDialog } from "./use-modal-dialog";
 import { useNow } from "./use-now";
 import { type Basis, useRevisionList } from "./use-revision-list";
 
@@ -209,13 +210,11 @@ export function RevisionHistory({
   }
 
   // 開いた行が取り直しで消えていたら（版がまとめられた）、焦点を一覧の先頭に戻す。戻さないと body に落ちる
-  function restoreFocus() {
+  function focusTargetAfterClose(): HTMLElement | null | undefined {
     const opener = openerRef.current;
-    openerRef.current = null;
-    const target = opener?.isConnected
+    return opener?.isConnected
       ? opener
       : listRef.current?.querySelector<HTMLElement>(".revision-entry");
-    target?.focus();
   }
 
   return (
@@ -281,7 +280,7 @@ export function RevisionHistory({
           setViewing(null);
           setRestoring(null);
         }}
-        onClosed={restoreFocus}
+        returnFocusTo={focusTargetAfterClose}
         resolveAttachmentUrl={resolveAttachmentUrl}
         restore={
           onRestore === undefined ||
@@ -306,7 +305,7 @@ function RevisionViewer({
   viewing,
   onPreviousMissing,
   onClose,
-  onClosed,
+  returnFocusTo,
   resolveAttachmentUrl,
   restore,
 }: {
@@ -314,13 +313,12 @@ function RevisionViewer({
   viewing: Viewing | null;
   onPreviousMissing: () => void;
   onClose: () => void;
-  /** ダイアログが閉じた後。焦点を戻すのに使う */
-  onClosed: () => void;
+  /** ダイアログが閉じた後に焦点を戻す先 */
+  returnFocusTo: () => HTMLElement | null | undefined;
   resolveAttachmentUrl: AttachmentUrlResolver | undefined;
   /** 戻せない版（先頭など）では null */
   restore: { state: Restoring | null; enabled: boolean; run: () => void } | null;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const restoreRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -331,35 +329,23 @@ function RevisionViewer({
     !(restore.state?.status === "done" && restore.state.restored);
   const restoreStatus = restore?.state?.status;
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) return;
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
-  }, [open]);
+  const dialog = useModalDialog({ open, onClose, returnFocusTo });
 
   // 押したボタンが待つ間に押せなくなるか、戻せて消えると、焦点がダイアログの外に落ちる。中に戻す
   // biome-ignore lint/correctness/useExhaustiveDependencies: 戻す操作の進みが変わったときに確かめる
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null || !dialog.open || dialog.contains(document.activeElement)) return;
+    const opened = dialog.ref.current;
+    if (opened === null || !opened.open || opened.contains(document.activeElement)) return;
     const target = restoreRef.current?.disabled === false ? restoreRef.current : closeRef.current;
     target?.focus();
   }, [restoreStatus, showRestore]);
 
   return (
     <dialog
-      ref={dialogRef}
+      ref={dialog.ref}
       className="dialog-frame revision-viewer"
       aria-labelledby={titleId}
-      onClose={() => {
-        onClose();
-        onClosed();
-      }}
-      onMouseDown={(event) => {
-        // 枠の外（backdrop）を押したときだけ閉じる
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...dialog.props}
     >
       {viewing !== null && (
         <>

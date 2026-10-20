@@ -24,6 +24,7 @@ import { openNewPage } from "./new-page";
 import { rememberTitle } from "./page-titles";
 import { listPageTitles } from "./pages-api";
 import { homeHref, navigate, pageHref, parseRoute } from "./route";
+import { useModalDialog } from "./use-modal-dialog";
 
 const RECENT_LABEL = "最近更新したページ";
 const ROWS_LABEL = "候補と操作";
@@ -76,7 +77,6 @@ export function QuickSwitcher({
   initialQuery = "",
   openPageId = null,
 }: QuickSwitcherProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   // 前に開いたときの候補を残して開いた直後から出し、開くたびに取り直した一覧へ差し替える
   const index = useMemo(
     () =>
@@ -86,26 +86,21 @@ export function QuickSwitcher({
     [owner],
   );
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) return;
-    if (open && !dialog.open) {
-      dialog.showModal();
+  const dialog = useModalDialog({
+    open,
+    onClose: () => onOpenChange(false),
+    onOpened: (opened) => {
       // showModal が入力欄へ focus を移した後でないと、選択が残らない処理系がある
-      dialog.querySelector<HTMLInputElement>(".switcher-input")?.select();
-    } else if (!open && dialog.open) dialog.close();
-  }, [open]);
+      opened.querySelector<HTMLInputElement>(".switcher-input")?.select();
+    },
+  });
 
   return (
     <dialog
-      ref={dialogRef}
+      ref={dialog.ref}
       className="dialog-frame switcher"
       aria-label="ページを検索"
-      onClose={() => onOpenChange(false)}
-      onMouseDown={(event) => {
-        // 枠の外（backdrop）を押したときだけ閉じる。dialog 自体は余白を持たない
-        if (event.target === event.currentTarget) onOpenChange(false);
-      }}
+      {...dialog.props}
     >
       {open && (
         <SwitcherBody
@@ -117,7 +112,7 @@ export function QuickSwitcher({
           onCreate={(title) => {
             // modal の間は外の要素に focus できないので、新規作成の画面が title 欄に focus する前に、
             // state の反映を待たず今すぐ閉じる。dialog の onClose が state を合わせる
-            dialogRef.current?.close();
+            dialog.ref.current?.close();
             onOpenChange(false);
             openNewPage({ title });
           }}

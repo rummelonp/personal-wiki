@@ -11,6 +11,7 @@ import type { LinkedDraft } from "./linked-drafts";
 import { rememberTitle } from "./page-titles";
 import type { ApiResult } from "./pages-api";
 import { pageHref } from "./route";
+import { focusIsAdrift, useModalDialog } from "./use-modal-dialog";
 import { VisibilityPillFace } from "./VisibilityPillFace";
 
 type Visibility = "draft" | "public";
@@ -34,17 +35,6 @@ const DONE_NOTES: Record<Visibility, string> = {
 
 /** 結果の読み上げを残しておく時間。残しすぎると、前の操作の結果が今の状態のように読める */
 const NOTE_MS = 6_000;
-
-/**
- * 焦点がどこにも無いか。WebKit は押したボタンでなく dialog 自身に焦点を移し、閉じるときに戻し先の印が
- * 無効だと、次の描画まで閉じた dialog を activeElement に残す。body に落ちたかだけを見ると、焦点を戻す
- * 時刻が描画の前か後かで結果が変わる
- */
-function focusIsAdrift(active: Element | null): boolean {
-  return (
-    active === null || active === document.body || active.closest("dialog:not([open])") !== null
-  );
-}
 
 /** 確認に出すリンク先の draft。失敗の理由は出し分けないので持たない */
 type LinkedDraftsState = { ok: true; value: readonly LinkedDraft[] } | { ok: false };
@@ -327,10 +317,7 @@ export function VisibilityControl({
           void apply("public");
         }}
         onClose={() => setConfirming(false)}
-        onClosed={() => {
-          // close は遅れて届くので、その間に利用者がメニューなどへ焦点を移していたら奪わない
-          if (focusIsAdrift(document.activeElement)) pill.current?.focus();
-        }}
+        returnFocusTo={() => pill.current}
       />
     </div>
   );
@@ -343,17 +330,16 @@ function PublishDialog({
   linkedDrafts,
   onConfirm,
   onClose,
-  onClosed,
+  returnFocusTo,
 }: {
   open: boolean;
   disabled: boolean;
   linkedDrafts: LinkedDraftsState | null;
   onConfirm: () => void;
   onClose: () => void;
-  /** ダイアログが閉じた後。焦点を戻すのに使う */
-  onClosed: () => void;
+  /** ダイアログが閉じた後に焦点を戻す先 */
+  returnFocusTo: () => HTMLElement | null;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const confirmTextId = useId();
   const draftsTextId = useId();
@@ -361,35 +347,19 @@ function PublishDialog({
   const describedBy = draftsShown ? `${confirmTextId} ${draftsTextId}` : confirmTextId;
 
   // 開いた直後の焦点は、確定でなく「やめる」に置く（showModal は先頭の「公開する」に置く）
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) return;
-    if (open && !dialog.open) {
-      dialog.showModal();
-      cancel.current?.focus();
-    } else if (!open && dialog.open) dialog.close();
-  }, [open]);
+  const dialog = useModalDialog({
+    open,
+    onClose,
+    onOpened: () => cancel.current?.focus(),
+    returnFocusTo,
+  });
 
   return (
     <dialog
-      ref={dialogRef}
+      ref={dialog.ref}
       className="dialog-frame publish-dialog"
       aria-label="公開の確認"
-      // Escape や戻る操作（cancel）はブラウザが dialog を閉じる。close を待たずに状態を合わせないと、
-      // close が届くまでの「公開」の選び直しは状態が変わらず、確認が開かない。
-      // preventDefault で閉じるのを止めないのは、利用者の操作を挟まずに繰り返すと Chromium が従わなくなるため
-      onCancel={onClose}
-      onClose={() => {
-        // close は閉じた後の別のタスクで届く。素早く開き直した後に届いた前の開きの close は、
-        // 開き直した確認を閉じてしまうので捨てる
-        if (dialogRef.current?.open) return;
-        onClose();
-        onClosed();
-      }}
-      onMouseDown={(event) => {
-        // 枠の外（backdrop）を押したときだけ閉じる
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...dialog.props}
     >
       {open && (
         <>

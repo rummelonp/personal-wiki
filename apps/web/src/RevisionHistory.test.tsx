@@ -478,6 +478,64 @@ describe("RevisionHistory の版の表示", () => {
     expect(dialog.textContent).not.toContain("まとめられた");
     expect(listRevisions).toHaveBeenCalledTimes(1);
   });
+
+  describe("閉じる経路と close の遅れ", () => {
+    const closeButton = (dialog: HTMLDialogElement) =>
+      [...dialog.querySelectorAll("button")].find((b) => b.textContent === "閉じる");
+    const entryButton = (index: number) =>
+      container?.querySelectorAll<HTMLButtonElement>(".revision-entry")[index] as HTMLButtonElement;
+
+    /** 「閉じる」を押し、本物の close が届くまで待つ。close は閉じた後の別のタスクで届く */
+    async function closeAndWait(dialog: HTMLDialogElement) {
+      const closed = new Promise<void>((resolve) =>
+        dialog.addEventListener("close", () => resolve(), { once: true }),
+      );
+      await act(async () => {
+        closeButton(dialog)?.click();
+        await closed;
+      });
+    }
+
+    beforeEach(() => {
+      vi.mocked(getRevision).mockResolvedValue(
+        ok({ ...(REVISIONS[1] as RevisionSummary), body: "昔の本文" }),
+      );
+    });
+
+    it("Escape で閉じた dialog の close が届く前に別の版を開いても、開く", async () => {
+      const dialog = await openEntry(1);
+      // ブラウザの Escape は cancel の後に閉じ、close は別のタスクで届く。その前に開き直す
+      await act(async () => {
+        dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+        dialog.close();
+      });
+      await act(async () => entryButton(0).click());
+      expect(dialog.open).toBe(true);
+      expect(dialog.querySelector("h2")?.textContent).toBe("題");
+    });
+
+    it("閉じた dialog の close が開き直した後に届いても、開き直した版を閉じない", async () => {
+      const dialog = await openEntry(1);
+      await closeAndWait(dialog);
+      await act(async () => entryButton(0).click());
+      act(() => {
+        dialog.dispatchEvent(new Event("close"));
+      });
+      expect(dialog.open).toBe(true);
+      expect(dialog.querySelector("h2")).not.toBeNull();
+    });
+
+    it("閉じた dialog の close が遅れて届いても、その間に利用者が移した焦点を奪わない", async () => {
+      // 開いた行と、焦点を失ったときの戻し先（一覧の先頭）のどちらでもない行へ移す
+      const dialog = await openEntry(0);
+      await closeAndWait(dialog);
+      act(() => entryButton(1).focus());
+      act(() => {
+        dialog.dispatchEvent(new Event("close"));
+      });
+      expect(document.activeElement).toBe(entryButton(1));
+    });
+  });
 });
 
 describe("RevisionHistory の版の差分", () => {

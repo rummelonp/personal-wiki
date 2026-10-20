@@ -514,6 +514,30 @@ describe("QuickSwitcher の操作", () => {
     expect(input().value).toBe("");
   });
 
+  it("Esc で閉じた dialog の close が届く前に開き直しても、開く", async () => {
+    await renderSwitcher(true);
+    // ブラウザの Esc は cancel の後に閉じ、close は別のタスクで届く。その前に開き直す
+    act(() => {
+      dialog().dispatchEvent(new Event("cancel", { cancelable: true }));
+      dialog().close();
+    });
+    act(() => container?.querySelector("button")?.click());
+    await vi.waitFor(() => expect(dialog().open).toBe(true));
+    expect(input()).not.toBeNull();
+  });
+
+  it("閉じた dialog の close が開き直した後に届いても、開き直した dialog を閉じない", async () => {
+    await renderSwitcher(true);
+    await closeWithEscape();
+    await act(async () => container?.querySelector("button")?.click());
+    expect(dialog().open).toBe(true);
+    act(() => {
+      dialog().dispatchEvent(new Event("close"));
+    });
+    expect(dialog().open).toBe(true);
+    expect(input()).not.toBeNull();
+  });
+
   it("枠の外を押すと閉じ、枠の中を押しても閉じない", async () => {
     await renderSwitcher(true);
     act(() => {
