@@ -1,4 +1,4 @@
-import { Prec } from "@codemirror/state";
+import { Facet, Prec } from "@codemirror/state";
 import { EditorView, repositionTooltips, tooltips, ViewPlugin } from "@codemirror/view";
 import { tooltipSpace } from "@personal-wiki/editor";
 import { NOTICE_CARET_GAP, NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
@@ -10,6 +10,23 @@ import { NOTICE_CARET_GAP, NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-d
 export function stickyHeaderBottom(): number {
   const header = document.querySelector("header.header");
   return header === null ? 0 : Math.max(0, header.getBoundingClientRect().bottom);
+}
+
+/** scrollBelowStickyHeaderWith に渡された extraTop。scrollMargins と scrollTopMargin が同じ値を読むために facet に置く。 */
+const extraTops = Facet.define<(view: EditorView) => number>();
+
+function extraTopOf(view: EditorView): number {
+  return view.state.facet(extraTops).reduce((sum, extraTop) => sum + extraTop(view), 0);
+}
+
+/**
+ * scrollIntoView が対象の上端を置く下限（viewport の上端から）。ヘッダーの下端に extraTop を足した高さで、
+ * scrollMargins の上の余白と同じ値を返す。script から移した focus がスクロールを要するかの判定は、
+ * この値を上端に使う。CodeMirror はこの値にさらに yMargin（既定 5px）を足した位置より上を寄せるが、
+ * その帯に入った行は見えているので、判定では動かさない側に扱う。
+ */
+export function scrollTopMargin(view: EditorView): number {
+  return stickyHeaderBottom() + extraTopOf(view);
 }
 
 /**
@@ -47,13 +64,13 @@ const markScrolling = EditorView.scrollHandler.of((view) => {
  * スクロールする箱とみなし、余白を足した矩形をその箱の内側に切り詰める。エディタの祖先の要素が
  * 1px でも外へはみ出すと、ここで返す余白が効かなくなる。
  */
-function scrollMarginsBelow(extraTop: (view: EditorView) => number) {
+function scrollMarginsBelow() {
   return EditorView.scrollMargins.of((view) => {
     const header = stickyHeaderBottom();
     const dock = noticeDockRect();
     if (scrolling.delete(view)) {
       return {
-        top: header + extraTop(view),
+        top: header + extraTopOf(view),
         bottom: dock === null ? 0 : dock.height + NOTICE_CARET_GAP,
       };
     }
@@ -100,8 +117,9 @@ const repositionOnDockChange = ViewPlugin.define((view) => {
  */
 export function scrollBelowStickyHeaderWith(extraTop: (view: EditorView) => number) {
   return [
+    extraTops.of(extraTop),
     markScrolling,
-    scrollMarginsBelow(extraTop),
+    scrollMarginsBelow(),
     tooltipSpaceBelowChrome,
     repositionOnDockChange,
   ];
