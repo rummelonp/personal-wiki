@@ -12,7 +12,7 @@ CREATE TABLE pages (
   -- pages_fts の rowid に使う。INTEGER PRIMARY KEY で rowid に別名を付けないと、VACUUM で
   -- rowid が振り直されて FTS の行と対応しなくなりうる。連番で推測できるので API には出さない
   seq INTEGER PRIMARY KEY,
-  -- 16 バイトの乱数の base64url（22 文字）。draft は id の URL だけで読めるので推測できない値にする
+  -- 16 バイトの乱数の base64url（22 文字）。連番や時刻由来にしない理由は src/pages/id.ts の冒頭にある
   id TEXT NOT NULL UNIQUE,
   visibility TEXT NOT NULL DEFAULT 'draft' CHECK (visibility IN ('public', 'draft')),
   version INTEGER NOT NULL CHECK (version >= 1),
