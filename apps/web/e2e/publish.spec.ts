@@ -666,6 +666,16 @@ test.describe("公開範囲の印の配置 @widths", () => {
   }
 
   /**
+   * 印の横では折り返し、印が無ければ 1 行に収まる幅の title。ちょうど境目の幅なので、乱数の部分は数字だけにする。
+   * 英字を混ぜると文字ごとの幅の差（i と m で 100px 以上）で、印が無くても折り返す title や、印があっても
+   * 折り返さない title になる
+   */
+  const borderlineTitle = (): string =>
+    `上端 chromium-desktop-${Math.floor(Math.random() * 1e6)
+      .toString()
+      .padStart(6, "0")}の長い題`;
+
+  /**
    * 取得の間のスケルトンと読み込んだ後のページで、title の高さと本文の上端が同じかを確かめる。
    * 印の横では折り返し、印が無ければ 1 行に収まる title で測る。読み込んだ後に、この前提が崩れていないかも確かめる。
    * 取得（by-title）は `open` が始める前から止めておき、スケルトンを測ってから放す。
@@ -729,7 +739,7 @@ test.describe("公開範囲の印の配置 @widths", () => {
     api,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}の長い題`;
+    const title = borderlineTitle();
     // public を直接開くと HTML に入ったページで出て by-title を引かず、取得中のスケルトンが出ないので draft にする
     await api.createPage({ title, body: "上端をそろえる本文", visibility: "draft" });
     await expectNoShiftWhileLoading(page, title, async () => {
@@ -742,7 +752,7 @@ test.describe("公開範囲の印の配置 @widths", () => {
     api,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    const title = `上端 chromium-desktop-${Math.random().toString(36).slice(2, 8)}の長い題`;
+    const title = borderlineTitle();
     await api.createPage({ title, body: "上端をそろえる本文", visibility: "public" });
     await expectNoShiftWhileLoading(page, title, async () => {
       await page.goto("/");
