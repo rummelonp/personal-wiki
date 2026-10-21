@@ -17,7 +17,6 @@ import {
   createAttachmentUrlResolver,
   type UploadNotice,
 } from "./attachments";
-import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
@@ -28,6 +27,7 @@ import {
   KeptBackupNotice,
   WithKeptContent,
 } from "./EditorNotices";
+import { EditorRail } from "./EditorRail";
 import { bindLifecycle } from "./editor-lifecycle";
 import { registerEditor } from "./editor-registry";
 import {
@@ -43,7 +43,6 @@ import {
   saveStatusOf,
 } from "./editor-session";
 import { focusAndRevealCaret } from "./focus-reveal";
-import { formatTime } from "./format";
 import { extractOutline } from "./heading-outline";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
 import { isInView } from "./in-view";
@@ -56,7 +55,7 @@ import { createLinkTargetSource } from "./link-target-source";
 import { findLinkedDrafts } from "./linked-drafts";
 import { Notice } from "./Notice";
 import { openNewPage, registerNewPageScreen } from "./new-page";
-import { InlineOutline, Outline } from "./Outline";
+import { InlineOutline } from "./Outline";
 import { hashOfLink } from "./page-fragment";
 import { rememberTitle } from "./page-titles";
 import {
@@ -71,8 +70,7 @@ import {
   setVisibility,
   updatePage,
 } from "./pages-api";
-import { RailLayout, RailSection } from "./Rail";
-import { RevisionHistory } from "./RevisionHistory";
+import { RailLayout } from "./Rail";
 import { homeHref, missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFragmentJump } from "./use-fragment-jump";
@@ -294,7 +292,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
-  const deleting = state.busy === "deleting" || pendingDelete;
   // 保存中も押せる。本文の編集中に公開の操作を押すと、mousedown の blur が保存を始めるので、保存中を
   // disabled にすると mouseup の時点で押せなくなり、クリックが届かない。session は切り替えを保存の後ろに
   // 並べ、保存で進んだ版に対して送る。切り替えの番が来たときに手元が未保存なら、保存をもう一度送る
@@ -613,61 +610,20 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const bodyBytes = inputCheckOf(state.draft).bodyBytes;
   const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
-  const rail = (
-    <>
-      <Outline items={outline} onJump={(offset) => editor.current?.jumpTo(offset)} />
-      {!uncreated && <Backlinks target={{ pageId }} />}
-      {!uncreated && (
-        <RailSection title="情報">
-          <dl className="facts">
-            <dt>更新</dt>
-            <dd>{formatTime(state.base.updatedAt)}</dd>
-            <dt>作成</dt>
-            <dd>{formatTime(state.base.createdAt)}</dd>
-          </dl>
-        </RailSection>
-      )}
-      {!uncreated && (
-        <RevisionHistory
-          pageId={pageId}
-          pageVersion={state.base.version}
-          updatedAt={state.base.updatedAt}
-          paused={state.gone}
-          resolveAttachmentUrl={attachmentUrl}
-          canRestore={!readOnly && !state.authLost && !deleting}
-          onRestore={(revision) => session.restoreRevision(revision)}
-        />
-      )}
-      {/* 作る前のページには消す対象が無い。押せない操作を置かない */}
-      {!uncreated && (
-        <div>
-          <button
-            type="button"
-            className="button button-quiet button-danger"
-            // 保存中も押せる。本文の編集中に押すと mousedown の blur が保存を始めるので、保存中を
-            // disabled にすると mouseup の時点で押せなくなり、クリックが届かない
-            disabled={
-              !(idle || state.busy === "saving") ||
-              pendingDelete ||
-              state.gone ||
-              state.authLost ||
-              state.conflict !== null ||
-              state.pendingBackup !== null
-            }
-            onClick={() => void handleDelete()}
-          >
-            {deleting ? "削除中…" : "このページを削除"}
-          </button>
-          <span className="visually-hidden" role="status">
-            {deleting ? "削除中…" : ""}
-          </span>
-        </div>
-      )}
-    </>
-  );
-
   return (
-    <RailLayout rail={rail}>
+    <RailLayout
+      rail={
+        <EditorRail
+          state={state}
+          outline={outline}
+          pendingDelete={pendingDelete}
+          resolveAttachmentUrl={attachmentUrl}
+          onJump={(offset) => editor.current?.jumpTo(offset)}
+          onRestoreRevision={(revision) => session.restoreRevision(revision)}
+          onDelete={() => void handleDelete()}
+        />
+      }
+    >
       <article
         ref={article}
         className={leaving ? "note note-leaving" : "note"}
