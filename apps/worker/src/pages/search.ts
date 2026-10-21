@@ -9,7 +9,7 @@ import {
 } from "@personal-wiki/domain";
 import { decodeBase64Url, encodeBase64Url } from "../auth/base64url";
 import type { ReadableVisibility } from "../auth/principal";
-import { publicOnlyFlag, type Visibility } from "./store";
+import { pageExists, publicOnlyFlag, type Visibility } from "./store";
 
 /*
  * 検索、最近の更新、backlink、タグの読み取り。どれも readable（readableVisibilityOf の値）を必須で
@@ -528,14 +528,7 @@ export async function listBacklinks(
     readable,
   }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
 ): Promise<PageList<VersionedSummary> | null> {
-  const exists = await db
-    .prepare(
-      `SELECT 1 AS found FROM pages
-       WHERE id = ?1 AND deleted_at IS NULL AND (?2 = 0 OR visibility = 'public')`,
-    )
-    .bind(pageId, publicOnlyFlag(readable))
-    .first();
-  if (exists === null) return null;
+  if (!(await pageExists(db, pageId, readable))) return null;
   const { results } = await db
     .prepare(
       `SELECT p.id, p.title, p.visibility, p.version, p.updated_at, e.body_sha256

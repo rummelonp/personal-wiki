@@ -119,13 +119,20 @@ export async function findPageById(
 }
 
 /**
- * 削除されていないページが id にあるかを返す。visibility では絞らないので、draft を読める principal の
- * 経路（MCP）だけで使う。本文を読まないので、存在だけを確かめたいときに使う。
+ * 削除されていないページが id にあるかを、本文を読まずに返す。readable が public なら draft は false
+ * （無いページと区別できないようにする）。
  */
-export async function pageExists(db: D1Database, id: string): Promise<boolean> {
+export async function pageExists(
+  db: D1Database,
+  id: string,
+  readable: ReadableVisibility,
+): Promise<boolean> {
   const row = await db
-    .prepare("SELECT 1 AS found FROM pages WHERE id = ?1 AND deleted_at IS NULL")
-    .bind(id)
+    .prepare(
+      `SELECT 1 AS found FROM pages
+       WHERE id = ?1 AND deleted_at IS NULL AND (?2 = 0 OR visibility = 'public')`,
+    )
+    .bind(id, publicOnlyFlag(readable))
     .first();
   return row !== null;
 }

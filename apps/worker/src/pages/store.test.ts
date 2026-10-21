@@ -6,9 +6,12 @@ import {
   appendText,
   appendToPage,
   createPage,
+  deletePage,
   findPageById,
   type Page,
+  pageExists,
   rebuildDerived,
+  setVisibility,
   updatePage,
 } from "./store";
 
@@ -60,6 +63,37 @@ async function concurrentEdit(id: string, suffix: string) {
   });
   if (!result.ok) throw new Error(result.reason);
 }
+
+describe("pageExists", () => {
+  it("draft は all では true、public だけの範囲では false", async () => {
+    const page = await seedPage("");
+    expect(await pageExists(env.DB, page.id, "all")).toBe(true);
+    expect(await pageExists(env.DB, page.id, "public")).toBe(false);
+  });
+
+  it("public のページはどちらの範囲でも true", async () => {
+    const page = await seedPage("");
+    const published = await setVisibility(env.DB, { id: page.id, visibility: "public", now: 2 });
+    if (!published.ok) throw new Error(published.reason);
+    expect(await pageExists(env.DB, page.id, "all")).toBe(true);
+    expect(await pageExists(env.DB, page.id, "public")).toBe(true);
+  });
+
+  it("削除した public のページはどちらの範囲でも false", async () => {
+    const page = await seedPage("");
+    const published = await setVisibility(env.DB, { id: page.id, visibility: "public", now: 2 });
+    if (!published.ok) throw new Error(published.reason);
+    const deleted = await deletePage(env.DB, {
+      id: page.id,
+      expectedVersion: published.page.version,
+      actor: "owner",
+      now: 3,
+    });
+    if (!deleted.ok) throw new Error(deleted.reason);
+    expect(await pageExists(env.DB, page.id, "all")).toBe(false);
+    expect(await pageExists(env.DB, page.id, "public")).toBe(false);
+  });
+});
 
 describe("appendToPage", () => {
   it("読んだあとに別の保存が入ったら、読み直して最新版に足す", async () => {

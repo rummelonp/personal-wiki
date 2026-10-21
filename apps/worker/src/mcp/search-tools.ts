@@ -227,7 +227,7 @@ export const listUnresolvedLinksTool = defineTool({
         if (page === null) return toolError({ error: "not_found" });
         sourceId = page.id;
       } else {
-        if (!(await pageExists(ctx.db, id))) return toolError({ error: "not_found" });
+        if (!(await pageExists(ctx.db, id, readable))) return toolError({ error: "not_found" });
         sourceId = id;
       }
     }
