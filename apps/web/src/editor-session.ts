@@ -80,6 +80,12 @@ export type FailedOp =
   | { kind: "visibility"; to: Visibility }
   | { kind: "delete" };
 
+/** 保存の失敗にだけ渡す。sent は送った内容、resend は同じ形のリクエストを送り直す関数 */
+interface FailureOptions {
+  sent?: Draft;
+  resend?: () => Promise<void>;
+}
+
 const NO_ERROR = { error: null, failedOp: null } as const;
 
 function rejectionOf(res: ApiFailure, sent: Draft): WriteRejection {
@@ -274,6 +280,16 @@ export const isReadOnly = (
   state: Pick<EditorState, "conflict" | "gone" | "pendingBackup">,
 ): boolean => state.conflict !== null || state.gone || state.pendingBackup !== null;
 
+/** 作成か保存の失敗が出ているときの状態。公開範囲や削除の失敗は保存の状態に出さない。 */
+function failedWriteStatus(
+  state: Pick<EditorState, "error" | "failedOp">,
+): "create-error" | "error" | null {
+  if (state.error === null) return null;
+  if (state.failedOp?.kind === "create") return "create-error";
+  if (state.failedOp?.kind === "save") return "error";
+  return null;
+}
+
 export function saveStatusOf(state: EditorState): SaveStatus {
   if (state.gone) return "gone";
   if (state.authLost) return "auth";
@@ -286,8 +302,8 @@ export function saveStatusOf(state: EditorState): SaveStatus {
   if ((state.uncreated || isDirty(state)) && inputProblemsOf(state.draft).length > 0) {
     return "invalid";
   }
-  if (state.error !== null && state.failedOp?.kind === "create") return "create-error";
-  if (state.error !== null && state.failedOp?.kind === "save") return "error";
+  const failed = failedWriteStatus(state);
+  if (failed !== null) return failed;
   if (state.uncreated) return "new";
   return isDirty(state) || hasPendingTitle(state) ? "unsaved" : "saved";
 }
@@ -991,16 +1007,13 @@ export class EditorSession {
     this.removeBackup(server.id);
   }
 
-  /**
-   * 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。
-   * resend は保存の失敗にだけ渡す。リンクの書き換えを重ねられたら、その版に対して送り直す。
-   */
+  /** 書き込みの失敗を状態に反映する。version_conflict はサーバーの最新を取り直して衝突にする。 */
   private async handleFailure(
     res: ApiFailure,
     op: FailedOp,
-    options: { stash?: boolean; sent?: Draft; resend?: () => Promise<void> } = {},
+    options: FailureOptions & { stash?: boolean } = {},
   ): Promise<void> {
-    const stash = options.stash ?? true;
+    const { stash = true, ...retry } = options;
     switch (res.reason) {
       case "unauthorized":
         this.set({ authLost: true });
@@ -1009,42 +1022,9 @@ export class EditorSession {
       case "not_found":
         this.markGone(op.kind === "delete" ? "self" : "elsewhere");
         return;
-      case "version_conflict": {
-        const latest = await this.api.getPage(this.state.base.id);
-        if (latest.ok) {
-          const server = latest.value;
-          const { sent } = options;
-          // 別の場所で同じ内容が保存されていれば、見せる差分が無いので衝突にしない
-          // （削除や visibility の変更は、版が変わったこと自体を知らせたいので対象外）。
-          // 比べるのは送った内容。最新を取り直す間に入力が進んでも、それは別の編集であり衝突ではない
-          if (sent !== undefined && server.title === sent.title && server.body === sent.body) {
-            this.set({ base: server, ...NO_ERROR });
-            // 取り直す間の入力は、新しい版に対して自動保存する
-            this.resumeOnNewBase();
-            return;
-          }
-          if (sent !== undefined && (await this.rebaseOnServer(server))) {
-            if (options.resend !== undefined && isDirty(this.state)) {
-              this.clearTimer();
-              await options.resend();
-            } else {
-              this.resumeOnNewBase();
-            }
-            return;
-          }
-          this.set({ conflict: server });
-        } else if (latest.reason === "unauthorized") this.set({ authLost: true });
-        else if (latest.reason === "not_found") {
-          this.markGone(op.kind === "delete" ? "self" : "elsewhere");
-          return;
-        } else
-          this.set({
-            error: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
-            failedOp: op,
-          });
-        if (stash) this.stashIfDirty();
+      case "version_conflict":
+        await this.handleVersionConflict(op, stash, retry);
         return;
-      }
       case "title_conflict":
       case "invalid_input":
       case "error":
@@ -1053,6 +1033,62 @@ export class EditorSession {
         if (stash) this.stashIfDirty();
         return;
     }
+  }
+
+  /**
+   * 版の衝突で、サーバーの最新を取り直して衝突にするかを決める。ページが消えていたら gone にする
+   * （手元の内容を残すか捨てるかは markGone が決める）。衝突にしたときと最新を取れなかったときは、
+   * stash なら手元を端末に退避する。
+   */
+  private async handleVersionConflict(
+    op: FailedOp,
+    stash: boolean,
+    options: FailureOptions,
+  ): Promise<void> {
+    const latest = await this.api.getPage(this.state.base.id);
+    if (!latest.ok) {
+      if (latest.reason === "not_found") {
+        this.markGone(op.kind === "delete" ? "self" : "elsewhere");
+        return;
+      }
+      if (latest.reason === "unauthorized") this.set({ authLost: true });
+      else
+        this.set({
+          error: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
+          failedOp: op,
+        });
+      if (stash) this.stashIfDirty();
+      return;
+    }
+    if (await this.settleWithoutConflict(latest.value, options)) return;
+    this.set({ conflict: latest.value });
+    if (stash) this.stashIfDirty();
+  }
+
+  /**
+   * 最新の版が送った内容と同じか、rebaseOnServer で手元を重ねられる版なら、衝突にせず手元をその版に
+   * 進めて true を返す。重ねた後に未保存の変更が残り resend があれば、その版に対して送り直す。
+   * 削除や visibility の変更（sent が無い）は、版が変わったこと自体を知らせたいので対象外にする。
+   */
+  private async settleWithoutConflict(server: Page, options: FailureOptions): Promise<boolean> {
+    const { sent, resend } = options;
+    if (sent === undefined) return false;
+    // 別の場所で同じ内容が保存されていれば、見せる差分が無い。比べるのは送った内容で、最新を取り直す間に
+    // 入力が進んでも、それは別の編集であり衝突ではない
+    if (server.title === sent.title && server.body === sent.body) {
+      this.set({ base: server, ...NO_ERROR });
+      // 取り直す間の入力は、新しい版に対して自動保存する
+      this.resumeOnNewBase();
+      return true;
+    }
+    if (!(await this.rebaseOnServer(server))) return false;
+    if (resend !== undefined && isDirty(this.state)) {
+      this.clearTimer();
+      await resend();
+    } else {
+      this.resumeOnNewBase();
+    }
+    return true;
   }
 
   /** フォーカス復帰で呼ぶ。手元に未保存の変更が無ければ最新を読み直し、あれば衝突にする。 */

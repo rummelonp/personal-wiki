@@ -325,6 +325,34 @@ describe("409 の衝突", () => {
     expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
   });
 
+  it("最新を取り直せなければ、衝突にせず保存の失敗として伝え、手元を退避する", async () => {
+    const { session, api, backup } = setup();
+    session.edit({ title: "題", body: "手元" });
+    api.updatePage = async () => ({ ok: false, reason: "version_conflict", currentVersion: 2 });
+    api.getPage = async () => ({ ok: false, reason: "error", message: "落ちた" });
+    await session.flush();
+    const state = session.getState();
+    expect(state.conflict).toBeNull();
+    expect(state.error).toBe(
+      "別の場所で更新されていますが、最新の内容を取得できませんでした。落ちた",
+    );
+    expect(state.failedOp).toMatchObject({ kind: "save" });
+    expect(saveStatusOf(state)).toBe("error");
+    expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
+  });
+
+  it("最新を取り直すときにログインが切れていたら、ログイン切れにして手元を退避する", async () => {
+    const { session, api, backup } = setup();
+    session.edit({ title: "題", body: "手元" });
+    api.updatePage = async () => ({ ok: false, reason: "version_conflict", currentVersion: 2 });
+    api.getPage = async () => ({ ok: false, reason: "unauthorized" });
+    await session.flush();
+    const state = session.getState();
+    expect(state.conflict).toBeNull();
+    expect(saveStatusOf(state)).toBe("auth");
+    expect(backup.load(ID)).toMatchObject({ body: "手元", baseVersion: 1 });
+  });
+
   it("手元で上書きすると、サーバーの版に重ねて保存する", async () => {
     const { session, api, server, backup } = await conflicted();
     await session.overwrite();
