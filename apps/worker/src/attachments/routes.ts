@@ -74,11 +74,10 @@ async function attachmentResponse(
   }
   const etag = `"${name}"`;
   const headers = new Headers({ ETag: etag });
-  // 匿名の draft の画像を共有キャッシュに置かせず、毎回の再検証で参照を外したことをすぐ効かせる。
-  // owner と token は resolvePrincipal が private, no-store で上書きする
+  // 匿名の画像を共有キャッシュに置かせず、毎回の再検証で、参照を外したことやページを draft に戻したことを
+  // すぐ効かせる。owner と token は resolvePrincipal が private, no-store で上書きする
   if (anonymous) headers.set("Cache-Control", "private, no-cache");
-  // 匿名に返す画像には付けない。public のページの画像を外のサイトが埋め込めなくなるため。draft の画像は
-  // id の URL を知っていれば匿名に読めるので、付けても外からの取り込みは防げない
+  // 匿名に返す画像には付けない。public のページの画像を外のサイトが埋め込めなくなるため
   else headers.set("Cross-Origin-Resource-Policy", "same-origin");
   if (matchesIfNoneMatch(c.req.header("If-None-Match"), etag)) {
     return new Response(null, { status: 304, headers });
@@ -143,9 +142,9 @@ export function registerAttachmentRoutes(app: Hono<AppEnv>, { now }: AttachmentR
           .run();
         return c.json({ name, contentType: type, size: bytes.byteLength }, 201);
       })
-      // 本文の ![[name]] の表示に使う。匿名は、削除されていないそのページが本文で参照している添付だけを
-      // 読める（public と draft を問わない。draft は id の URL で匿名に読めるのに合わせる）。read 以上の
-      // principal は、行があればどの添付も読める。読めないものは、存在しないものと同じ 404 にする
+      // 本文の ![[name]] の表示に使う。匿名は、削除されていない public のそのページが本文で参照している
+      // 添付だけを読める。read 以上の principal は、行があればどの添付も読める。読めないもの（匿名から見た
+      // draft のページの添付を含む）は、存在しないものと同じ 404 にする
       .get("/api/pages/:id/attachments/:name", allowAnonymousRead(), async (c) => {
         const id = c.req.param("id");
         const name = c.req.param("name");
@@ -157,7 +156,8 @@ export function registerAttachmentRoutes(app: Hono<AppEnv>, { now }: AttachmentR
           `SELECT a.content_type, a.size FROM attachments AS a
            WHERE a.name = ?2 AND (?3 OR EXISTS (
              SELECT 1 FROM attachment_refs AS r JOIN pages AS p ON p.id = r.page_id
-             WHERE r.page_id = ?1 AND r.name = a.name AND p.deleted_at IS NULL))`,
+             WHERE r.page_id = ?1 AND r.name = a.name AND p.deleted_at IS NULL
+               AND p.visibility = 'public'))`,
         )
           .bind(id, name, anonymous ? 0 : 1)
           .first<AttachmentRow>();

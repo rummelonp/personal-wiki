@@ -346,12 +346,10 @@ describe("GET /api/pages/:id/attachments/:name の認可", () => {
     };
   }
 
-  it("匿名は、削除されていないページが参照する添付だけを読める（public と draft を問わない）", async () => {
-    const { call, served, pub, draft, back, names } = await seed();
+  it("匿名は、削除されていない public のページが参照する添付だけを読める", async () => {
+    const { call, served, pub, names } = await seed();
     const readable: [string, string, Uint8Array][] = [
       [served(pub, names.onPublic), "image/png", PNG],
-      [served(draft, names.onDraft), "image/jpeg", JPEG],
-      [served(back, names.toDraft), "image/png", PNG],
     ];
     for (const [path, type, bytes] of readable) {
       const res = await call(path);
@@ -369,9 +367,11 @@ describe("GET /api/pages/:id/attachments/:name の認可", () => {
     }
   });
 
-  it("匿名には、別ページの参照、参照なし、存在しない、削除したページ、参照を外した後を同じ 404 にする", async () => {
-    const { call, served, pub, draft, other, gone, names } = await seed();
+  it("匿名には、draft のページの参照、別ページの参照、参照なし、存在しない、削除したページ、参照を外した後を同じ 404 にする", async () => {
+    const { call, served, pub, draft, other, gone, back, names } = await seed();
     const hidden = [
+      served(draft, names.onDraft),
+      served(back, names.toDraft),
       served(pub, names.onDraft),
       served(draft, names.onOther),
       served(other, names.onPublic),
@@ -390,10 +390,39 @@ describe("GET /api/pages/:id/attachments/:name の認可", () => {
     await expectNotFound(conditional, "If-None-Match");
   });
 
-  it("owner と read の token は、参照の無い添付も private, no-store で読める", async () => {
-    const { call, served, pub, ownerHeaders, bearer, readToken, writeToken, names } = await seed();
+  it("匿名から見た draft のページの添付は、GET、HEAD、If-None-Match 付きのどれも、存在しない添付とステータス、ヘッダー、本文が同じ", async () => {
+    const { call, served, pub, draft, names } = await seed();
+    const snapshot = async (res: Response) => ({
+      status: res.status,
+      headers: Object.fromEntries(res.headers),
+      body: await res.text(),
+    });
+    for (const [label, init] of [
+      ["GET", {}],
+      ["HEAD", { method: "HEAD" }],
+      ["If-None-Match", { headers: { "If-None-Match": `"${names.onDraft}"` } }],
+    ] as const) {
+      const hidden = await snapshot(await call(served(draft, names.onDraft), init));
+      const missing = await snapshot(await call(served(pub, MISSING_NAME), init));
+      expect(hidden.status, label).toBe(404);
+      expect(hidden, label).toEqual(missing);
+    }
+  });
+
+  it("public と draft の両方が参照する添付は、匿名には public のページの URL でだけ読め、draft のページの URL では 404", async () => {
+    const { call, served, create, pub, names } = await seed();
+    const shared = await create("Shared Draft", `![[${names.onPublic}]]`);
+    expect((await call(served(pub, names.onPublic))).status).toBe(200);
+    await expectNotFound(await call(served(shared, names.onPublic)), "draft");
+  });
+
+  it("owner と read の token は、draft のページの添付と参照の無い添付も private, no-store で読める", async () => {
+    const { call, served, pub, draft, back, ownerHeaders, bearer, readToken, writeToken, names } =
+      await seed();
     for (const headers of [ownerHeaders, bearer(readToken), bearer(writeToken)]) {
       for (const path of [
+        served(draft, names.onDraft),
+        served(back, names.toDraft),
         served(pub, names.unreferenced),
         served(pub, names.onDraft),
         `/api/attachments/${names.unreferenced}`,
