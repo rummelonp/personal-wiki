@@ -64,6 +64,7 @@ import {
   updatePage,
 } from "./pages-api";
 import { RailLayout } from "./Rail";
+import { decideRetryFocus, retryButtonState } from "./retry-focus";
 import { homeHref, missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
 import { useFailureProgress } from "./use-failure-progress";
@@ -472,47 +473,45 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       for (const type of types) document.removeEventListener(type, onDown, true);
     };
   }, []);
+  function parkOnAnchor(anchor: HTMLElement) {
+    // 押したボタンが消えると、focus は body に落ちる。WebKit は、focus が body や消えない要素に
+    // あっても、本文か title の欄に選択が残っていれば打鍵の既定の動作（Enter の改行）をその選択へ届けるので、
+    // 応答を待つ間の Enter が欄に入る。そこで選択を外す。view は focus を受けるときに選択を描き直す。
+    // focus の預け先は、body に落とさないための置き場で、Enter を止めるのは選択を外す方である
+    focusAfterInput(anchor, { preventScroll: true });
+    const selection = window.getSelection();
+    const node = selection?.anchorNode;
+    if (
+      node &&
+      (editor.current?.view()?.contentDOM.contains(node) || titleEditor.current?.contains(node))
+    )
+      selection?.removeAllRanges();
+  }
   useEffect(() => {
     const anchor = waitAnchorEl.current;
     const active = document.activeElement;
-    const lost = active === null || active === document.body;
-    const parked = parkedOnAnchor.current;
-    if (anchor === null) parkedOnAnchor.current = false;
-    if (restoreRetryFocus.current) {
-      // 失敗の通知が戻らずに操作が終わったとき（成功、衝突、再試行できない失敗など）に、
-      // 次の失敗の通知へ持ち越さない。操作の途中は通知にボタンが無いので、busy の間は待つ
-      const button = retryButtonEl.current;
-      if (!afterFailure || !(lost || active === anchor) || (button === null && state.busy === null))
-        restoreRetryFocus.current = false;
-      else if (button?.disabled === false) {
-        restoreRetryFocus.current = false;
-        focusAfterInput(button, { preventScroll: true });
-        return;
-      } else if (anchor !== null && lost) {
-        // 押したボタンが消えると、focus は body に落ちる。WebKit は、focus が body や消えない要素に
-        // あっても、本文か title の欄に選択が残っていれば打鍵の既定の動作（Enter の改行）をその選択へ届けるので、
-        // 応答を待つ間の Enter が欄に入る。そこで選択を外す。view は focus を受けるときに選択を描き直す。
-        // focus の預け先は、body に落とさないための置き場で、Enter を止めるのは選択を外す方である
-        focusAfterInput(anchor, { preventScroll: true });
-        const selection = window.getSelection();
-        const node = selection?.anchorNode;
-        if (
-          node &&
-          (editor.current?.view()?.contentDOM.contains(node) || titleEditor.current?.contains(node))
-        )
-          selection?.removeAllRanges();
-        parkedOnAnchor.current = true;
-        return;
-      }
-    }
-    // 預けた先が、再送のボタンに戻らずに消えたとき（成功、衝突など）は、focus を body に落とさない。
-    // title の重複で終わったときは、次に直すのが title なので、title の欄へ移す。
-    if (parked && anchor === null && lost && !restoreRetryFocus.current) {
-      const titleTaken =
+    const button = retryButtonEl.current;
+    const decision = decideRetryFocus({
+      anchorPresent: anchor !== null,
+      onAnchor: anchor !== null && active === anchor,
+      lost: active === null || active === document.body,
+      parked: parkedOnAnchor.current,
+      restore: restoreRetryFocus.current,
+      afterFailure,
+      button: retryButtonState(button),
+      busy: state.busy !== null,
+      titleTaken:
         (shownFailure?.kind === "create" || shownFailure?.kind === "save") &&
-        shownFailure.titleTaken !== undefined;
-      focusTitleOrBodyOrFrame(titleTaken);
-    }
+        shownFailure.titleTaken !== undefined,
+    });
+    // focus を移すと document の focusin が parkedOnAnchor を書くので、ref は focus より先に書く
+    restoreRetryFocus.current = decision.restore;
+    parkedOnAnchor.current = decision.parked;
+    if (decision.action === "retry" && button !== null)
+      focusAfterInput(button, { preventScroll: true });
+    else if (decision.action === "anchor" && anchor !== null) parkOnAnchor(anchor);
+    else if (decision.action === "title" || decision.action === "body")
+      focusTitleOrBodyOrFrame(decision.action === "title");
   });
   // 削除の再試行は確認を挟まない。ボタン自体が「もう一度削除する」と明示している
   async function retryFailed(op: FailedOp | null) {
