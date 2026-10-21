@@ -103,15 +103,28 @@ test("本文の末尾を画面の下寄りで打って上限を超えても、�
 
   // 末尾の行が画面の下寄りに来るまで、末尾から戻す。下寄りの行は、通知が出れば覆う位置にある
   const last = bodyEditor(page).locator(".cm-line").last();
-  // 長い本文は描いた行から高さを測り直すので、末尾の位置は 1 回のスクロールでは定まらない
+  // 長い本文は描いた行から高さを測り直すので、末尾の位置は 1 回のスクロールでは定まらない。
+  // スクロールの直後はメーターが画面に入っていても、描かれているのはまだ先頭側の行で、次のフレームで
+  // 末尾の行に入れ替わる。末尾の行がメーターの直前に着くまで待ち、同じ評価の中で位置を読む
+  // （行の要素を先に取ると、入れ替えで外れたあとに位置を問い合わせることになる）
+  let lastY = Number.NaN;
   await expect
     .poll(async () => {
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      return meter.evaluate((element) => element.getBoundingClientRect().bottom <= innerHeight);
-    }, "末尾までスクロールできない")
-    .toBe(true);
-  const lastY = (await last.boundingBox())?.y;
-  if (lastY === undefined) throw new Error("末尾の行の位置を取れない");
+      lastY = await page.evaluate(() => {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        const lines = document.querySelectorAll('.cm-content[aria-label="本文"] .cm-line');
+        const line = lines[lines.length - 1]?.getBoundingClientRect();
+        const meterBox = document
+          .querySelector(".body-meter .input-meter")
+          ?.getBoundingClientRect();
+        if (line === undefined || meterBox === undefined) return Number.NaN;
+        const atEnd =
+          meterBox.bottom <= innerHeight && meterBox.top - line.bottom < line.height * 3;
+        return atEnd ? line.y : Number.NaN;
+      });
+      return Number.isNaN(lastY);
+    }, "末尾の行までスクロールできない")
+    .toBe(false);
   await page.evaluate((by) => window.scrollBy(0, -by), viewport.height * 0.8 - lastY);
   await expect
     .poll(
