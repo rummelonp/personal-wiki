@@ -4,6 +4,7 @@ import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor/page-index";
 import {
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useId,
   useLayoutEffect,
@@ -199,6 +200,91 @@ function OptionContent({
   }
 }
 
+/**
+ * 案内を支援技術へ伝えられる状態か。待つのは、開いた描画から出ている案内だけで、語を打ったら待たない。
+ * 案内が無い描画を挟んだ後に出た案内は、空で置いた status への変化として伝わる。
+ */
+function useNoteReady(hasNote: boolean, typed: boolean): boolean {
+  const framesPassed = useAfterFrames();
+  // status が案内なしで描画された後か
+  const [statusEmptied, setStatusEmptied] = useState(false);
+  useEffect(() => {
+    if (!hasNote) setStatusEmptied(true);
+  }, [hasNote]);
+  return framesPassed || statusEmptied || typed;
+}
+
+function SwitcherStatus({
+  pending,
+  note,
+  noteReady,
+}: {
+  pending: boolean;
+  note: ReactNode;
+  noteReady: boolean;
+}) {
+  return (
+    <>
+      {/* 案内の status は 1 つにまとめる。取得中と匿名の案内が同時に出ると、status が 2 つ並ぶため。
+          中身を持ったまま挿入した status は多くの読み上げで読まれないので、常に置いて中身だけを入れる */}
+      <div role="status" className="switcher-status">
+        {pending && <PendingCandidates />}
+        {noteReady && note}
+      </div>
+      {/* 開いた描画で案内がすでにあると、status へ中身ごと挿入することになり読まれない。見た目は先に出し、
+          支援技術には後の frame で status へ移して伝える */}
+      {!noteReady && note !== null && <div aria-hidden="true">{note}</div>}
+    </>
+  );
+}
+
+function SwitcherList({
+  id,
+  label,
+  rows,
+  selectedIndex,
+  optionId,
+  trimmed,
+  terms,
+  onHover,
+  onSelect,
+}: {
+  id: string;
+  label: string;
+  rows: readonly Row[];
+  selectedIndex: number;
+  optionId: (row: Row) => string;
+  trimmed: string;
+  terms: readonly string[];
+  onHover: (row: Row, selected: boolean) => void;
+  onSelect: (row: Row) => void;
+}) {
+  return (
+    <div id={id} role="listbox" aria-label={label} className="switcher-list">
+      {rows.map((row, i) => (
+        // マウスは mouseenter でなく mousemove で拾う。キーで選んだ行へのスクロールで、動かしていない
+        // マウスの下に別の行が来ても、キーの選択を奪わせないため
+        <button
+          key={rowKey(row)}
+          type="button"
+          id={optionId(row)}
+          role="option"
+          tabIndex={-1}
+          className="switcher-option"
+          aria-selected={i === selectedIndex}
+          data-row-kind={row.kind}
+          onMouseMove={() => onHover(row, i === selectedIndex)}
+          // 入力欄からフォーカスを奪わない
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onSelect(row)}
+        >
+          <OptionContent row={row} trimmed={trimmed} terms={terms} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SwitcherBody({
   index,
   owner,
@@ -223,9 +309,6 @@ function SwitcherBody({
   // マウスが載った行はすでに見えているので、それによる選択の変更ではスクロールしない
   const hoveredRef = useRef(false);
   const listboxId = useId();
-  const framesPassed = useAfterFrames();
-  // status が案内なしで描画された後か。その後に出た案内は、空で置いた status への変化として伝わる
-  const [statusEmptied, setStatusEmptied] = useState(false);
 
   // 取り直しが始まったことを、最初の描画の前に反映する。前の失敗が残ったインデックスで開き直すと、
   // 取り直しの間も失敗の案内が一瞬出てしまう
@@ -331,11 +414,12 @@ function SwitcherBody({
       contentSearchTooShort={contentSearchTooShort}
     />
   ) : null;
-  useEffect(() => {
-    if (!hasNote) setStatusEmptied(true);
-  }, [hasNote]);
-  // 待つのは、開いた描画から出ている案内だけ。語を打ったら待たない
-  const noteReady = framesPassed || statusEmptied || query !== initialQuery;
+  const noteReady = useNoteReady(hasNote, query !== initialQuery);
+
+  function hoverRow(row: Row, selected: boolean) {
+    if (!selected) hoveredRef.current = true;
+    setSelectedKey(rowKey(row));
+  }
 
   return (
     <div className="switcher-body">
@@ -366,45 +450,18 @@ function SwitcherBody({
       )}
       {/* listbox の子は option だけにするので、候補が無いことと本文から検索できないことの案内は
           外に置く。owner には「作成」と「本文から検索」の行が同じことを伝える */}
-      {/* 案内の status は 1 つにまとめる。取得中と匿名の案内が同時に出ると、status が 2 つ並ぶため。
-          中身を持ったまま挿入した status は多くの読み上げで読まれないので、常に置いて中身だけを入れる */}
-      <div role="status" className="switcher-status">
-        {(!settled || retrying) && <PendingCandidates />}
-        {noteReady && note}
-      </div>
-      {/* 開いた描画で案内がすでにあると、status へ中身ごと挿入することになり読まれない。見た目は先に出し、
-          支援技術には後の frame で status へ移して伝える */}
-      {!noteReady && hasNote && <div aria-hidden="true">{note}</div>}
-      <div
+      <SwitcherStatus pending={!settled || retrying} note={note} noteReady={noteReady} />
+      <SwitcherList
         id={listboxId}
-        role="listbox"
-        aria-label={trimmed === "" && !hasClearRow ? RECENT_LABEL : ROWS_LABEL}
-        className="switcher-list"
-      >
-        {rows.map((row, i) => (
-          // マウスは mouseenter でなく mousemove で拾う。キーで選んだ行へのスクロールで、動かしていない
-          // マウスの下に別の行が来ても、キーの選択を奪わせないため
-          <button
-            key={rowKey(row)}
-            type="button"
-            id={optionId(row)}
-            role="option"
-            tabIndex={-1}
-            className="switcher-option"
-            aria-selected={i === selectedIndex}
-            data-row-kind={row.kind}
-            onMouseMove={() => {
-              if (i !== selectedIndex) hoveredRef.current = true;
-              setSelectedKey(rowKey(row));
-            }}
-            // 入力欄からフォーカスを奪わない
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => selectRow(row)}
-          >
-            <OptionContent row={row} trimmed={trimmed} terms={terms} />
-          </button>
-        ))}
-      </div>
+        label={trimmed === "" && !hasClearRow ? RECENT_LABEL : ROWS_LABEL}
+        rows={rows}
+        selectedIndex={selectedIndex}
+        optionId={optionId}
+        trimmed={trimmed}
+        terms={terms}
+        onHover={hoverRow}
+        onSelect={selectRow}
+      />
       {/* 物理キーボードの案内なので、タッチ操作が主の狭い幅では出さない（CSS） */}
       <p className="switcher-hints" aria-hidden="true">
         <span>↑↓ 選ぶ</span>
