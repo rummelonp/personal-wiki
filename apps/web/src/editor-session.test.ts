@@ -2818,6 +2818,7 @@ describe("保存の前の検査", () => {
     await session.changeVisibility("public");
     expect(api.calls).toEqual([]);
     expect(session.getState().base.visibility).toBe("draft");
+    expect(session.getState().busy).toBeNull();
     expect(backup.load(ID)).toMatchObject({ body: OVER });
   });
 
@@ -2960,6 +2961,7 @@ describe("保存の前の検査", () => {
       expect(api.setVisibility).not.toHaveBeenCalled();
       expect(server.page.visibility).toBe("draft");
       expect(session.getState().failedOp).toMatchObject({ titleTaken: { title: "週報" } });
+      expect(session.getState().busy).toBeNull();
     });
   });
 
