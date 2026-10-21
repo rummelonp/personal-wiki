@@ -83,7 +83,7 @@ E2E のポートは既定で 8790（inspector は 9339）。
 従の環境（Firefox、Android の Chromium、デスクトップの WebKit）の smoke と速さの計測（`apps/web/e2e/perf-budget.json` の予算）は `pnpm e2e:full` だけが走らせる。
 CI（`ci.yml`）は E2E を流さないので、master に取り込む前と push の前に `pnpm e2e:full` を流す。
 
-GitHub Actions の `e2e.yml` は、速さの計測を除くすべての環境の E2E を Linux で流す。
+GitHub Actions の `e2e.yml` は、速さの計測を除くすべての環境の E2E を macOS の runner で流す。
 push では走らず、手で起動する（`gh workflow run e2e.yml -R rummelonp/personal-wiki`）。
 `workflow_dispatch` で起動できるのは、既定ブランチに `e2e.yml` があるときだけである。
 master にあれば、`--ref <ブランチ>` で push した作業ブランチの版も流せる。

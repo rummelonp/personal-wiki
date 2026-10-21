@@ -21,9 +21,12 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
-    # 4 vCPU で 5 つの project を流す見積もりは 15〜25 分。詰まったときに待ち続けないよう、
-    # 倍近い値で打ち切る
+    # Linux では流せない。Linux の WebKit は http://localhost の Secure の cookie を送らず、owner の
+    # テストがすべて匿名になる。theme.css の font stack が先頭に置く Hiragino も macOS にしか無く、
+    # 文字の幅や折り返しを測るテストが手元と合わない
+    runs-on: macos-latest
+    # macos-latest（3 vCPU）で 5 つの project を流すと 18 分ほどかかる。詰まったときに
+    # 待ち続けないよう、倍より長めの値で打ち切る
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,17 +41,10 @@ jobs:
         run: echo "version=$(pnpm --filter @personal-wiki/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/ms-playwright
+          path: ~/Library/Caches/ms-playwright
           key: playwright-e2e-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      # cache が当たってもブラウザが使う OS のライブラリは入れ直す必要があるので、毎回実行する。
       # ブラウザ本体は入っていればダウンロードを飛ばす
-      - run: pnpm --filter @personal-wiki/web exec playwright install --with-deps chromium webkit firefox
-      # --with-deps が入れる日本語のフォントは IPA Gothic などで、theme.css の font stack が
-      # 名指しする Noto（明朝を含む）が無い。無いと見出しの明朝もゴシックに落ち、折り返しや文字の幅を
-      # 測るテストが手元とさらにずれる
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - run: pnpm --filter @personal-wiki/web exec playwright install chromium webkit firefox
       # Playwright には project を除く指定が無いので、apps/web/playwright.config.ts の perf-* 以外を
       # 並べる。project を足したらここにも足す。
       # specs は env 経由で渡し、シェルの構文としては解釈させない（空白で分けるだけで、glob は展開しない）。
