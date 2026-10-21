@@ -111,6 +111,17 @@ describe("リンクの書き換えの通知", () => {
       expect(statusText()).toBe("");
     });
 
+    it("止まった理由が通信と決まらないので、通信を原因として書かず、時間をおくことを案内する", async () => {
+      const { runner, settled } = setup([]);
+      act(() => runner.start(1));
+      await act(async () => {
+        await settled();
+      });
+      const text = alerts()[0]?.textContent ?? "";
+      expect(text).toContain("時間をおいて、再試行してください。");
+      expect(text).not.toContain("通信");
+    });
+
     it("ログインが切れて止まったときも alert で、ログインし直すを出す", async () => {
       const { runner, settled } = setup([{ ok: false, kind: "unauthorized" }]);
       act(() => runner.start(1));

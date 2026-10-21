@@ -121,6 +121,14 @@ describe("createAttachmentUploader", () => {
     expect(messages.size).toBe(KINDS.length);
   });
 
+  it("error の知らせは、通信を原因として書かず、もう一度添付することと再読み込みを案内する", async () => {
+    const { uploader, notices } = setup({ ok: false, kind: "error" });
+    await uploader.upload(png("pic.png")).catch(() => {});
+    expect(notices[0]?.message).toBe(
+      "「pic.png」を添付できませんでした。もう一度添付してください。直らないときは再読み込みしてください。",
+    );
+  });
+
   it("名前の無い File は「この画像」と呼ぶ", async () => {
     const { uploader, notices } = setup({ ok: false, kind: "error" });
     await uploader.upload(png("")).catch(() => {});

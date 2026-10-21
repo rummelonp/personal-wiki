@@ -111,6 +111,14 @@ describe("読み込みの失敗", () => {
     expect(text()).toContain("画面を読み込めませんでした");
   });
 
+  it("失敗の通知は、通信を原因として書かず、再読み込みだけを案内する", async () => {
+    const { loader } = failingOnce();
+    mount(loader);
+    await settle();
+    expect(text()).toContain("再読み込みしてください。");
+    expect(text()).not.toContain("通信");
+  });
+
   it("失敗の通知が出ている間に再描画しても、読み込み直さない", async () => {
     const { loader, importPageView } = failingOnce();
     mount(loader);

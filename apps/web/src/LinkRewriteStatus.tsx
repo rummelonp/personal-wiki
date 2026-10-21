@@ -176,7 +176,7 @@ function LinkRewriteNotice({
       {stoppedForAuth && (
         <p>書き込みが拒否されました。ログインし直すと、残りを続きから書き換えます。</p>
       )}
-      {stoppedForError && <p>通信を確かめて、再試行してください。</p>}
+      {stoppedForError && <p>時間をおいて、再試行してください。</p>}
       {rewritten.length > 0 && (
         <details onToggle={(event) => onListToggle(event.currentTarget.open)}>
           <summary>

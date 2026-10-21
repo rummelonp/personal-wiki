@@ -66,5 +66,6 @@
   title を渡した新規作成は、開いた時点で作るので「作成」でよい。
 - 失敗の原因は、確かなときだけ書く。
   リンク先を開けなかった知らせは、通信の失敗でも別の失敗でも同じ結果（error）になるので、通信を原因として書かない（`apps/web/src/title-resolver.ts`）。
+  添付、リンクの書き換えの停止、画面の読み込みの失敗も、通信以外の失敗が同じ結果にまとまるので同じ書き方にする（`apps/web/src/attachments.ts`、`LinkRewriteStatus.tsx`、`page-view-loader.tsx`）。
 - SPA が知らないエラーコードは、サーバーが返した message を出さず、HTTP の状態に応じた汎用の文にする（`apps/web/src/pages-api.ts` の `statusMessage`）。
 - そろえないもの: 相対時刻の表記（「3分前」「約1時間前」など）は、画面ごとの文脈が違うのでそろえない。

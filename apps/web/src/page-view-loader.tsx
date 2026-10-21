@@ -86,7 +86,7 @@ function PageViewLoadFailed() {
   return (
     <RailLayout rail={null}>
       <Notice inline tone="error" title="画面を読み込めませんでした">
-        <p>通信を確かめて、再読み込みしてください。</p>
+        <p>再読み込みしてください。</p>
       </Notice>
     </RailLayout>
   );
