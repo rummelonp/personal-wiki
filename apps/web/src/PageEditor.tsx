@@ -2,7 +2,6 @@ import { MAX_BODY_BYTES } from "@personal-wiki/domain/page-input";
 import { wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
 import {
-  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -22,6 +21,7 @@ import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
+import { FailureNotice, WithKeptContent } from "./EditorNotices";
 import { bindLifecycle } from "./editor-lifecycle";
 import { registerEditor } from "./editor-registry";
 import {
@@ -35,7 +35,6 @@ import {
   isReadOnly,
   type SaveStatus,
   saveStatusOf,
-  type WriteRejection,
 } from "./editor-session";
 import { focusAndRevealCaret } from "./focus-reveal";
 import { formatTime } from "./format";
@@ -44,7 +43,6 @@ import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
 import { isInView } from "./in-view";
 import { inputProblemMessage, inputProblemTitle } from "./input-messages";
 import { focusAfterInput } from "./input-modality";
-import { Link } from "./Link";
 import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
 import { createTitleIndex } from "./link-sources";
@@ -128,70 +126,6 @@ const SPOKEN_BY_NOTICE: ReadonlySet<SaveStatus> = new Set([
   "gone",
 ]);
 
-const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
-  create: "作成できませんでした",
-  save: "保存できませんでした",
-  visibility: "公開範囲を変更できませんでした",
-  delete: "削除できませんでした",
-};
-
-/**
- * 保存や作成が失敗しても、打った内容は画面に残り、session が端末にも退避する（editor-session の stashIfDirty）。
- * 退避は容量超過や private window で書けないことがあり、そのときは画面を閉じると内容が失われる。
- * 送らずに止めた入力（held）の退避は、打つのが止まってから書くので、通知を出した時点ではまだ無い。
- * 文末を「残します」と「残してあります」で分けるのはそのためで、利用者が時制の違いを不具合と読まないよう、
- * held の文には退避を書く時機を入れる。
- */
-const keptContent = (backupFailed: boolean, held = false) =>
-  backupFailed
-    ? "入力した内容は、この画面にしか残っていません。再読み込みや画面の移動をする前に、内容をコピーしてください。"
-    : held
-      ? "入力した内容は、打つのが止まってからこの端末に残します。"
-      : "入力した内容は、この端末に残してあります。";
-
-/**
- * 失敗の理由の段落に、内容の扱いの段落を添える。内容が画面にしか無いときは先に出す。
- * 理由が「再読み込みしてから…」のように読み込み直しを促すことがあり、先に読むと内容を失うため。
- */
-function WithKeptContent({
-  show,
-  backupFailed,
-  held = false,
-  children,
-}: {
-  show: boolean;
-  backupFailed: boolean;
-  held?: boolean;
-  children: ReactNode;
-}) {
-  const kept = show && <p>{keptContent(backupFailed, held)}</p>;
-  return (
-    <>
-      {backupFailed && kept}
-      {children}
-      {!backupFailed && kept}
-    </>
-  );
-}
-
-/**
- * 退避が書けなかったときは、見出しに内容を失う恐れを入れる。通知を畳むと本文の段落は隠れ、
- * 見出しだけが残るので、失う恐れが見出しに無いと畳んだまま見落とす。
- */
-const UNKEPT_TITLES = {
-  create: "作成できず、内容をこの端末に残せませんでした",
-  save: "保存できず、内容をこの端末に残せませんでした",
-};
-
-/**
- * title の重複で拒まれたときの見出し。重複はもう一度送っても同じレスポンスになるので、通信の失敗と分けて
- * 直し方の分かる見出しにする。
- */
-const TAKEN_TITLES = {
-  create: "同じタイトルのページがあるため、作成できません",
-  save: "同じタイトルのページがあるため、保存できません",
-};
-
 /** 失敗の後の操作が終わるまでの間、失敗の通知に代えてドックに出す見出し。 */
 const PROGRESS_TITLES = {
   saving: "保存中…",
@@ -199,43 +133,6 @@ const PROGRESS_TITLES = {
   deleting: "削除中…",
   restoring: "本文を戻し中…",
 } as const;
-
-function retryLabel(op: FailedOp): string {
-  switch (op.kind) {
-    case "create":
-      return "もう一度作成する";
-    case "save":
-      return "もう一度保存する";
-    case "visibility":
-      return op.to === "public" ? "もう一度公開にする" : "もう一度下書きにする";
-    case "delete":
-      return "もう一度削除する";
-  }
-}
-
-/**
- * 重複と言われた title の直し方。サーバーは大文字と小文字などの違いを同じ title とみなすので、
- * 見た目の違う title と重なったときはその規則を添える。
- */
-function TakenGuide({
-  taken,
-  kind,
-}: {
-  taken: NonNullable<WriteRejection["titleTaken"]>;
-  kind: "create" | "save";
-}) {
-  const { existing } = taken;
-  return (
-    <p>
-      {existing !== undefined &&
-        existing.title !== taken.title &&
-        `「${existing.title}」と同じタイトルとみなします。大文字と小文字、全角と半角、_ と空白は区別しません。`}
-      {kind === "create"
-        ? "タイトルを変えて欄を離れると、作成します。"
-        : "タイトルを変えて欄を離れると、保存します。"}
-    </p>
-  );
-}
 
 /** 同時に出す添付の失敗の数。まとめて貼った画像が全部失敗しても、画面を埋めない */
 const MAX_UPLOAD_NOTICES = 5;
@@ -699,16 +596,16 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   // 保存済みのままの内容は送らないので、問題があっても手を付けるまでは知らせない
   const inputProblems = uncreated || isDirty(state) ? inputProblemsOf(state.draft) : [];
   const inputProblem = inputProblems[0];
-  // サーバーが入力のエラーで拒んでも、手元の検査が同じ問題を見つけていれば、その通知に任せる
-  const coveredByCheck = (op: FailedOp) =>
-    (op.kind === "create" || op.kind === "save") && op.input === true && inputProblem !== undefined;
-  // 重複と入力のエラーは、同じ内容を送り直しても同じレスポンスになるので、再試行を出さない。手元の内容が
-  // 規則に合わない間も、再試行は送らずに止まるので出さない
-  const retryable = (op: FailedOp) =>
-    !(
-      (op.kind === "create" || op.kind === "save") &&
-      (op.titleTaken || op.input || inputProblem !== undefined)
-    );
+  const createFailure = shownFailure?.kind === "create" ? shownFailure : null;
+  const failureNoticeProps = {
+    error: state.error,
+    dirty: isDirty(state),
+    backupFailed: state.backupFailed,
+    inputProblem: inputProblem !== undefined,
+    idle,
+    retryButtonRef,
+    onRetry: retryFailed,
+  };
   // 変更が無いときの retry() は通知を下ろすだけで、保存も作成もしない
   const authRetryLabel = !isDirty(state)
     ? "閉じる"
@@ -930,51 +827,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           // key を失敗の通知と分け、再び失敗したときに alert を新しく挿入して確実に読み上げさせる
           <Notice key="progress" tone="info" title={progress} silent />
         ) : (
-          failure !== null &&
-          !coveredByCheck(failure) && (
-            <Notice
-              key="failure"
-              tone="error"
-              title={
-                failure.kind === "save" && isDirty(state) && state.backupFailed
-                  ? UNKEPT_TITLES.save
-                  : failure.kind === "save" && failure.titleTaken
-                    ? TAKEN_TITLES.save
-                    : FAILURE_TITLES[failure.kind]
-              }
-              actions={
-                failure.kind === "save" && failure.titleTaken?.existing ? (
-                  <Link
-                    className="button button-main"
-                    href={pageHrefFor(failure.titleTaken.existing)}
-                  >
-                    そのページを開く
-                  </Link>
-                ) : retryable(failure) ? (
-                  <button
-                    type="button"
-                    className="button button-main"
-                    ref={retryButtonRef}
-                    disabled={!idle}
-                    onClick={() => void retryFailed(failure)}
-                  >
-                    {retryLabel(failure)}
-                  </button>
-                ) : undefined
-              }
-            >
-              <WithKeptContent
-                show={failure.kind === "save" && isDirty(state)}
-                backupFailed={state.backupFailed}
-              >
-                {failure.kind === "save" && failure.titleTaken ? (
-                  <TakenGuide taken={failure.titleTaken} kind="save" />
-                ) : (
-                  <p>{state.error}</p>
-                )}
-              </WithKeptContent>
-            </Notice>
-          )
+          <FailureNotice key="failure" op={failure} {...failureNoticeProps} />
         )}
 
         {state.conflict !== null && (
@@ -1094,48 +947,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           )}
         </div>
         {/* 通知はドックへ重なるので、JSX の位置は表示位置を決めない。作成は title の確定で起きるので、title の後に置く */}
-        {state.error !== null &&
-          state.failedOp?.kind === "create" &&
-          !coveredByCheck(state.failedOp) && (
-            <Notice
-              tone="error"
-              title={
-                state.backupFailed
-                  ? UNKEPT_TITLES.create
-                  : state.failedOp.titleTaken
-                    ? TAKEN_TITLES.create
-                    : FAILURE_TITLES.create
-              }
-              actions={
-                state.failedOp.titleTaken?.existing ? (
-                  <Link
-                    className="button button-main"
-                    href={pageHrefFor(state.failedOp.titleTaken.existing)}
-                  >
-                    そのページを開く
-                  </Link>
-                ) : retryable(state.failedOp) ? (
-                  <button
-                    type="button"
-                    className="button button-main"
-                    ref={retryButtonRef}
-                    disabled={!idle}
-                    onClick={() => void retryFailed(state.failedOp)}
-                  >
-                    {retryLabel(state.failedOp)}
-                  </button>
-                ) : undefined
-              }
-            >
-              <WithKeptContent show backupFailed={state.backupFailed}>
-                {state.failedOp.titleTaken ? (
-                  <TakenGuide taken={state.failedOp.titleTaken} kind="create" />
-                ) : (
-                  <p>{state.error}</p>
-                )}
-              </WithKeptContent>
-            </Notice>
-          )}
+        <FailureNotice op={createFailure} {...failureNoticeProps} />
         {inputProblem !== undefined && (
           // 数は打つたびに変わり、読み上げると打つたびに読み直されるので、通知は読み上げない。
           // 原因と保存できないことは、下の見えない status が inputProblemTitle で伝える。
