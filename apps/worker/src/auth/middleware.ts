@@ -247,9 +247,9 @@ export interface ResolvePrincipalOptions {
  * - principal で内容が変わりうるので、principal が決まった後のレスポンスには Vary を付ける
  * - owner と token のレスポンスは private, no-store で上書きする
  * - 匿名のレスポンスは、ハンドラが Cache-Control を付けていなければ no-store にする。public から draft に
- *   戻したページは直ちに title で引けなくなる必要があり、ETag はあっても If-None-Match に応じないので、
- *   no-cache で再検証させても得るものが無い。id で取った draft の本文を共有キャッシュに置かせない意味も
- *   ある。キャッシュさせてよいレスポンス（SPA の HTML の no-cache など）は、ハンドラが明示して外す
+ *   戻したページは直ちに id と title で引けなくなる必要があり、ETag はあっても If-None-Match に応じないので、
+ *   no-cache で再検証させても得るものが無い。キャッシュさせてよいレスポンス（SPA の HTML の no-cache など）は、
+ *   ハンドラが明示して外す
  */
 export function resolvePrincipal({ now }: ResolvePrincipalOptions): MiddlewareHandler<AppEnv> {
   return defineBaseMiddleware(

@@ -71,21 +71,6 @@ test.describe("匿名", () => {
     ).toEqual([]);
   });
 
-  test("draft のページは、直接開いても再読み込みでもページの JSON を引く", async ({
-    page,
-    api,
-  }, testInfo) => {
-    const title = uniqueTitle(testInfo, "下書きを開く");
-    const created = await api.createPage({ title, body: "下書きの本文" });
-    const reads = recordPageReads(page);
-    await page.goto(`/p/${created.id}`);
-    await expectShown(page, title, "下書きの本文");
-    expect(reads).toEqual([`/api/pages/${created.id}`]);
-    await page.reload();
-    await expectShown(page, title, "下書きの本文");
-    expect(reads).toEqual([`/api/pages/${created.id}`, `/api/pages/${created.id}`]);
-  });
-
   test("SPA の中の移動で開いたページと、戻った最初のページはページの JSON を引く", async ({
     page,
     api,
@@ -114,6 +99,23 @@ test.describe("匿名", () => {
     await expect(page.getByRole("heading", { level: 1, name: start.title })).toBeVisible();
     await expect.poll(() => reads).toEqual([byTitle(target.title), byTitle(start.title)]);
   });
+});
+
+test("owner が draft のページを開くと、直接開いても再読み込みでもページの JSON を引く", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "下書きを開く"),
+    body: "下書きの本文",
+  });
+  const reads = recordPageReads(page);
+  await page.goto(`/p/${created.id}`);
+  await expect(bodyEditor(page)).toContainText("下書きの本文");
+  expect(reads).toEqual([`/api/pages/${created.id}`]);
+  await page.reload();
+  await expect(bodyEditor(page)).toContainText("下書きの本文");
+  expect(reads).toEqual([`/api/pages/${created.id}`, `/api/pages/${created.id}`]);
 });
 
 test("owner が public のページを直接開いて書いても、別の場所の保存との衝突を見逃さない", async ({

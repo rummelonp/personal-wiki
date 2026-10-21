@@ -4,7 +4,7 @@ import {
   MAX_TITLE_BYTES,
   singleLineTitle,
 } from "@personal-wiki/domain";
-import { type Principal, readableVisibilityOf } from "../auth/principal";
+import { type Principal, type ReadableVisibility, readableVisibilityOf } from "../auth/principal";
 import { applyBodyEdits, type BodyEdit, type BodyEditFailure } from "./body-edits";
 import { isPageId } from "./id";
 import {
@@ -85,8 +85,12 @@ export interface PageWriteContext {
 }
 
 /** 入力された id でページを引く。id の形式が違えば D1 を引かずに null。 */
-export async function findPageByInputId(db: D1Database, id: string): Promise<Page | null> {
-  return isPageId(id) ? findPageById(db, id) : null;
+export async function findPageByInputId(
+  db: D1Database,
+  id: string,
+  readable: ReadableVisibility,
+): Promise<Page | null> {
+  return isPageId(id) ? findPageById(db, id, readable) : null;
 }
 
 export async function createPageAs(
@@ -176,7 +180,7 @@ export async function editPageAs(
   ctx: PageWriteContext,
   input: { id: string; expectedVersion: number; edits: readonly BodyEdit[] },
 ): Promise<EditSuccess | EditPageError> {
-  const page = await findPageByInputId(ctx.db, input.id);
+  const page = await findPageByInputId(ctx.db, input.id, readableVisibilityOf(ctx.principal));
   if (page === null) return { ok: false, reason: "not_found" };
   if (page.version !== input.expectedVersion) {
     return { ok: false, reason: "version_conflict", currentVersion: page.version };

@@ -118,10 +118,10 @@ async function findPageWithLinks(
  * 307 を返すため。
  *
  * 4 の index.html は、ページの URL ならメタ情報を差し込み、ページが無ければ 404 にする（page-html.ts）。
- * - 404 は書き換えずに返す。匿名から見た draft の title と存在しない title を、ステータス、ヘッダー、
- *   本文のどれでも区別させないため。draft の title で引けたかどうかで分岐する処理をここに足さない
- * - noindex を外すのは、トップと public のページだけ。draft は id で開けても検索エンジンに載せない
- * - draft の HTML は title と抜粋を含むので、id で取った draft の JSON と同じく no-store にする
+ * - 404 は書き換えずに返す。匿名から見た draft の id と title を、存在しない id と title と、ステータス、
+ *   ヘッダー、本文のどれでも区別させないため。draft で引けたかどうかで分岐する処理をここに足さない
+ * - noindex を外すのは、トップと public のページだけ。draft の HTML を受け取るのは draft を読める owner と
+ *   token だけで、その応答は resolvePrincipal が private, no-store にするが、写しが出回っても索引に載せない
  * - 書き換えたレスポンスと 404 は index.html と中身が違うので、ASSETS の ETag と Content-Length を外す
  * - D1 の検索が失敗したら、書き換えない index.html を 503 で返す。500 にすると SPA が起動できず、
  *   200 にするとメタ情報の無いページがインデックスに載る。2 の一覧の失敗も 503 にする。一覧の無い 200 だと、
@@ -164,7 +164,6 @@ export function registerSpaRoutes(app: Hono<AppEnv>) {
     });
     res.headers.delete("ETag");
     res.headers.delete("Content-Length");
-    if (page.visibility === "draft") res.headers.set("Cache-Control", "no-store");
     return res;
   });
 }

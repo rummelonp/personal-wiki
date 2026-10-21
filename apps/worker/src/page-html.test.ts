@@ -15,8 +15,8 @@ import { type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
 
 /*
- * ページの URL の HTML に差し込むメタ情報と、公開範囲で変わるヘッダー。匿名が draft の title を開いた
- * レスポンスは、存在しない title のレスポンスと区別できてはならない。
+ * ページの URL の HTML に差し込むメタ情報と、公開範囲で変わるヘッダー。匿名が draft の title や id を
+ * 開いたレスポンスは、存在しないページのレスポンスと区別できてはならない。
  */
 
 const ORIGIN = "http://localhost";
@@ -386,62 +386,44 @@ describe("owner と token の HTML", () => {
 });
 
 describe("draft のページの HTML", () => {
-  it("匿名の /p/<draft の id> は 200 で、noindex と no-store を付け、OGP も差し込む", async () => {
-    const { navigate, draft } = await seed();
-    const res = await navigate(`/p/${draft.id}`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
-    expect(res.headers.get("Referrer-Policy")).toBe("same-origin");
-    expect(res.headers.get("Cache-Control")).toBe("no-store");
-    expect(metaOf(await res.text())).toEqual({
-      title: "Hidden Plan - wiki",
-      ogTitle: "Hidden Plan",
-      ogDescription: "下書きの zebrafish の話",
-      description: null,
-      ogUrl: `${ORIGIN}/p/${draft.id}`,
-      ogType: "article",
-      canonical: `${ORIGIN}/p/${draft.id}`,
-      twitterCard: "summary",
-      ogImage: `${ORIGIN}${OG_IMAGE_PATH}`,
-      ogImageWidth: "1200",
-      ogImageHeight: "1200",
-      ogImageAlt: OG_IMAGE_ALT,
-      robots: "noindex",
-    });
-  });
-
-  it("owner と read の token は /<draft の title> で 200 と draft のヘッダーを受け取る", async () => {
+  it("owner と read の token は /<draft の title> と /p/<draft の id> で 200、private, no-store と noindex を受け取る", async () => {
     const { navigate, cookie, draft } = await seed();
     const token = await insertToken({ name: "reader", scopes: "read" });
     for (const headers of [{ Cookie: cookie }, { Authorization: `Bearer ${token}` }]) {
-      const res = await navigate(`/${encodeURIComponent("Hidden Plan")}`, headers);
-      const label = Object.keys(headers)[0];
-      expect(res.status, label).toBe(200);
-      expect(res.headers.get("Cache-Control"), label).toBe("private, no-store");
-      expect(res.headers.get("X-Robots-Tag"), label).toBe("noindex");
-      const meta = metaOf(await res.text());
-      expect(meta.ogTitle, label).toBe("Hidden Plan");
-      expect(meta.ogUrl, label).toBe(`${ORIGIN}/p/${draft.id}`);
-      expect(meta.robots, label).toBe("noindex");
+      for (const path of [`/${encodeURIComponent("Hidden Plan")}`, `/p/${draft.id}`]) {
+        const res = await navigate(path, headers);
+        const label = `${Object.keys(headers)[0]} ${path}`;
+        expect(res.status, label).toBe(200);
+        expect(res.headers.get("Cache-Control"), label).toBe("private, no-store");
+        expect(res.headers.get("X-Robots-Tag"), label).toBe("noindex");
+        expect(res.headers.get("Referrer-Policy"), label).toBe("same-origin");
+        // draft には抜粋があっても description を出さない
+        expect(metaOf(await res.text()), label).toEqual({
+          title: "Hidden Plan - wiki",
+          ogTitle: "Hidden Plan",
+          ogDescription: "下書きの zebrafish の話",
+          description: null,
+          ogUrl: `${ORIGIN}/p/${draft.id}`,
+          ogType: "article",
+          canonical: `${ORIGIN}/p/${draft.id}`,
+          twitterCard: "summary",
+          ogImage: `${ORIGIN}${OG_IMAGE_PATH}`,
+          ogImageWidth: "1200",
+          ogImageHeight: "1200",
+          ogImageAlt: OG_IMAGE_ALT,
+          robots: "noindex",
+        });
+      }
     }
   });
 
-  it("draft には抜粋があっても description を出さず、owner が開いても同じ", async () => {
-    const { navigate, draft, cookie } = await seed();
-    for (const headers of [{}, { Cookie: cookie }]) {
-      const html = await (await navigate(`/p/${draft.id}`, headers)).text();
-      expect(metaOf(html).ogDescription).toBe("下書きの zebrafish の話");
-      expect(html).not.toContain('name="description"');
-    }
-  });
-
-  it("draft の本文は匿名にも owner と token にも差し込まない", async () => {
+  it("draft の本文は owner と token にも差し込まない", async () => {
     const { navigate, cookie, create } = await seed();
     const token = await insertToken({ name: "reader", scopes: "read" });
     const draft = await create("Long Draft", `${"前置き。".repeat(100)}末尾の okapi の話`);
     for (const [path, headers] of [
-      [`/p/${draft.id}`, {}],
       [`/p/${draft.id}`, { Cookie: cookie }],
+      [`/p/${draft.id}`, { Authorization: `Bearer ${token}` }],
       [`/${encodeURIComponent("Long Draft")}`, { Cookie: cookie }],
       [`/${encodeURIComponent("Long Draft")}`, { Authorization: `Bearer ${token}` }],
     ] as const) {
@@ -450,15 +432,6 @@ describe("draft のページの HTML", () => {
       expect(initialPageTextOf(html), path).toBeNull();
       expect(html, path).not.toContain("okapi");
     }
-  });
-
-  it("public から draft に戻すと、id で開いても本文を差し込まない", async () => {
-    const { navigate, setVisibility, open } = await seed();
-    expect(pageTextOf(await (await navigate(`/p/${open.id}`)).text())).not.toBeNull();
-    await setVisibility(open.id, "draft");
-    const html = await (await navigate(`/p/${open.id}`)).text();
-    expect(pageTextOf(html)).toBeNull();
-    expect(initialPageTextOf(html)).toBeNull();
   });
 
   it("draft の本文は D1 から読まず、本文を持つ draft を渡されても差し込まない", async () => {
@@ -490,14 +463,17 @@ describe("draft のページの HTML", () => {
   });
 });
 
-describe("匿名から見た draft の title", () => {
-  it("存在しない title と、ステータス、ヘッダー、本文のどれも同じ 404", async () => {
+describe("匿名から見た draft の title と id", () => {
+  it("存在しない title や id と、ステータス、ヘッダー、本文のどれも同じ 404", async () => {
     const { navigate, draft } = await seed();
     const responses = await Promise.all(
       [
         `/${encodeURIComponent("Hidden Plan")}`,
         `/${encodeURIComponent("hidden plan")}`,
         `/${encodeURIComponent("Missing Page")}`,
+        `/p/${draft.id}`,
+        `/p/${draft.id}/`,
+        "/p/AAAAAAAAAAAAAAAAAAAAAA",
       ].map(async (path) => ({ path, ...(await snapshot(await navigate(path))) })),
     );
     const [first, ...others] = responses;
@@ -510,30 +486,34 @@ describe("匿名から見た draft の title", () => {
     expect(expected.headers.etag).toBeUndefined();
     for (const { path, ...response } of others) expect(response, path).toEqual(expected);
 
-    const serialized = JSON.stringify(responses);
+    const serialized = JSON.stringify(responses.map(({ path: _, ...response }) => response));
     for (const word of [draft.id, "zebrafish", "下書き"]) {
       expect(serialized, word).not.toContain(word);
     }
   });
 
   it("検証できない cookie の匿名にも 401 ではなく同じ 404 を返し、public は読める", async () => {
-    const { navigate } = await seed();
+    const { navigate, draft } = await seed();
     const stale = { Cookie: `${SESSION_COOKIE_NAME}=garbage` };
     const missing = await snapshot(await navigate(`/${encodeURIComponent("Missing Page")}`, stale));
-    const hidden = await snapshot(await navigate(`/${encodeURIComponent("Hidden Plan")}`, stale));
-    expect(hidden.status).toBe(404);
-    expect(hidden).toEqual(missing);
-    expect(hidden.headers["set-cookie"]).toBeUndefined();
+    for (const path of [`/${encodeURIComponent("Hidden Plan")}`, `/p/${draft.id}`]) {
+      const hidden = await snapshot(await navigate(path, stale));
+      expect(hidden.status, path).toBe(404);
+      expect(hidden, path).toEqual(missing);
+      expect(hidden.headers["set-cookie"], path).toBeUndefined();
+    }
     expect((await navigate(`/${encodeURIComponent("Open Note")}`, stale)).status).toBe(200);
   });
 
-  it("public から draft に戻すと、title では同じ 404 になる", async () => {
+  it("public から draft に戻すと、title でも id でも同じ 404 になる", async () => {
     const { navigate, setVisibility, open } = await seed();
     expect((await navigate(`/${encodeURIComponent("Open Note")}`)).status).toBe(200);
+    expect((await navigate(`/p/${open.id}`)).status).toBe(200);
     await setVisibility(open.id, "draft");
-    const hidden = await snapshot(await navigate(`/${encodeURIComponent("Open Note")}`));
     const missing = await snapshot(await navigate(`/${encodeURIComponent("Missing Page")}`));
-    expect(hidden).toEqual(missing);
+    for (const path of [`/${encodeURIComponent("Open Note")}`, `/p/${open.id}`]) {
+      expect(await snapshot(await navigate(path)), path).toEqual(missing);
+    }
   });
 });
 
@@ -595,29 +575,34 @@ describe("Accept による分岐", () => {
       expect(metaOf(openHtml).ogTitle, label).toBe("Open Note");
       expect(pageTextOf(openHtml)?.body, label).toBe("公開の kangaroo の話");
 
-      const byId = await call(`/p/${draft.id}`, withAccept(accept));
-      expect(byId.status, label).toBe(200);
-      expect(byId.headers.get("X-Robots-Tag"), label).toBe("noindex");
-      const byIdHtml = await byId.text();
-      expect(metaOf(byIdHtml).ogTitle, label).toBe("Hidden Plan");
-      expect(pageTextOf(byIdHtml), label).toBeNull();
-
       const init = withAccept(accept);
-      const asOwner = await call("/Hidden%20Plan", {
-        headers: { ...(init.headers as Record<string, string>), Cookie: cookie },
-      });
-      expect(asOwner.status, label).toBe(200);
-      expect(metaOf(await asOwner.text()).ogTitle, label).toBe("Hidden Plan");
+      for (const path of ["/Hidden%20Plan", `/p/${draft.id}`]) {
+        const asOwner = await call(path, {
+          headers: { ...(init.headers as Record<string, string>), Cookie: cookie },
+        });
+        expect(asOwner.status, `${label} ${path}`).toBe(200);
+        expect(asOwner.headers.get("X-Robots-Tag"), `${label} ${path}`).toBe("noindex");
+        const html = await asOwner.text();
+        expect(metaOf(html).ogTitle, `${label} ${path}`).toBe("Hidden Plan");
+        expect(pageTextOf(html), `${label} ${path}`).toBeNull();
+      }
     }
   });
 
-  it("Accept が無いか */* だけでも、匿名の draft の title と存在しない title は同じ JSON の 404", async () => {
+  it("Accept が無いか */* だけでも、匿名の draft の title や id と存在しないページは同じ JSON の 404", async () => {
     const { call, draft } = await seed();
     for (const accept of anyAccepts) {
       const responses = await Promise.all(
-        ["/Hidden%20Plan", "/hidden%20plan", "/Missing%20Page", "/p/AAAAAAAAAAAAAAAAAAAAAA"].map(
-          async (path) => ({ path, ...(await snapshot(await call(path, withAccept(accept)))) }),
-        ),
+        [
+          "/Hidden%20Plan",
+          "/hidden%20plan",
+          "/Missing%20Page",
+          `/p/${draft.id}`,
+          "/p/AAAAAAAAAAAAAAAAAAAAAA",
+        ].map(async (path) => ({
+          path,
+          ...(await snapshot(await call(path, withAccept(accept)))),
+        })),
       );
       const [first, ...others] = responses;
       const { path: _path, ...expected } = first as (typeof responses)[number];
@@ -626,7 +611,7 @@ describe("Accept による分岐", () => {
       for (const { path, ...response } of others) {
         expect(response, `${accept} ${path}`).toEqual(expected);
       }
-      const serialized = JSON.stringify(responses);
+      const serialized = JSON.stringify(responses.map(({ path: _, ...response }) => response));
       for (const word of [draft.id, "zebrafish"]) expect(serialized, word).not.toContain(word);
     }
   });
@@ -1218,7 +1203,6 @@ describe("ページのリンク先の一覧", () => {
     const { navigate, create, cookie } = await seed();
     const page = await create("Draft Hub", "[[Open Note]]");
     for (const [path, headers] of [
-      [`/p/${page.id}`, {}],
       [`/p/${page.id}`, { Cookie: cookie }],
       ["/Draft_Hub", { Cookie: cookie }],
     ] as const) {
@@ -1327,7 +1311,7 @@ describe("ページの画面の chunk の modulepreload", () => {
     const { navigate, cookie, draft } = await seed();
     for (const [path, headers] of [
       [`/${encodeURIComponent("Open Note")}`, {}],
-      [`/p/${draft.id}`, {}],
+      [`/p/${draft.id}`, { Cookie: cookie }],
       [`/${encodeURIComponent("Hidden Plan")}`, { Cookie: cookie }],
     ] as const) {
       const res = await navigate(path, headers);
@@ -1339,12 +1323,13 @@ describe("ページの画面の chunk の modulepreload", () => {
   });
 
   it("トップ、クエリ付きのトップ、見つからないページ、匿名から見た draft は印のままにし、modulepreload を出さない", async () => {
-    const { navigate } = await seed();
+    const { navigate, draft } = await seed();
     for (const path of [
       "/",
       "/?q=Open",
       `/${encodeURIComponent("Missing Page")}`,
       `/${encodeURIComponent("Hidden Plan")}`,
+      `/p/${draft.id}`,
     ]) {
       const html = await (await navigate(path)).text();
       expect(modulePreloadsOf(html), path).toEqual([]);

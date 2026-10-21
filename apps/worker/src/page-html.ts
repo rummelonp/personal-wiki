@@ -28,9 +28,9 @@ const META_FROM = "pages AS p LEFT JOIN page_excerpts AS e ON e.page_id = p.id";
 
 /**
  * ページの URL（`/p/<id>` か `/<title>`）のパスから、principal が読めるページを引く。D1 は多くて 1 回引く。
- * 見つからなければ null で、ページが無い、匿名から見た draft の title、ページの URL の形でないパスを区別しない。
- * title の解決は findPageByTitle と同じ条件で、principal が draft を読めなければ draft を返さない。
- * id の解決は visibility で絞らない（draft は id を知っていれば読める）。
+ * 見つからなければ null で、ページが無い、匿名から見た draft の id と title、ページの URL の形でないパスを
+ * 区別しない。id と title の解決は findPageById、findPageByTitle と同じ条件で、principal が draft を
+ * 読めなければ draft を返さない。
  *
  * パスは c.req.path ではなく生の pathname を parsePagePath に渡す（SPA のルーティングと同じ関数）。
  * c.req.path は `%2F` などを残す decodeURI 相当で、title に `/` を含むページの URL を引けないため。
@@ -43,10 +43,14 @@ export async function findPageForPath(
 ): Promise<PageMeta | null> {
   const path = parsePagePath(pathname);
   if (path === null) return null;
+  const publicOnly = publicOnlyFlag(readableVisibilityOf(principal));
   if (path.kind === "id") {
     return db
-      .prepare(`SELECT ${META_COLUMNS} FROM ${META_FROM} WHERE p.id = ?1 AND p.deleted_at IS NULL`)
-      .bind(path.id)
+      .prepare(
+        `SELECT ${META_COLUMNS} FROM ${META_FROM}
+         WHERE p.id = ?1 AND p.deleted_at IS NULL AND (?2 = 0 OR p.visibility = 'public')`,
+      )
+      .bind(path.id, publicOnly)
       .first<PageMeta>();
   }
 
@@ -57,7 +61,7 @@ export async function findPageForPath(
       `SELECT ${META_COLUMNS} FROM ${META_FROM}
        WHERE p.title_key = ?1 AND p.deleted_at IS NULL AND (?2 = 0 OR p.visibility = 'public')`,
     )
-    .bind(key.value, publicOnlyFlag(readableVisibilityOf(principal)))
+    .bind(key.value, publicOnly)
     .first<PageMeta>();
 }
 

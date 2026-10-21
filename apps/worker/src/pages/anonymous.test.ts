@@ -8,8 +8,8 @@ import { insertToken } from "../test/tokens";
 import { RESOLVE_MAX_TITLES } from "./routes";
 
 /*
- * 匿名から見た公開範囲の境界。draft は id での直接取得だけで読め、title での取得、一覧、検索、
- * タグ、backlink には出ない。匿名向けのレスポンスのどこにも draft の id が現れないことを、
+ * 匿名から見た公開範囲の境界。draft は id と title での取得、一覧、検索、タグ、backlink のどこにも
+ * 出ず、存在しないページと区別できない。匿名向けのレスポンスのどこにも draft の id が現れないことを、
  * 登録されている GET の API を総当たりして確かめる。
  */
 
@@ -91,11 +91,11 @@ async function seed() {
   return { ...ctx, draft, open, linker, gone };
 }
 
-/** draft にだけ書かれた文字列。匿名向けのレスポンスには、draft を id で取ったとき以外は現れない。 */
+/** draft にだけ書かれた文字列。匿名向けのレスポンスには現れない。 */
 const DRAFT_ONLY_MARKERS = ["zebrafish", "秘蔵", "draftonly", "shared/inner"];
 
 describe("匿名の読み取り", () => {
-  it("public は title と id で読め、draft は id でだけ読める", async () => {
+  it("public は title と id で読め、draft は id でも title でも読めない", async () => {
     const { anonymous, draft, open } = await seed();
 
     const byTitle = await anonymous(`/api/pages/by-title?title=${encodeURIComponent("open note")}`);
@@ -106,13 +106,7 @@ describe("匿名の読み取り", () => {
     expect(await openById.json()).toMatchObject({ id: open.id, title: "Open Note" });
 
     const draftById = await anonymous(`/api/pages/${draft.id}`);
-    expect(draftById.status).toBe(200);
-    expect(await draftById.json()).toMatchObject({
-      id: draft.id,
-      title: "Hidden Plan",
-      visibility: "draft",
-    });
-    expect(draftById.headers.get("Cache-Control")).toBe("no-store");
+    expect(draftById.status).toBe(404);
 
     const draftByTitle = await anonymous(
       `/api/pages/by-title?title=${encodeURIComponent("Hidden Plan")}`,
@@ -120,16 +114,18 @@ describe("匿名の読み取り", () => {
     expect(draftByTitle.status).toBe(404);
   });
 
-  it("draft の title、存在しない title、削除済み／存在しない／形式の違う id（本文と backlink）は同じ 404", async () => {
-    const { anonymous, gone } = await seed();
+  it("draft の title と id、存在しない title、削除済み／存在しない／形式の違う id（本文と backlink）は同じ 404", async () => {
+    const { anonymous, draft, gone } = await seed();
     const responses = await Promise.all(
       [
         `/api/pages/by-title?title=${encodeURIComponent("Hidden Plan")}`,
         `/api/pages/by-title?title=${encodeURIComponent("Missing Page")}`,
         `/api/pages/by-title?title=${encodeURIComponent("Gone")}`,
+        `/api/pages/${draft.id}`,
         `/api/pages/${gone.id}`,
         "/api/pages/AAAAAAAAAAAAAAAAAAAAAA",
         "/api/pages/short",
+        `/api/pages/${draft.id}/backlinks`,
         `/api/pages/${gone.id}/backlinks`,
         "/api/pages/AAAAAAAAAAAAAAAAAAAAAA/backlinks",
         "/api/pages/short/backlinks",
@@ -147,6 +143,22 @@ describe("匿名の読み取り", () => {
     const { path: _firstPath, ...expected } = first as (typeof responses)[number];
     expect(expected).toMatchObject({ status: 404, body: JSON.stringify({ error: "not_found" }) });
     for (const { path, ...response } of others) expect(response, path).toEqual(expected);
+  });
+
+  it("HEAD でも、draft の id は存在しない id と同じ 404", async () => {
+    const { call, draft } = await seed();
+    const [hidden, missing] = await Promise.all(
+      [`/api/pages/${draft.id}`, "/api/pages/AAAAAAAAAAAAAAAAAAAAAA"].map(async (path) => {
+        const res = await call(path, { method: "HEAD" });
+        return {
+          status: res.status,
+          body: await res.text(),
+          headers: Object.fromEntries(res.headers),
+        };
+      }),
+    );
+    expect(hidden?.status).toBe(404);
+    expect(hidden).toEqual(missing);
   });
 
   it("一覧、タグ、検索、backlink には public だけが出る", async () => {
@@ -193,11 +205,8 @@ describe("匿名の読み取り", () => {
     }>();
     expect(ids(openBacklinks.pages)).toEqual([linker.id]);
 
-    // draft は id を知っていれば読めるので、その backlink も引ける。返すのは public のリンク元だけ
-    const draftBacklinks = await (await anonymous(`/api/pages/${draft.id}/backlinks`)).json<{
-      pages: Listed[];
-    }>();
-    expect(ids(draftBacklinks.pages)).toEqual([open.id]);
+    // draft の id の backlink は、リンク元が public でも存在しない id と同じ 404
+    expect((await anonymous(`/api/pages/${draft.id}/backlinks`)).status).toBe(404);
   });
 
   it("title での backlink は、draft の title と存在しない title で同じレスポンスになり、public のリンク元だけを返す", async () => {
@@ -390,8 +399,8 @@ describe("匿名の読み取り", () => {
     expect(anon.results.map((hit) => hit.id)).toEqual([open.id]);
   });
 
-  it("public を draft に戻すと、title、一覧、タグ、検索、backlink から消え、id では読める", async () => {
-    const { anonymous, open, linker, setVisibility, draft } = await seed();
+  it("public を draft に戻すと、title、id、一覧、タグ、検索、backlink から消える", async () => {
+    const { anonymous, open, linker, setVisibility } = await seed();
     const byTitle = () => anonymous(`/api/pages/by-title?title=${encodeURIComponent("Open Note")}`);
     expect((await byTitle()).status).toBe(200);
 
@@ -400,12 +409,16 @@ describe("匿名の読み取り", () => {
     const missing = await anonymous(
       `/api/pages/by-title?title=${encodeURIComponent("Missing Page")}`,
     );
+    const notFound = await missing.text();
     const reverted = await byTitle();
     expect(reverted.status).toBe(404);
-    expect(await reverted.text()).toBe(await missing.text());
+    expect(await reverted.text()).toBe(notFound);
     expect(reverted.headers.get("Cache-Control")).toBe("no-store");
 
-    expect((await anonymous(`/api/pages/${open.id}`)).status).toBe(200);
+    const byId = await anonymous(`/api/pages/${open.id}`);
+    expect(byId.status).toBe(404);
+    expect(await byId.text()).toBe(notFound);
+    expect((await anonymous(`/api/pages/${open.id}/backlinks`)).status).toBe(404);
     const recent = await (await anonymous("/api/pages/recent")).json<{ pages: Listed[] }>();
     expect(recent.pages.map((page) => page.id)).toEqual([linker.id]);
     const titles = await (await anonymous("/api/pages/titles")).json<{ pages: Listed[] }>();
@@ -415,7 +428,9 @@ describe("匿名の読み取り", () => {
     });
     const search = await (await anonymous("/api/search?q=kangaroo")).json();
     expect(search).toEqual({ results: [] });
-    const backlinks = await (await anonymous(`/api/pages/${draft.id}/backlinks`)).json();
+    const backlinks = await (
+      await anonymous(`/api/pages/by-title/backlinks?title=${encodeURIComponent("Missing Page")}`)
+    ).json();
     expect(backlinks).toEqual({ pages: [], nextCursor: null });
   });
 });
@@ -538,8 +553,8 @@ describe("匿名向けのレスポンスの総当たり", () => {
   /**
    * 匿名を受け付ける宣言（allowAnonymousRead と allowAnonymous）を付けたルートと、匿名で呼ぶ具体的な
    * パス。キーは `METHOD path`。そうしたルートを足すとこの表との突き合わせが落ちるので、足したルートも
-   * draft の id を返さないかをここで確かめることになる。draft を id で取る `/api/pages/:draftId` だけは、
-   * draft の id を含むのが正しいので除いて別に確かめる。
+   * draft の id を返さないかをここで確かめることになる。draft の id を含むパスも表に入れ、その応答にも
+   * draft の id が出ないことを確かめる。
    */
   function anonymousRequests(pages: {
     draft: PageJson;
@@ -626,6 +641,7 @@ describe("匿名向けのレスポンスの総当たり", () => {
       "GET /api/pages/:id": [
         `/api/pages/${open.id}`,
         `/api/pages/${linker.id}`,
+        `/api/pages/${draft.id}`,
         `/api/pages/${gone.id}`,
         "/api/pages/AAAAAAAAAAAAAAAAAAAAAA",
       ],
@@ -658,6 +674,8 @@ describe("匿名向けのレスポンスの総当たり", () => {
         `/${encodeURIComponent("Hidden Plan")}/`,
         `/p/${open.id}`,
         `/p/${open.id}/`,
+        `/p/${draft.id}`,
+        `/p/${draft.id}/`,
       ],
       // OAuth の認可サーバー（auth/oauth-routes.ts）。認可と接続の一覧は owner でなければ /_auth/login へ送る
       "GET /.well-known/oauth-authorization-server": ["/.well-known/oauth-authorization-server"],
@@ -718,12 +736,6 @@ describe("匿名向けのレスポンスの総当たり", () => {
       }
     }
   });
-
-  it("draft を id で取ったときだけ draft の本文を返す", async () => {
-    const { anonymous, draft } = await seed();
-    const text = await (await anonymous(`/api/pages/${draft.id}`)).text();
-    for (const word of [draft.id, "zebrafish"]) expect(text).toContain(word);
-  });
 });
 
 describe("owner と token の読み取りは変わらない", () => {
@@ -771,6 +783,29 @@ describe("owner と token の読み取りは変わらない", () => {
       await asOwner(`/api/pages/by-title/backlinks?title=${encodeURIComponent("missing page")}`)
     ).json<{ pages: Listed[] }>();
     expect(missing.pages.map((page) => page.id)).toEqual([draftLinker.id, open.id]);
+  });
+
+  it("owner と read の token は draft を id と id の backlink で読め、レスポンスは private, no-store", async () => {
+    const { asOwner, call, draft, open } = await seed();
+    const token = await insertToken({ name: "reader", scopes: "read" });
+    const asReader = (path: string) =>
+      call(path, { headers: { Authorization: `Bearer ${token}` } });
+    for (const [label, read] of [
+      ["owner", asOwner],
+      ["token", asReader],
+    ] as const) {
+      const byId = await read(`/api/pages/${draft.id}`);
+      expect(byId.status, label).toBe(200);
+      expect(byId.headers.get("Cache-Control"), label).toBe("private, no-store");
+      expect(await byId.json(), label).toMatchObject({ id: draft.id, visibility: "draft" });
+      const backlinks = await (await read(`/api/pages/${draft.id}/backlinks`)).json<{
+        pages: Listed[];
+      }>();
+      expect(
+        backlinks.pages.map((page) => page.id),
+        label,
+      ).toEqual([open.id]);
+    }
   });
 
   it("read の token は draft を title と一覧で見られる", async () => {

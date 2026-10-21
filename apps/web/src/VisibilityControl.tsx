@@ -74,7 +74,7 @@ interface VisibilityControlProps {
  * 届いたときに押そうとしている操作の位置を動かさない。
  *
  * 共有の URL は、公開した後のアドレスバーから取ってもらう（表示中のページの URL は正の URL に置き換わる）。
- * draft の URL（`/p/<id>`）も知っていれば匿名に本文が読めるので、draft のまま共有する導線は作らない。
+ * draft の URL（`/p/<id>`）は匿名には存在しないページと同じに見えるので、draft のまま共有する導線は作らない。
  */
 export function VisibilityControl({
   visibility,

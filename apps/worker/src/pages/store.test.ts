@@ -47,7 +47,7 @@ function interruptingDb(interruptions: number, interrupt: () => Promise<void>): 
 }
 
 async function concurrentEdit(id: string, suffix: string) {
-  const current = await findPageById(env.DB, id);
+  const current = await findPageById(env.DB, id, "all");
   if (current === null) throw new Error("page not found");
   const result = await updatePage(env.DB, {
     id,
@@ -72,7 +72,7 @@ describe("appendToPage", () => {
       now: 3,
     });
     expect(result).toMatchObject({ ok: true, attempts: 2 });
-    const latest = await findPageById(env.DB, page.id);
+    const latest = await findPageById(env.DB, page.id, "all");
     expect(latest?.body).toBe("base edited\nappended");
     expect(latest?.version).toBe(3);
   });
@@ -95,7 +95,7 @@ describe("appendToPage", () => {
       "token:other",
       "token:other",
     ]);
-    expect((await findPageById(env.DB, page.id))?.body).toBe("base e1 e2 e3");
+    expect((await findPageById(env.DB, page.id, "all"))?.body).toBe("base e1 e2 e3");
   });
 });
 

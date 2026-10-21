@@ -39,8 +39,8 @@ export function principalHasScope(principal: Principal, required: Scope): boolea
 }
 
 /**
- * 読み取りで見せるページの範囲。`public` は title での取得と一覧系（最近の更新、タグ、検索、backlink）を
- * public のページだけに絞る。id での取得は範囲に関係なく draft も返す（id を知っていれば読める）。
+ * 読み取りで見せるページの範囲。`public` は id と title での取得（本文、ページの HTML、添付を含む）と
+ * 一覧系（最近の更新、タグ、検索、backlink）を public のページだけに絞り、draft を無いページと同じに見せる。
  */
 export type ReadableVisibility = "all" | "public";
 

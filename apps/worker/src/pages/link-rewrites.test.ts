@@ -592,7 +592,7 @@ function beforeBatch(hook: () => Promise<void>): D1Database {
 
 /** 別の呼び出し元の保存として、本文を変えずに title だけを変える */
 async function renameDirectly(id: string, title: string, now: number) {
-  const current = await findPageById(env.DB, id);
+  const current = await findPageById(env.DB, id, "all");
   if (current === null) throw new Error("page not found");
   const result = await updatePage(env.DB, {
     id,

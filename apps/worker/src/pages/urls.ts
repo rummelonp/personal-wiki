@@ -2,7 +2,7 @@ import { titlePath } from "@personal-wiki/domain";
 import type { Page } from "./store";
 
 export interface PageUrls {
-  /** `/p/<id>`。visibility に関係なく開ける */
+  /** `/p/<id>`。draft は、draft を読める principal だけが開ける */
   url: string;
   /** `/<title>`。public で、title が予約語と重ならないときだけ */
   titleUrl: string | null;

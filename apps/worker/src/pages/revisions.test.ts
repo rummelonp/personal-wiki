@@ -54,7 +54,7 @@ describe("保存の revision のまとめ", () => {
 
   /** 今の版に対して保存する。title を省くと今の title のまま */
   async function save(id: string, body: string, actor: string, now: number, title?: string) {
-    const current = await findPageById(env.DB, id);
+    const current = await findPageById(env.DB, id, "all");
     if (current === null) throw new Error("page not found");
     const result = await updatePage(env.DB, {
       id,
@@ -140,7 +140,7 @@ describe("保存の revision のまとめ", () => {
       [2, "v2"],
       [5, "v5"],
     ]);
-    expect((await findPageById(env.DB, id))?.visibility).toBe("public");
+    expect((await findPageById(env.DB, id, "all"))?.visibility).toBe("public");
   });
 
   it("owner の追記もまとめる", async () => {

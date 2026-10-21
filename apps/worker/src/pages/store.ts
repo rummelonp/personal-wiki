@@ -100,20 +100,27 @@ function toPage(row: PageRow): Page {
 }
 
 /**
- * 削除されていないページを id で引く。visibility では絞らず draft も返す。draft は id を知っていれば
- * 読めるので、anonymous にもこのまま返す。
+ * 削除されていないページを id で引く。readable が public なら draft は null（無いページと区別できない
+ * ようにする）。
  */
-export async function findPageById(db: D1Database, id: string): Promise<Page | null> {
+export async function findPageById(
+  db: D1Database,
+  id: string,
+  readable: ReadableVisibility,
+): Promise<Page | null> {
   const row = await db
-    .prepare(`SELECT ${PAGE_COLUMNS} FROM pages WHERE id = ?1 AND deleted_at IS NULL`)
-    .bind(id)
+    .prepare(
+      `SELECT ${PAGE_COLUMNS} FROM pages
+       WHERE id = ?1 AND deleted_at IS NULL AND (?2 = 0 OR visibility = 'public')`,
+    )
+    .bind(id, publicOnlyFlag(readable))
     .first<PageRow>();
   return row === null ? null : toPage(row);
 }
 
 /**
- * 削除されていないページが id にあるかを返す。findPageById と同じく visibility では絞らない。
- * 本文を読まないので、存在だけを確かめたいときに使う。
+ * 削除されていないページが id にあるかを返す。visibility では絞らないので、draft を読める principal の
+ * 経路（MCP）だけで使う。本文を読まないので、存在だけを確かめたいときに使う。
  */
 export async function pageExists(db: D1Database, id: string): Promise<boolean> {
   const row = await db
@@ -500,7 +507,7 @@ export async function appendToPage(
   const nul = findNul(input.text);
   if (nul !== null) return { ok: false, reason: "control_char", field: "text", at: nul };
   for (let attempt = 1; attempt <= APPEND_MAX_ATTEMPTS; attempt++) {
-    const current = await findPageById(db, input.id);
+    const current = await findPageById(db, input.id, "all");
     if (current === null) return { ok: false, reason: "not_found" };
     const update = {
       id: input.id,
@@ -610,7 +617,7 @@ export async function setVisibility(
   if (row !== undefined) {
     return { ok: true, page: toPage(row), rowsWritten: result.meta.rows_written ?? 0 };
   }
-  const current = await findPageById(db, input.id);
+  const current = await findPageById(db, input.id, "all");
   if (current === null) return { ok: false, reason: "not_found" };
   if (input.expectedVersion !== undefined && current.version !== input.expectedVersion) {
     return { ok: false, reason: "version_conflict", currentVersion: current.version };

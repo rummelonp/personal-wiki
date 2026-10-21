@@ -130,8 +130,7 @@ const noticeDock = () => document.querySelector(".notice-dock");
 const tagOf = (page: Page) => `${page.title}のタグ`;
 
 /**
- * Worker の API と同じ範囲を返す。title、一覧、タグでは、匿名に draft を無いものとして返す。
- * `GET /api/pages/:id` は id を知っていれば draft も読めるので、principal で絞らない。
+ * Worker の API と同じ範囲を返す。id、title、一覧、タグのどれでも、匿名に draft を無いものとして返す。
  * ログアウトすると、その後のリクエストは匿名として扱う。
  */
 function serve(
@@ -151,7 +150,7 @@ function serve(
   });
   const listed = () => pages.filter((page) => signedIn || page.visibility === "public");
   vi.mocked(getPage).mockImplementation(async (id) => {
-    const page = pages.find((p) => p.id === id);
+    const page = listed().find((p) => p.id === id);
     return page ? ok(page) : notFound;
   });
   vi.mocked(findPageByTitle).mockImplementation(async (title) => {
@@ -324,13 +323,21 @@ describe("App の匿名の画面", () => {
     expect(cursorOf()).toBe(other.body.indexOf("## 節B"));
   });
 
-  it("/p/<id> で開いた draft は読み取り専用で読め、URL は /p/<id> のまま", async () => {
+  it("/p/<id> で開いた draft は、存在しない id と同じ「ページが見つかりません」を出す", async () => {
     serve("anonymous", [PUBLIC, DRAFT]);
-    await renderAt(`/p/${DRAFT.id}`);
-    await vi.waitFor(() => expect(main()?.querySelector("h1")?.textContent).toBe("下書きの題"));
-    expect(main()?.querySelector(".title-input")).toBeNull();
-    expect(location.pathname).toBe(`/p/${DRAFT.id}`);
-    expect(getPage).toHaveBeenCalledTimes(1);
+    const shown: string[] = [];
+    for (const id of [DRAFT.id, "ZZZZZZZZZZZZZZZZZZZZZZ"]) {
+      await renderAt(`/p/${id}`);
+      await vi.waitFor(() => expect(main()?.textContent).toContain("ページが見つかりません"));
+      expect(location.pathname).toBe(`/p/${id}`);
+      expect(document.title).toBe("personal-wiki");
+      shown.push(main()?.innerHTML ?? "");
+      act(() => root?.unmount());
+      container?.remove();
+      root = null;
+    }
+    expect(shown[0]).toBe(shown[1]);
+    expect(shown[0]).not.toContain("下書き");
   });
 
   it("title で引いた draft と存在しないページで同じ空のページを出し、public の被リンクだけを出す", async () => {

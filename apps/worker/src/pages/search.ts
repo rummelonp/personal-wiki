@@ -513,8 +513,8 @@ export async function listTagCounts(
 /**
  * pageId を指す links を持つ、削除されていないページを更新日時の降順で返す。
  * pageId のページが無いか削除済みなら null。自分自身へのリンクは含めない。
- * readable が public なら、リンク元を public のページに絞る。pageId 自体は draft でもよい
- * （id を知っていれば draft を読めるのと同じ扱いで、返すのは public のページだけ）。
+ * readable が public なら、pageId が draft のときも null にし（無いページと区別できないようにする）、
+ * リンク元を public のページに絞る。
  *
  * links.target_page_id は保存と削除のたびに付け直されるので、改題や削除の後は古い title で書かれた
  * リンクが外れ、新しい title で書かれたリンクが入る。
@@ -529,8 +529,11 @@ export async function listBacklinks(
   }: { limit: number; cursor: Cursor | null; readable: ReadableVisibility },
 ): Promise<PageList<VersionedSummary> | null> {
   const exists = await db
-    .prepare("SELECT 1 AS found FROM pages WHERE id = ?1 AND deleted_at IS NULL")
-    .bind(pageId)
+    .prepare(
+      `SELECT 1 AS found FROM pages
+       WHERE id = ?1 AND deleted_at IS NULL AND (?2 = 0 OR visibility = 'public')`,
+    )
+    .bind(pageId, publicOnlyFlag(readable))
     .first();
   if (exists === null) return null;
   const { results } = await db

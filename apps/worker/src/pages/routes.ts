@@ -258,8 +258,8 @@ function readPaging(
 
 /**
  * `/api/pages` のルートを app に登録する。書き込みは owner と token だけが呼べる。読み取りは
- * anonymous も呼べ、title での取得と一覧系は public だけを返す（readableVisibilityOf）。
- * 匿名から見た draft の title、存在しない id、削除済みの id は、どれも notFound の同じ 404 にする。
+ * anonymous も呼べ、id と title での取得、一覧系は public だけを返す（readableVisibilityOf）。
+ * 匿名から見た draft の id と title、存在しない id、削除済みの id は、どれも notFound の同じ 404 にする。
  * ページの id は形式が違えば D1 を引かずに 404 にする。
  *
  * 認可の宣言はハンドラと同じ method と path の登録に、ハンドラより前に付ける。子の app を route() で
@@ -435,9 +435,12 @@ export function registerPageRoutes(app: Hono<AppEnv>, { now, recordWrite }: Page
         );
         return c.json({ results });
       })
-      // draft も id を知っていれば読めるので、principal に関係なく visibility で絞らない
       .get("/api/pages/:id", allowAnonymousRead(), async (c) => {
-        const page = await findPageByInputId(c.env.DB, c.req.param("id"));
+        const page = await findPageByInputId(
+          c.env.DB,
+          c.req.param("id"),
+          readableVisibilityOf(c.get("principal")),
+        );
         if (page === null) return c.notFound();
         return pageResponse(c, page);
       })

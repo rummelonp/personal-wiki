@@ -50,7 +50,7 @@ async function create(actor: string, now: number, title = "Memo", body = "v1") {
 }
 
 async function save(id: string, body: string, actor: string, now: number, title?: string) {
-  const current = await findPageById(env.DB, id);
+  const current = await findPageById(env.DB, id, "all");
   if (current === null) throw new Error("page not found");
   const result = await updatePage(env.DB, {
     id,

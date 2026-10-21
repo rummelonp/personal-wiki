@@ -29,7 +29,7 @@ const LIMITS = [
 ].join("");
 /** instructions を AI に渡さないクライアントもあるので、書き込みの tool ごとに description にも書く */
 const NO_SECRETS =
-  "draft も URL を知っていれば誰でも読めるので、パスワードやトークンなどの秘密を書かない。";
+  "draft もオーナーが公開すれば誰でも読めるので、パスワードやトークンなどの秘密を書かない。";
 
 /** 書き込みの tool の description に載せる。計算の手順は read_page の description にある */
 const WRITE_HASH =
@@ -99,7 +99,7 @@ export const readPageTool = defineTool({
     const page =
       id === undefined
         ? await findPageByTitle(ctx.db, title as string, readableVisibilityOf(ctx.principal))
-        : await findPageByInputId(ctx.db, id);
+        : await findPageByInputId(ctx.db, id, readableVisibilityOf(ctx.principal));
     if (page === null) return toolError({ error: "not_found" });
     if (revision === undefined) {
       return toolResult({
@@ -410,7 +410,7 @@ async function versionConflict(
   id: string,
   error: Extract<WriteError, { reason: "version_conflict" }>,
 ) {
-  const current = await findPageByInputId(ctx.db, id);
+  const current = await findPageByInputId(ctx.db, id, readableVisibilityOf(ctx.principal));
   if (current === null) return toolError({ error: "not_found" });
   return toolError({
     ...describeWriteError(error).body,

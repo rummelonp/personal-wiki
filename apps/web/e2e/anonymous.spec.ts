@@ -9,9 +9,8 @@ import {
 import { DRAFT_MARKER, SEED } from "./support/seed";
 
 /*
- * 匿名の読み取り: public のページを開いてリンクをたどれ、draft が title、一覧、検索、backlink の
- * どこにも出ない。draft は id の URL を知っていれば匿名にも読める仕様（docs/attachments.md）なので、
- * `/p/<id>` が読めることは漏れとして扱わない。
+ * 匿名の読み取り: public のページを開いてリンクをたどれ、draft が id と title の URL、一覧、検索、
+ * backlink のどこにも出ず、存在しないページと区別できない。
  */
 
 test.use({ role: "anonymous" });
@@ -191,6 +190,24 @@ test("draft の title の URL は存在しないページと同じ空のペー�
   }
   expect(shown[1]).toBe(shown[0]);
   expect(shown[0]).not.toContain("下書き");
+});
+
+test("draft の id の URL は、存在しない id と同じ 404 の「ページが見つかりません」になる", async ({
+  page,
+  seedIds,
+}) => {
+  const draftId = seedIds[SEED.draftSecret];
+  const shown: string[] = [];
+  for (const id of [draftId, "ZZZZZZZZZZZZZZZZZZZZZZ"]) {
+    const res = await page.goto(`/p/${id}`);
+    expect(res?.status(), id).toBe(404);
+    await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+    await expect(page).toHaveURL(`/p/${id}`);
+    shown.push(await page.getByRole("main").innerText());
+  }
+  expect(shown[1]).toBe(shown[0]);
+  expect(shown[0]).not.toContain("下書き");
+  expect(shown[0]).not.toContain(SEED.draftSecret);
 });
 
 test("検索と quick switcher に draft が出ない", async ({ page }) => {

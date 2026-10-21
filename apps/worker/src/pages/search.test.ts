@@ -847,15 +847,19 @@ describe("GET /api/pages/:id/backlinks", () => {
     expect((await backlinks(client, target.id, "?limit=101")).status).toBe(400);
   });
 
-  it("無いページと形式の違う id は 404、token が無ければ匿名として 200", async () => {
+  it("無いページと形式の違う id は 404、token が無ければ匿名として public だけ 200", async () => {
     const client = await buildClient();
     for (const id of ["AAAAAAAAAAAAAAAAAAAAAA", "short", "recent"]) {
       expect((await backlinks(client, id)).status).toBe(404);
     }
     const page = await client.create("x");
-    expect((await withoutToken(`/api/pages/${page.id}/backlinks`)).status).toBe(200);
+    expect((await withoutToken(`/api/pages/${page.id}/backlinks`)).status).toBe(404);
     const reader = await buildClient({ scopes: "read", name: "reader" });
     expect((await backlinks(reader, page.id)).status).toBe(200);
+    await env.DB.prepare("UPDATE pages SET visibility = 'public' WHERE id = ?1")
+      .bind(page.id)
+      .run();
+    expect((await withoutToken(`/api/pages/${page.id}/backlinks`)).status).toBe(200);
   });
 });
 
