@@ -88,6 +88,7 @@ owner や API token で取っても、draft は入らない。
 100 件より古いページへは、トップの HTML と `/llms.txt` の末尾から指す `/sitemap.xml` でたどらせる（「sitemap.xml」の節）。
 
 クエリの無い `/` の HTML は、`#root` にサイト名と各ページへのリンクを差し込んで返す（`apps/worker/src/spa.ts` の `rootHtml`、`page-html.ts` の `rewriteRootHtml`）。
+head には、リンクのプレビュー用に `og:title`（サイト名）、`og:url`、`canonical`（どちらも `<origin>/`）、`og:image` などを足す。
 一覧の後ろには `/sitemap.xml` へのリンクを置く。
 ブラウザでは SPA の描画が置き換えるので、人には見えない。
 `/?tag=` や `/?q=` のようにクエリの付いた `/` は絞り込みの画面なので、一覧を差し込まない。

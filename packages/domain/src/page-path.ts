@@ -40,6 +40,7 @@ export const RESERVED_TITLE_SEGMENTS: readonly string[] = [
   "favicon.svg",
   "favicon.ico",
   "apple-touch-icon.png",
+  "og-image.png",
 ];
 
 const PAGE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;

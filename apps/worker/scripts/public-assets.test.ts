@@ -11,6 +11,7 @@ const PUBLIC_DIR = new URL("../../web/public/", import.meta.url);
 const WRANGLER_PATH = new URL("../wrangler.jsonc", import.meta.url);
 const INDEX_HTML_PATH = new URL("../../web/index.html", import.meta.url);
 const OAUTH_ROUTES_PATH = new URL("../src/auth/oauth-routes.ts", import.meta.url);
+const PAGE_HTML_PATH = new URL("../src/page-html.ts", import.meta.url);
 
 // public にあって Worker を通すファイル（CSP などのヘッダーを Worker が付けるもの）。
 // run_worker_first の除外には入れない。title の予約語には、Worker を通す場合も入れる
@@ -78,6 +79,30 @@ describe("OAuth の画面の icon の link", () => {
     expect(hrefs.filter((href) => !spa.includes(href))).toEqual([]);
     const excluded = excludedFileNames().map((name) => `/${name}`);
     expect(hrefs.filter((href) => !excluded.includes(href))).toEqual([]);
+  });
+});
+
+describe("og:image の画像", () => {
+  // page-html.ts は workerd 専用の import を持ち、この node のテストでは読み込めないので、ソースから定数を取り出す
+  function ogImagePath(): string {
+    const source = readFileSync(PAGE_HTML_PATH, "utf8");
+    const path = /\bexport const OG_IMAGE_PATH = "([^"?]+)(?:\?[^"]*)?"/.exec(source)?.[1];
+    expect(path, "page-html.ts に OG_IMAGE_PATH の定義が見つからない").toBeDefined();
+    return path ?? "";
+  }
+
+  it("OG_IMAGE_PATH は public のファイルを指し、Worker を通さない", () => {
+    const name = ogImagePath().slice(1);
+    expect(publicFileNames()).toContain(name);
+    expect(excludedFileNames()).toContain(name);
+  });
+
+  // og:image:width と og:image:height の値（page-html.ts の OG_IMAGE_SIZE）と合わせる
+  it("1200×1200 の PNG である", () => {
+    const bytes = readFileSync(new URL(ogImagePath().slice(1), PUBLIC_DIR));
+    expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    // IHDR の幅と高さ（ビッグエンディアンの 4 バイト）
+    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([1200, 1200]);
   });
 });
 

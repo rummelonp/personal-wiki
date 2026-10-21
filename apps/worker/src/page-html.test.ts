@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { SESSION_COOKIE_NAME } from "./auth/session";
 import {
   findPageForPath,
+  OG_IMAGE_PATH,
   PAGE_LINK_LIST_LIMIT,
   ROOT_PAGE_LIST_LIMIT,
   rewritePageHtml,
@@ -19,6 +20,7 @@ import { insertToken } from "./test/tokens";
  */
 
 const ORIGIN = "http://localhost";
+const OG_IMAGE_ALT = "グラファイト色の地に、明朝体の w と藍色の点を置いたアイコン";
 const HTML_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
 // apps/web の build が head に置く、ページの画面の chunk の印
 const PAGE_VIEW_CHUNKS = ["/assets/PageView-test.js", "/assets/dist-test.js"];
@@ -114,6 +116,10 @@ function metaOf(html: string) {
     ogType: attr(/<meta property="og:type" content="([^"]*)">/),
     canonical: attr(/<link rel="canonical" href="([^"]*)">/),
     twitterCard: attr(/<meta name="twitter:card" content="([^"]*)">/),
+    ogImage: attr(/<meta property="og:image" content="([^"]*)">/),
+    ogImageWidth: attr(/<meta property="og:image:width" content="([^"]*)">/),
+    ogImageHeight: attr(/<meta property="og:image:height" content="([^"]*)">/),
+    ogImageAlt: attr(/<meta property="og:image:alt" content="([^"]*)">/),
     description: attr(/<meta name="description" content="([^"]*)">/),
     robots: attr(/<meta name="robots" content="([^"]*)">/),
   };
@@ -200,6 +206,10 @@ describe("public のページの HTML", () => {
       ogType: "article",
       canonical: `${ORIGIN}/Open_Note`,
       twitterCard: "summary",
+      ogImage: `${ORIGIN}${OG_IMAGE_PATH}`,
+      ogImageWidth: "1200",
+      ogImageHeight: "1200",
+      ogImageAlt: OG_IMAGE_ALT,
       robots: null,
     });
   });
@@ -392,6 +402,10 @@ describe("draft のページの HTML", () => {
       ogType: "article",
       canonical: `${ORIGIN}/p/${draft.id}`,
       twitterCard: "summary",
+      ogImage: `${ORIGIN}${OG_IMAGE_PATH}`,
+      ogImageWidth: "1200",
+      ogImageHeight: "1200",
+      ogImageAlt: OG_IMAGE_ALT,
       robots: "noindex",
     });
   });
@@ -863,9 +877,16 @@ describe("トップの HTML", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("<h1>A &lt;b&gt; &amp; ");
-    expect(html).not.toContain("<b>");
-    expect(html).not.toContain("<i>");
+    // head の属性値の中の < は要素にならないので、要素として現れうる body だけを確かめる
+    const body = html.slice(html.indexOf("<body>"));
+    expect(body).not.toContain("<b>");
+    expect(body).not.toContain("<i>");
+    expect(html).toContain("</head><body>");
     expect(rootListOf(html)).toMatchObject({ siteName, links: [{ title: "Open Note" }] });
+    expect(metaOf(html).ogTitle).toBe(siteName);
+    expect(html).toContain(
+      '<meta property="og:title" content="A <b> &amp; &quot;c&quot; &amp;amp; d </h1><i>">',
+    );
   });
 
   it("HEAD は GET と同じステータスとヘッダーで本文を空にし、一覧のために D1 を 1 回引く", async () => {
@@ -923,6 +944,27 @@ describe("トップの HTML", () => {
     expect(html).not.toContain("sitemap.xml");
   });
 
+  it("head にリンクのプレビュー用のメタ情報を差し込み、og:title はサイト名、og:url と canonical は /", async () => {
+    const { navigate } = await seed();
+    const html = await (await navigate("/")).text();
+    expect(html.match(/property="og:image"/g)).toHaveLength(1);
+    expect(metaOf(html)).toEqual({
+      title: "wiki",
+      ogTitle: DEFAULT_SITE_NAME,
+      ogDescription: null,
+      ogUrl: `${ORIGIN}/`,
+      ogType: "website",
+      canonical: `${ORIGIN}/`,
+      twitterCard: "summary",
+      ogImage: `${ORIGIN}${OG_IMAGE_PATH}`,
+      ogImageWidth: "1200",
+      ogImageHeight: "1200",
+      ogImageAlt: OG_IMAGE_ALT,
+      description: null,
+      robots: null,
+    });
+  });
+
   it("匿名には no-cache で ETag を付けず、noindex を付けない。owner には private, no-store", async () => {
     const { navigate, cookie } = await seed();
     const anonymous = await navigate("/");
@@ -978,6 +1020,7 @@ describe("トップの HTML", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(metaOf(html).description).toBe(DESCRIPTION);
+      expect(metaOf(html).ogDescription).toBe(DESCRIPTION);
       expect(html).toMatch(/<head>.*<meta name="description" content="[^"]*">.*<\/head>/);
       expect(html).toContain("<title>wiki</title>");
       expect(html.match(/name="description"/g)).toHaveLength(1);
@@ -988,7 +1031,10 @@ describe("トップの HTML", () => {
       await seed();
       for (const description of [undefined, "", "  ", "a\u202eb", "😀".repeat(201)]) {
         const html = await (await withDescription(description)("/")).text();
-        expect(html, JSON.stringify(description?.slice(0, 4))).not.toContain('name="description"');
+        const label = JSON.stringify(description?.slice(0, 4));
+        expect(html, label).not.toContain('name="description"');
+        expect(html, label).not.toContain("og:description");
+        expect(metaOf(html).ogTitle, label).toBe(DEFAULT_SITE_NAME);
       }
     });
 
@@ -1000,6 +1046,7 @@ describe("トップの HTML", () => {
       expect(html).toContain('content="A <b> &amp; &quot;c&quot; &amp;amp; d &quot;><script>">');
       expect(html).toContain("</head><body>");
       expect(metaOf(html).description).toBe(description);
+      expect(metaOf(html).ogDescription).toBe(description);
     });
 
     it("HEAD は GET と同じステータスとヘッダーで本文を空にする", async () => {
@@ -1018,7 +1065,9 @@ describe("トップの HTML", () => {
       await seed();
       const res = await withDescription(DESCRIPTION)("/?q=Open");
       expect(res.headers.get("ETag")).toBe('"index"');
-      expect(await res.text()).toBe(INDEX_HTML);
+      const html = await res.text();
+      expect(html).toBe(INDEX_HTML);
+      for (const tag of ["og:", "canonical", "twitter:card"]) expect(html).not.toContain(tag);
       const conditional = await withDescription(DESCRIPTION, {
         headers: { Accept: HTML_ACCEPT, "If-None-Match": '"index"' },
       })("/?q=Open");

@@ -75,6 +75,7 @@ describe("titlePath", () => {
       "favicon.svg",
       "favicon.ico",
       "apple-touch-icon.png",
+      "og-image.png",
     ]) {
       expect(titlePath(title)).toBeNull();
     }

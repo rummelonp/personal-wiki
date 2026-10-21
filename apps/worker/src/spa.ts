@@ -47,8 +47,9 @@ function unavailable(index: Response): Response {
 }
 
 /**
- * クエリの無い `/` の index.html に、public のページの一覧を差し込む。クエリ付きの `/?tag=` などは絞り込みの
- * 画面で、絞らない一覧を入れると読み手が中身を取り違えるので、ASSETS の index.html をそのまま返す。
+ * クエリの無い `/` の index.html に、public のページの一覧とリンクのプレビュー用のメタ情報を差し込む。
+ * クエリ付きの `/?tag=` などは絞り込みの画面で、絞らない一覧を入れると読み手が中身を取り違えるので、
+ * ASSETS の index.html をそのまま返す（og:url や canonical も付けず、ETag と 304 も ASSETS のままにする）。
  * Accept では分けない。一覧を読ませたい AI のエージェントやクローラーは、Accept が無いか任意の型だけのことがある。
  * 応答の本文は D1 の中身で変わり、index.html の ETag では同じ応答かを表せない。そのため index.html は
  * 条件付きリクエストのヘッダーを付けずに取り、ETag を外して返す。ASSETS の 304 を通すと、一覧の古い応答が使われ続ける。
@@ -105,7 +106,7 @@ async function findPageWithLinks(
  * wrangler.jsonc の run_worker_first で `/assets/*` 以外は Worker が先に受ける。
  * 1. Worker のパス（paths.ts）はレスポンスを作らずに next() へ回す。後から登録した API のルートも隠さず、
  *    何もレスポンスを返さなければ notFound の JSON の 404 になる
- * 2. クエリの無い `/` は、public のページの一覧を差し込んだ index.html を返す（rootHtml）
+ * 2. クエリの無い `/` は、public のページの一覧とリンクのプレビュー用のメタ情報を差し込んだ index.html を返す（rootHtml）
  * 3. ASSETS に実際のファイル（`apps/web/public` のうち run_worker_first から除いていないもの）があれば
  *    それを返す。クエリ付きの `/` もここで ASSETS が index.html を返すので、4 には来ない
  * 4. 無ければ、HTML を受け付けるナビゲーションにだけ index.html を返す。fetch や画像の読み込みに

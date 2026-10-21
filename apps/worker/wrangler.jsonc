@@ -34,8 +34,8 @@
   // Worker が index.html を返す（src/spa.ts）。未定義の /api や /mcp、fetch に SPA の HTML を返さないため。
   // not_found_handling を none にして、無い `/assets/*` には index.html でなく本文の無い 404 を返させる
   // （この 404 は Worker を通らない）。
-  // robots.txt はクローラーが、favicon と apple-touch-icon はブラウザが繰り返し取りに来るので、Worker の
-  // 日次の上限を消費させないよう直接返す。Worker を通すと owner には private, no-store が付き、キャッシュも効かない。
+  // robots.txt と og-image.png はクローラーが、favicon と apple-touch-icon はブラウザが繰り返し取りに来るので、
+  // Worker の日次の上限を消費させないよう直接返す。Worker を通すと owner には private, no-store が付き、キャッシュも効かない。
   // 除くのは apps/web/public のファイルのうち Worker を通さないものだけで、そのファイル名は
   // packages/domain の RESERVED_TITLE_SEGMENTS にも足す。対応は scripts/public-assets.test.ts が検査する。
   "assets": {
@@ -47,7 +47,8 @@
       "!/robots.txt",
       "!/favicon.svg",
       "!/favicon.ico",
-      "!/apple-touch-icon.png"
+      "!/apple-touch-icon.png",
+      "!/og-image.png"
     ],
     "not_found_handling": "none"
   }

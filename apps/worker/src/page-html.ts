@@ -85,10 +85,27 @@ export function scriptJson(value: unknown): string {
 
 const DESCRIPTION_TAG = '<meta name="description">';
 
-function appendDescriptionTag(structure: HTMLRewriter): void {
-  structure.on("head", {
+/**
+ * サイト全体で共通の og:image。apps/web/public に置いた静的な資産で、ページやサイトの設定では変わらない。
+ * Facebook などは画像を URL ごとに覚えるので、画像を差し替えるときは `?v=2` のようにパスを変える。
+ * 正方形の画像なので、twitter:card は summary にする。
+ */
+export const OG_IMAGE_PATH = "/og-image.png";
+const OG_IMAGE_SIZE = 1200;
+const OG_IMAGE_ALT = "グラファイト色の地に、明朝体の w と藍色の点を置いたアイコン";
+
+/** og:image の値を持たない固定のタグ。url は fillOgImage が絶対 URL にして入れる。 */
+const OG_IMAGE_TAGS = [
+  '<meta property="og:image">',
+  `<meta property="og:image:width" content="${OG_IMAGE_SIZE}">`,
+  `<meta property="og:image:height" content="${OG_IMAGE_SIZE}">`,
+  `<meta property="og:image:alt" content="${OG_IMAGE_ALT}">`,
+];
+
+function fillOgImage(values: HTMLRewriter, origin: string): void {
+  values.on('meta[property="og:image"]', {
     element(element) {
-      element.append(DESCRIPTION_TAG, { html: true });
+      element.setAttribute("content", attributeValue(`${origin}${OG_IMAGE_PATH}`));
     },
   });
 }
@@ -127,7 +144,8 @@ function fillDescription(values: HTMLRewriter, description: string): void {
  * HTMLRewriter は自分で挿入したマークアップを解析し直さないので、2 段に分ける。1 段目は値を持たない
  * 固定のタグだけを挿入し、2 段目がそのタグに setAttribute や setInnerContent で値を入れる。ページの
  * title や抜粋、本文を HTML の文字列に連結せず、エスケープを HTMLRewriter に任せるため（属性値の `&`
- * だけは attributeValue、script の中身は scriptJson）。og:image は既定の画像を持たないので出さない。
+ * だけは attributeValue、script の中身は scriptJson）。og:image はサイト全体で共通の固定の画像で、
+ * draft のページにも同じものを出す（公開範囲にかかわる情報を含まない）。
  *
  * 抜粋は og:description と `name="description"` に同じ値で出す。`name="description"` は検索結果の
  * 説明文の候補になり、indexable でない draft に出しても使われないので、public のページにだけ足す。
@@ -167,6 +185,7 @@ export function rewritePageHtml(
     '<meta property="og:url">',
     '<link rel="canonical">',
     '<meta name="twitter:card" content="summary">',
+    ...OG_IMAGE_TAGS,
   ];
   if (description !== null) tags.push('<meta property="og:description">');
   const searchDescription = page.visibility === "public" ? description : null;
@@ -226,6 +245,7 @@ export function rewritePageHtml(
     });
   }
   if (searchDescription !== null) fillDescription(values, searchDescription);
+  fillOgImage(values, origin);
   if (body !== null) {
     const initial = pageJson({ ...page, body });
     values
@@ -283,6 +303,9 @@ export const ROOT_PAGE_LIST_LIMIT = 100;
  * 一覧の後ろに sitemap.xml へのリンクを置き、ROOT_PAGE_LIST_LIMIT で切った残りのページへもたどらせる。
  * public のページが無ければ sitemap.xml も空なので、リンクを置かない。
  *
+ * head には、リンクのプレビューが読む og:title（サイト名）、og:url、canonical（どちらも `<origin>/`）、
+ * og:image と、あれば説明文の og:description、`name="description"` を足す。
+ *
  * rewritePageHtml と同じく 2 段に分け、1 段目は値を持たない固定のタグだけを件数分挿入し、2 段目が
  * 文書の順にリンクを埋める。title を HTML の文字列に連結しない。
  * ブラウザでは styles.css が隠し、SPA の createRoot が `#root` の中身を置き換える。
@@ -298,15 +321,45 @@ export function rewriteRootHtml(
 ): Response {
   const list = linkListHtml(pages.length);
   const sitemap = pages.length === 0 ? "" : "<p><a>sitemap.xml</a></p>";
-  const structure = new HTMLRewriter().on("#root", {
-    element(element) {
-      element.setInnerContent(`<article class="page-text"><h1></h1>${list}${sitemap}</article>`, {
-        html: true,
-      });
-    },
-  });
-  if (description !== null) appendDescriptionTag(structure);
+  const tags = [
+    '<meta property="og:title">',
+    '<meta property="og:type" content="website">',
+    '<meta property="og:url">',
+    '<link rel="canonical">',
+    '<meta name="twitter:card" content="summary">',
+    ...OG_IMAGE_TAGS,
+  ];
+  if (description !== null) tags.push('<meta property="og:description">', DESCRIPTION_TAG);
+  const structure = new HTMLRewriter()
+    .on("head", {
+      element(element) {
+        element.append(tags.join(""), { html: true });
+      },
+    })
+    .on("#root", {
+      element(element) {
+        element.setInnerContent(`<article class="page-text"><h1></h1>${list}${sitemap}</article>`, {
+          html: true,
+        });
+      },
+    });
+  const canonical = `${origin}/`;
   const values = new HTMLRewriter()
+    .on('meta[property="og:title"]', {
+      element(element) {
+        element.setAttribute("content", attributeValue(siteName));
+      },
+    })
+    .on('meta[property="og:url"]', {
+      element(element) {
+        element.setAttribute("content", attributeValue(canonical));
+      },
+    })
+    .on('link[rel="canonical"]', {
+      element(element) {
+        element.setAttribute("href", attributeValue(canonical));
+      },
+    })
     .on("#root > article.page-text > h1", {
       element(element) {
         element.setInnerContent(siteName);
@@ -317,7 +370,15 @@ export function rewriteRootHtml(
         element.setAttribute("href", attributeValue(`${origin}${SITEMAP_XML_PATH}`));
       },
     });
-  if (description !== null) fillDescription(values, description);
+  fillOgImage(values, origin);
+  if (description !== null) {
+    values.on('meta[property="og:description"]', {
+      element(element) {
+        element.setAttribute("content", attributeValue(description));
+      },
+    });
+    fillDescription(values, description);
+  }
   fillLinkList(values, pages, origin);
   return values.transform(structure.transform(index));
 }

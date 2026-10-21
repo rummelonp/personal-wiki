@@ -244,7 +244,9 @@ Cron を使わないときの進め方と、Cron が飛ばしたページの扱�
 - OAuth の保護されたリソースのメタデータの `resource_name`
 - OAuth の同意画面、許可した接続の一覧、エラーの画面の上に出るブランド
 
-リンクプレビューが読む `og:title` はページの title だけで、サイト名は含まない（`og:site_name` も出さない）。
+リンクプレビューが読む `og:title` は、ページの URL ではページの title だけで、サイト名は含まない。
+トップ（`/`）ではサイト名になる。
+`og:site_name` は出さない。
 
 名前は前後の空白を除き、40 文字以内（サロゲートペアは 1 文字）にする。
 改行などの制御文字、U+2028 と U+2029、書式文字（RTL override などの文字の向きを変える文字、ゼロ幅空白、ソフトハイフンなど）は使えない。
@@ -267,15 +269,32 @@ web には、`pnpm deploy:remote` が `apps/web` をビルドするときに名�
 ### サイトの説明文
 
 `deploy.env` の `SITE_DESCRIPTION` に書いた文が、`/llms.txt` の H1（サイト名）の下に blockquote で出る。
-トップの HTML には、`<meta name="description">` として同じ文が入る。
+トップの HTML には、`<meta name="description">` と `og:description` として同じ文が入る。
 AI のエージェントに wiki の中身を伝える 1〜2 文の要約を想定する。
-空のままなら blockquote も `<meta name="description">` も出さない。
+空のままなら blockquote も `<meta name="description">` も `og:description` も出さない。
 
 説明文は前後の空白を除き、200 文字以内（サロゲートペアは 1 文字）にする。
 使えない文字と、`#` を含むときに `"` で囲むことは、サイト名と同じである。
 `pnpm deploy:remote` は規則を満たさない説明文を止め、Worker も規則を満たさない説明文を出さない。
 説明文は Worker だけが読み、web には埋め込まない。
 変えたら `pnpm deploy:remote` を実行し直す。
+
+### リンクのプレビューの画像
+
+`og:image` は、サイト全体で共通の 1200×1200 の PNG（`apps/web/public/og-image.png`）を、全部のページの URL とトップで絶対 URL にして指す。
+サイト名や説明文を変えても画像は変わらない。
+`og:image:width`、`og:image:height`、`og:image:alt` を添え、`twitter:card` は正方形の画像に合う `summary` である。
+クエリ付きのトップ（`/?q=` など）、404、503 は、Static Assets の `index.html` をそのまま返すので出さない（`apps/worker/src/spa.ts`）。
+
+画像は `favicon.svg` の輪郭をもとに、角の丸め（`rx`）を外して書き出す。
+追加の依存は使わず、librsvg の `rsvg-convert` で次のように作る。
+
+```sh
+sed 's/ rx="7"//' apps/web/public/favicon.svg | rsvg-convert -w 1200 -h 1200 -o apps/web/public/og-image.png
+```
+
+Facebook などは画像を URL ごとに覚えるので、画像を差し替えるときは `apps/worker/src/page-html.ts` の `OG_IMAGE_PATH` を `/og-image.png?v=2` のように変える。
+ファイル名を変えるなら、`wrangler.jsonc` の `run_worker_first` の除外と `RESERVED_TITLE_SEGMENTS` も合わせる（`apps/worker/scripts/public-assets.test.ts` が検査する）。
 
 ## ゾーンの WAF、レート制限、Bot の設定
 
