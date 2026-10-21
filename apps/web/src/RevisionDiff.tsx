@@ -1,7 +1,7 @@
 import { diffLines, type LineDiff } from "@personal-wiki/markdown";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { collapseDiff, type DiffRow } from "./conflict-diff";
-import { DiffRows } from "./DiffRows";
+import { DiffLegend, DiffRows } from "./DiffRows";
 import { PendingBody } from "./Loading";
 import {
   type ApiFailure,
@@ -187,9 +187,7 @@ function DiffContent({
         </p>
       )}
       {previous !== null && hasDiff && (
-        <p className="muted diff-legend">
-          −&nbsp;は前の版だけにある行、＋&nbsp;はこの版で加わった行
-        </p>
+        <DiffLegend removed="前の版だけにある行" added="この版で加わった行" />
       )}
       {previous !== null && !hasDiff && (
         <p className="muted diff-legend">

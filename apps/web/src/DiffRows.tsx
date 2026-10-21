@@ -8,6 +8,19 @@ interface DiffRowsProps {
   notes: { delete: string; insert: string };
 }
 
+/**
+ * 差分の記号の凡例。「−」の説明と「＋」の説明を、それぞれ折り返さない塊にする。
+ * 文節の判定に任せると、幅によって 1〜2 字だけが次の行に残る。塊のままでは収まらない幅だけ、塊の中で折り返す。
+ */
+export function DiffLegend({ removed, added }: { removed: string; added: string }) {
+  return (
+    <p className="muted diff-legend">
+      <span className="diff-legend-clause">−&nbsp;は{removed}、</span>
+      <span className="diff-legend-clause">＋&nbsp;は{added}</span>
+    </p>
+  );
+}
+
 /** 行の差分。衝突の確認と版の差分で、同じ見た目と読み上げにする */
 export function DiffRows({ rows, notes }: DiffRowsProps) {
   return (

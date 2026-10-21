@@ -690,6 +690,8 @@ a.segmented-option {
  * 凡例は短い固定の文で、区切りは句読点と空白にある。語の途中を切らないよう keep-all にし、
  * auto-phrase を解釈する描画だけ文節で切る。WebKit は解釈しないので keep-all が残り、line-break: strict で
  * 小さい仮名や長音を行頭に置かない。
+ * 文節の判定だけでは、幅によって「行」や「ある行」だけが次の行に残る。「−」の説明と「＋」の説明を
+ * 折り返さない塊（.diff-legend-clause）にして、折り返しを塊の境に寄せる。
  * 通知（.notice-title と .notice-text）は利用者の入力を含み、固定の句読点だけに頼れないので、
  * 文節の切れ目に <wbr> を置く（Notice.tsx）。keep-all だけを当てると、区切りのない長い文字列が
  * 切れなくなり、あふれた分を body の overflow-wrap: anywhere が切る。この切り方は line-break: strict を
@@ -2182,6 +2184,10 @@ a.segmented-option {
 .diff-legend {
   margin: 0;
   font-size: var(--font-size-sm);
+}
+
+.diff-legend-clause {
+  display: inline-block;
 }
 
 .conflict-hint {

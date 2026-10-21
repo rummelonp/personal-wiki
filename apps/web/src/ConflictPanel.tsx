@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { conflictRows } from "./conflict-diff";
-import { DiffRows } from "./DiffRows";
+import { DiffLegend, DiffRows } from "./DiffRows";
 import type { Draft } from "./editor-session";
 import { formatTime } from "./format";
 import { focusAfterInput } from "./input-modality";
@@ -206,9 +206,7 @@ export function ConflictPanel({
           <div className="conflict-summary">
             {!hasDiff && titles}
             {hasDiff ? (
-              <p className="muted diff-legend">
-                −&nbsp;は別の場所の内容だけにある行、＋&nbsp;はこの画面だけにある行
-              </p>
+              <DiffLegend removed="別の場所の内容だけにある行" added="この画面だけにある行" />
             ) : (
               <p className="notice-text muted">本文に差分はありません。</p>
             )}

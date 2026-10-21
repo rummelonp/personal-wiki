@@ -509,6 +509,26 @@ async function provokeLongConflict(page: Page, api: OwnerApi, title: string): Pr
   return conflict;
 }
 
+test.describe("衝突の差分の凡例は、横向きの iPhone や狭い窓でも、行末の 1〜2 字を次の行に残さない @widths", () => {
+  const SIZES = [
+    { width: 667, height: 375 },
+    { width: 700, height: 600 },
+  ];
+  for (const size of SIZES) {
+    test(`${size.width}x${size.height}`, async ({ page, api }, testInfo) => {
+      await page.setViewportSize(size);
+      await provokeLongConflict(page, api, uniqueTitle(testInfo, "凡例の折り返し"));
+      const lines = await lineTexts(dock(page).locator(".diff-legend"));
+      expect(lines.length, "凡例が折り返していないので測れていない").toBeGreaterThan(1);
+      // 「−」の説明と「＋」の説明の境で折り返す。説明の途中で切れると、行末の「行」などが次の行に残る
+      expect(lines).toEqual([
+        "−\u00a0は別の場所の内容だけにある行、",
+        "＋\u00a0はこの画面だけにある行",
+      ]);
+    });
+  }
+});
+
 test.describe("差分の長い衝突の通知は、ドックの中と差分の欄が二重にスクロールしない", () => {
   // iPhone 15 の layout viewport は 393x659。キーボードが無くても、ドックの上限（0.6）は 395 ほどになる
   const SIZES = [
