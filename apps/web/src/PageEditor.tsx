@@ -1,8 +1,6 @@
 import { MAX_BODY_BYTES } from "@personal-wiki/domain/page-input";
-import { wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { loginHref } from "./api";
 import {
   acceptAttachment,
   createAttachmentUploader,
@@ -16,8 +14,12 @@ import {
   AuthLostNotice,
   FailureNotice,
   GoneNotice,
+  InputProblemNotice,
   KeptBackupNotice,
-  WithKeptContent,
+  LinkNotice,
+  type LinkNoticeState,
+  UnsafeTitleNotice,
+  UploadNotices,
 } from "./EditorNotices";
 import { EditorRail } from "./EditorRail";
 import { bindLifecycle } from "./editor-lifecycle";
@@ -36,7 +38,7 @@ import {
 import { focusAndRevealCaret } from "./focus-reveal";
 import { extractOutline } from "./heading-outline";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
-import { inputProblemMessage, inputProblemTitle } from "./input-messages";
+import { inputProblemTitle } from "./input-messages";
 import { focusAfterInput } from "./input-modality";
 import { useDelayedWhile } from "./Loading";
 import { linkRewrites } from "./link-rewrites";
@@ -44,7 +46,7 @@ import { createTitleIndex } from "./link-sources";
 import { createLinkTargetSource } from "./link-target-source";
 import { findLinkedDrafts } from "./linked-drafts";
 import { Notice } from "./Notice";
-import { openNewPage, registerNewPageScreen } from "./new-page";
+import { registerNewPageScreen } from "./new-page";
 import { InlineOutline } from "./Outline";
 import { canChangeVisibility, shownInputProblems } from "./page-editor-state";
 import { hashOfLink } from "./page-fragment";
@@ -124,12 +126,6 @@ const SPOKEN_BY_NOTICE: ReadonlySet<SaveStatus> = new Set([
 
 /** 同時に出す添付の失敗の数。まとめて貼った画像が全部失敗しても、画面を埋めない */
 const MAX_UPLOAD_NOTICES = 5;
-
-/**
- * 本文のリンクをクリックしても開けなかったときの案内。無いページは title の URL の空のページへ移るので、
- * missing は title の URL を作れない title（予約語、長すぎる title など）だけに出す。
- */
-type LinkNotice = { kind: "missing"; title: string } | { kind: "error" };
 
 function useEditorSession(
   page: Page | null,
@@ -312,7 +308,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     );
     return Promise.reject(new Error("page not created"));
   });
-  const [linkNotice, setLinkNotice] = useState<LinkNotice | null>(null);
+  const [linkNotice, setLinkNotice] = useState<LinkNoticeState | null>(null);
   const linkClick = useRef<AbortController | null>(null);
   /** 問い合わせ中の link（target と見出し）。同じ link の押し直しで、問い合わせを最初からやり直さない */
   const linkClickKey = useRef<string | null>(null);
@@ -539,7 +535,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     onRetry: retryFailed,
   };
   const bodyBytes = inputCheckOf(state.draft).bodyBytes;
-  const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
   return (
     <RailLayout
@@ -622,86 +617,15 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           />
         )}
 
-        {linkNotice !== null &&
-          (linkNotice.kind === "error" ? (
-            <Notice
-              tone="warn"
-              title="リンク先を調べられませんでした"
-              actions={
-                <button type="button" className="button" onClick={() => setLinkNotice(null)}>
-                  閉じる
-                </button>
-              }
-            >
-              <p>もう一度リンクを押してください。</p>
-            </Notice>
-          ) : (
-            // 作成へ進める案内なので info。行き止まりになる PageReader の同じ通知は warn
-            <Notice
-              tone="info"
-              title={`「${linkNotice.title}」のページはまだありません`}
-              actions={
-                <>
-                  <button
-                    type="button"
-                    className="button button-main"
-                    // このページの未保存の変更は、離れるときの leave が送る
-                    onClick={() => openNewPage({ title: linkNotice.title })}
-                  >
-                    このタイトルで作成
-                  </button>
-                  <button type="button" className="button" onClick={() => setLinkNotice(null)}>
-                    閉じる
-                  </button>
-                </>
-              }
-            />
-          ))}
+        <LinkNotice notice={linkNotice} onClose={() => setLinkNotice(null)} />
 
-        {unsafeTitle !== null && unsafeTitle === savedTitle && (
-          <Notice
-            tone="warn"
-            title="他のページのリンクは自動では書き換わりません"
-            actions={
-              <button type="button" className="button" onClick={() => setUnsafeTitle(null)}>
-                閉じる
-              </button>
-            }
-          >
-            <p>
-              {`${wikiLinkUnsafeChars(savedTitle)
-                .map((ch) => `「${ch}」`)
-                .join(
-                  "",
-                )}を含むタイトルには [[ ]] でリンクできないため、旧タイトルへのリンクは、このページを指さなくなりました。`}
-            </p>
-          </Notice>
-        )}
+        <UnsafeTitleNotice
+          unsafeTitle={unsafeTitle}
+          savedTitle={savedTitle}
+          onClose={() => setUnsafeTitle(null)}
+        />
 
-        {uploadNotices.length > 0 && (
-          <Notice
-            tone="warn"
-            title="画像を添付できませんでした"
-            actions={
-              <>
-                {uploadNotices.some(
-                  ({ kind }) => kind === "unauthorized" || kind === "forbidden",
-                ) && (
-                  <a className="button button-main" href={loginHref(window.location)}>
-                    ログインし直す
-                  </a>
-                )}
-                <button type="button" className="button" onClick={() => setUploadNotices([])}>
-                  閉じる
-                </button>
-              </>
-            }
-          >
-            {uploadNotices.map(({ message }) => (
-              <p key={message}>{message}</p>
-            ))}
-          </Notice>
-        )}
+        <UploadNotices notices={uploadNotices} onClose={() => setUploadNotices([])} />
 
         <div className="title-row">
           <TitleEditor
@@ -730,36 +654,11 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
         </div>
         {/* 通知はドックへ重なるので、JSX の位置は表示位置を決めない。作成は title の確定で起きるので、title の後に置く */}
         <FailureNotice op={createFailure} {...failureNoticeProps} />
-        {inputProblem !== undefined && (
-          // 数は打つたびに変わり、読み上げると打つたびに読み直されるので、通知は読み上げない。
-          // 原因と保存できないことは、下の見えない status が inputProblemTitle で伝える。
-          // 上端の保存の状態は、この間は読み上げない
-          <Notice
-            key="input"
-            tone="error"
-            title={inputProblemTitle(inputProblem)}
-            silent
-            actions={
-              nulInBody ? (
-                <button
-                  type="button"
-                  className="button button-main"
-                  onClick={() => editor.current?.selectFirstNul()}
-                >
-                  その文字を選択する
-                </button>
-              ) : undefined
-            }
-          >
-            <WithKeptContent show backupFailed={state.backupFailed} held>
-              {inputProblems.map((problem) => (
-                <p key={problem.reason + (problem.reason === "control_char" ? problem.field : "")}>
-                  {inputProblemMessage(problem)}
-                </p>
-              ))}
-            </WithKeptContent>
-          </Notice>
-        )}
+        <InputProblemNotice
+          problems={inputProblems}
+          backupFailed={state.backupFailed}
+          onSelectNul={() => editor.current?.selectFirstNul()}
+        />
         <span className="visually-hidden" role="status">
           {inputProblem === undefined ? "" : inputProblemTitle(inputProblem)}
         </span>

@@ -1,8 +1,12 @@
+import type { PageInputProblem } from "@personal-wiki/domain/page-input";
+import { wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import type { ReactNode, Ref } from "react";
 import { loginHref } from "./api";
+import type { UploadNotice } from "./attachments";
 import type { Backup } from "./draft-backup";
 import type { FailedOp, WriteRejection } from "./editor-session";
 import { formatTime } from "./format";
+import { inputProblemMessage, inputProblemTitle } from "./input-messages";
 import { Link } from "./Link";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
@@ -33,7 +37,7 @@ const keptContent = (backupFailed: boolean, held = false) =>
  * 失敗の理由の段落に、内容の扱いの段落を添える。内容が画面にしか無いときは先に出す。
  * 理由が「再読み込みしてから…」のように読み込み直しを促すことがあり、先に読むと内容を失うため。
  */
-export function WithKeptContent({
+function WithKeptContent({
   show,
   backupFailed,
   held = false,
@@ -295,6 +299,164 @@ export function AuthLostNotice({
             : `未保存の内容は、この端末に残してあります。ログインし直してこのページに戻ると、その内容を戻せます。別のタブでログインし直したときは、「${label}」を押してください。`
           : "未保存の変更はありません。ログインし直してください。"}
       </p>
+    </Notice>
+  );
+}
+
+/**
+ * 本文のリンクをクリックしても開けなかったときの案内。無いページは title の URL の空のページへ移るので、
+ * missing は title の URL を作れない title（予約語、長すぎる title など）だけに出す。
+ */
+export type LinkNoticeState = { kind: "missing"; title: string } | { kind: "error" };
+
+export function LinkNotice({
+  notice,
+  onClose,
+}: {
+  notice: LinkNoticeState | null;
+  onClose: () => void;
+}) {
+  if (notice === null) return null;
+  if (notice.kind === "error")
+    return (
+      <Notice
+        tone="warn"
+        title="リンク先を調べられませんでした"
+        actions={
+          <button type="button" className="button" onClick={onClose}>
+            閉じる
+          </button>
+        }
+      >
+        <p>もう一度リンクを押してください。</p>
+      </Notice>
+    );
+  return (
+    // 作成へ進める案内なので info。行き止まりになる PageReader の同じ通知は warn
+    <Notice
+      tone="info"
+      title={`「${notice.title}」のページはまだありません`}
+      actions={
+        <>
+          <button
+            type="button"
+            className="button button-main"
+            // このページの未保存の変更は、離れるときの leave が送る
+            onClick={() => openNewPage({ title: notice.title })}
+          >
+            このタイトルで作成
+          </button>
+          <button type="button" className="button" onClick={onClose}>
+            閉じる
+          </button>
+        </>
+      }
+    />
+  );
+}
+
+/** 保存した title が [[ ]] に書けない文字を含み、他のページのリンクを書き換えられなかったときの通知。 */
+export function UnsafeTitleNotice({
+  unsafeTitle,
+  savedTitle,
+  onClose,
+}: {
+  /** リンクに書けないと知らされた title */
+  unsafeTitle: string | null;
+  savedTitle: string;
+  onClose: () => void;
+}) {
+  if (unsafeTitle === null || unsafeTitle !== savedTitle) return null;
+  return (
+    <Notice
+      tone="warn"
+      title="他のページのリンクは自動では書き換わりません"
+      actions={
+        <button type="button" className="button" onClick={onClose}>
+          閉じる
+        </button>
+      }
+    >
+      <p>
+        {`${wikiLinkUnsafeChars(savedTitle)
+          .map((ch) => `「${ch}」`)
+          .join(
+            "",
+          )}を含むタイトルには [[ ]] でリンクできないため、旧タイトルへのリンクは、このページを指さなくなりました。`}
+      </p>
+    </Notice>
+  );
+}
+
+/** 添付のアップロードの失敗をまとめて出す通知。 */
+export function UploadNotices({
+  notices,
+  onClose,
+}: {
+  notices: readonly UploadNotice[];
+  onClose: () => void;
+}) {
+  if (notices.length === 0) return null;
+  return (
+    <Notice
+      tone="warn"
+      title="画像を添付できませんでした"
+      actions={
+        <>
+          {notices.some(({ kind }) => kind === "unauthorized" || kind === "forbidden") && (
+            <a className="button button-main" href={loginHref(window.location)}>
+              ログインし直す
+            </a>
+          )}
+          <button type="button" className="button" onClick={onClose}>
+            閉じる
+          </button>
+        </>
+      }
+    >
+      {notices.map(({ message }) => (
+        <p key={message}>{message}</p>
+      ))}
+    </Notice>
+  );
+}
+
+/** 手元の検査で見つけた、このままでは保存で拒まれる入力の問題の通知。 */
+export function InputProblemNotice({
+  problems,
+  backupFailed,
+  onSelectNul,
+}: {
+  problems: readonly PageInputProblem[];
+  backupFailed: boolean;
+  onSelectNul: () => void;
+}) {
+  const problem = problems[0];
+  if (problem === undefined) return null;
+  const nulInBody = problem.reason === "control_char" && problem.field === "body";
+  return (
+    // 数は打つたびに変わり、読み上げると打つたびに読み直されるので、通知は読み上げない。
+    // 原因と保存できないことは、PageEditor の見えない status が inputProblemTitle で伝える。
+    // 上端の保存の状態は、この間は読み上げない
+    <Notice
+      tone="error"
+      title={inputProblemTitle(problem)}
+      silent
+      actions={
+        nulInBody ? (
+          <button type="button" className="button button-main" onClick={onSelectNul}>
+            その文字を選択する
+          </button>
+        ) : undefined
+      }
+    >
+      <WithKeptContent show backupFailed={backupFailed} held>
+        {problems.map((p) => (
+          <p key={p.reason + (p.reason === "control_char" ? p.field : "")}>
+            {inputProblemMessage(p)}
+          </p>
+        ))}
+      </WithKeptContent>
     </Notice>
   );
 }
