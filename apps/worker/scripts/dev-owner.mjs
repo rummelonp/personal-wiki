@@ -181,20 +181,36 @@ function portInUse(port) {
  * 起動を待つ間に wrangler dev を止めると、この確認の途中で起きる。http のクライアントは
  * TOS を設定せず、ソケットのエラーも error のイベントで受けられる。
  * @param {number} port
+ * @param {string} path
+ * @returns {Promise<{ status: number; body: string }>}
+ */
+function getLoopback(port, path) {
+  return new Promise((done, fail) => {
+    const req = http.get({ host: "127.0.0.1", port, path, timeout: 5000 }, (res) => {
+      res.setEncoding("utf8");
+      let body = "";
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.once("end", () => done({ status: res.statusCode ?? 0, body }));
+      res.once("error", fail);
+    });
+    req.once("timeout", () => req.destroy(new Error(`GET ${path} timed out`)));
+    req.once("error", fail);
+  });
+}
+
+/**
+ * @param {number} port
  * @returns {Promise<boolean>}
  */
-function isHealthy(port) {
-  return new Promise((done) => {
-    const req = http.get(
-      { host: "127.0.0.1", port, path: "/api/healthz", timeout: 5000 },
-      (res) => {
-        res.resume();
-        done(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300);
-      },
-    );
-    req.once("timeout", () => req.destroy());
-    req.once("error", () => done(false));
-  });
+async function isHealthy(port) {
+  try {
+    const { status } = await getLoopback(port, "/api/healthz");
+    return status >= 200 && status < 300;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -249,10 +265,14 @@ async function listenOnLoopback(handler, port) {
  * @param {number} port
  */
 async function assertOwner(port) {
-  const res = await fetch(`http://127.0.0.1:${port}/api/me`);
-  const body = /** @type {{ kind?: unknown } | undefined} */ (
-    await res.json().catch(() => undefined)
-  );
+  const res = await getLoopback(port, "/api/me");
+  /** @type {{ kind?: unknown } | undefined} */
+  let body;
+  try {
+    body = JSON.parse(res.body);
+  } catch {
+    // JSON でない応答は owner でないものとして、下の失敗で知らせる
+  }
   if (body?.kind !== "owner") {
     throw new Error(
       `self-check failed: /api/me through the proxy returned ${res.status} ${JSON.stringify(body?.kind)}, ` +
