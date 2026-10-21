@@ -4,6 +4,7 @@ import { setDocumentTitle } from "./document-title";
 import { EmptyState } from "./EmptyState";
 import { Link } from "./Link";
 import { openNewPage } from "./new-page";
+import { preloadPageViewWhenIdle } from "./page-view-loader";
 import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout } from "./Rail";
 import { homeHref } from "./route";
@@ -14,6 +15,7 @@ import { homeHref } from "./route";
 export function NotFound() {
   useEffect(() => {
     setDocumentTitle(null);
+    preloadPageViewWhenIdle();
   }, []);
   return (
     <RailLayout rail={null}>

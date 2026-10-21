@@ -10,6 +10,7 @@ import { listHeading, listTitleClass, VISIBILITY_FILTER_NOUNS } from "./list-hea
 import { useListSort } from "./list-sort";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
+import { preloadPageViewWhenIdle } from "./page-view-loader";
 import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout } from "./Rail";
 import { homeHref, tagHref, type VisibilityFilter } from "./route";
@@ -102,6 +103,10 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
   useEffect(() => {
     if (receivedEntries !== undefined) rememberEntryShape(receivedEntries);
   }, [receivedEntries]);
+  const listSettled = state.status !== "loading";
+  useEffect(() => {
+    if (listSettled) preloadPageViewWhenIdle();
+  }, [listSettled]);
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 

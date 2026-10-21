@@ -48,13 +48,10 @@ function show(loader: Loader, props: PageViewProps = PROPS) {
 }
 
 describe("読み込みの開始", () => {
-  it("作っただけでは読み込まず、ページの画面に移る URL のときだけ preloadFor で始める", () => {
+  it("作っただけでは読み込まず、ページの画面に移る URL なら preloadFor ですぐ始める", () => {
     const importPageView = vi.fn(async () => stubModule);
-    const loader = createPageViewLoader(importPageView);
-    expect(importPageView).not.toHaveBeenCalled();
-
-    loader.preloadFor(parseRoute("/", ""));
-    loader.preloadFor(parseRoute("/p/short", ""));
+    const scheduleIdle = vi.fn();
+    const loader = createPageViewLoader(importPageView, scheduleIdle);
     expect(importPageView).not.toHaveBeenCalled();
 
     for (const [pathname, search] of [
@@ -66,6 +63,25 @@ describe("読み込みの開始", () => {
       loader.preloadFor(parseRoute(pathname ?? "", search ?? ""));
       expect(importPageView).toHaveBeenCalledTimes(1);
     }
+    expect(scheduleIdle).not.toHaveBeenCalled();
+  });
+
+  it("トップと 404 では preloadFor が読み込まず、preloadWhenIdle が手が空いたときの読み込みを 1 度だけ予約する", () => {
+    const importPageView = vi.fn(async () => stubModule);
+    const idleTasks: (() => void)[] = [];
+    const loader = createPageViewLoader(importPageView, (task) => idleTasks.push(task));
+
+    loader.preloadFor(parseRoute("/", ""));
+    loader.preloadFor(parseRoute("/p/short", ""));
+    expect(idleTasks).toHaveLength(0);
+
+    loader.preloadWhenIdle();
+    loader.preloadWhenIdle();
+    expect(importPageView).not.toHaveBeenCalled();
+    expect(idleTasks).toHaveLength(1);
+
+    idleTasks[0]?.();
+    expect(importPageView).toHaveBeenCalledTimes(1);
   });
 
   it("読み込み済みなら、最初の描画で suspend せずに画面を出す", async () => {

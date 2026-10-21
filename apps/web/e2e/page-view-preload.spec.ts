@@ -3,7 +3,7 @@ import { bodyEditor, expect, test, uniqueTitle } from "./support/fixtures";
 
 /*
  * ページの URL の HTML は、ページの画面の chunk を modulepreload で指し、入口の chunk の実行を待たずに取り始める。
- * トップと絞り込みの画面は、匿名にはページの画面の chunk を取らせない。
+ * トップと検索の画面は一覧を出した後、404 は描いた後の手が空いたときにページの画面の chunk を取る。
  */
 
 const ENTRY_CHUNK = /\/assets\/index-[^/]+\.js$/;
@@ -68,23 +68,53 @@ test("public のページの URL は、入口の chunk を返す前にページ�
   ).toEqual([]);
 });
 
-test("トップと絞り込みの画面は、匿名にはページの画面の chunk を取らせない", async ({
+test("トップと検索の画面は、一覧の応答の前にはページの画面の chunk を取らず、一覧を出した後に取る", async ({
   page,
   api,
 }, testInfo) => {
   const title = uniqueTitle(testInfo, "トップの一覧");
-  await api.createPage({ title, body: "", visibility: "public" });
+  await api.createPage({ title, body: "トップから開く本文", visibility: "public" });
   const requests = recordAssetRequests(page);
+  const pageViewRequested = () => requests.some((path) => PAGE_VIEW_CHUNK.test(path));
 
-  await page.goto("/");
-  await expect(
-    page.locator(".entries").getByRole("link", { name: title, exact: true }),
-  ).toBeVisible();
-  await page.waitForLoadState("networkidle");
+  // 一覧の応答を遅らせている間に、ページの画面の chunk が要求されないことを見る。要求されれば、
+  // 一覧の取得と帯域を取り合い、トップの LCP が遅れる。route を張ると HTTP キャッシュが効かなくなるので、
+  // 2 度目に開いたときも chunk を取り直し、要求として数えられる
+  const requestedBeforeList: boolean[] = [];
+  for (const path of ["**/api/search?*", "**/api/pages/recent*"]) {
+    await page.route(path, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      requestedBeforeList.push(pageViewRequested());
+      await route.continue();
+    });
+  }
+
   await page.goto(`/?q=${encodeURIComponent("どこにも無い語句")}`);
   await expect(page.getByRole("heading", { name: "一致するページがありません" })).toBeVisible();
+  await expect.poll(pageViewRequested).toBe(true);
   await page.waitForLoadState("networkidle");
 
-  expect(requests.some((path) => ENTRY_CHUNK.test(path))).toBe(true);
-  expect(requests.filter((path) => PAGE_VIEW_CHUNK.test(path))).toEqual([]);
+  requests.length = 0;
+  await page.goto("/");
+  const link = page.locator(".entries").getByRole("link", { name: title, exact: true });
+  await expect(link).toBeVisible();
+  await expect.poll(pageViewRequested).toBe(true);
+  expect(requestedBeforeList.length).toBeGreaterThanOrEqual(2);
+  expect(requestedBeforeList.every((requested) => !requested)).toBe(true);
+  await page.waitForLoadState("networkidle");
+
+  // 先読みが済んでいれば、画面の中でページへ移るときに chunk を待たずにページを取りに行く
+  const requestedBeforeClick = requests.length;
+  await link.click();
+  await expect(bodyEditor(page)).toContainText("トップから開く本文");
+  expect(requests.slice(requestedBeforeClick).filter((path) => PAGE_VIEW_CHUNK.test(path))).toEqual(
+    [],
+  );
+});
+
+test("404 の画面は、描いた後にページの画面の chunk を取る", async ({ page }) => {
+  const requests = recordAssetRequests(page);
+  await page.goto("/p/short");
+  await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+  await expect.poll(() => requests.some((path) => PAGE_VIEW_CHUNK.test(path))).toBe(true);
 });

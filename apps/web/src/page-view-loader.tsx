@@ -13,10 +13,14 @@ type PageViewExport = { default: ComponentType<PageViewProps> };
  * 読み込みの失敗（デプロイで古い版の chunk が消えた後の遷移など）は、画面全体を壊さず再読み込みを促す。
  * ブラウザは失敗した module の取得をキャッシュしていて、同じ URL を import し直しても取り直さないので、
  * 画面の中で読み込み直す仕組みは持たない。
- * 作っただけでは何も読み込まない。importPageView は試験で差し替えられるよう引数にする。
+ * 作っただけでは何も読み込まない。importPageView と scheduleIdle は試験で差し替えられるよう引数にする。
  */
-export function createPageViewLoader(importPageView: () => Promise<PageViewModule>) {
+export function createPageViewLoader(
+  importPageView: () => Promise<PageViewModule>,
+  scheduleIdle: (task: () => void) => void = whenIdle,
+) {
   let loaded: PageViewModule | null = null;
+  let idleScheduled = false;
 
   const load = () =>
     importPageView().then((module) => {
@@ -55,7 +59,27 @@ export function createPageViewLoader(importPageView: () => Promise<PageViewModul
     preloadFor(route: Route) {
       if (route.name === "page" || route.name === "title" || route.name === "new") preload();
     },
+    /**
+     * トップや 404 を描き終えたときに呼び、手が空いたときに読み込みを始める。画面の中でページへ移るときに、
+     * chunk の取得とページの取得が順に走らないようにする。描き終える前に始めると、一覧の取得と帯域を取り合い、
+     * module の評価で一覧の描画も遅れて、トップの LCP が遅れる。何度呼んでも 1 度だけ予約する。
+     */
+    preloadWhenIdle() {
+      if (idleScheduled) return;
+      idleScheduled = true;
+      scheduleIdle(preload);
+    },
   };
+}
+
+// requestIdleCallback の無いブラウザ（WebKit など）では、次のフレームの後に回す。timeout が無いと、
+// メインスレッドが空かない間は先読みが始まらず、最初にページへ移るときに chunk を待つ
+function whenIdle(task: () => void): void {
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(task, { timeout: 2000 });
+    return;
+  }
+  requestAnimationFrame(() => setTimeout(task, 0));
 }
 
 function PageViewLoadFailed() {
@@ -73,3 +97,4 @@ const loader = createPageViewLoader(() => import("./PageView"));
 export const PageView = loader.PageView;
 export const preloadPageView = loader.preload;
 export const preloadPageViewFor = loader.preloadFor;
+export const preloadPageViewWhenIdle = loader.preloadWhenIdle;
