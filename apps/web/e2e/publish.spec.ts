@@ -455,6 +455,40 @@ test("公開に失敗したら draft のまま理由と再試行が出て、再�
   expect(await anonymousSees(title)).toBe(true);
 });
 
+test("公開の失敗の後にやり直す間は、「公開範囲を変更中…」を通知に出す", async ({
+  page,
+  api,
+}, testInfo) => {
+  const title = uniqueTitle(testInfo, "失敗の後に公開");
+  await openDraft(page, title, api);
+  await page.route("**/api/pages/*/visibility", (route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' }),
+  );
+  await choose(page, "公開");
+  await confirmDialog(page).getByRole("button", { name: "公開する" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "公開範囲を変更できませんでした" }),
+  ).toBeVisible();
+
+  // 失敗の通知は、やり直しが終わるまで進行の通知に代わる。応答を遅らせて、その間の見出しを見る
+  await page.unroute("**/api/pages/*/visibility");
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/pages/*/visibility", async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "もう一度公開にする" }).click();
+  await expect(page.locator(".notice-dock .notice-title")).toHaveText("公開範囲を変更中…");
+  release();
+  await expectShown(page, "public");
+  await expect(notice(page)).toHaveText("公開しました。");
+  await expect(page.locator(".notice-dock .notice-title")).toHaveCount(0);
+  expect(await anonymousSees(title)).toBe(true);
+});
+
 test("本文を編集した直後に「公開」を 1 回押すと、保存の間でも確認が開き、保存の後に公開する", async ({
   page,
   api,

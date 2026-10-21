@@ -819,6 +819,16 @@ describe("visibility", () => {
     session.edit({ title: "題", body: "手元" });
     await session.changeVisibility("public");
     expect(api.setVisibility).not.toHaveBeenCalled();
+    // 変えないと決めたら進行の表示を外す。残すと、ほかの操作が押せないままになる
+    expect(session.getState().busy).toBeNull();
+  });
+
+  it("すでにその公開範囲なら何も送らず、busy を外す", async () => {
+    const { session, api } = setup();
+    api.setVisibility = vi.fn(api.setVisibility);
+    await session.changeVisibility("draft");
+    expect(api.setVisibility).not.toHaveBeenCalled();
+    expect(session.getState().busy).toBeNull();
   });
 
   it("版が違えば 409 で衝突にする", async () => {
@@ -1757,6 +1767,29 @@ describe("処理が始まると失敗の記録を消す", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(seen).not.toContain("idle");
     expect(seen.at(-1)).toBe("restoring");
+
+    gate.resolve(FAIL);
+    await running;
+  });
+
+  it("公開範囲を変えるときは、失敗の記録を消す更新の途中に busy の無い状態を作らない", async () => {
+    const { session, api } = setup();
+    api.deletePage = async () => FAIL;
+    await session.remove();
+    expect(session.getState().failedOp).not.toBeNull();
+
+    const gate = pending<ApiResult<never>>();
+    api.setVisibility = () => gate.promise;
+    const seen: string[] = [];
+    session.subscribe(() => {
+      const { busy, failedOp } = session.getState();
+      if (busy === null && failedOp !== null) return;
+      seen.push(busy ?? "idle");
+    });
+    const running = session.changeVisibility("public");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen).not.toContain("idle");
+    expect(seen.at(-1)).toBe("visibility");
 
     gate.resolve(FAIL);
     await running;

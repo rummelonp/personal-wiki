@@ -1266,14 +1266,21 @@ export class EditorSession {
       if (this.state.uncreated) return;
       this.clearTimer();
       // 前回の失敗が残っていると、下の判定が保存の失敗と取り違える。title の重複は保存できない
-      // ままなので残し、visibility を変えない
-      this.set(this.clearedError());
+      // ままなので残し、visibility を変えない。失敗の記録は busy を立てる更新と同時に消す。先に消すと、
+      // 失敗の通知が外れてから進行の通知が立つまでの間に画面が「失敗の後」を抜け、変更中の通知が出ない
+      this.set({ busy: "visibility", ...this.clearedError() });
       await this.saveIfDirty();
       // 保存できなかった（衝突、ログイン切れ、失敗、送れない内容）なら、画面の状態表示に任せて
       // visibility は変えない。手元に保存できない内容を残したまま、公開範囲だけを変えない
-      if (!this.canWrite() || this.state.error !== null) return;
-      if (isDirty(this.state) && holdsBack(this.state)) return;
-      if (this.state.base.visibility === visibility) return;
+      if (
+        !this.canWrite() ||
+        this.state.error !== null ||
+        (isDirty(this.state) && holdsBack(this.state)) ||
+        this.state.base.visibility === visibility
+      ) {
+        this.set({ busy: null });
+        return;
+      }
       const { base } = this.state;
       this.set({ busy: "visibility", ...NO_ERROR });
       const res = await this.api.setVisibility(base.id, base.version, visibility);
