@@ -871,6 +871,7 @@ describe("版を戻す", () => {
     expect(session.getState().draft.body).toBe("打った内容");
     expect(saveStatusOf(session.getState())).toBe("error");
     expect(backup.load(ID)?.body).toBe("打った内容");
+    expect(session.getState().busy).toBeNull();
   });
 
   it("送れない内容（入力のエラー）が残っていれば戻さない", async () => {
@@ -880,6 +881,8 @@ describe("版を戻す", () => {
     expect(await session.restoreRevision(1)).toEqual({ ok: false, reason: "unsaved" });
     expect(api.calls).toEqual([]);
     expect(session.getState().draft.body).toBe("a\u0000b");
+    // 戻せないと決めたら進行の表示を外す。残すと、ほかの操作が押せないままになる
+    expect(session.getState().busy).toBeNull();
   });
 
   it("本文が今と同じなら版を進めず、changed を false で返す", async () => {
@@ -1730,6 +1733,30 @@ describe("処理が始まると失敗の記録を消す", () => {
     expect(session.getState().busy).toBe(busy);
     expect(session.getState().error).toBeNull();
     expect(session.getState().failedOp).toBeNull();
+
+    gate.resolve(FAIL);
+    await running;
+  });
+
+  // 画面は、失敗の通知が外れた状態で busy も無い描画を挟むと、失敗の後の進行の通知を出さない
+  it("版を戻すときは、失敗の記録を消す更新の途中に busy の無い状態を作らない", async () => {
+    const { session, api } = setup();
+    api.deletePage = async () => FAIL;
+    await session.remove();
+    expect(session.getState().failedOp).not.toBeNull();
+
+    const gate = pending<ApiResult<never>>();
+    api.restoreRevision = () => gate.promise;
+    const seen: string[] = [];
+    session.subscribe(() => {
+      const { busy, failedOp } = session.getState();
+      if (busy === null && failedOp !== null) return;
+      seen.push(busy ?? "idle");
+    });
+    const running = session.restoreRevision(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen).not.toContain("idle");
+    expect(seen.at(-1)).toBe("restoring");
 
     gate.resolve(FAIL);
     await running;

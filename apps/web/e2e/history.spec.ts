@@ -265,6 +265,49 @@ test("未保存の入力は先に保存してから戻し、戻す前の内容�
   await expect(viewer(page).locator(".cm-content")).toHaveText("二つ目の本文を足した");
 });
 
+test("別の操作の失敗の後に戻すと、戻している間は「本文を戻し中…」を通知に出す", async ({
+  page,
+  api,
+}, testInfo) => {
+  const created = await api.createPage({
+    title: uniqueTitle(testInfo, "失敗の後に戻す"),
+    body: "最初の本文",
+    visibility: "public",
+  });
+  await api.updatePage(created, { body: "二つ目の本文" });
+
+  await page.goto(`/p/${created.id}`);
+  await expect(entries(page)).toHaveCount(2);
+  // 失敗の通知が出ているところから戻す。通知が出ていないときは、ダイアログのボタンが進行を伝える
+  await page.route("**/api/pages/*/visibility", (route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' }),
+  );
+  await page.locator(".visibility-pill").click();
+  await page.getByRole("menuitemradio", { name: "下書き", exact: true }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "公開範囲を変更できませんでした" }),
+  ).toBeVisible();
+
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**/api/pages/${created.id}/revisions/*/restore`, async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  await entries(page).nth(1).click();
+  await viewer(page).getByRole("button", { name: "この版の本文に戻す" }).click();
+  await expect(viewer(page).getByRole("button", { name: "戻し中…" })).toBeDisabled();
+  await expect(page.locator(".notice-dock .notice-title")).toHaveText("本文を戻し中…");
+  release();
+  await expect(viewer(page).locator(".revision-viewer-status")).toContainText(
+    "この版の本文に戻しました。",
+  );
+  await closeViewer(page);
+  await expect(page.locator(".notice-dock .notice-title")).toHaveCount(0);
+});
+
 test("版を開くと 1 つ古い版との差分を出し、title の変化も添え、全文と切り替えられる", async ({
   page,
   api,

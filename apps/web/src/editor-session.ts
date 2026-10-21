@@ -1311,11 +1311,19 @@ export class EditorSession {
       // 変換中の文字はまだ draft に無い。確定を待たずに保存すると、戻した本文で消える
       await this.whenSettled();
       this.clearTimer();
-      this.set(this.clearedError());
+      // 前の失敗の記録は、busy を立てる更新と同時に消す。先に消すと、失敗の通知が外れてから進行の通知が
+      // 立つまでの間に画面が「失敗の後」を抜け、戻している間の進行の通知が出ない
+      this.set({ busy: "restoring", ...this.clearedError() });
       await this.saveIfDirty();
-      const unsaved = this.restoreBlocked();
-      if (unsaved !== null) return unsaved;
-      if (this.state.error !== null || isDirty(this.state)) return { ok: false, reason: "unsaved" };
+      const unsaved =
+        this.restoreBlocked() ??
+        (this.state.error !== null || isDirty(this.state)
+          ? ({ ok: false, reason: "unsaved" } as const)
+          : null);
+      if (unsaved !== null) {
+        this.set({ busy: null });
+        return unsaved;
+      }
       const { base } = this.state;
       this.set({ busy: "restoring", ...NO_ERROR });
       const res = await this.api.restoreRevision(base.id, revision, base.version);
