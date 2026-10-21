@@ -139,6 +139,7 @@ pnpm test
 
 `packages/editor` と `apps/web` のコンポーネントのテストは、Playwright の Chromium の中で動く。
 初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れる。
+`pnpm lint` は複雑度を cccc で測るので、`cargo install cccc-cli` で入れる（版は [AGENTS.md](./AGENTS.md) の「複雑度の検査」にある）。
 `pnpm format` で biome が整形する。
 E2E、規約、開発用コマンドの一覧は [AGENTS.md](./AGENTS.md) にある。
 画面の見た目と使い心地の原則は [docs/design.md](./docs/design.md) にある。

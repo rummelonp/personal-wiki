@@ -33,14 +33,29 @@ Node は 24 系、パッケージマネージャーは pnpm（バージョンは
 
 ```sh
 pnpm install
-pnpm lint          # biome check と CSS の直書きの検査
+pnpm lint          # biome check、CSS の直書きの検査、複雑度の検査
 pnpm format        # biome check --write
 pnpm typecheck     # tsc --noEmit
 pnpm test          # vitest run
+pnpm complexity:update  # 複雑度の baseline を今の値で書き直す
 ```
 
 `packages/editor` と `apps/web` のコンポーネントのテストは Playwright の Chromium の中で動く。
 初回は `pnpm --filter @personal-wiki/editor exec playwright install chromium` でブラウザを入れる。
+
+### 複雑度の検査
+
+`pnpm lint` は [cccc](https://github.com/moznion/cccc) で関数ごとの認知的複雑度を測り、上限の 15 を超える関数が増えていないかを検査する（`scripts/check-complexity.mjs`）。
+対象は `apps`、`packages`、`scripts` などで、テストと E2E も含む。
+cccc は npm の package が無いので、手元では `cargo install cccc-cli --version <版> --locked` で入れる。
+版は `scripts/complexity-baseline.json` の `cccc` に合わせる（違う版だと検査が失敗する）。
+CI は同じ版の Release のバイナリを、build provenance を確かめてから使う。
+
+上限を超えている既存の関数は baseline に載っていて、新しく超えた関数と、baseline より値が上がった関数で失敗する。
+ただし同じファイルの同じ入れ子に同じ名前の関数（無名関数など）が複数あると、1 つの値の上昇が別の値の低下に隠れて「下がった」と出ることがあるので、`pnpm complexity:update` の後は baseline の差分を見る。
+関数を分けて値を下げたときも、baseline が古いとして失敗するので、`pnpm complexity:update` で書き直してコミットに含める。
+上限を超える関数を新しく足すのは、分けると読みにくくなる場合（アルゴリズムの本体など）に限り、`pnpm complexity:update` で baseline に載せる。
+cccc の版を上げるときは、baseline の `cccc` を書き換えてから `pnpm complexity:update` を流し、値の変化を差分で確かめる。
 
 ### E2E
 

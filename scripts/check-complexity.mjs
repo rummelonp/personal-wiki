@@ -11,6 +11,7 @@
 // 循環的複雑度は検査しない。JSX の条件の分岐で膨らみ、読みにくさの指標としては認知的複雑度で足りるため。
 //
 // 版で値の数え方が変わりうるので、cccc の版は baseline に書いた版と同じでなければ失敗にする。
+// CI も baseline の版の Release を入れる。
 import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

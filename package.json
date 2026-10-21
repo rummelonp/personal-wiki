@@ -10,7 +10,7 @@
     "node": ">=24.22 <25"
   },
   "scripts": {
-    "lint": "biome check . && node scripts/check-css-tokens.mjs",
+    "lint": "biome check . && node scripts/check-css-tokens.mjs && node scripts/check-complexity.mjs",
     "format": "biome check --write .",
     "complexity:update": "node scripts/check-complexity.mjs --update",
     "typecheck": "tsc --noEmit && pnpm -r --if-present run typecheck",

@@ -27,6 +27,23 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # pnpm lint の複雑度の検査が使う。版は baseline に書いた版に合わせる（版で値の数え方が変わりうる）。
+      # Release のバイナリが moznion/cccc の release の workflow で作られ、その release の asset で
+      # あることを確かめてから使う
+      - name: Install cccc
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .cccc scripts/complexity-baseline.json)
+          asset="cccc-v${version}-x86_64-unknown-linux-musl.tar.gz"
+          cd "$RUNNER_TEMP"
+          gh release download "v${version}" --repo moznion/cccc --pattern "$asset"
+          gh attestation verify "$asset" --repo moznion/cccc \
+            --signer-workflow moznion/cccc/.github/workflows/release-build.yml
+          gh release verify-asset "v${version}" "$asset" --repo moznion/cccc
+          mkdir cccc-bin
+          tar xzf "$asset" -C cccc-bin cccc
+          echo "$RUNNER_TEMP/cccc-bin" >> "$GITHUB_PATH"
       - run: pnpm lint
       - run: pnpm typecheck
       # packages/editor と apps/web のテストは headless の Chromium の中で動かす。headless では
