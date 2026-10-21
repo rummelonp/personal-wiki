@@ -1473,6 +1473,24 @@ describe("サーバーから消えたページの退避", () => {
     expect(deletedCopies(backup)).toMatchObject([{ body: "消えたページの編集" }]);
   });
 
+  it("保存の 409 のあとに最新を取りにいって 404 なら、手元の内容をページの key には退避せず、作る前の退避の key に 1 件だけ書く", async () => {
+    const { session, api, backup } = setup();
+    api.updatePage = async () => ({ ok: false, reason: "version_conflict", currentVersion: 2 });
+    api.getPage = async () => ({ ok: false, reason: "not_found" });
+    // ページの key に一度書いて移す形でも最終の状態は同じになるので、書き込みそのものを記録する
+    const writtenKeys: string[] = [];
+    const save = backup.save;
+    backup.save = (key, stored) => {
+      writtenKeys.push(key);
+      return save(key, stored);
+    };
+    session.edit({ title: "題", body: "消えたページの編集" });
+    await session.flush();
+    expect(writtenKeys).toHaveLength(1);
+    expect(writtenKeys[0]).toMatch(new RegExp(`^${NEW_PAGE_BACKUP_PREFIX}`));
+    expect(deletedCopies(backup)).toHaveLength(1);
+  });
+
   it("保存の 409 のあとに最新を取りにいく間も、busy を保ち、衝突が決まると外す", async () => {
     const { session, api } = setup();
     api.updatePage = async () => ({ ok: false, reason: "version_conflict", currentVersion: 2 });
@@ -2166,6 +2184,36 @@ describe("自分のタブの外で走ったリンクの書き換え", () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(api.calls.at(-1)).toBe("put@3");
     expect(server.page.body).toBe("[[新2]] 本文 追記");
+  });
+
+  it("取り直す間に入力があって送り直しが失敗しても、自動保存のタイマーで続けて送らない", async () => {
+    const { session, server, api } = setup({ server: base() });
+    session.edit({ title: "題", body: "[[旧]] 本文 追記" });
+    rewritten(server);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realGet = api.getPage;
+    api.getPage = async (id) => {
+      await gate;
+      return realGet(id);
+    };
+    const flushed = session.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    // 取り直す間の入力がタイマーを掛ける。送り直しは手元の最新を送るので、このタイマーは要らない
+    session.edit({ title: "題", body: "[[旧]] 本文 追記 さらに" });
+    const resent: number[] = [];
+    api.updatePage = async (_id, version) => {
+      resent.push(version);
+      return { ok: false, reason: "error", message: "失敗" };
+    };
+    release();
+    await flushed;
+    expect(resent).toEqual([2]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(resent).toEqual([2]);
+    expect(session.getState()).toMatchObject({ failedOp: { kind: "save" }, conflict: null });
   });
 
   it("フォーカス復帰で版が進んでいても、リンクの書き換えだけなら衝突にせず重ねる。確定済みの title は残す", async () => {
