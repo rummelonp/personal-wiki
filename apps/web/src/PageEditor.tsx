@@ -1,15 +1,7 @@
 import { MAX_BODY_BYTES } from "@personal-wiki/domain/page-input";
 import { wikiLinkUnsafeChars } from "@personal-wiki/domain/title";
 import type { UploadAttachment, WikiLinkClick } from "@personal-wiki/editor";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { loginHref } from "./api";
 import {
   acceptAttachment,
@@ -44,7 +36,6 @@ import {
 import { focusAndRevealCaret } from "./focus-reveal";
 import { extractOutline } from "./heading-outline";
 import { InputMeter, METER_SHOW_RATIO } from "./InputMeter";
-import { isInView } from "./in-view";
 import { inputProblemMessage, inputProblemTitle } from "./input-messages";
 import { focusAfterInput } from "./input-modality";
 import { useDelayedWhile } from "./Loading";
@@ -73,6 +64,7 @@ import {
 import { RailLayout } from "./Rail";
 import { homeHref, missingPagePath, navigate, openTag, pageHrefFor } from "./route";
 import { TitleEditor, type TitleEditorHandle } from "./TitleEditor";
+import { useFailureProgress } from "./use-failure-progress";
 import { useFragmentJump } from "./use-fragment-jump";
 import { VisibilityControl } from "./VisibilityControl";
 import { createWikiLinks } from "./wiki-links";
@@ -129,14 +121,6 @@ const SPOKEN_BY_NOTICE: ReadonlySet<SaveStatus> = new Set([
   "auth",
   "gone",
 ]);
-
-/** 失敗の後の操作が終わるまでの間、失敗の通知に代えてドックに出す見出し。 */
-const PROGRESS_TITLES = {
-  saving: "保存中…",
-  visibility: "公開範囲を変更中…",
-  deleting: "削除中…",
-  restoring: "本文を戻し中…",
-} as const;
 
 /** 同時に出す添付の失敗の数。まとめて貼った画像が全部失敗しても、画面を埋めない */
 const MAX_UPLOAD_NOTICES = 5;
@@ -441,15 +425,8 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     if (removed && mounted.current) navigate(homeHref());
   }
 
-  // 失敗の後に操作を始めると session は失敗の記録を消すので、通知も消える。保存の状態の表示はページの上端に
-  // あり、下までスクロールしていると進んでいる手応えが無いため、終わるまで同じ場所に進行の通知を残す。
-  // 「もう一度保存する」を押す前に本文の blur が保存を始めると、ボタンが消えて押せないので、押したかどうかでなく
-  // 失敗の通知が出ていたかどうかで決める。再送のボタンへ focus を戻す判断にも使うので、作成の失敗も数える
-  const shownFailure = state.error !== null ? state.failedOp : null;
-  const failure = shownFailure !== null && shownFailure.kind !== "create" ? shownFailure : null;
-  const [afterFailure, setAfterFailure] = useState(false);
-  if (shownFailure !== null && !afterFailure) setAfterFailure(true);
-  else if (afterFailure && shownFailure === null && state.busy === null) setAfterFailure(false);
+  const { shownFailure, failure, createFailure, afterFailure, progress, saveStateEl } =
+    useFailureProgress(state);
   // 再送が再び失敗すると、失敗の通知は進行の通知を挟んで作り直される（読み上げさせるため、同じ要素を使い回せない）。
   // 再送のボタンが消えるとき、押そうとしていたなら、作り直されたボタンが押せるようになった描画で
   // focus を戻す。作り直されたボタンは、操作が終わるまで disabled で focus を受けない。
@@ -541,42 +518,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
       focusTitleOrBodyOrFrame(titleTaken);
     }
   });
-  // 衝突、ログイン切れ、ページの消失は、操作の途中（busy が外れる前）に決まりうる。その通知と進行を並べない
-  const inProgress =
-    afterFailure &&
-    failure === null &&
-    state.busy !== null &&
-    state.busy !== "creating" &&
-    state.conflict === null &&
-    !state.authLost &&
-    !state.gone
-      ? state.busy
-      : null;
-  // 保存の進行は、ページの上端の保存の状態（.save-state）が見えている間はそちらが伝えるので、ドックには出さない。
-  // ドックの通知は、下までスクロールして上端が見えないときの手応えのためにある。保存の間は測り直す
-  const saveStateEl = useRef<HTMLParagraphElement>(null);
-  const [topVisible, setTopVisible] = useState(false);
-  const watchTop = inProgress === "saving";
-  useLayoutEffect(() => {
-    const element = saveStateEl.current;
-    if (!watchTop || element === null) return;
-    const measure = () => setTopVisible(isInView(element));
-    measure();
-    window.addEventListener("scroll", measure, { passive: true });
-    window.addEventListener("resize", measure);
-    // iOS はキーボードや拡大の間のパンで visualViewport だけを動かし、window の scroll を出さないことがある
-    window.visualViewport?.addEventListener("resize", measure);
-    window.visualViewport?.addEventListener("scroll", measure);
-    return () => {
-      window.removeEventListener("scroll", measure);
-      window.removeEventListener("resize", measure);
-      window.visualViewport?.removeEventListener("resize", measure);
-      window.visualViewport?.removeEventListener("scroll", measure);
-    };
-  }, [watchTop]);
-  const progress =
-    inProgress !== null && !(watchTop && topVisible) ? PROGRESS_TITLES[inProgress] : null;
-
   // 削除の再試行は確認を挟まない。ボタン自体が「もう一度削除する」と明示している
   async function retryFailed(op: FailedOp | null) {
     if (op === null) return;
@@ -588,7 +529,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
 
   const inputProblems = shownInputProblems(state);
   const inputProblem = inputProblems[0];
-  const createFailure = shownFailure?.kind === "create" ? shownFailure : null;
   const failureNoticeProps = {
     error: state.error,
     dirty: isDirty(state),
