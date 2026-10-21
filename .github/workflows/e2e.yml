@@ -40,12 +40,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - id: playwright
         run: echo "version=$(pnpm --filter @personal-wiki/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # restore と save に分けるのは、actions/cache が job の成功時にしか保存しないため。
+      # E2E が落ち続ける間も、ブラウザを毎回取り直さずに済むよう、E2E の前に保存する
+      - id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/ms-playwright
           key: playwright-e2e-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       # ブラウザ本体は入っていればダウンロードを飛ばす
       - run: pnpm --filter @personal-wiki/web exec playwright install chromium webkit firefox
+      # install が失敗したときは、ブラウザが欠けた cache を残さないよう、この step も飛ばす（既定の success()）
+      - if: ${{ steps.playwright-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
       # E2E_SKIP_PERF=1 で、apps/web/playwright.config.ts が perf-* の project を作らなくなる。
       # specs は env 経由で渡し、シェルの構文としては解釈させない（空白で分けるだけで、glob は展開しない）。
       # Playwright は -- の後の引数を絞り込みに使わないので、-- で option と分けることはできない
