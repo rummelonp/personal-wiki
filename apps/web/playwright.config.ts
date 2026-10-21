@@ -7,10 +7,14 @@ import { E2E_ORIGIN } from "./e2e/support/stack";
  * 機能のテストがすべて終わった後に走らせる。
  * Tab の移動先をエンジンごとに確かめるテスト（@keyboard）は、WebKit のデスクトップでも走らせる。
  * 幅を変えて調べるテスト（@widths）は、幅を自分で切り替えるのでデスクトップの Chromium だけで走らせる。
+ * E2E_SKIP_PERF=1 のときは perf-* の project を作らない。Playwright の --project には除く指定が無く、
+ * 呼び出し側で並べると project を足したときに漏れる。
  */
 
 const PRIMARY = ["chromium-desktop", "webkit-iphone"];
 const SECONDARY = ["firefox-desktop", "chromium-android", "webkit-desktop"];
+
+const skipPerf = process.env.E2E_SKIP_PERF === "1";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -72,5 +76,5 @@ export default defineConfig({
       // 計測どうしも重ねない
       dependencies: ["perf-chromium-desktop"],
     },
-  ],
+  ].filter((project) => !(skipPerf && project.name.startsWith("perf-"))),
 });

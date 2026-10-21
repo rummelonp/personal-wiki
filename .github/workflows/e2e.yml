@@ -3,7 +3,8 @@ name: E2E
 # 手で起動する（gh workflow run e2e.yml -R rummelonp/personal-wiki）。
 # workflow_dispatch は、既定ブランチにこのファイルがあるときだけ起動できる。
 # 既定ブランチにあれば、--ref <ブランチ> で push した作業ブランチの版も流せる。
-# 速さの計測（perf-* の project）は、予算が 1 台の機械の値なので手元の pnpm e2e:full だけで流す。
+# 速さの計測（perf-* の project）は、予算が 1 台の機械の値なので手元の pnpm e2e:full だけで流し、
+# ここでは E2E_SKIP_PERF=1 で外す。
 on:
   workflow_dispatch:
     inputs:
@@ -45,22 +46,16 @@ jobs:
           key: playwright-e2e-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       # ブラウザ本体は入っていればダウンロードを飛ばす
       - run: pnpm --filter @personal-wiki/web exec playwright install chromium webkit firefox
-      # Playwright には project を除く指定が無いので、apps/web/playwright.config.ts の perf-* 以外を
-      # 並べる。project を足したらここにも足す。
+      # E2E_SKIP_PERF=1 で、apps/web/playwright.config.ts が perf-* の project を作らなくなる。
       # specs は env 経由で渡し、シェルの構文としては解釈させない（空白で分けるだけで、glob は展開しない）。
       # Playwright は -- の後の引数を絞り込みに使わないので、-- で option と分けることはできない
       - name: Run E2E
         env:
+          E2E_SKIP_PERF: "1"
           E2E_SPECS: ${{ inputs.specs }}
         run: |
           set -f
-          pnpm --filter @personal-wiki/web exec playwright test \
-            --project=chromium-desktop \
-            --project=webkit-iphone \
-            --project=firefox-desktop \
-            --project=chromium-android \
-            --project=webkit-desktop \
-            $E2E_SPECS
+          pnpm --filter @personal-wiki/web exec playwright test $E2E_SPECS
       # 失敗したときの trace とスクリーンショットを後から見られるよう、失敗しても上げる。
       # timeout-minutes の打ち切りは取り消しとして扱われ、!cancelled() では上がらないので always() にする
       # （詰まったときこそ trace が要る）
