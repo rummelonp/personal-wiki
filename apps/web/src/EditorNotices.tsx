@@ -1,8 +1,12 @@
 import type { ReactNode, Ref } from "react";
+import { loginHref } from "./api";
+import type { Backup } from "./draft-backup";
 import type { FailedOp, WriteRejection } from "./editor-session";
+import { formatTime } from "./format";
 import { Link } from "./Link";
 import { Notice } from "./Notice";
-import { pageHrefFor } from "./route";
+import { openNewPage } from "./new-page";
+import { homeHref, navigate, pageHrefFor } from "./route";
 
 const FAILURE_TITLES: Record<FailedOp["kind"], string> = {
   create: "作成できませんでした",
@@ -187,6 +191,166 @@ export function FailureNotice(props: FailureNoticeProps) {
           <p>{error}</p>
         )}
       </WithKeptContent>
+    </Notice>
+  );
+}
+
+/** 前回、保存できなかった内容（端末の退避）を、戻すか破棄するかを選ばせる通知。 */
+export function KeptBackupNotice({
+  backup,
+  onRestore,
+  onDiscard,
+}: {
+  backup: Backup | null;
+  onRestore: () => void;
+  onDiscard: () => void;
+}) {
+  if (backup === null) return null;
+  const deleted = backup.deletedFrom !== undefined;
+  return (
+    <Notice
+      tone="warn"
+      // 通知が重なると本文は畳まれ、見出しだけが残る。どのページの内容かは見出しで分かるようにする
+      title={
+        deleted
+          ? "削除されたページで保存できなかった内容があります"
+          : "前回、保存できなかった内容があります"
+      }
+      // 復元か破棄を選ぶまで入力欄は読み取り専用で、選ぶ操作はこの通知の中にしか無い。
+      // 新規ページでは title の autoFocus が先に focus を持つので、打鍵の guard で移らない
+      claimFocus
+      actions={
+        <>
+          <button type="button" className="button button-main" onClick={onRestore}>
+            {deleted ? "新しいページとして作る" : "残った内容に戻す"}
+          </button>
+          <button type="button" className="button" onClick={onDiscard}>
+            残った内容を破棄する
+          </button>
+        </>
+      }
+    >
+      {deleted ? (
+        // 文字列を 1 つにするのは、JSX の改行が文の間に半角の空白を入れるため
+        <p>
+          {`この端末に残っている「${backup.title}」の内容（${formatTime(backup.savedAt)}）から、新しいページを作れます。`}
+        </p>
+      ) : (
+        <p>
+          {backup.createFailed
+            ? `作成できなかったページ「${backup.title}」の内容が、この端末に残っています（`
+            : "保存できなかった内容が、この端末に残っています（"}
+          {formatTime(backup.savedAt)}
+          ）。戻すか破棄すると、編集を続けられます。
+        </p>
+      )}
+    </Notice>
+  );
+}
+
+/** 変更が無いときの retry() は通知を下ろすだけで、保存も作成もしない */
+const authRetryLabel = (dirty: boolean, uncreated: boolean) =>
+  !dirty ? "閉じる" : uncreated ? "もう一度作成する" : "もう一度保存する";
+
+/** ログインの期限切れ（401）の通知。 */
+export function AuthLostNotice({
+  authLost,
+  dirty,
+  uncreated,
+  backupFailed,
+  onRetry,
+}: {
+  authLost: boolean;
+  dirty: boolean;
+  uncreated: boolean;
+  backupFailed: boolean;
+  onRetry: () => void;
+}) {
+  if (!authLost) return null;
+  const label = authRetryLabel(dirty, uncreated);
+  return (
+    <Notice
+      tone="warn"
+      title={
+        dirty && backupFailed
+          ? "ログインの期限が切れ、内容をこの端末に残せませんでした"
+          : "ログインの期限が切れました"
+      }
+      claimFocus
+      actions={
+        <>
+          <a className="button button-main" href={loginHref(window.location)}>
+            ログインし直す
+          </a>
+          <button type="button" className="button" onClick={onRetry}>
+            {label}
+          </button>
+        </>
+      }
+    >
+      <p>
+        {dirty
+          ? backupFailed
+            ? `「ログインし直す」で画面を移ると、入力した内容は消えます。先に内容をコピーするか、別のタブでログインし直してから「${label}」を押してください。`
+            : `未保存の内容は、この端末に残してあります。ログインし直してこのページに戻ると、その内容を戻せます。別のタブでログインし直したときは、「${label}」を押してください。`
+          : "未保存の変更はありません。ログインし直してください。"}
+      </p>
+    </Notice>
+  );
+}
+
+/** 別の場所でページが削除されたときの通知。 */
+export function GoneNotice({
+  gone,
+  dirty,
+  backupFailed,
+  deletedKept,
+}: {
+  gone: boolean;
+  dirty: boolean;
+  backupFailed: boolean;
+  deletedKept: boolean;
+}) {
+  if (!gone) return null;
+  const unkept = dirty && backupFailed;
+  // 退避できなかった内容は画面にしか無く、新規作成の画面へ移っても戻らないので案内しない
+  const recreatable = deletedKept && !unkept;
+  return (
+    <Notice
+      tone="error"
+      title={
+        unkept
+          ? "このページは削除され、内容をこの端末に残せませんでした"
+          : "このページは削除されました"
+      }
+      actions={
+        <>
+          {recreatable && (
+            <button type="button" className="button button-main" onClick={() => openNewPage()}>
+              新しいページとして作る
+            </button>
+          )}
+          <a
+            className={recreatable ? "button" : "button button-main"}
+            href={homeHref()}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(homeHref());
+            }}
+          >
+            一覧へ戻る
+          </a>
+        </>
+      }
+    >
+      <p>
+        別の場所で削除されたため、編集できません。
+        {unkept
+          ? "入力した内容は、この画面にしか残っていません。画面を離れる前に、内容をコピーしてください。"
+          : deletedKept
+            ? "保存できなかった内容は、この端末に残してあります。新しいページとして作り直せます。"
+            : ""}
+      </p>
     </Notice>
   );
 }

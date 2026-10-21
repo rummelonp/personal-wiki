@@ -21,7 +21,13 @@ import { Backlinks } from "./Backlinks";
 import { BodyEditor, type BodyEditorHandle } from "./BodyEditor";
 import { ConflictPanel } from "./ConflictPanel";
 import { createLocalBackupStore } from "./draft-backup";
-import { FailureNotice, WithKeptContent } from "./EditorNotices";
+import {
+  AuthLostNotice,
+  FailureNotice,
+  GoneNotice,
+  KeptBackupNotice,
+  WithKeptContent,
+} from "./EditorNotices";
 import { bindLifecycle } from "./editor-lifecycle";
 import { registerEditor } from "./editor-registry";
 import {
@@ -591,8 +597,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     else if ((await session.remove()) && mounted.current) navigate(homeHref());
   }
 
-  const goneUnkept = state.gone && isDirty(state) && state.backupFailed;
-
   // 保存済みのままの内容は送らないので、問題があっても手を付けるまでは知らせない
   const inputProblems = uncreated || isDirty(state) ? inputProblemsOf(state.draft) : [];
   const inputProblem = inputProblems[0];
@@ -606,12 +610,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     retryButtonRef,
     onRetry: retryFailed,
   };
-  // 変更が無いときの retry() は通知を下ろすだけで、保存も作成もしない
-  const authRetryLabel = !isDirty(state)
-    ? "閉じる"
-    : uncreated
-      ? "もう一度作成する"
-      : "もう一度保存する";
   const bodyBytes = inputCheckOf(state.draft).bodyBytes;
   const nulInBody = inputProblem?.reason === "control_char" && inputProblem.field === "body";
 
@@ -692,129 +690,26 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           {SPOKEN_BY_NOTICE.has(status) ? "" : STATUS_LABELS[status]}
         </span>
 
-        {state.pendingBackup !== null && (
-          <Notice
-            tone="warn"
-            // 通知が重なると本文は畳まれ、見出しだけが残る。どのページの内容かは見出しで分かるようにする
-            title={
-              state.pendingBackup.deletedFrom !== undefined
-                ? "削除されたページで保存できなかった内容があります"
-                : "前回、保存できなかった内容があります"
-            }
-            // 復元か破棄を選ぶまで入力欄は読み取り専用で、選ぶ操作はこの通知の中にしか無い。
-            // 新規ページでは title の autoFocus が先に focus を持つので、打鍵の guard で移らない
-            claimFocus
-            actions={
-              <>
-                <button
-                  type="button"
-                  className="button button-main"
-                  onClick={() => resolveKept(() => session.restoreBackup())}
-                >
-                  {state.pendingBackup.deletedFrom !== undefined
-                    ? "新しいページとして作る"
-                    : "残った内容に戻す"}
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => resolveKept(() => session.discardBackup())}
-                >
-                  残った内容を破棄する
-                </button>
-              </>
-            }
-          >
-            {state.pendingBackup.deletedFrom !== undefined ? (
-              // 文字列を 1 つにするのは、JSX の改行が文の間に半角の空白を入れるため
-              <p>
-                {`この端末に残っている「${state.pendingBackup.title}」の内容（${formatTime(state.pendingBackup.savedAt)}）から、新しいページを作れます。`}
-              </p>
-            ) : (
-              <p>
-                {state.pendingBackup.createFailed
-                  ? `作成できなかったページ「${state.pendingBackup.title}」の内容が、この端末に残っています（`
-                  : "保存できなかった内容が、この端末に残っています（"}
-                {formatTime(state.pendingBackup.savedAt)}
-                ）。戻すか破棄すると、編集を続けられます。
-              </p>
-            )}
-          </Notice>
-        )}
+        <KeptBackupNotice
+          backup={state.pendingBackup}
+          onRestore={() => resolveKept(() => session.restoreBackup())}
+          onDiscard={() => resolveKept(() => session.discardBackup())}
+        />
 
-        {state.authLost && (
-          <Notice
-            tone="warn"
-            title={
-              isDirty(state) && state.backupFailed
-                ? "ログインの期限が切れ、内容をこの端末に残せませんでした"
-                : "ログインの期限が切れました"
-            }
-            claimFocus
-            actions={
-              <>
-                <a className="button button-main" href={loginHref(window.location)}>
-                  ログインし直す
-                </a>
-                <button type="button" className="button" onClick={() => void session.retry()}>
-                  {authRetryLabel}
-                </button>
-              </>
-            }
-          >
-            <p>
-              {isDirty(state)
-                ? state.backupFailed
-                  ? `「ログインし直す」で画面を移ると、入力した内容は消えます。先に内容をコピーするか、別のタブでログインし直してから「${authRetryLabel}」を押してください。`
-                  : `未保存の内容は、この端末に残してあります。ログインし直してこのページに戻ると、その内容を戻せます。別のタブでログインし直したときは、「${authRetryLabel}」を押してください。`
-                : "未保存の変更はありません。ログインし直してください。"}
-            </p>
-          </Notice>
-        )}
+        <AuthLostNotice
+          authLost={state.authLost}
+          dirty={isDirty(state)}
+          uncreated={uncreated}
+          backupFailed={state.backupFailed}
+          onRetry={() => void session.retry()}
+        />
 
-        {state.gone && (
-          <Notice
-            tone="error"
-            title={
-              goneUnkept
-                ? "このページは削除され、内容をこの端末に残せませんでした"
-                : "このページは削除されました"
-            }
-            actions={
-              <>
-                {/* 退避できなかった内容は画面にしか無く、新規作成の画面へ移っても戻らないので案内しない */}
-                {state.deletedKept && !goneUnkept && (
-                  <button
-                    type="button"
-                    className="button button-main"
-                    onClick={() => openNewPage()}
-                  >
-                    新しいページとして作る
-                  </button>
-                )}
-                <a
-                  className={state.deletedKept && !goneUnkept ? "button" : "button button-main"}
-                  href={homeHref()}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    navigate(homeHref());
-                  }}
-                >
-                  一覧へ戻る
-                </a>
-              </>
-            }
-          >
-            <p>
-              別の場所で削除されたため、編集できません。
-              {goneUnkept
-                ? "入力した内容は、この画面にしか残っていません。画面を離れる前に、内容をコピーしてください。"
-                : state.deletedKept
-                  ? "保存できなかった内容は、この端末に残してあります。新しいページとして作り直せます。"
-                  : ""}
-            </p>
-          </Notice>
-        )}
+        <GoneNotice
+          gone={state.gone}
+          dirty={isDirty(state)}
+          backupFailed={state.backupFailed}
+          deletedKept={state.deletedKept}
+        />
 
         {/* 再送を待つ間の focus の置き場。進行の通知は上端の保存の状態が見えていると出ず、再び失敗した後も
             ボタンが押せるようになるまで置き場が要るので、通知とは別に置く。中身を空にするのは、保存の状態や
