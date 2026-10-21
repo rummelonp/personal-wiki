@@ -21,6 +21,7 @@ import {
 import { extractBlockIds, findHeadingOffset } from "@personal-wiki/markdown";
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { bodyScrollAnchor } from "./body-scroll-anchor";
+import { holdsFocus } from "./focus-reveal";
 import { NOTICE_CARET_GAP, NOTICE_DOCK_RESIZE, noticeDockRect } from "./notice-dock";
 import type { PageFragment } from "./page-fragment";
 import { tagHref } from "./route";
@@ -324,7 +325,7 @@ export function BodyEditor({
   useEffect(() => {
     const reveal = () => {
       const editor = view.current;
-      if (editor === null || !editor.hasFocus) return;
+      if (editor === null || !holdsFocus(editor)) return;
       dispatchWhenSettled(editor, revealKey, () => {
         if (!caretUnderNoticeDock(editor)) return;
         editor.dispatch({

@@ -394,6 +394,7 @@ describe("通知のドック", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     dock?.remove();
     dock = null;
     window.scrollTo(0, 0);
@@ -430,6 +431,22 @@ describe("通知のドック", () => {
     act(() => v.focus());
     const at = offsetNearBottom(v);
     v.dispatch({ selection: { anchor: at } });
+    showDock();
+    await vi.waitFor(() => {
+      const bottom = v.coordsAtPos(at)?.bottom ?? Number.NaN;
+      expect(bottom).toBeLessThanOrEqual(window.innerHeight - DOCK_HEIGHT - NOTICE_CARET_GAP);
+    });
+  });
+
+  it("窓が背面で view.hasFocus が false でも、view に focus があればドックの上へ逃がす", async () => {
+    const { view } = controlled(body);
+    const v = view();
+    act(() => v.focus());
+    const at = offsetNearBottom(v);
+    v.dispatch({ selection: { anchor: at } });
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    expect(v.hasFocus).toBe(false);
+    expect(v.root.activeElement).toBe(v.contentDOM);
     showDock();
     await vi.waitFor(() => {
       const bottom = v.coordsAtPos(at)?.bottom ?? Number.NaN;
