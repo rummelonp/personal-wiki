@@ -1,6 +1,6 @@
 import type { AttachmentUrlResolver } from "@personal-wiki/editor";
 import { Backlinks } from "./Backlinks";
-import { type EditorState, isReadOnly, type RestoreOutcome } from "./editor-session";
+import type { EditorState, RestoreOutcome } from "./editor-session";
 import { formatTime } from "./format";
 import type { OutlineItem } from "./heading-outline";
 import { Outline } from "./Outline";
@@ -11,16 +11,23 @@ import { RevisionHistory } from "./RevisionHistory";
  * 保存中も押せる。本文の編集中に押すと mousedown の blur が保存を始めるので、保存中を
  * disabled にすると mouseup の時点で押せなくなり、クリックが届かない
  */
-const canDelete = (state: EditorState, pendingDelete: boolean) =>
-  (state.busy === null || state.busy === "saving") &&
-  !pendingDelete &&
-  !state.gone &&
-  !state.authLost &&
-  state.conflict === null &&
-  state.pendingBackup === null;
+const canDelete = ({
+  busy,
+  authLost,
+  readOnly,
+  pendingDelete,
+}: Pick<EditorRailProps, "busy" | "authLost" | "readOnly" | "pendingDelete">) =>
+  (busy === null || busy === "saving") && !pendingDelete && !authLost && !readOnly;
 
 interface EditorRailProps {
-  state: EditorState;
+  uncreated: EditorState["uncreated"];
+  base: EditorState["base"];
+  busy: EditorState["busy"];
+  /** 別の場所で削除された。版の履歴の取得を止める */
+  gone: boolean;
+  authLost: boolean;
+  /** 手元の内容を動かしてはいけない状態（`isReadOnly`）。復元と削除を止める */
+  readOnly: boolean;
   outline: OutlineItem[];
   /** 削除の確認を承認してから、session が削除を終えるまで */
   pendingDelete: boolean;
@@ -32,7 +39,12 @@ interface EditorRailProps {
 
 /** 編集の画面の右の列（見出しの一覧、バックリンク、日時、版の履歴、削除）。 */
 export function EditorRail({
-  state,
+  uncreated,
+  base,
+  busy,
+  gone,
+  authLost,
+  readOnly,
   outline,
   pendingDelete,
   resolveAttachmentUrl,
@@ -40,8 +52,7 @@ export function EditorRail({
   onRestoreRevision,
   onDelete,
 }: EditorRailProps) {
-  const { uncreated, base } = state;
-  const deleting = state.busy === "deleting" || pendingDelete;
+  const deleting = busy === "deleting" || pendingDelete;
   return (
     <>
       <Outline items={outline} onJump={onJump} />
@@ -61,9 +72,9 @@ export function EditorRail({
           pageId={base.id}
           pageVersion={base.version}
           updatedAt={base.updatedAt}
-          paused={state.gone}
+          paused={gone}
           resolveAttachmentUrl={resolveAttachmentUrl}
-          canRestore={!isReadOnly(state) && !state.authLost && !deleting}
+          canRestore={!readOnly && !authLost && !deleting}
           onRestore={onRestoreRevision}
         />
       )}
@@ -73,7 +84,7 @@ export function EditorRail({
           <button
             type="button"
             className="button button-quiet button-danger"
-            disabled={!canDelete(state, pendingDelete)}
+            disabled={!canDelete({ busy, authLost, readOnly, pendingDelete })}
             onClick={onDelete}
           >
             {deleting ? "削除中…" : "このページを削除"}

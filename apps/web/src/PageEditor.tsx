@@ -539,7 +539,12 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     <RailLayout
       rail={
         <EditorRail
-          state={state}
+          uncreated={state.uncreated}
+          base={state.base}
+          busy={state.busy}
+          gone={state.gone}
+          authLost={state.authLost}
+          readOnly={readOnly}
           outline={outline}
           pendingDelete={pendingDelete}
           resolveAttachmentUrl={attachmentUrl}
