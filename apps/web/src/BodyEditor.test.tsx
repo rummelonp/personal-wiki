@@ -583,7 +583,15 @@ describe("jumpToFragment", () => {
     ).join("\n");
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled(body, { ref });
-    act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "見出し 1990" }));
+    // 先読みの解析は時間の上限で打ち切られる。見るのは移す前に解析することなので、Date.now を止めて
+    // 機械の速さに左右されないようにする。作るときの解析まで止めると先読みが無くても装飾されるので、
+    // 作った後に止める
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    try {
+      act(() => ref.current?.jumpToFragment({ kind: "heading", heading: "見出し 1990" }));
+    } finally {
+      now.mockRestore();
+    }
     const v = view();
     // measure を同期に走らせ、背景の解析（idle を待つ）が動く前に、移した先の描画を見る
     v.coordsAtPos(body.indexOf("## 見出し 1990"), 1);

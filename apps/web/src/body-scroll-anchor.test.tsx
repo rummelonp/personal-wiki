@@ -185,7 +185,15 @@ describe("遠くの行へ戻す", () => {
     const { doc: text } = view.state;
     let target = text.lineAt(text.length / 2);
     while (!target.text.startsWith("## ")) target = text.line(target.number + 1);
-    expect(bodyScrollAnchor(view).apply({ offset: target.from, delta: 0 })).toBe(true);
+    // 先読みの解析は時間の上限で打ち切られる。見るのは戻す前に解析することなので、Date.now を止めて
+    // 機械の速さに左右されないようにする。作るときの解析まで止めると先読みが無くても装飾されるので、
+    // 作った後に止める
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    try {
+      expect(bodyScrollAnchor(view).apply({ offset: target.from, delta: 0 })).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
     // measure を同期に走らせ、背景の解析（idle を待つ）が動く前に、移した先の描画を見る
     view.coordsAtPos(target.from, 1);
     const line = [...view.contentDOM.querySelectorAll(".cm-line")].find(
