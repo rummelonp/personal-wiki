@@ -1,3 +1,4 @@
+import type { Locator } from "@playwright/test";
 import { expect, test, uniqueTitle } from "./support/fixtures";
 import { lineTexts } from "./support/line-breaks";
 
@@ -9,6 +10,12 @@ import { lineTexts } from "./support/line-breaks";
 // 折り返しの途中で切れてはいけない語。タグの中で 1 度ずつ使う
 const WORDS = ["並び順", "ボタン", "見出し", "狭めた", "折り返し", "確かめる", "さらに"];
 const TAG = `${WORDS.join("と")}のタグ`;
+
+async function topOf(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  expect(box, "要素の箱を取れない").not.toBeNull();
+  return (box as { y: number }).y;
+}
 
 test("長いタグの見出しは、どの幅でも語の途中で折り返さない @widths", async ({
   page,
@@ -23,6 +30,9 @@ test("長いタグの見出しは、どの幅でも語の途中で折り返さ�
 
   const head = page.locator(".list-head");
   const sort = page.getByRole("button", { name: /^並び順: / });
+  // 起動中のスケルトンも同じ見出しを出す（並び順のボタンは aria-hidden の枠）。本物の画面に替わると .list-head が
+  // 作り直されて幅の指定が消えるので、ボタンが見えてから振り始める
+  await expect(sort).toBeVisible();
   // 見出しの 1 行に収まる語（4 字）が収まらない幅は振らない。1 行より長い語は、折り返しが語の中に入る
   for (let width = 220; width <= 640; width += 7) {
     await head.evaluate((element, w) => {
@@ -43,8 +53,8 @@ test("長いタグの見出しは、どの幅でも語の途中で折り返さ�
       expect(inside, `${width}px で「${word}」が折れる: ${rows.join(" | ")}`).toEqual([]);
     }
     // 折り返しても、並び順のボタンは見出しの 1 行目の右に残る
-    const top = (await heading.boundingBox())?.y ?? Number.NaN;
-    const buttonTop = (await sort.boundingBox())?.y ?? Number.NaN;
+    const top = await topOf(heading);
+    const buttonTop = await topOf(sort);
     expect(Math.abs(buttonTop - top), `${width}px でボタンが 1 行目から離れている`).toBeLessThan(4);
   }
 });
