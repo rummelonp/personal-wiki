@@ -36,7 +36,6 @@ import {
   type FailedOp,
   holdsBack,
   inputCheckOf,
-  inputProblemsOf,
   isDirty,
   isReadOnly,
   type SaveStatus,
@@ -56,6 +55,7 @@ import { findLinkedDrafts } from "./linked-drafts";
 import { Notice } from "./Notice";
 import { openNewPage, registerNewPageScreen } from "./new-page";
 import { InlineOutline } from "./Outline";
+import { canChangeVisibility, shownInputProblems } from "./page-editor-state";
 import { hashOfLink } from "./page-fragment";
 import { rememberTitle } from "./page-titles";
 import {
@@ -292,14 +292,6 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
   const status = saveStatusOf(state);
   const readOnly = isReadOnly(state);
   const idle = state.busy === null;
-  // 保存中も押せる。本文の編集中に公開の操作を押すと、mousedown の blur が保存を始めるので、保存中を
-  // disabled にすると mouseup の時点で押せなくなり、クリックが届かない。session は切り替えを保存の後ろに
-  // 並べ、保存で進んだ版に対して送る。切り替えの番が来たときに手元が未保存なら、保存をもう一度送る
-  // （通信の失敗で終わった保存もここで送り直す）。それが通れば切り替えを送り、409 や 401 を含め
-  // 保存できなければ切り替えない
-  const canChangeVisibility =
-    (idle || state.busy === "saving") &&
-    (status === "saved" || status === "unsaved" || status === "saving");
   const outline = useMemo(() => extractOutline(state.draft.body), [state.draft.body]);
   const [linkTargets] = useState(() => createLinkTargetSource(findWithSignal));
   const [links] = useState(() => createWikiLinks({ pageId: () => session.getState().base.id }));
@@ -594,8 +586,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
     else if ((await session.remove()) && mounted.current) navigate(homeHref());
   }
 
-  // 保存済みのままの内容は送らないので、問題があっても手を付けるまでは知らせない
-  const inputProblems = uncreated || isDirty(state) ? inputProblemsOf(state.draft) : [];
+  const inputProblems = shownInputProblems(state);
   const inputProblem = inputProblems[0];
   const createFailure = shownFailure?.kind === "create" ? shownFailure : null;
   const failureNoticeProps = {
@@ -789,7 +780,7 @@ export function PageEditor({ page, newTitle = "", attachments = false, onShown }
           {!uncreated && (
             <VisibilityControl
               visibility={savedVisibility}
-              disabled={!canChangeVisibility || state.pendingBackup !== null}
+              disabled={!canChangeVisibility(state, status) || state.pendingBackup !== null}
               externalBases={state.externalBases}
               pending={pendingVisibility}
               onChange={changeVisibility}
