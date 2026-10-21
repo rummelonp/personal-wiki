@@ -1,5 +1,5 @@
 import type { ListSort } from "@personal-wiki/domain/list-sort";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 import { EmptyState } from "./EmptyState";
 import { EntryList, type EntryTime } from "./EntryRow";
 import { rememberEntryShape } from "./entry-shape";
@@ -11,6 +11,7 @@ import { useListSort } from "./list-sort";
 import { Notice } from "./Notice";
 import { openNewPage } from "./new-page";
 import { preloadPageViewWhenIdle } from "./page-view-loader";
+import type { TagCount } from "./pages-api";
 import { breakAtPhrases } from "./phrase-wrap";
 import { RailLayout } from "./Rail";
 import { homeHref, tagHref, type VisibilityFilter } from "./route";
@@ -18,7 +19,7 @@ import { SignInNotice } from "./SignInNotice";
 import { useRestoreScroll } from "./scroll-restore";
 import { TagsPanel, useTags } from "./TagsPanel";
 import { useNow } from "./use-now";
-import { type PreviousList, useEntryList } from "./useEntryList";
+import { type ListState, type PreviousList, useEntryList } from "./useEntryList";
 import { VisibilityFilterPanel } from "./VisibilityFilterPanel";
 
 interface HomeViewProps {
@@ -69,11 +70,7 @@ function PreviousEntries({
   );
 }
 
-/**
- * トップの配置。中央に抜粋付きの一覧、右にタグの一覧を置く。
- * データは useEntryList、行は EntryRow が受け持つので、配置を変えるときはこのファイルだけを直す。
- */
-export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
+function homeFilterOf(query: string, tag: string, visibility: VisibilityFilter, owner: boolean) {
   const trimmed = query.trim();
   const searching = trimmed !== "";
   // 検索 API に tag の絞り込みは無いので、検索中は tag を一覧の取得にも強調にも使わない
@@ -82,7 +79,222 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
   // URL に残っていても絞り込まない
   const ownerVisibility = owner ? visibility : "";
   const effectiveVisibility = searching ? "" : ownerVisibility;
-  const filtered = effectiveTag !== "" || effectiveVisibility !== "";
+  return {
+    trimmed,
+    searching,
+    effectiveTag,
+    ownerVisibility,
+    effectiveVisibility,
+    filtered: effectiveTag !== "" || effectiveVisibility !== "",
+  };
+}
+
+function BackToListLink() {
+  return (
+    <Link className="button" href={homeHref()}>
+      一覧へ戻る
+    </Link>
+  );
+}
+
+interface EmptyEntriesProps {
+  trimmed: string;
+  searching: boolean;
+  filtered: boolean;
+  effectiveTag: string;
+  effectiveVisibility: VisibilityFilter;
+  owner: boolean;
+}
+
+/** 一覧が空のときの案内。検索、絞り込み、何も無い、の 3 種は排他になる（絞り込みは検索中に効かない）。 */
+function EmptyEntries({
+  trimmed,
+  searching,
+  filtered,
+  effectiveTag,
+  effectiveVisibility,
+  owner,
+}: EmptyEntriesProps) {
+  if (searching) {
+    return (
+      <EmptyState
+        title="一致するページがありません"
+        actions={
+          <>
+            {/* 検索語の title で作る入口。匿名は作れないので出さない */}
+            {owner && (
+              <button
+                type="button"
+                className="button button-primary button-wrap button-wrap-quoted"
+                onClick={() => openNewPage({ title: trimmed })}
+              >
+                {`「${trimmed}」を作成`}
+              </button>
+            )}
+            <BackToListLink />
+          </>
+        }
+      />
+    );
+  }
+  if (filtered) {
+    return (
+      <EmptyState
+        title={filteredEmptyTitle(effectiveTag, effectiveVisibility)}
+        actions={<BackToListLink />}
+      />
+    );
+  }
+  return (
+    <EmptyState
+      title={owner ? "ページがまだありません" : "公開されているページはまだありません"}
+      text={owner ? "ヘッダーの「新規作成」から、最初のページを作れます。" : undefined}
+    />
+  );
+}
+
+type ReadyState = Extract<ListState, { status: "ready" }>;
+
+function ReadyEntries({
+  state,
+  now,
+  highlight,
+  owner,
+  visibility,
+  loadMore,
+}: {
+  state: ReadyState;
+  now: number;
+  highlight: string;
+  owner: boolean;
+  visibility: VisibilityFilter;
+  loadMore: () => void;
+}) {
+  return (
+    <>
+      <EntryList
+        entries={state.entries}
+        now={now}
+        highlight={highlight}
+        showVisibility={owner}
+        visibility={visibility}
+        time={entryTimeOf(state.sort)}
+      >
+        {state.loadingMore && <LoadingMoreRows />}
+      </EntryList>
+      {state.next !== null && (
+        // 文字を変えるとボタンの幅が動くので、読み込み中も同じ文字にして、状態は disabled と一覧の末尾のスケルトンで伝える
+        <button type="button" className="button" onClick={loadMore} disabled={state.loadingMore}>
+          さらに表示
+        </button>
+      )}
+    </>
+  );
+}
+
+interface HomeBodyProps extends EmptyEntriesProps {
+  state: ListState;
+  now: number;
+  loadMore: () => void;
+  reload: () => void;
+}
+
+function HomeBody({ state, now, loadMore, reload, ...empty }: HomeBodyProps) {
+  const { owner, effectiveVisibility } = empty;
+  switch (state.status) {
+    case "loading":
+      return state.previous === undefined ? (
+        <SkeletonEntries />
+      ) : (
+        <PreviousEntries
+          previous={state.previous}
+          now={now}
+          showVisibility={owner}
+          visibility={effectiveVisibility}
+        />
+      );
+    case "query_too_short":
+      return (
+        <EmptyState
+          role="status"
+          title={`${state.min}文字以上で検索してください`}
+          actions={<BackToListLink />}
+        />
+      );
+    case "invalid_query":
+      return (
+        <EmptyState
+          role="status"
+          title="この検索語では検索できません"
+          text={state.message}
+          actions={<BackToListLink />}
+        />
+      );
+    case "error":
+      return (
+        <Notice
+          inline
+          tone="error"
+          title="一覧を取得できませんでした"
+          actions={
+            <button type="button" className="button button-main" onClick={reload}>
+              再読み込み
+            </button>
+          }
+        >
+          <p>{state.message}</p>
+        </Notice>
+      );
+    case "ready":
+      return state.entries.length === 0 ? (
+        <EmptyEntries {...empty} />
+      ) : (
+        <ReadyEntries
+          state={state}
+          now={now}
+          highlight={empty.searching ? empty.trimmed : ""}
+          owner={owner}
+          visibility={effectiveVisibility}
+          loadMore={loadMore}
+        />
+      );
+    case "unauthorized":
+      return null;
+  }
+}
+
+/**
+ * 右の列の中身。公開範囲の欄とタグの欄のどちらも無いときは null を返し、列ごと出さない。
+ * RailLayout は null かどうかで列を出すか決めるので、コンポーネントにはしない。
+ */
+function homeRailOf({
+  tags,
+  showVisibilityFilter,
+  tag,
+  visibility,
+}: {
+  tags: TagCount[] | null;
+  showVisibilityFilter: boolean;
+  tag: string;
+  visibility: VisibilityFilter;
+}): ReactNode {
+  if (tags === null && !showVisibilityFilter) return null;
+  // 公開範囲の欄を先頭に置く。タグの数で長さが変わる欄より下に置くと、欄の位置が動く
+  return (
+    <>
+      {showVisibilityFilter && <VisibilityFilterPanel tag={tag} active={visibility} />}
+      {tags !== null && <TagsPanel tags={tags} active={tag} visibility={visibility} />}
+    </>
+  );
+}
+
+/**
+ * トップの配置。中央に抜粋付きの一覧、右にタグの一覧を置く。
+ * データは useEntryList、行は EntryRow が受け持つので、配置を変えるときはこのファイルだけを直す。
+ */
+export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
+  const { trimmed, searching, effectiveTag, ownerVisibility, effectiveVisibility, filtered } =
+    homeFilterOf(query, tag, visibility, owner);
   const [sort, setSort] = useListSort();
   const { state, loadMore, reload } = useEntryList({
     query: trimmed,
@@ -110,12 +322,6 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
 
   if (state.status === "unauthorized") return <SignInNotice expired />;
 
-  const backToList = (
-    <Link className="button" href={homeHref()}>
-      一覧へ戻る
-    </Link>
-  );
-
   const heading = listHeading(trimmed, tag, ownerVisibility, sort);
   // 検索中は公開範囲で絞れず、欄のリンクを押すと検索語も落ちるので出さない
   const showVisibilityFilter = owner && !searching;
@@ -123,19 +329,12 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
 
   return (
     <RailLayout
-      rail={
-        tags === null && !showVisibilityFilter ? null : (
-          // 公開範囲の欄を先頭に置く。タグの数で長さが変わる欄より下に置くと、欄の位置が動く
-          <>
-            {showVisibilityFilter && (
-              <VisibilityFilterPanel tag={effectiveTag} active={effectiveVisibility} />
-            )}
-            {tags !== null && (
-              <TagsPanel tags={tags} active={effectiveTag} visibility={effectiveVisibility} />
-            )}
-          </>
-        )
-      }
+      rail={homeRailOf({
+        tags,
+        showVisibilityFilter,
+        tag: effectiveTag,
+        visibility: effectiveVisibility,
+      })}
     >
       {busy && (
         <LoadingStatus
@@ -153,101 +352,18 @@ export function HomeView({ query, tag, visibility, owner }: HomeViewProps) {
             <Link href={tagHref(tag)}>タグ「{tag}」のページを見る</Link>
           </p>
         )}
-        {state.status === "loading" && state.previous === undefined && <SkeletonEntries />}
-        {state.status === "loading" && state.previous !== undefined && (
-          <PreviousEntries
-            previous={state.previous}
-            now={now}
-            showVisibility={owner}
-            visibility={effectiveVisibility}
-          />
-        )}
-        {state.status === "query_too_short" && (
-          <EmptyState
-            role="status"
-            title={`${state.min}文字以上で検索してください`}
-            actions={backToList}
-          />
-        )}
-        {state.status === "invalid_query" && (
-          <EmptyState
-            role="status"
-            title="この検索語では検索できません"
-            text={state.message}
-            actions={backToList}
-          />
-        )}
-        {state.status === "error" && (
-          <Notice
-            inline
-            tone="error"
-            title="一覧を取得できませんでした"
-            actions={
-              <button type="button" className="button button-main" onClick={reload}>
-                再読み込み
-              </button>
-            }
-          >
-            <p>{state.message}</p>
-          </Notice>
-        )}
-        {state.status === "ready" && state.entries.length === 0 && searching && (
-          <EmptyState
-            title="一致するページがありません"
-            actions={
-              <>
-                {/* 検索語の title で作る入口。匿名は作れないので出さない */}
-                {owner && (
-                  <button
-                    type="button"
-                    className="button button-primary button-wrap button-wrap-quoted"
-                    onClick={() => openNewPage({ title: trimmed })}
-                  >
-                    {`「${trimmed}」を作成`}
-                  </button>
-                )}
-                {backToList}
-              </>
-            }
-          />
-        )}
-        {state.status === "ready" && state.entries.length === 0 && filtered && (
-          <EmptyState
-            title={filteredEmptyTitle(effectiveTag, effectiveVisibility)}
-            actions={backToList}
-          />
-        )}
-        {state.status === "ready" && state.entries.length === 0 && !searching && !filtered && (
-          <EmptyState
-            title={owner ? "ページがまだありません" : "公開されているページはまだありません"}
-            text={owner ? "ヘッダーの「新規作成」から、最初のページを作れます。" : undefined}
-          />
-        )}
-        {state.status === "ready" && state.entries.length > 0 && (
-          <>
-            <EntryList
-              entries={state.entries}
-              now={now}
-              highlight={searching ? trimmed : ""}
-              showVisibility={owner}
-              visibility={effectiveVisibility}
-              time={entryTimeOf(state.sort)}
-            >
-              {state.loadingMore && <LoadingMoreRows />}
-            </EntryList>
-            {state.next !== null && (
-              // 文字を変えるとボタンの幅が動くので、読み込み中も同じ文字にして、状態は disabled と一覧の末尾のスケルトンで伝える
-              <button
-                type="button"
-                className="button"
-                onClick={loadMore}
-                disabled={state.loadingMore}
-              >
-                さらに表示
-              </button>
-            )}
-          </>
-        )}
+        <HomeBody
+          state={state}
+          now={now}
+          loadMore={loadMore}
+          reload={reload}
+          trimmed={trimmed}
+          searching={searching}
+          filtered={filtered}
+          effectiveTag={effectiveTag}
+          effectiveVisibility={effectiveVisibility}
+          owner={owner}
+        />
       </div>
     </RailLayout>
   );
