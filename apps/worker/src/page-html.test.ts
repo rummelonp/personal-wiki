@@ -663,6 +663,18 @@ describe("D1 や ASSETS の失敗", () => {
     }
   });
 
+  it("HEAD は D1 が失敗していても、ASSETS が読めれば 200 を返す", async () => {
+    const head = await createApp().request(
+      "/",
+      { method: "HEAD", headers: { Accept: HTML_ACCEPT } },
+      { ...ownerEnv(), ASSETS: assets, DB: failingDb },
+    );
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("Cache-Control")).toBe("no-cache");
+    expect(head.headers.get("X-Robots-Tag")).toBeNull();
+  });
+
   const brokenAssets = {
     fetch: async (input: RequestInfo | URL) => {
       const { pathname } = new URL(String(input instanceof Request ? input.url : input));
@@ -874,8 +886,9 @@ describe("トップの HTML", () => {
     );
   });
 
-  it("HEAD は GET と同じステータスとヘッダーで本文を空にし、一覧のために D1 を 1 回引く", async () => {
+  it("HEAD は GET と同じステータスとヘッダーで本文を空にし、D1 を引かない", async () => {
     await seed();
+    const cookie = await ownerCookie(T0);
     const statements: string[] = [];
     const db = new Proxy(env.DB, {
       get(target, prop) {
@@ -889,23 +902,29 @@ describe("トップの HTML", () => {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const request = (method: string) =>
-      createApp().request(
-        "/",
-        { method, headers: { Accept: HTML_ACCEPT } },
-        { ...ownerEnv(), ASSETS: assets, DB: db },
-      );
+    for (const [label, extra] of [
+      ["匿名", {}],
+      ["owner", { Cookie: cookie }],
+    ] as const) {
+      const request = (method: string) =>
+        createApp().request(
+          "/",
+          { method, headers: { Accept: HTML_ACCEPT, ...extra } },
+          { ...ownerEnv(), ASSETS: assets, DB: db },
+        );
 
-    const get = await request("GET");
-    expect(rootListOf(await get.text())?.links).toHaveLength(1);
-    expect(statements).toHaveLength(1);
+      statements.length = 0;
+      const get = await request("GET");
+      expect(rootListOf(await get.text())?.links, label).toHaveLength(1);
+      expect(statements, label).toHaveLength(1);
 
-    statements.length = 0;
-    const head = await request("HEAD");
-    expect(head.status).toBe(200);
-    expect(Object.fromEntries(head.headers)).toEqual(Object.fromEntries(get.headers));
-    expect(await head.text()).toBe("");
-    expect(statements).toHaveLength(1);
+      statements.length = 0;
+      const head = await request("HEAD");
+      expect(head.status, label).toBe(200);
+      expect(Object.fromEntries(head.headers), label).toEqual(Object.fromEntries(get.headers));
+      expect(await head.text(), label).toBe("");
+      expect(statements, label).toHaveLength(0);
+    }
   });
 
   it("予約語と重なる title は /p/<id> へ、/ を含む title は %2F の URL へリンクする", async () => {

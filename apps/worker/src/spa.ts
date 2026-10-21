@@ -53,8 +53,19 @@ function unavailable(index: Response): Response {
  * Accept では分けない。一覧を読ませたい AI のエージェントやクローラーは、Accept が無いか任意の型だけのことがある。
  * 応答の本文は D1 の中身で変わり、index.html の ETag では同じ応答かを表せない。そのため index.html は
  * 条件付きリクエストのヘッダーを付けずに取り、ETag を外して返す。ASSETS の 304 を通すと、一覧の古い応答が使われ続ける。
+ *
+ * HEAD は一覧を引かず、GET と同じステータスとヘッダーで本文の無い応答を返す。死活監視が打つたびに
+ * D1 の読み取りの行数を使わないため。ヘッダーは一覧に依存しないので GET と食い違わない（Content-Length と
+ * ETag は GET も付けない）。代わりに、HEAD は D1 の失敗を映さない。D1 が失敗すると GET は 503、no-store、
+ * noindex になるが、HEAD は ASSETS が読めれば 200 のまま、GET の成功時と同じヘッダーを返す。
  */
-async function rootHtml(env: Bindings, url: URL): Promise<Response> {
+async function rootHtml(env: Bindings, url: URL, method: string): Promise<Response> {
+  if (method === "HEAD") {
+    const index = await env.ASSETS.fetch(new URL("/", url));
+    if (!index.ok) return withHtmlHeaders(index);
+    await index.body?.cancel();
+    return rootResponse(new Response(null, { status: index.status, headers: index.headers }));
+  }
   const lookup = settle<PublicPageEntry[]>(
     listPublicPages(env.DB, { limit: ROOT_PAGE_LIST_LIMIT }),
     "spa.root_list_failed",
@@ -63,18 +74,22 @@ async function rootHtml(env: Bindings, url: URL): Promise<Response> {
   if (!index.ok) return withHtmlHeaders(index);
   const result = await lookup;
   if (!result.ok) return unavailable(index);
-  const res = withHtmlHeaders(
+  return rootResponse(
     rewriteRootHtml(index, {
       siteName: siteNameOf(env),
       description: siteDescriptionOf(env),
       pages: result.value,
       origin: url.origin,
     }),
-    { indexable: true },
   );
-  res.headers.delete("ETag");
-  res.headers.delete("Content-Length");
-  return res;
+}
+
+/** GET と HEAD のヘッダーを 1 か所で作り、片方にだけヘッダーを足して食い違うのを防ぐ。 */
+function rootResponse(res: Response): Response {
+  const out = withHtmlHeaders(res, { indexable: true });
+  out.headers.delete("ETag");
+  out.headers.delete("Content-Length");
+  return out;
 }
 
 /**
@@ -124,7 +139,7 @@ async function findPageWithLinks(
  *   token だけで、その応答は resolvePrincipal が private, no-store にするが、写しが出回っても索引に載せない
  * - 書き換えたレスポンスと 404 は index.html と中身が違うので、ASSETS の ETag と Content-Length を外す
  * - D1 の検索が失敗したら、書き換えない index.html を 503 で返す。500 にすると SPA が起動できず、
- *   200 にするとメタ情報の無いページがインデックスに載る。2 の一覧の失敗も 503 にする。一覧の無い 200 だと、
+ *   200 にするとメタ情報の無いページがインデックスに載る。2 の一覧の失敗も 503 にする（HEAD は一覧を引かないので除く）。一覧の無い 200 だと、
  *   JS を実行しない読み手は public のページが 1 つも無いと読み、検索エンジンもその版を覚える。
  *   ページのリンク先の失敗も 503 にする。一覧の無い 200 だと、索引がリンクの欠けた版を覚え、リンク先を
  *   見つけ直すのが次の巡回まで遅れる。D1 の失敗はページの行の読み取りと同時に起きやすいので、本文まで
@@ -134,7 +149,7 @@ export function registerSpaRoutes(app: Hono<AppEnv>) {
   return app.get("*", allowAnonymous(), async (c, next) => {
     if (isWorkerPath(c.req.path)) return next();
     const url = new URL(c.req.url);
-    if (url.pathname === "/" && url.search === "") return rootHtml(c.env, url);
+    if (url.pathname === "/" && url.search === "") return rootHtml(c.env, url, c.req.method);
     const asset = await c.env.ASSETS.fetch(c.req.raw);
     if (asset.status !== 404) return withHtmlHeaders(asset);
     await asset.body?.cancel();
