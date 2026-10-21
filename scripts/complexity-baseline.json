@@ -6,7 +6,6 @@
     "apps/web/src/App.tsx:App": [17],
     "apps/web/src/PageEditor.tsx:PageEditor": [103],
     "apps/web/src/PageEditor.tsx:PageEditor > <anonymous>": [20],
-    "apps/web/src/PageView.tsx:PageView": [26],
     "apps/web/src/editor-session.ts:handleFailure": [32],
     "apps/web/src/editor-session.ts:saveStatusOf": [16],
     "apps/web/src/heading-outline.ts:extractOutline": [24],

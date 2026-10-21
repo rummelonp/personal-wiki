@@ -1,34 +1,26 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setDocumentTitle } from "./document-title";
-import { discardInitialPage, initialPageFor } from "./initial-page";
+import { discardInitialPage } from "./initial-page";
 import { PageSkeleton } from "./Loading";
 import { MissingPage, NotFound } from "./NotFound";
 import { Notice } from "./Notice";
 import { consumeNewPageTitle, markNewPageCreated } from "./new-page";
 import { PageEditor } from "./PageEditor";
 import { PageReader } from "./PageReader";
-import { loadingTitleFor, recallTitle, rememberTitle } from "./page-titles";
+import { rememberTitle } from "./page-titles";
 import {
-  failureMessage,
-  findPageByTitle,
-  getPage,
-  LOAD_FAILED,
-  type Page,
-  type PageSummary,
-} from "./pages-api";
+  initialStateFor,
+  loadingTitleOf,
+  loadStateFrom,
+  type PageTarget,
+  type PageViewState,
+  targetKeyOf,
+} from "./page-view-state";
+import { findPageByTitle, getPage, type PageSummary } from "./pages-api";
 import { RailLayout } from "./Rail";
 import { navigate, pageHrefFor, parseRoute } from "./route";
 import { SignInNotice } from "./SignInNotice";
 import { useRestoreScrollAfterMount } from "./scroll-restore";
-
-/**
- * ページの URL が指すもの。`/p/<id>` は id、`/<title>` は title で引く。`/?new` はまだ作っていない
- * ページで、serial と title は新規作成の画面を開いた 1 回分（NewPageRequest）。
- */
-export type PageTarget =
-  | { by: "id"; id: string }
-  | { by: "title"; title: string }
-  | { by: "new"; serial: number; title: string };
 
 /**
  * 今のアドレスバーが target と同じページを指すか。新規作成は serial を見ない
@@ -45,15 +37,6 @@ function locationTargets(target: PageTarget): boolean {
       return route.name === "new";
   }
 }
-
-type State =
-  | { status: "loading" }
-  | { status: "ready"; page: Page }
-  | { status: "new"; serial: number; title: string }
-  /** settled は、title の URL の空のページで被リンクの最初の取得が済んだか */
-  | { status: "not_found"; settled: boolean }
-  | { status: "unauthorized" }
-  | { status: "error"; message: string };
 
 interface PageViewProps {
   target: PageTarget;
@@ -86,21 +69,12 @@ interface PageViewProps {
  * 作る前の編集の画面をそのまま使い続ける。
  */
 export function PageView({ target, owner, attachments, onOpenPage }: PageViewProps) {
-  const [state, setState] = useState<State>(() => {
-    if (target.by === "new") return { status: "new", serial: target.serial, title: target.title };
-    const initial = initialPageFor(target);
-    return initial === null ? { status: "loading" } : { status: "ready", page: initial };
-  });
+  const [state, setState] = useState<PageViewState>(() => initialStateFor(target));
   /** 取得の失敗から再読み込みで取り直すたびに進める */
   const [attempt, setAttempt] = useState(0);
   /** 表示中のページの正の URL のパス。アドレスバーがこれと同じなら、ルートが変わっても取り直さない */
   const shownPath = useRef<string | null>(null);
-  const targetKey =
-    target.by === "id"
-      ? `id:${target.id}`
-      : target.by === "title"
-        ? `title:${target.title}`
-        : `new:${target.serial}`;
+  const targetKey = targetKeyOf(target);
   /**
    * HTML に入っていたページで表示した target。この target の間は取得しない。StrictMode が effect を
    * 2 度動かしても取得しないよう、target が変わるまで残す。
@@ -138,11 +112,7 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
     setState({ status: "loading" });
     const request = target.by === "id" ? getPage(target.id) : findPageByTitle(target.title);
     void request.then((res) => {
-      if (cancelled) return;
-      if (res.ok) setState({ status: "ready", page: res.value });
-      else if (res.reason === "not_found") setState({ status: "not_found", settled: false });
-      else if (res.reason === "unauthorized") setState({ status: "unauthorized" });
-      else setState({ status: "error", message: failureMessage(res, LOAD_FAILED) });
+      if (!cancelled) setState(loadStateFrom(res));
     });
     return () => {
       cancelled = true;
@@ -164,6 +134,8 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
     if (state.status !== "ready") setDocumentTitle(missingTitle);
   }, [state.status, missingTitle]);
 
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
   const settleMissing = useCallback(() => {
     setState((current) =>
       current.status === "not_found" && !current.settled ? { ...current, settled: true } : current,
@@ -171,7 +143,7 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
   }, []);
 
   const show = useCallback(
-    (page: Pick<PageSummary, "id" | "title" | "visibility">) => {
+    (page: ShownPage) => {
       // 子が表示を伝える effect は、開いた直後の戻るでアドレスバーが前の画面へ移った後に遅れて届くことがある。
       // そのまま置き換えると、戻った先の履歴のエントリをこのページの URL で上書きし、前の画面へ戻れなくなる
       if (window.location.pathname !== shownPath.current && !locationTargets(shownTarget.current)) {
@@ -192,25 +164,57 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
 
   const newSerial = state.status === "new" ? state.serial : null;
   const showCreated = useCallback(
-    (page: Pick<PageSummary, "id" | "title" | "visibility">) => {
+    (page: ShownPage) => {
       if (newSerial !== null) markNewPageCreated(newSerial);
       show(page);
     },
     [newSerial, show],
   );
 
+  return (
+    <PageViewBody
+      state={state}
+      target={target}
+      owner={owner}
+      attachments={attachments}
+      show={show}
+      showCreated={showCreated}
+      settleMissing={settleMissing}
+      retry={retry}
+    />
+  );
+}
+
+type ShownPage = Pick<PageSummary, "id" | "title" | "visibility">;
+
+interface PageViewBodyProps {
+  state: PageViewState;
+  target: PageTarget;
+  owner: boolean;
+  attachments: boolean;
+  show: (page: ShownPage) => void;
+  showCreated: (page: ShownPage) => void;
+  settleMissing: () => void;
+  retry: () => void;
+}
+
+/** 状態ごとの画面。key はページの id か新規作成の serial で決め、同じページの間はエディタも閲覧も作り直さない。 */
+function PageViewBody({
+  state,
+  target,
+  owner,
+  attachments,
+  show,
+  showCreated,
+  settleMissing,
+  retry,
+}: PageViewBodyProps) {
   if (target.by === "new" && !owner) return <SignInNotice />;
   switch (state.status) {
     case "loading":
       return (
         <PageSkeleton
-          title={
-            target.by === "title"
-              ? loadingTitleFor(target.title)
-              : target.by === "id"
-                ? recallTitle(target.id)
-                : undefined
-          }
+          title={loadingTitleOf(target)}
           visibilityPill={owner && target.by !== "new"}
         />
       );
@@ -230,11 +234,7 @@ export function PageView({ target, owner, attachments, onOpenPage }: PageViewPro
             tone="error"
             title="ページを取得できませんでした"
             actions={
-              <button
-                type="button"
-                className="button button-main"
-                onClick={() => setAttempt((n) => n + 1)}
-              >
+              <button type="button" className="button button-main" onClick={retry}>
                 再読み込み
               </button>
             }
