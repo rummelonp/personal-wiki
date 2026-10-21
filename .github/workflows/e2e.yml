@@ -1,0 +1,77 @@
+name: E2E
+
+# 手で起動する（gh workflow run e2e.yml -R rummelonp/personal-wiki）。
+# workflow_dispatch は、既定ブランチにこのファイルがあるときだけ起動できる。
+# 既定ブランチにあれば、--ref <ブランチ> で push した作業ブランチの版も流せる。
+# 速さの計測（perf-* の project）は、予算が 1 台の機械の値なので手元の pnpm e2e:full だけで流す。
+on:
+  workflow_dispatch:
+    inputs:
+      specs:
+        description: "絞り込む spec のパスや正規表現（空白区切り。空なら全部）"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    # 4 vCPU で 5 つの project を流す見積もりは 15〜25 分。詰まったときに待ち続けないよう、
+    # 倍近い値で打ち切る
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # pnpm のバージョンは package.json の packageManager から読まれる
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: playwright
+        run: echo "version=$(pnpm --filter @personal-wiki/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-e2e-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # cache が当たってもブラウザが使う OS のライブラリは入れ直す必要があるので、毎回実行する。
+      # ブラウザ本体は入っていればダウンロードを飛ばす
+      - run: pnpm --filter @personal-wiki/web exec playwright install --with-deps chromium webkit firefox
+      # --with-deps が入れる日本語のフォントは IPA Gothic などで、theme.css の font stack が
+      # 名指しする Noto（明朝を含む）が無い。無いと見出しの明朝もゴシックに落ち、折り返しや文字の幅を
+      # 測るテストが手元とさらにずれる
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      # Playwright には project を除く指定が無いので、apps/web/playwright.config.ts の perf-* 以外を
+      # 並べる。project を足したらここにも足す。
+      # specs は env 経由で渡し、シェルの構文としては解釈させない（空白で分けるだけで、glob は展開しない）。
+      # Playwright は -- の後の引数を絞り込みに使わないので、-- で option と分けることはできない
+      - name: Run E2E
+        env:
+          E2E_SPECS: ${{ inputs.specs }}
+        run: |
+          set -f
+          pnpm --filter @personal-wiki/web exec playwright test \
+            --project=chromium-desktop \
+            --project=webkit-iphone \
+            --project=firefox-desktop \
+            --project=chromium-android \
+            --project=webkit-desktop \
+            $E2E_SPECS
+      # 失敗したときの trace とスクリーンショットを後から見られるよう、失敗しても上げる。
+      # timeout-minutes の打ち切りは取り消しとして扱われ、!cancelled() では上がらないので always() にする
+      # （詰まったときこそ trace が要る）
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: e2e-output
+          path: apps/web/e2e-output/
+          retention-days: 14
+          if-no-files-found: warn

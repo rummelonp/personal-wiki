@@ -81,7 +81,14 @@ E2E のポートは既定で 8790（inspector は 9339）。
 
 `pnpm e2e` は主の環境（デスクトップの Chromium と iPhone の WebKit）だけを走らせる。
 従の環境（Firefox、Android の Chromium、デスクトップの WebKit）の smoke と速さの計測（`apps/web/e2e/perf-budget.json` の予算）は `pnpm e2e:full` だけが走らせる。
-CI は E2E を流さないので、master に取り込む前と push の前に `pnpm e2e:full` を流す。
+CI（`ci.yml`）は E2E を流さないので、master に取り込む前と push の前に `pnpm e2e:full` を流す。
+
+GitHub Actions の `e2e.yml` は、速さの計測を除くすべての環境の E2E を Linux で流す。
+push では走らず、手で起動する（`gh workflow run e2e.yml -R rummelonp/personal-wiki`）。
+`workflow_dispatch` で起動できるのは、既定ブランチに `e2e.yml` があるときだけである。
+master にあれば、`--ref <ブランチ>` で push した作業ブランチの版も流せる。
+spec を絞るには `-f specs='e2e/notices.spec.ts'` を付ける。
+結果は artifact の `e2e-output` に残る。
 
 速さの予算は、測った機械での値である。
 機械（CPU、OS など）を変えて予算を外れるようになったら、`pnpm e2e:full` を 2 回流し、`apps/web/e2e-output/perf-<project>.json` の `results` の `median` を指標ごとに見て、大きい方を `measured` に書く。
