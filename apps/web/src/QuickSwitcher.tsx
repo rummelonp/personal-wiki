@@ -1,5 +1,5 @@
 import { parsePagePath } from "@personal-wiki/domain/page-path";
-import { ANONYMOUS_SEARCH_MIN_CHARS, searchQueryLength } from "@personal-wiki/domain/search";
+import { ANONYMOUS_SEARCH_MIN_CHARS } from "@personal-wiki/domain/search";
 import { foldTitle } from "@personal-wiki/domain/title";
 import type { PageCandidate } from "@personal-wiki/editor/page-index";
 import {
@@ -24,32 +24,12 @@ import { openNewPage } from "./new-page";
 import { rememberTitle } from "./page-titles";
 import { listPageTitles } from "./pages-api";
 import { homeHref, navigate, pageHref, parseRoute } from "./route";
+import { buildRows, type Row, rowKey } from "./switcher-rows";
 import { useModalDialog } from "./use-modal-dialog";
 
 const RECENT_LABEL = "最近更新したページ";
 const ROWS_LABEL = "候補と操作";
 const CANDIDATES_FAILED = "候補を取得できません。開き直してください。";
-
-/**
- * 先頭の行が Enter の既定で、選択と Enter の動作を同じ配列から引く。並びは次のとおり。
- * - title が完全に一致するページがあるとき: 候補、「本文から検索」。既定はその完全一致のページ。
- * - 無いとき: 「本文から検索」、候補、「作成」。既定は「本文から検索」。
- * 語を打って Enter しただけで要らないページができないよう、「作成」は既定にせず末尾に置く。
- * 候補の取得に失敗して 1 件も無いときは、title の完全一致を確かめられないので「作成」を出さない。
- * 匿名が本文を検索できる長さに満たない間は、行き止まりの画面へ移さないよう「本文から検索」を出さない。
- * 検索結果の画面で開いて語を消したときは、先頭に「検索を解除」の行を置き、Enter で最近の更新へ戻す。
- * 結果の画面に語を直す欄が無いので、語を空にして確定する手段をここに持つ。
- */
-type Row =
-  | { kind: "page"; candidate: PageCandidate }
-  | { kind: "create" }
-  | { kind: "content-search" }
-  | { kind: "clear-search" };
-
-// 選択は位置でなく行の識別子で持つ。候補が後から変わっても、選んでいる行に追従させる
-function rowKey(row: Row): string {
-  return row.kind === "page" ? `page-${row.candidate.id}` : row.kind;
-}
 
 interface QuickSwitcherProps {
   open: boolean;
@@ -160,6 +140,65 @@ function isOpenPage(candidate: PageCandidate, openPageId: string | null): boolea
     : foldTitle(path.title) === foldTitle(candidate.title);
 }
 
+/** 案内の中身。取得の失敗、一致なし、匿名の本文検索が短すぎる案内を、該当するものだけ並べる。 */
+function SwitcherNote({
+  showFailed,
+  noMatch,
+  contentSearchTooShort,
+}: {
+  showFailed: boolean;
+  noMatch: boolean;
+  contentSearchTooShort: boolean;
+}) {
+  return (
+    <p className={showFailed ? "switcher-heading switcher-alert" : "switcher-heading"}>
+      {showFailed && CANDIDATES_FAILED}
+      {noMatch && "一致するタイトルはありません。"}
+      {contentSearchTooShort && `${ANONYMOUS_SEARCH_MIN_CHARS}文字以上で、本文からも検索できます。`}
+    </p>
+  );
+}
+
+function OptionContent({
+  row,
+  trimmed,
+  terms,
+}: {
+  row: Row;
+  trimmed: string;
+  terms: readonly string[];
+}) {
+  switch (row.kind) {
+    case "page":
+      return (
+        <span className="switcher-option-label">
+          {highlightMatches(row.candidate.title, terms, { underscoreAsSpace: true })}
+        </span>
+      );
+    case "create":
+      return (
+        <>
+          <PlusIcon />
+          <span className="switcher-option-label">{`「${trimmed}」を作成`}</span>
+        </>
+      );
+    case "clear-search":
+      return (
+        <>
+          <CloseIcon />
+          <span className="switcher-option-label">検索を解除して一覧へ戻る</span>
+        </>
+      );
+    case "content-search":
+      return (
+        <>
+          <SearchIcon />
+          <span className="switcher-option-label">{`「${trimmed}」を本文から検索`}</span>
+        </>
+      );
+  }
+}
+
 function SwitcherBody({
   index,
   owner,
@@ -213,25 +252,14 @@ function SwitcherBody({
   // 候補には文字が飛び飛びに当たるものもある。強調するのは、空白で区切った語がそのまま含まれる箇所だけ
   const terms = trimmed.split(/\s+/);
   const candidates = index.search(trimmed);
-  // 部分一致の候補があるだけで「作成」を隠すと、「メモ」を作れなくなる。完全一致が無いときに出す。
-  // 完全一致は score が最上位なので、上限で切った候補の先頭に必ず入っている
-  const hasExactTitle =
-    candidates[0] !== undefined && foldTitle(candidates[0].title) === foldTitle(trimmed);
-  const contentSearchTooShort =
-    trimmed !== "" && !owner && searchQueryLength(trimmed) < ANONYMOUS_SEARCH_MIN_CHARS;
-  const pageRows = candidates.map((candidate): Row => ({ kind: "page", candidate }));
-  const contentSearchRows: Row[] =
-    trimmed !== "" && !contentSearchTooShort ? [{ kind: "content-search" }] : [];
-  const createRows: Row[] =
-    trimmed !== "" && owner && !hasExactTitle && settled && !failed ? [{ kind: "create" }] : [];
-  const clearRows: Row[] =
-    trimmed === "" && initialQuery.trim() !== "" ? [{ kind: "clear-search" }] : [];
-  const rows: Row[] = hasExactTitle
-    ? [...pageRows, ...contentSearchRows]
-    : [...clearRows, ...contentSearchRows, ...pageRows, ...createRows];
-  // 行が 1 つでもあれば、一致が無いことは並びから分かる。行が無いのは、匿名が本文を検索できない短い語で
-  // 候補も無いときだけ
-  const noMatch = trimmed !== "" && settled && !failed && rows.length === 0;
+  const { rows, hasClearRow, contentSearchTooShort, noMatch } = buildRows({
+    trimmed,
+    owner,
+    initialQuery,
+    candidates,
+    settled,
+    failed,
+  });
 
   // 選んでいた行が並びから消えたら先頭に戻す
   const keyedIndex = rows.findIndex((row) => rowKey(row) === selectedKey);
@@ -295,16 +323,14 @@ function SwitcherBody({
     }
   }
 
-  const note =
-    showFailed || noMatch || contentSearchTooShort ? (
-      <p className={showFailed ? "switcher-heading switcher-alert" : "switcher-heading"}>
-        {showFailed && CANDIDATES_FAILED}
-        {noMatch && "一致するタイトルはありません。"}
-        {contentSearchTooShort &&
-          `${ANONYMOUS_SEARCH_MIN_CHARS}文字以上で、本文からも検索できます。`}
-      </p>
-    ) : null;
-  const hasNote = note !== null;
+  const hasNote = showFailed || noMatch || contentSearchTooShort;
+  const note = hasNote ? (
+    <SwitcherNote
+      showFailed={showFailed}
+      noMatch={noMatch}
+      contentSearchTooShort={contentSearchTooShort}
+    />
+  ) : null;
   useEffect(() => {
     if (!hasNote) setStatusEmptied(true);
   }, [hasNote]);
@@ -333,7 +359,7 @@ function SwitcherBody({
         onKeyDown={handleKeyDown}
       />
       {/* 見出しがあると、検索を解除する行まで最近のページの 1 つに見えるので出さない */}
-      {trimmed === "" && candidates.length > 0 && clearRows.length === 0 && (
+      {trimmed === "" && candidates.length > 0 && !hasClearRow && (
         <p className="switcher-heading" aria-hidden="true">
           {RECENT_LABEL}
         </p>
@@ -352,7 +378,7 @@ function SwitcherBody({
       <div
         id={listboxId}
         role="listbox"
-        aria-label={trimmed === "" && clearRows.length === 0 ? RECENT_LABEL : ROWS_LABEL}
+        aria-label={trimmed === "" && !hasClearRow ? RECENT_LABEL : ROWS_LABEL}
         className="switcher-list"
       >
         {rows.map((row, i) => (
@@ -375,29 +401,7 @@ function SwitcherBody({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => selectRow(row)}
           >
-            {row.kind === "page" && (
-              <span className="switcher-option-label">
-                {highlightMatches(row.candidate.title, terms, { underscoreAsSpace: true })}
-              </span>
-            )}
-            {row.kind === "create" && (
-              <>
-                <PlusIcon />
-                <span className="switcher-option-label">{`「${trimmed}」を作成`}</span>
-              </>
-            )}
-            {row.kind === "clear-search" && (
-              <>
-                <CloseIcon />
-                <span className="switcher-option-label">検索を解除して一覧へ戻る</span>
-              </>
-            )}
-            {row.kind === "content-search" && (
-              <>
-                <SearchIcon />
-                <span className="switcher-option-label">{`「${trimmed}」を本文から検索`}</span>
-              </>
-            )}
+            <OptionContent row={row} trimmed={trimmed} terms={terms} />
           </button>
         ))}
       </div>
