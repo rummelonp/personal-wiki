@@ -4,20 +4,9 @@ import type { EditorState, RestoreOutcome } from "./editor-session";
 import { formatTime } from "./format";
 import type { OutlineItem } from "./heading-outline";
 import { Outline } from "./Outline";
+import { canDelete } from "./page-editor-state";
 import { RailSection } from "./Rail";
 import { RevisionHistory } from "./RevisionHistory";
-
-/**
- * 保存中も押せる。本文の編集中に押すと mousedown の blur が保存を始めるので、保存中を
- * disabled にすると mouseup の時点で押せなくなり、クリックが届かない
- */
-const canDelete = ({
-  busy,
-  authLost,
-  readOnly,
-  pendingDelete,
-}: Pick<EditorRailProps, "busy" | "authLost" | "readOnly" | "pendingDelete">) =>
-  (busy === null || busy === "saving") && !pendingDelete && !authLost && !readOnly;
 
 interface EditorRailProps {
   uncreated: EditorState["uncreated"];

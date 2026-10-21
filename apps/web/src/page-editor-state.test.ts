@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canChangeVisibility, shownInputProblems } from "./page-editor-state";
+import { canChangeVisibility, canDelete, shownInputProblems } from "./page-editor-state";
 import type { Page } from "./pages-api";
 
 const BASE: Page = {
@@ -24,6 +24,26 @@ describe("canChangeVisibility", () => {
     expect(canChangeVisibility({ busy: null }, "unsaved")).toBe(true);
     for (const status of ["error", "conflict", "invalid", "auth", "gone", "kept"] as const)
       expect(canChangeVisibility({ busy: null }, status)).toBe(false);
+  });
+});
+
+describe("canDelete", () => {
+  const idle = { busy: null, authLost: false, readOnly: false, pendingDelete: false } as const;
+
+  it("何も起きていなければ押せ、保存中も押せる", () => {
+    expect(canDelete(idle)).toBe(true);
+    expect(canDelete({ ...idle, busy: "saving" })).toBe(true);
+  });
+
+  it("保存のほかの操作の途中は押せない", () => {
+    for (const busy of ["creating", "visibility", "deleting", "restoring"] as const)
+      expect(canDelete({ ...idle, busy })).toBe(false);
+  });
+
+  it("削除の確認の後、認証の失効、読み取り専用では押せない", () => {
+    expect(canDelete({ ...idle, pendingDelete: true })).toBe(false);
+    expect(canDelete({ ...idle, authLost: true })).toBe(false);
+    expect(canDelete({ ...idle, readOnly: true })).toBe(false);
   });
 });
 
