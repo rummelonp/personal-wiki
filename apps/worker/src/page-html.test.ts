@@ -26,7 +26,9 @@ const HTML_ACCEPT = "text/html,application/xhtml+xml,*/*;q=0.8";
 const PAGE_VIEW_CHUNKS = ["/assets/PageView-test.js", "/assets/dist-test.js"];
 const INDEX_HTML =
   '<!doctype html><html lang="ja"><head><meta charset="UTF-8" /><title>wiki</title>' +
-  PAGE_VIEW_CHUNKS.map((href) => `<link data-page-view-preload="${href}" crossorigin>`).join("") +
+  "<template data-page-view-preload>" +
+  PAGE_VIEW_CHUNKS.map((href) => `<link rel="modulepreload" href="${href}" crossorigin>`).join("") +
+  "</template>" +
   '</head><body><div id="root"></div></body></html>';
 
 // Static Assets と同じく、ETag が合う条件付きのリクエストには 304 を返す。
@@ -1314,7 +1316,9 @@ describe("ページのリンク先の一覧", () => {
   });
 });
 
-/** head の `<link>` のうち modulepreload のものの href を、文書の順に返す。 */
+const PRELOAD_TEMPLATE = /<template data-page-view-preload>([\s\S]*?)<\/template>/g;
+
+/** `<link>` のうち modulepreload のものの href を、文書の順に返す。 */
 function modulePreloadsOf(html: string): string[] {
   return [...html.matchAll(/<link\b[^>]*>/g)]
     .map((match) => match[0])
@@ -1326,7 +1330,7 @@ function modulePreloadsOf(html: string): string[] {
 }
 
 describe("ページの画面の chunk の modulepreload", () => {
-  it("public と draft のページの URL は、印を文書の順に modulepreload にし、印を残さない", async () => {
+  it("public と draft のページの URL は、印の template を外し、中の modulepreload を文書の順に head に出す", async () => {
     const { navigate, cookie, draft } = await seed();
     for (const [path, headers] of [
       [`/${encodeURIComponent("Open Note")}`, {}],
@@ -1336,12 +1340,14 @@ describe("ページの画面の chunk の modulepreload", () => {
       const res = await navigate(path, headers);
       expect(res.status, path).toBe(200);
       const html = await res.text();
+      expect(html, path).not.toContain("<template");
+      const head = html.slice(0, html.indexOf("</head>"));
+      expect(modulePreloadsOf(head), path).toEqual(PAGE_VIEW_CHUNKS);
       expect(modulePreloadsOf(html), path).toEqual(PAGE_VIEW_CHUNKS);
-      expect(html, path).not.toContain("data-page-view-preload");
     }
   });
 
-  it("トップ、クエリ付きのトップ、見つからないページ、匿名から見た draft は印のままにし、modulepreload を出さない", async () => {
+  it("トップ、クエリ付きのトップ、見つからないページ、匿名から見た draft は印の template を残し、その外に modulepreload を出さない", async () => {
     const { navigate, draft } = await seed();
     for (const path of [
       "/",
@@ -1351,8 +1357,10 @@ describe("ページの画面の chunk の modulepreload", () => {
       `/p/${draft.id}`,
     ]) {
       const html = await (await navigate(path)).text();
-      expect(modulePreloadsOf(html), path).toEqual([]);
-      expect(html.match(/data-page-view-preload=/g), path).toHaveLength(PAGE_VIEW_CHUNKS.length);
+      const templates = [...html.matchAll(PRELOAD_TEMPLATE)];
+      expect(templates, path).toHaveLength(1);
+      expect(modulePreloadsOf(templates[0]?.[1] ?? ""), path).toEqual(PAGE_VIEW_CHUNKS);
+      expect(modulePreloadsOf(html.replace(PRELOAD_TEMPLATE, "")), path).toEqual([]);
     }
   });
 });

@@ -57,6 +57,12 @@ function reachable(
   return loaded;
 }
 
+/** 印の `<template>`。中の link は文書に属さず、ブラウザは取りに行かない。 */
+const PRELOAD_TEMPLATE = new RegExp(
+  `<template ${PAGE_VIEW_PRELOAD_ATTRIBUTE}>([\\s\\S]*?)</template>`,
+  "g",
+);
+
 const moduleIdsOf = (chunks: Map<string, Rolldown.OutputChunk>, fileNames: Iterable<string>) =>
   [...fileNames].flatMap((fileName) => chunks.get(fileName)?.moduleIds ?? []);
 
@@ -66,9 +72,11 @@ describe("入口の chunk", () => {
     const entry = [...chunks.values()].find((chunk) => chunk.isEntry);
     expect(entry).toBeDefined();
     expect(html).toContain(`src="/${entry?.fileName}"`);
-    const preloaded = [...html.matchAll(/<link rel="modulepreload"[^>]*href="\/([^"]+)"/g)].map(
-      (match) => match[1] ?? "",
-    );
+    const preloaded = [
+      ...html
+        .replace(PRELOAD_TEMPLATE, "")
+        .matchAll(/<link rel="modulepreload"[^>]*href="\/([^"]+)"/g),
+    ].map((match) => match[1] ?? "");
 
     // 入口が静的に import する chunk も、入口と一緒に描画の前に読まれる
     const loaded = reachable(chunks, [entry?.fileName ?? "", ...preloaded]);
@@ -82,19 +90,22 @@ describe("入口の chunk", () => {
 });
 
 describe("ページの画面の chunk の印", () => {
-  it("ページの画面の chunk と、入口から読まないその静的な依存を、rel と href の無い印で 1 つずつ指す", async () => {
+  it("head の印の template の中で、ページの画面の chunk と、入口から読まないその静的な依存を modulepreload で 1 つずつ指す", async () => {
     const { chunks, html } = await buildOutput();
-    const tags = [...html.matchAll(/<link\b[^>]*>/g)]
-      .map((match) => match[0])
-      .filter((tag) => tag.includes(PAGE_VIEW_PRELOAD_ATTRIBUTE));
+    const head = html.slice(0, html.indexOf("</head>"));
+    const templates = [...head.matchAll(PRELOAD_TEMPLATE)];
+    expect(templates).toHaveLength(1);
+    expect([...html.matchAll(PRELOAD_TEMPLATE)]).toHaveLength(1);
+    const tags = [...(templates[0]?.[1] ?? "").matchAll(/<link\b[^>]*>/g)].map((match) => match[0]);
     for (const tag of tags) {
-      // Worker が書き換えない HTML で何も取らせず、Vite の preload の helper にも読み込み済みと見せない
-      expect(tag).not.toMatch(/\s(?:rel|href)=/);
+      expect(tag).toMatch(/\srel="modulepreload"/);
+      // 入口の script と同じ取得の設定でないと、入口の動的 import が同じ chunk を取り直す
       expect(tag).toMatch(/\scrossorigin[\s>]/);
     }
-    const marked = tags.map(
-      (tag) => new RegExp(`${PAGE_VIEW_PRELOAD_ATTRIBUTE}="/([^"]+)"`).exec(tag)?.[1] ?? "",
-    );
+    const marked = tags.map((tag) => /\shref="\/([^"]+)"/.exec(tag)?.[1] ?? "");
+    // template の外で指すと、Worker が書き換えない HTML でも取りに行き、Vite の preload の helper も読み込み済みとみなす
+    const outside = html.replace(PRELOAD_TEMPLATE, "");
+    for (const fileName of marked) expect(outside).not.toContain(fileName);
 
     const pageView = [...chunks.values()].find(
       (chunk) => chunk.isDynamicEntry && chunk.facadeModuleId?.endsWith("/src/PageView.tsx"),
