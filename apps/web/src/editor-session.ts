@@ -1047,21 +1047,29 @@ export class EditorSession {
   ): Promise<void> {
     const latest = await this.api.getPage(this.state.base.id);
     if (!latest.ok) {
-      if (latest.reason === "not_found") {
-        this.markGone(op.kind === "delete" ? "self" : "elsewhere");
-        return;
-      }
-      if (latest.reason === "unauthorized") this.set({ authLost: true });
-      else
-        this.set({
-          error: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
-          failedOp: op,
-        });
-      if (stash) this.stashIfDirty();
+      this.handleLatestUnavailable(latest, op, stash);
       return;
     }
     if (await this.settleWithoutConflict(latest.value, options)) return;
     this.set({ conflict: latest.value });
+    if (stash) this.stashIfDirty();
+  }
+
+  /**
+   * 版の衝突の後にサーバーの最新を取れなかったときの扱い。理由ごとの扱いは handleFailure と同じだが、
+   * 通信の失敗の文言には、衝突が起きていて内容を比べられないことを添える。
+   */
+  private handleLatestUnavailable(latest: ApiFailure, op: FailedOp, stash: boolean): void {
+    if (latest.reason === "not_found") {
+      this.markGone(op.kind === "delete" ? "self" : "elsewhere");
+      return;
+    }
+    if (latest.reason === "unauthorized") this.set({ authLost: true });
+    else
+      this.set({
+        error: `別の場所で更新されていますが、最新の内容を取得できませんでした。${failureMessage(latest, "通信に失敗しました。")}`,
+        failedOp: op,
+      });
     if (stash) this.stashIfDirty();
   }
 
