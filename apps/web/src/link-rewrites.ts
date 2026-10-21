@@ -1,5 +1,11 @@
 import type { ProcessedLinkRewrite } from "./editor-session";
-import { type FailedLinkRewrite, type StepResult, stepLinkRewrites } from "./link-rewrites-api";
+import {
+  type FailedLinkRewrite,
+  type LinkRewriteStepResult,
+  type StepFailureKind,
+  type StepResult,
+  stepLinkRewrites,
+} from "./link-rewrites-api";
 import { getPage, type Visibility } from "./pages-api";
 
 /*
@@ -73,6 +79,96 @@ const IDLE: LinkRewriteState = {
   failed: [],
   stopReason: null,
 };
+
+/** 続けて起きた conflict と通信の失敗の数 */
+export interface RetryCounts {
+  conflicts: number;
+  errors: number;
+}
+
+/**
+ * step の結果を受けてループが次にすること。proceed は結果を一覧に取り込む、wait は待って step を送り直す、
+ * finish はその状態でループを終える。
+ */
+export type StepOutcome =
+  | { kind: "proceed"; value: LinkRewriteStepResult }
+  | { kind: "wait"; ms: number; counts: RetryCounts }
+  | { kind: "finish"; state: LinkRewriteState };
+
+const stopped = (state: LinkRewriteState, stopReason: "auth" | "error"): StepOutcome => ({
+  kind: "finish",
+  state: { ...state, status: "stopped", stopReason },
+});
+
+function failureOutcome(
+  kind: StepFailureKind,
+  counts: RetryCounts,
+  state: LinkRewriteState,
+): StepOutcome {
+  // step の無い Worker（前の版に戻したときなど）では、書き換えの機能が無いものとして黙って止める
+  if (kind === "not_found") return { kind: "finish", state: IDLE };
+  if (kind === "unauthorized" || kind === "forbidden") return stopped(state, "auth");
+  const ms = ERROR_WAITS_MS[counts.errors];
+  if (ms === undefined) return stopped(state, "error");
+  return { kind: "wait", ms, counts: { ...counts, errors: counts.errors + 1 } };
+}
+
+/**
+ * 1 回の step の応答を、取り込む、待って送り直す、終えるのどれかに分ける。待つときは数を進めた counts を返す。
+ * conflict の応答は通信の失敗の数を 0 に戻し、通信の失敗は conflict の数を戻さない。取り込むときの数え直しは
+ * 呼び出し側が行う。state は止めるときに結果として残す状態。
+ */
+export function outcomeOf(
+  result: StepResult,
+  counts: RetryCounts,
+  state: LinkRewriteState,
+): StepOutcome {
+  if (!result.ok) return failureOutcome(result.kind, counts, state);
+  if (!result.value.conflict) return { kind: "proceed", value: result.value };
+  const conflicts = counts.conflicts + 1;
+  if (conflicts > MAX_CONFLICTS) return stopped(state, "error");
+  return { kind: "wait", ms: CONFLICT_WAIT_MS, counts: { conflicts, errors: 0 } };
+}
+
+/** step が処理したリンク元を進み具合と一覧に足す。 */
+export function advance(
+  state: LinkRewriteState,
+  { processed, failed, remaining }: LinkRewriteStepResult,
+  failedPages: FailedPage[],
+): LinkRewriteState {
+  // 何もキューに入っていないときのレスポンス（processed も failed も無く残りも 0）は処理に数えない
+  const handled = processed !== null || failed.length > 0 || state.total > state.done;
+  const done = state.done + (handled ? 1 : 0);
+  const rewritten =
+    processed === null
+      ? state.rewritten
+      : [
+          ...state.rewritten.filter((page) => page.id !== processed.sourcePageId),
+          { id: processed.sourcePageId, title: processed.title, visibility: processed.visibility },
+        ];
+  return {
+    ...state,
+    done,
+    total: done + remaining,
+    rewritten,
+    failed: mergeFailed(state.failed, failedPages),
+  };
+}
+
+/**
+ * 取り込んだあとにループを続けるか。running は残りがあるので続ける、rerun は走っている間に来た start の分を
+ * もう一度確かめる、finish は終える。見せる結果が無ければ何も見せずに終える。
+ */
+export function continuationOf(
+  next: LinkRewriteState,
+  remaining: number,
+  rerun: boolean,
+): { kind: "running" | "rerun" | "finish"; state: LinkRewriteState } {
+  if (remaining > 0) return { kind: "running", state: { ...next, status: "running" } };
+  if (rerun) return { kind: "rerun", state: next };
+  const shown = next.rewritten.length > 0 || next.failed.length > 0;
+  return { kind: "finish", state: shown ? { ...next, status: "done" } : IDLE };
+}
 
 export class LinkRewriteRunner {
   private state: LinkRewriteState = IDLE;
@@ -249,72 +345,50 @@ export class LinkRewriteRunner {
   }
 
   private async loop(generation: number): Promise<void> {
-    let conflicts = 0;
-    let errors = 0;
     const current = () => generation === this.generation;
-    const stopWith = (stopReason: "auth" | "error") =>
-      this.finish({ ...this.state, status: "stopped", stopReason });
+    for (;;) {
+      const value = await this.stepUntilProgress(generation);
+      if (value === null || !current()) return;
+      const failedPages = await this.nameFailed(value.failed);
+      if (!current()) return;
+      const continuation = continuationOf(
+        advance(this.state, value, failedPages),
+        value.remaining,
+        this.rerun,
+      );
+      if (continuation.kind === "finish") return this.finish(continuation.state);
+      if (continuation.kind === "rerun") this.rerun = false;
+      this.set(continuation.state);
+    }
+  }
+
+  /**
+   * 待って送り直す結果（conflict と通信の失敗）を繰り返し、取り込む結果を返す。null を返すのは、finish で
+   * ループを終えた後か、世代が変わったときだけにする（finish を呼ばずに返すと active が立ったまま残る）。
+   * 取り込む結果を返すときは数え直すので、数は呼ぶたびに 0 から始める。
+   */
+  private async stepUntilProgress(generation: number): Promise<LinkRewriteStepResult | null> {
+    const current = () => generation === this.generation;
+    let counts: RetryCounts = { conflicts: 0, errors: 0 };
     for (;;) {
       // 待たないときは await を挟まない（start の同じ同期区間で最初の step を送る）
       if (this.suspended) {
         await this.untilResumed(generation);
-        if (!current()) return;
+        if (!current()) return null;
       }
       const result = await this.runStep();
-      if (!current()) return;
-      if (!result.ok) {
-        // step の無い Worker（前の版に戻したときなど）では、書き換えの機能が無いものとして黙って止める
-        if (result.kind === "not_found") return this.finish(IDLE);
-        if (result.kind === "unauthorized" || result.kind === "forbidden") return stopWith("auth");
-        const wait = ERROR_WAITS_MS[errors++];
-        if (wait === undefined) return stopWith("error");
-        await this.deps.sleep(wait);
-        if (!current()) return;
-        continue;
+      if (!current()) return null;
+      // 止めた状態は、この同期区間の state から作って finish する。await を挟むと、その間の start が
+      // 終わるループの rerun に入って取りこぼされるか、start の変更が落ちる
+      const outcome = outcomeOf(result, counts, this.state);
+      if (outcome.kind === "proceed") return outcome.value;
+      if (outcome.kind === "finish") {
+        this.finish(outcome.state);
+        return null;
       }
-      errors = 0;
-      const { processed, conflict, failed, remaining } = result.value;
-      if (conflict) {
-        if (++conflicts > MAX_CONFLICTS) return stopWith("error");
-        await this.deps.sleep(CONFLICT_WAIT_MS);
-        if (!current()) return;
-        continue;
-      }
-      conflicts = 0;
-      const failedPages = await this.nameFailed(failed);
-      if (!current()) return;
-      // 何もキューに入っていないときのレスポンス（processed も failed も無く残りも 0）は処理に数えない
-      const handled = processed !== null || failed.length > 0 || this.state.total > this.state.done;
-      const done = this.state.done + (handled ? 1 : 0);
-      const rewritten =
-        processed === null
-          ? this.state.rewritten
-          : [
-              ...this.state.rewritten.filter((page) => page.id !== processed.sourcePageId),
-              {
-                id: processed.sourcePageId,
-                title: processed.title,
-                visibility: processed.visibility,
-              },
-            ];
-      const next = {
-        ...this.state,
-        done,
-        total: done + remaining,
-        rewritten,
-        failed: mergeFailed(this.state.failed, failedPages),
-      };
-      if (remaining > 0) {
-        this.set({ ...next, status: "running" });
-        continue;
-      }
-      if (this.rerun) {
-        this.rerun = false;
-        this.set(next);
-        continue;
-      }
-      const shown = next.rewritten.length > 0 || next.failed.length > 0;
-      return this.finish(shown ? { ...next, status: "done" } : IDLE);
+      counts = outcome.counts;
+      await this.deps.sleep(outcome.ms);
+      if (!current()) return null;
     }
   }
 }

@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  advance,
+  CONFLICT_WAIT_MS,
+  continuationOf,
   ERROR_WAITS_MS,
   LinkRewriteRunner,
   type LinkRewriteState,
   MAX_CONFLICTS,
+  outcomeOf,
 } from "./link-rewrites";
 import type { LinkRewriteStepResult, StepResult } from "./link-rewrites-api";
 
@@ -106,6 +110,25 @@ describe("LinkRewriteRunner", () => {
     runner.start(1);
     await settled();
     expect(runner.getState()).toMatchObject({ status: "done", done: 1 });
+  });
+
+  it("取り込む応答を挟めば、通信の失敗と conflict の数を数え直す", async () => {
+    const errors = () =>
+      Array.from({ length: ERROR_WAITS_MS.length }, () => ({ ok: false, kind: "error" }) as const);
+    const conflicts = () =>
+      Array.from({ length: MAX_CONFLICTS }, () => ok({ conflict: true, remaining: 2 }));
+    // 通信の失敗は conflict の数を戻さないので、前の回の conflict の後に通信の失敗を置き、次の回は通信の失敗から始める
+    const { runner, settled } = setup([
+      ...conflicts(),
+      ...errors(),
+      ok({ processed: processed("a"), remaining: 1 }),
+      ...errors(),
+      ...conflicts(),
+      ok({ processed: processed("b"), remaining: 0 }),
+    ]);
+    runner.start(2);
+    await settled();
+    expect(runner.getState()).toMatchObject({ status: "done", done: 2 });
   });
 
   it("step の無い Worker（404）では黙って止める", async () => {
@@ -296,6 +319,24 @@ describe("LinkRewriteRunner", () => {
     expect(runner.getState().status).toBe("idle");
   });
 
+  it("送り直しを待つ間に stop したら、待ち終えても step を送らない", async () => {
+    let wake: () => void = () => {};
+    const { runner, step, sleep } = setup([ok({ conflict: true, remaining: 1 })]);
+    sleep.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          wake = resolve;
+        }),
+    );
+    runner.start(1);
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+    runner.stop();
+    wake();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(step).toHaveBeenCalledTimes(1);
+    expect(runner.getState().status).toBe("idle");
+  });
+
   it("suspend と resume は、失敗したページの一覧と止まった理由を残し、step を送らない", async () => {
     const { runner, step } = setup([
       ok({ processed: processed("a"), failed: [failure("x")], remaining: 1 }),
@@ -448,5 +489,167 @@ describe("LinkRewriteRunner", () => {
     runner.start(1);
     await settled();
     expect(told).toEqual(["a"]);
+  });
+});
+
+const state = (patch: Partial<LinkRewriteState> = {}): LinkRewriteState => ({
+  status: "running",
+  done: 0,
+  total: 0,
+  rewritten: [],
+  failed: [],
+  stopReason: null,
+  ...patch,
+});
+
+const idle = state({ status: "idle" });
+
+describe("outcomeOf", () => {
+  const zero = { conflicts: 0, errors: 0 };
+
+  it("conflict でない応答は取り込む", () => {
+    const value = { processed: processed("a"), conflict: false, failed: [], remaining: 1 };
+    expect(outcomeOf({ ok: true, value }, { conflicts: 3, errors: 2 }, state())).toEqual({
+      kind: "proceed",
+      value,
+    });
+  });
+
+  it("404 は何も見せずに終える", () => {
+    expect(outcomeOf({ ok: false, kind: "not_found" }, zero, state({ done: 1 }))).toEqual({
+      kind: "finish",
+      state: idle,
+    });
+  });
+
+  it("401 と 403 は、それまでの結果を残して auth で止める", () => {
+    const current = state({ done: 1, total: 2, failed: [failure("x")] });
+    for (const kind of ["unauthorized", "forbidden"] as const) {
+      expect(outcomeOf({ ok: false, kind }, zero, current)).toEqual({
+        kind: "finish",
+        state: { ...current, status: "stopped", stopReason: "auth" },
+      });
+    }
+  });
+
+  it("通信の失敗は回数に応じて待ち、conflict の数は戻さない", () => {
+    let counts = { conflicts: 2, errors: 0 };
+    for (const ms of ERROR_WAITS_MS) {
+      const outcome = outcomeOf({ ok: false, kind: "error" }, counts, state());
+      if (outcome.kind !== "wait") throw new Error("待たなかった");
+      expect(outcome.ms).toBe(ms);
+      counts = outcome.counts;
+    }
+    expect(counts).toEqual({ conflicts: 2, errors: ERROR_WAITS_MS.length });
+    expect(outcomeOf({ ok: false, kind: "error" }, counts, state({ done: 1 }))).toEqual({
+      kind: "finish",
+      state: state({ done: 1, status: "stopped", stopReason: "error" }),
+    });
+  });
+
+  it("conflict は通信の失敗の数を戻して待ち、上限を超えたら止める", () => {
+    const conflict = ok({ conflict: true, remaining: 1 });
+    expect(outcomeOf(conflict, { conflicts: 0, errors: 2 }, state())).toEqual({
+      kind: "wait",
+      ms: CONFLICT_WAIT_MS,
+      counts: { conflicts: 1, errors: 0 },
+    });
+    expect(outcomeOf(conflict, { conflicts: MAX_CONFLICTS - 1, errors: 0 }, state())).toEqual({
+      kind: "wait",
+      ms: CONFLICT_WAIT_MS,
+      counts: { conflicts: MAX_CONFLICTS, errors: 0 },
+    });
+    expect(outcomeOf(conflict, { conflicts: MAX_CONFLICTS, errors: 0 }, state())).toEqual({
+      kind: "finish",
+      state: state({ status: "stopped", stopReason: "error" }),
+    });
+  });
+});
+
+describe("advance", () => {
+  const value = (patch: Partial<LinkRewriteStepResult>): LinkRewriteStepResult => ({
+    processed: null,
+    conflict: false,
+    failed: [],
+    remaining: 0,
+    ...patch,
+  });
+
+  it("何もキューに入っていないときの応答は処理に数えない", () => {
+    expect(advance(state({ done: 2, total: 2 }), value({}), [])).toMatchObject({
+      done: 2,
+      total: 2,
+    });
+  });
+
+  it("残りを見込んでいる間は、何も処理しなかった応答も 1 件に数える", () => {
+    expect(advance(state({ done: 0, total: 1 }), value({}), [])).toMatchObject({
+      done: 1,
+      total: 1,
+    });
+  });
+
+  it("書き換えたリンク元は前の記録を除いて末尾に足し、失敗は id ごとに 1 回だけ残す", () => {
+    const before = state({
+      done: 1,
+      total: 3,
+      rewritten: [
+        { id: "a", title: "古い a", visibility: "draft" },
+        { id: "b", title: "題 b", visibility: "draft" },
+      ],
+      failed: [failure("x")],
+    });
+    const next = advance(
+      before,
+      value({
+        processed: processed("a", "public"),
+        failed: [failure("x"), failure("y")],
+        remaining: 1,
+      }),
+      [failure("x"), failure("y")],
+    );
+    expect(next).toMatchObject({
+      done: 2,
+      total: 3,
+      rewritten: [
+        { id: "b", title: "題 b", visibility: "draft" },
+        { id: "a", title: "題 a", visibility: "public" },
+      ],
+      failed: [failure("x"), failure("y")],
+    });
+  });
+});
+
+describe("continuationOf", () => {
+  const shown = state({
+    status: "idle",
+    rewritten: [{ id: "a", title: "題 a", visibility: "draft" }],
+  });
+
+  it("残りがあれば running にして続ける", () => {
+    expect(continuationOf(shown, 1, true)).toEqual({
+      kind: "running",
+      state: { ...shown, status: "running" },
+    });
+  });
+
+  it("残りが無くても、走っている間に start が来ていればそのまま確かめ直す", () => {
+    expect(continuationOf(shown, 0, true)).toEqual({ kind: "rerun", state: shown });
+  });
+
+  it("終えるときは、見せる結果があれば done、無ければ何も見せない", () => {
+    expect(continuationOf(shown, 0, false)).toEqual({
+      kind: "finish",
+      state: { ...shown, status: "done" },
+    });
+    const failedOnly = state({ failed: [failure("x")] });
+    expect(continuationOf(failedOnly, 0, false)).toEqual({
+      kind: "finish",
+      state: { ...failedOnly, status: "done" },
+    });
+    expect(continuationOf(state({ done: 1, total: 1 }), 0, false)).toEqual({
+      kind: "finish",
+      state: idle,
+    });
   });
 });
