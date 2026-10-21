@@ -1684,6 +1684,17 @@ describe("公開設定と削除の失敗", () => {
     expect(saveStatusOf(session.getState())).toBe("gone");
   });
 
+  it("削除の 409 で衝突にしても、未保存の手元は退避しない", async () => {
+    const { session, api, server, backup } = setup();
+    session.edit({ title: "題", body: "消すつもりの編集" });
+    server.page = page({ body: "他", version: 2 });
+    api.deletePage = async () => ({ ok: false, reason: "version_conflict", currentVersion: 2 });
+    expect(await session.remove()).toBe(false);
+    expect(session.getState().conflict?.body).toBe("他");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(backup.load(ID)).toBeNull();
+  });
+
   it("保存の失敗は保存の状態になり、次の入力で消える", async () => {
     const { session, api } = setup();
     api.updatePage = failOnce(api.updatePage);
