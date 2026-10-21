@@ -407,3 +407,5 @@ Worker を前の版に戻して再デプロイしたあとは、次の点に注�
 - `0009_api_token_names.sql` を当てたまま、API token を id で識別しない版に戻すと、同じ名前の token の書き込みはどれも actor が `token:<name>` になり、どの token が書いたか区別できない。
   前の版の `pnpm api-token revoke <name>` は、同じ名前の有効な token をすべて失効させる。
   戻している間は同じ名前の token を発行せず、失効は今の版のスクリプトの `revoke --id` で行う
+- 匿名から見た draft を存在しないページと同じ 404 にしない版に戻すと、draft の本文、HTML、添付は、id の URL（`/p/<id>`）を知っていれば匿名にも読める。
+  戻している間は draft の URL と画像の URL を人に渡さない

@@ -47,8 +47,7 @@ JS を実行するクローラーが `/api/` をすべて断られると、こ�
 `/?q=` の HTML は索引に載せない（`apps/worker/src/spa.ts` で載せてよいとするのは、クエリの無い `/` だけ）ので、描画できなくてよい。
 
 許しているのは取得だけで、公開範囲は変わらない。
-title での解決と一覧では、匿名の読み手に public のページだけが返り、draft は無いページと区別できない（`apps/worker/src/pages/store.ts`）。
-id で引けば、draft も誰にでも返る（README.md のページごとの public / draft の説明）。
+id と title での解決と一覧では、匿名の読み手に public のページだけが返り、draft は無いページと区別できない（`apps/worker/src/pages/store.ts`）。
 API の応答には `X-Robots-Tag: noindex` が付くので（`apps/worker/src/security-headers.ts`）、JSON は検索結果に載らない。
 
 `/mcp` と `/_auth/`（OAuth の同意画面など）は、人の画面でなくエージェントや認証の入口なので、クローラーに取らせる理由が無い。
@@ -71,7 +70,7 @@ robots.txt は取得への申告で、検索結果に載るかは HTML 側の指
 - HTML のレスポンスには、既定で `X-Robots-Tag: noindex` を付ける。未知のパスや 404 を載せないため、付ける側に倒してある（`apps/worker/src/security-headers.ts` の `withHtmlHeaders`）
 - トップと public のページだけ、この `noindex` を外す（`apps/worker/src/spa.ts`）
 - `/_auth/` の HTML は `withHtmlHeaders` を通らず、OAuth のルートが個別に `X-Robots-Tag: noindex` を付ける（`apps/worker/src/auth/oauth-routes.ts`）
-- draft のページは、id で開けても `<meta name="robots" content="noindex">` を HTML に入れる（`apps/worker/src/page-html.ts`）
+- draft のページの HTML には `<meta name="robots" content="noindex">` を入れる（`apps/worker/src/page-html.ts`）。この HTML を受け取るのは owner と API token だけだが、写しが出回っても索引に載せない
 
 検索結果の説明文の候補として、HTML の head に `<meta name="description">` を入れる。
 
