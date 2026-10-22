@@ -102,13 +102,54 @@ function isOwnRequest(fetchSite) {
   return fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "none";
 }
 
+// 接続ごとの項目で、proxy が受け持つ区間の外へ渡してはならない（RFC 9110 の 7.6.1）。
+// 上流の Keep-Alive: timeout=5 や Connection: close をブラウザに渡すと、下の IDLE_TIMEOUT_MS が効かない。
+const HOP_BY_HOP = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+/**
+ * @template {Record<string, unknown>} T
+ * @param {T} headers
+ * @returns {T}
+ */
+function withoutHopByHop(headers) {
+  return /** @type {T} */ (
+    Object.fromEntries(Object.entries(headers).filter(([name]) => !HOP_BY_HOP.has(name)))
+  );
+}
+
+// 画面を開いたまま離れている間もブラウザの接続を閉じない長さにする
+const IDLE_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * ブラウザ側の接続を長く保つ proxy のサーバー。wrangler dev は使われていない keep-alive の接続を
+ * 5 秒で閉じ、WebKit は閉じられる瞬間に再利用した接続への POST を送り直さず失敗させる。
+ * Node の既定（keepAliveTimeout が 5 秒）のままだと、この proxy が同じ競合を起こす。
+ * @param {http.RequestListener} handler
+ */
+export function createProxyServer(handler) {
+  const server = http.createServer(handler);
+  server.keepAliveTimeout = IDLE_TIMEOUT_MS;
+  return server;
+}
+
 /**
  * proxy のリクエストの処理。Host を書き換えずに渡すのは、Worker が CSRF の検査で Origin を
  * リクエストの URL（Host から作られる）と比べるため。
+ * 上流へは要求ごとに新しい接続を張る。再利用すると、wrangler dev が 5 秒で閉じる瞬間の接続に
+ * 要求を載せる競合が、proxy と wrangler dev の間で起きる。
  * @param {{ upstreamPort: number; sessionSecret: string; email: string }} options
  * @returns {http.RequestListener}
  */
 export function createProxyHandler({ upstreamPort, sessionSecret, email }) {
+  const agent = new http.Agent({ keepAlive: false });
   return (req, res) => {
     if (!isLoopbackHost(req.headers.host, req.socket.localPort ?? -1)) {
       res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
@@ -122,7 +163,7 @@ export function createProxyHandler({ upstreamPort, sessionSecret, email }) {
       res.end("dev:owner accepts only origin-form request targets\n");
       return;
     }
-    const headers = { ...req.headers };
+    const headers = withoutHopByHop(req.headers);
     const cookies = withoutSessionCookie(headers.cookie);
     // Authorization 付き（API token や MCP の確かめ）に cookie を足すと、Worker は併用として 400 にする
     if (headers.authorization === undefined && isOwnRequest(headers["sec-fetch-site"])) {
@@ -132,11 +173,18 @@ export function createProxyHandler({ upstreamPort, sessionSecret, email }) {
     else delete headers.cookie;
 
     const upstream = http.request(
-      { host: "127.0.0.1", port: upstreamPort, method: req.method, path: req.url, headers },
+      {
+        host: "127.0.0.1",
+        port: upstreamPort,
+        method: req.method,
+        path: req.url,
+        headers,
+        agent,
+      },
       (upstreamRes) => {
         // ログアウトなどで Worker が cookie を消しても、ブラウザの別のポートの localhost の
         // cookie を巻き込まないよう、セッション cookie の Set-Cookie はブラウザに渡さない
-        const responseHeaders = { ...upstreamRes.headers };
+        const responseHeaders = withoutHopByHop(upstreamRes.headers);
         const setCookie = responseHeaders["set-cookie"]?.filter(
           (line) => !line.startsWith(`${SESSION_COOKIE_NAME}=`),
         );
@@ -241,7 +289,7 @@ async function listenOnLoopback(handler, port) {
   /** @type {http.Server[]} */
   const servers = [];
   for (const host of ["127.0.0.1", "::1"]) {
-    const server = http.createServer(handler);
+    const server = createProxyServer(handler);
     try {
       await new Promise((done, fail) => {
         server.once("error", fail);

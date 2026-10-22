@@ -134,6 +134,7 @@ migration は適用しないので、先に `pnpm db:migrate` を実行する。
 ログアウトしても、再読み込みで owner に戻る。
 匿名の画面は、proxy を通らない `<port> + 1`（既定は 8781）で見る。
 Host が loopback でないリクエストと `--remote` は拒む。
+proxy はブラウザ側の接続を idle 10 分まで保ち、wrangler dev へは要求ごとに接続を張る（E2E の proxy と同じ。wrangler dev が idle の接続を 5 秒で閉じる瞬間に、WebKit が再利用した接続の POST を送り直さず失敗するのを避ける）。
 inspector は `<port> + 549`（既定は 9329）を使う。
 別の worktree と同時に動かすときは `--port` を変える（wrangler dev と inspector も一緒にずれる）。
 cookie の値は `scripts/session-cookie.mjs` が作り、E2E も同じものを使う。

@@ -1,11 +1,11 @@
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, connect } from "node:net";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createProxyHandler, isLoopbackHost, parseArgs } from "./dev-owner.mjs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createProxyHandler, createProxyServer, isLoopbackHost, parseArgs } from "./dev-owner.mjs";
 import {
   localWranglerEnv,
   OWNER_EMAIL,
@@ -151,8 +151,11 @@ describe("createProxyHandler", () => {
     servers.length = 0;
   });
 
-  async function listen(handler: http.RequestListener): Promise<number> {
-    const server = http.createServer(handler);
+  async function listen(
+    handler: http.RequestListener,
+    create: (handler: http.RequestListener) => http.Server = http.createServer,
+  ): Promise<number> {
+    const server = create(handler);
     servers.push(server);
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
     return (server.address() as AddressInfo).port;
@@ -161,6 +164,7 @@ describe("createProxyHandler", () => {
   /** 受けたヘッダーを返し、ログアウトのようにセッション cookie を消すレスポンスを真似る上流。 */
   async function startProxy(
     setCookie = [`${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/`, "other=1"],
+    create?: (handler: http.RequestListener) => http.Server,
   ): Promise<{ port: number; upstreamHits: () => number }> {
     let hits = 0;
     const upstreamPort = await listen((req, res) => {
@@ -171,6 +175,7 @@ describe("createProxyHandler", () => {
     });
     const port = await listen(
       createProxyHandler({ upstreamPort, sessionSecret: SECRET, email: OWNER_EMAIL }),
+      create,
     );
     return { port, upstreamHits: () => hits };
   }
@@ -308,5 +313,92 @@ describe("createProxyHandler", () => {
     await once(res, "data");
     req.destroy();
     await closed;
+  });
+
+  describe("接続を保つ", () => {
+    // Node の既定（keepAliveTimeout 5 秒）は、余裕の 1 秒を足した 6 秒で idle の接続を閉じる。
+    // それを過ぎるまで待つので、他のテストより長くかかる
+    const IDLE_MS = 6_500;
+    const TIMEOUT_MS = 15_000;
+    const IDLE_TIMEOUT_SECONDS = 600;
+
+    it(
+      "ブラウザ側の接続を 5 秒を過ぎても閉じず、同じ接続で次の要求に答える",
+      async () => {
+        const { port } = await startProxy(undefined, createProxyServer);
+        const socket = connect({ host: "127.0.0.1", port });
+        const statusLines: string[] = [];
+        let closed = false;
+        socket.on("data", (chunk) => {
+          const line = chunk.toString().split("\r\n")[0];
+          if (line?.startsWith("HTTP/")) statusLines.push(line);
+        });
+        socket.on("close", () => {
+          closed = true;
+        });
+        socket.on("error", () => {});
+        const get = () =>
+          socket.write(`GET /api/healthz HTTP/1.1\r\nHost: localhost:${port}\r\n\r\n`);
+        try {
+          get();
+          await vi.waitFor(() => expect(statusLines).toHaveLength(1));
+          await new Promise((done) => setTimeout(done, IDLE_MS));
+          expect(closed).toBe(false);
+          get();
+          await vi.waitFor(() => expect(statusLines).toHaveLength(2));
+          expect(statusLines).toEqual(["HTTP/1.1 200 OK", "HTTP/1.1 200 OK"]);
+        } finally {
+          socket.destroy();
+        }
+      },
+      TIMEOUT_MS,
+    );
+
+    it("上流へは要求ごとに新しい接続を張り、接続ごとの項目をブラウザに渡さない", async () => {
+      const upstreamConnections = new Set<unknown>();
+      const upstreamPort = await listen((req, res) => {
+        upstreamConnections.add(req.socket);
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify(req.headers));
+      });
+      const port = await listen(
+        createProxyHandler({ upstreamPort, sessionSecret: SECRET, email: OWNER_EMAIL }),
+        createProxyServer,
+      );
+      const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+      const get = () =>
+        new Promise<{ headers: http.IncomingHttpHeaders; body: string }>((done, fail) => {
+          http
+            .get(
+              {
+                host: "127.0.0.1",
+                port,
+                path: "/api/me",
+                agent,
+                headers: { host: `localhost:${port}`, "keep-alive": "timeout=1" },
+              },
+              (res) => {
+                let body = "";
+                res.on("data", (chunk) => {
+                  body += chunk;
+                });
+                res.on("end", () => done({ headers: res.headers, body }));
+              },
+            )
+            .on("error", fail);
+        });
+      try {
+        const first = await get();
+        await get();
+        expect(upstreamConnections.size).toBe(2);
+        const seen = JSON.parse(first.body);
+        expect(seen.connection).toBe("close");
+        expect(seen["keep-alive"]).toBeUndefined();
+        // 上流の Node が付ける timeout=5 ではなく、この proxy の保つ長さをブラウザに伝える
+        expect(first.headers["keep-alive"]).toBe(`timeout=${IDLE_TIMEOUT_SECONDS}`);
+      } finally {
+        agent.destroy();
+      }
+    });
   });
 });
