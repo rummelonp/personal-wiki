@@ -1,5 +1,10 @@
 import { ownerApi } from "./api";
-import { connectOAuthWriters, registerOAuthClient } from "./principals";
+import {
+  API_TOKEN_NAME,
+  connectOAuthWriters,
+  issueApiToken,
+  registerOAuthClient,
+} from "./principals";
 import { seed } from "./seed";
 import { setupTimings, startStack, timed } from "./stack";
 
@@ -10,6 +15,10 @@ import { setupTimings, startStack, timed } from "./stack";
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const stack = await startStack();
   try {
+    // D1 へは別のプロセスから書くので、テストの保存と重ならないよう、テストが始まる前に済ませる
+    const apiToken = await timed("API token", () =>
+      issueApiToken(stack, API_TOKEN_NAME, "read,write"),
+    );
     const ids = await timed("seed", () => seed(ownerApi(stack.origin, stack.sessionSecret)));
     // 同意画面を開くだけのテストが共有する client。Worker の登録は 1 日 20 件までなので、worker ごとには登録しない
     const consentClientId = await timed("OAuth の client", () =>
@@ -22,8 +31,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     process.env.E2E_ORIGIN = stack.origin;
     process.env.E2E_CONSENT_CLIENT_ID = consentClientId;
     process.env.E2E_SESSION_SECRET = stack.sessionSecret;
-    process.env.E2E_STACK_CONFIG = stack.configPath;
-    process.env.E2E_STACK_STATE = stack.persistDir;
+    process.env.E2E_API_TOKEN = apiToken;
     process.env.E2E_SEED_IDS = JSON.stringify(ids);
   } catch (error) {
     await stack.stop();

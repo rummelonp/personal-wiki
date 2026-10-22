@@ -8,7 +8,8 @@ import {
   uniqueTitle,
 } from "./support/fixtures";
 import {
-  issueApiToken,
+  API_TOKEN_NAME,
+  apiToken,
   OAUTH_WRITERS,
   oauthWriterToken,
   updatePageWithOAuth,
@@ -93,8 +94,6 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
   page,
   api,
 }, testInfo) => {
-  const suffix = Math.random().toString(36).slice(2, 8);
-  const tokenName = `e2e-token-${suffix}`;
   const clientName = OAUTH_WRITERS.author;
   // owner の保存は直前の owner の版にまとまるが、AI の書き込みは毎回 1 件の版になる
   const created = await api.createPage({
@@ -102,8 +101,7 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
     body: "owner の本文",
     visibility: "public",
   });
-  const token = await issueApiToken(tokenName, "read,write");
-  await updatePageWithToken(token, created, "token の本文");
+  await updatePageWithToken(apiToken(), created, "token の本文");
   const afterToken = await api.getPage(created.id);
   await updatePageWithOAuth(oauthWriterToken(clientName), afterToken, "OAuth の接続の本文");
 
@@ -111,11 +109,11 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
   await expect(bodyEditor(page)).toContainText("OAuth の接続の本文");
   await expect(entries(page)).toHaveCount(3);
   await expect(entries(page).nth(0)).toContainText(clientName);
-  await expect(entries(page).nth(1)).toContainText(tokenName);
+  await expect(entries(page).nth(1)).toContainText(API_TOKEN_NAME);
   await expect(entries(page).nth(2)).toContainText("Web");
 
   await entries(page).nth(1).click();
-  await expect(viewer(page)).toContainText(tokenName);
+  await expect(viewer(page)).toContainText(API_TOKEN_NAME);
   await showFull(page);
   await expect(viewer(page).locator(".cm-content")).toHaveText("token の本文");
   await closeViewer(page);

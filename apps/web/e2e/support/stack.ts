@@ -51,7 +51,7 @@ export { OWNER_EMAIL };
 export interface Stack {
   origin: string;
   sessionSecret: string;
-  /** wrangler dev が使う設定と D1 の保存先。テストが D1 に直接行を足す（principals.ts）のに使う */
+  /** wrangler dev が使う設定と D1 の保存先。global setup が token の行を足す（principals.ts）のに使い、テストには渡さない */
   configPath: string;
   persistDir: string;
   stop: () => Promise<void>;

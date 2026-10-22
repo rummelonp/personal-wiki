@@ -14,35 +14,45 @@ import { OWNER_EMAIL, WORKER_DIR } from "./stack";
 /*
  * owner 以外の書き手（API token と OAuth の接続）として書くための部品。履歴の作成者の表示を、
  * それぞれの経路で保存した版で確かめるのに使う。Worker の認証には手を入れず、本番と同じ入口を通す。
- * token は D1 に行を足して発行し、OAuth は登録、同意、コードの交換を /_auth/oauth/* に対して行う。
+ * token は global setup が D1 に行を足して発行し（issueApiToken）、OAuth は登録、同意、コードの交換を
+ * /_auth/oauth/* に対して行う。
  */
 
 const run = promisify(execFile);
 
-function stackEnv(): { origin: string; sessionSecret: string; config: string; state: string } {
-  const { E2E_ORIGIN, E2E_SESSION_SECRET, E2E_STACK_CONFIG, E2E_STACK_STATE } = process.env;
-  if (
-    E2E_ORIGIN === undefined ||
-    E2E_SESSION_SECRET === undefined ||
-    E2E_STACK_CONFIG === undefined ||
-    E2E_STACK_STATE === undefined
-  ) {
+function stackEnv(): { origin: string; sessionSecret: string } {
+  const { E2E_ORIGIN, E2E_SESSION_SECRET } = process.env;
+  if (E2E_ORIGIN === undefined || E2E_SESSION_SECRET === undefined) {
     throw new Error("global setup が動いていない（playwright.config.ts から実行する）");
   }
-  return {
-    origin: E2E_ORIGIN,
-    sessionSecret: E2E_SESSION_SECRET,
-    config: E2E_STACK_CONFIG,
-    state: E2E_STACK_STATE,
-  };
+  return { origin: E2E_ORIGIN, sessionSecret: E2E_SESSION_SECRET };
+}
+
+/** global setup が発行する、read と write の scope を持つ token の名前 */
+export const API_TOKEN_NAME = "e2e-token";
+
+/** global setup が発行した token の平文。履歴に出る名前は API_TOKEN_NAME */
+export function apiToken(): string {
+  const token = process.env.E2E_API_TOKEN;
+  if (token === undefined) {
+    throw new Error("global setup が動いていない（playwright.config.ts から実行する）");
+  }
+  return token;
 }
 
 /**
  * 起動中の wrangler dev の D1 に api_tokens の行を足し、平文の token を返す。
  * 平文は発行時にしか得られないので、api-token.mjs の発行と同じ生成と hash を使う。
+ *
+ * 別のプロセスから、動いている workerd と同じ SQLite に書くので、テストが保存している間に呼ぶと
+ * workerd の保存が SQLITE_BUSY で 500 になる。テストが始まる前の global setup だけで呼ぶ。
+ * テストが D1 の設定と保存先を知らないよう、これらは環境変数で渡さず、引数で受ける。
  */
-export async function issueApiToken(name: string, scopes: "read" | "read,write"): Promise<string> {
-  const { config, state } = stackEnv();
+export async function issueApiToken(
+  stack: { configPath: string; persistDir: string },
+  name: string,
+  scopes: "read" | "read,write",
+): Promise<string> {
   const token = generateToken();
   // name は SQL に埋め込まれるので、発行のスクリプトと同じ検査を通す。scopes も保存の形はスクリプトが組み立てる
   const sql = issueSql({
@@ -51,21 +61,23 @@ export async function issueApiToken(name: string, scopes: "read" | "read,write")
     scopes: resolveScopes(scopes),
     now: Date.now(),
   });
-  // 動いている workerd と同じ SQLite に別のプロセスから書くので、ほかのテストの保存と重なると
-  // SQLITE_BUSY で断られる。断られた INSERT は何も書いていないので、間を空けて同じ文を流し直す
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await run(
-        join(WORKER_DIR, "node_modules/.bin/wrangler"),
-        ["d1", "execute", "DB", "--local", "--persist-to", state, "-c", config, "--command", sql],
-        { cwd: dirname(config), env: { ...process.env, CI: "1" } },
-      );
-      return token;
-    } catch (error) {
-      if (attempt >= 5 || !String(error).includes("SQLITE_BUSY")) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
-    }
-  }
+  await run(
+    join(WORKER_DIR, "node_modules/.bin/wrangler"),
+    [
+      "d1",
+      "execute",
+      "DB",
+      "--local",
+      "--persist-to",
+      stack.persistDir,
+      "-c",
+      stack.configPath,
+      "--command",
+      sql,
+    ],
+    { cwd: dirname(stack.configPath), env: { ...process.env, CI: "1" } },
+  );
+  return token;
 }
 
 /** token で REST の更新を呼ぶ。Bearer の呼び出しには Origin の検査が掛からない */
