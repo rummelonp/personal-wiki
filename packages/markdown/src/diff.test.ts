@@ -194,7 +194,7 @@ describe("diffLines", () => {
     { name: "全面的な書き換え", common: () => false },
     { name: "10 行ごとに空行を共通に残した書き換え", common: (i: number) => i % 10 === 0 },
   ])(
-    "長いページの$nameでも差分を返す",
+    "長いページの $name でも差分を返す",
     ({ common }) => {
       const lines = (side: string) =>
         Array.from({ length: 50_000 }, (_, i) => (common(i) ? "" : `${side} ${i}`));
