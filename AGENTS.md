@@ -76,6 +76,8 @@ web を build し、一時の D1 で `wrangler dev` を起動して、owner の 
 E2E の build は `apps/web/dist` を上書きするので、8787 で動かしている開発の `wrangler dev` の画面もその版に変わる。
 web のソースを前の build から変えていなければ、`E2E_SKIP_BUILD=1 pnpm e2e` で build を省ける。
 E2E のポートは既定で 8790（inspector は 9339）。
+ブラウザとテストが繋ぐのは、wrangler dev の手前に置いた proxy（`apps/web/e2e/support/keep-alive-proxy.ts`）で、wrangler dev は `E2E_PORT + 1`（既定は 8791）で待つ。
+wrangler dev は idle の接続を 5 秒で閉じ、WebKit はそのとき再利用した接続への POST を送り直さず失敗するので、proxy が接続を保つ。
 別の worktree の E2E と同時に流すときは `E2E_PORT=8800 pnpm e2e` のように変える。
 `pnpm e2e:full` と `pnpm e2e:sheet` も同じサーバーを起動するので、`apps/web/dist` の上書き、`E2E_SKIP_BUILD`、`E2E_PORT` は `pnpm e2e` と同じに働く。
 
@@ -198,8 +200,8 @@ CI（`.github/workflows/ci.yml`）も同じ 3 つを実行する。
   取り込む各コミットで `pnpm typecheck` が通ることも確かめる。
 - 同時に動かすレーン: 3〜4 本まで（E2E を流すレーンが重なると手元のマシンが重くなる）。
 - 排他の資源: `--repeat-each` などで繰り返す E2E は、ほかのレーンの検証と重ねない（負荷で、関係のないテストが時間切れで落ちる）。
-- 開発サーバー: 開発の `wrangler dev` は 8787、`dev:owner` は既定で 8780 と 8781、E2E は既定で 8790 を使う。
-  8790 は統括の E2E に空けておき、レーンには 8800 から 10 ずつ `E2E_PORT` を渡す。
+- 開発サーバー: 開発の `wrangler dev` は 8787、`dev:owner` は既定で 8780 と 8781、E2E は既定で 8790 と 8791 を使う。
+  8790 と 8791 は統括の E2E に空けておき、レーンには 8800 から 10 ずつ `E2E_PORT` を渡す。
   8780 は統括の `dev:owner` に空けておき、レーンには 8700 から 10 ずつ `--port` を渡す（4 本までなら、開発、E2E、統括の `dev:owner` のポートと重ならない）。
   E2E は `.dev.vars` を読まないので、レーンの worktree に写さない。
 - 不変条件: エディタは `packages/editor/src/ime.ts` 冒頭の IME の不変条件を守る。

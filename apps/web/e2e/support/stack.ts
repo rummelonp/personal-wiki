@@ -12,6 +12,7 @@ import {
   writeLocalConfig,
   writeLocalSecrets,
 } from "../../../worker/scripts/local-dev.mjs";
+import { startKeepAliveProxy } from "./keep-alive-proxy";
 
 /*
  * E2E 用のローカルのスタック。web をビルドし、毎回新しい一時ディレクトリの D1 に migration を当てて
@@ -33,6 +34,11 @@ export const E2E_PORT = Number(process.env.E2E_PORT ?? 8790);
  * 重ならないよう、E2E_PORT からの差で決める（既定は 9339）。
  */
 const INSPECTOR_PORT = E2E_PORT + INSPECTOR_OFFSET;
+/**
+ * wrangler dev が待つポート。ブラウザとテストは手前の proxy（E2E_PORT）に繋ぐ（keep-alive-proxy.ts）。
+ * E2E_PORT からの差で決めるので、レーンごとに E2E_PORT を 10 ずつ離せば重ならない。
+ */
+const UPSTREAM_PORT = E2E_PORT + 1;
 export const E2E_ORIGIN = `http://localhost:${E2E_PORT}`;
 export { OWNER_EMAIL };
 
@@ -138,11 +144,11 @@ async function launch(
       "--persist-to",
       persist,
       "--port",
-      String(E2E_PORT),
+      String(UPSTREAM_PORT),
       "--inspector-port",
       String(INSPECTOR_PORT),
       "--ip",
-      "localhost",
+      "127.0.0.1",
       "--show-interactive-dev-session=false",
       "--log-level",
       "warn",
@@ -163,8 +169,10 @@ async function launch(
 }
 
 export async function startStack(): Promise<Stack> {
-  if (await portInUse(E2E_PORT)) {
-    throw new Error(`ポート ${E2E_PORT} が使用中。前の E2E のサーバーが残っていないか確かめる`);
+  for (const port of [E2E_PORT, UPSTREAM_PORT]) {
+    if (await portInUse(port)) {
+      throw new Error(`ポート ${port} が使用中。前の E2E のサーバーが残っていないか確かめる`);
+    }
   }
   // 繰り返し実行するときにビルドを省く（web のソースを変えていないときだけ使う）
   const build =
@@ -190,7 +198,7 @@ export async function startStack(): Promise<Stack> {
   const { child, sessionSecret, configPath, persistDir, log } = launched;
 
   // wrangler は workerd を子に持つので、プロセスグループ（detached で作った）ごと止める。
-  // wrangler だけを止めると workerd が残り、8790 と 9339 を握ったままになることがある
+  // wrangler だけを止めると workerd が残り、wrangler dev と inspector のポートを握ったままになることがある
   const signalGroup = (signal: NodeJS.Signals) => {
     try {
       if (child.pid !== undefined) process.kill(-child.pid, signal);
@@ -202,8 +210,10 @@ export async function startStack(): Promise<Stack> {
   const killOnExit = () => signalGroup("SIGKILL");
   process.once("exit", killOnExit);
 
+  let stopProxy: (() => Promise<void>) | undefined;
   const stop = async () => {
     process.off("exit", killOnExit);
+    await stopProxy?.();
     if (child.exitCode === null && child.signalCode === null) {
       const exited = new Promise((done) => child.once("exit", done));
       signalGroup("SIGTERM");
@@ -214,10 +224,12 @@ export async function startStack(): Promise<Stack> {
     // 子の workerd は wrangler より後に終わることがある
     signalGroup("SIGKILL");
     rmSync(dir, { recursive: true, force: true });
-    await waitForPortsClosed([E2E_PORT, INSPECTOR_PORT]);
+    await waitForPortsClosed([E2E_PORT, UPSTREAM_PORT, INSPECTOR_PORT]);
   };
 
   try {
+    // wrangler dev が起動するまでの proxy は 502 を返し、waitForHealthy が待つ
+    stopProxy = await startKeepAliveProxy(E2E_PORT, UPSTREAM_PORT);
     await timed("起動", () => waitForHealthy(child, log));
   } catch (error) {
     await stop();
