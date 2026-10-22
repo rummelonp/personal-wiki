@@ -120,6 +120,9 @@ async function openSwitcherAndType(page: Page, text: string) {
   const switcher = page.getByRole("dialog", { name: "ページを検索" });
   const input = switcher.getByRole("combobox", { name: "検索語" });
   await input.fill(text);
+  // 欄が空のまま Enter すると、全ページが候補に並び、先頭の最近のページが選ばれる。
+  // 後段の失敗が欄の欠落か候補の遅れかを、ここで切り分ける
+  await expect(input, "入力した語が欄に残っていない").toHaveValue(text);
   return { switcher, input };
 }
 
@@ -129,9 +132,10 @@ test("quick switcher で語を打って Enter しても、ページは作られ�
   const title = uniqueTitle(testInfo, "Enter で作らない");
   const { switcher, input } = await openSwitcherAndType(page, title);
   // 既定の行は「本文から検索」。作成は選ばれていない
-  await expect(switcher.getByRole("option", { selected: true })).toHaveText(
-    `「${title}」を本文から検索`,
-  );
+  await expect(
+    switcher.getByRole("option", { selected: true }),
+    "欄に語はあるが、選ばれた行が「本文から検索」にならない",
+  ).toHaveText(`「${title}」を本文から検索`);
   await input.press("Enter");
   await expect(page).toHaveURL(/\/\?q=/);
   await expect(page.getByRole("heading", { name: `「${title}」の検索結果` })).toBeVisible();
