@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { bodyEditor, expect, test, uniqueTitle } from "./support/fixtures";
-import { lineTexts, midPhraseBreaks, misplacedWbrs, phraseSeams } from "./support/line-breaks";
+import { measureWrap, type WrapSummary } from "./support/line-breaks";
 
 /*
  * 一覧の見出し（.list-title）とページの title（.note-title）の折り返し。
@@ -35,21 +35,44 @@ const isAutoPhraseRendering = (page: Page): Promise<boolean> =>
   page.evaluate(() => CSS.supports("word-break", "auto-phrase"));
 
 /**
+ * 行が描かれるまで測り直す。iPhone の WebKit は幅を変えた直後に、描かれている見出しの文字の幅を 0 と返すことがある。
+ * 描かれていれば、測るのは 1 回で済む。
+ */
+async function measureDrawnWrap(heading: Locator, width: number): Promise<WrapSummary> {
+  const measured: WrapSummary[] = [];
+  await expect
+    .poll(
+      async () => {
+        const summary = await measureWrap(heading);
+        measured.push(summary);
+        return summary.lineTexts.length;
+      },
+      { message: `${width}px で見出しが描かれていない` },
+    )
+    .toBeGreaterThan(0);
+  return measured.at(-1) as WrapSummary;
+}
+
+/**
  * 画面の幅を振り、見出しが語の途中で折り返さないこと、<wbr> が文節の切れ目だけにあることを測る。
  * 折り返す幅が 1 つも無ければ何も測れていないので、失敗にする。
+ * 幅ごとの往復は setViewportSize と 1 回の evaluate（measureWrap）に抑える。負荷の高い runner（CI の macOS）では
+ * 往復が秒単位で止まることがあり、項目ごとに往復すると 1 テストが 60 秒の時間切れになる。
  */
 async function expectNoMidPhraseBreaks(page: Page, heading: Locator): Promise<void> {
   const height = page.viewportSize()?.height ?? 800;
+  await expect(heading).toBeVisible();
   let wrapped = 0;
+  let last: WrapSummary | null = null;
   for (let width = NARROWEST; width <= WIDEST; width += STEP) {
     await page.setViewportSize({ width, height });
-    await expect(heading).toBeVisible();
-    if ((await lineTexts(heading)).length > 1) wrapped++;
-    expect(await midPhraseBreaks(heading), `${width}px で語の途中で折り返している`).toEqual([]);
+    last = await measureDrawnWrap(heading, width);
+    if (last.lineTexts.length > 1) wrapped++;
+    expect(last.midPhraseBreaks, `${width}px で語の途中で折り返している`).toEqual([]);
   }
   expect(wrapped, "折り返す幅が無く、測れていない").toBeGreaterThan(0);
-  expect((await phraseSeams(heading)).length, "<wbr> が無い").toBeGreaterThan(0);
-  expect(await misplacedWbrs(heading), "<wbr> が文節の切れ目にない").toEqual([]);
+  expect(last?.seamCount, "<wbr> が無い").toBeGreaterThan(0);
+  expect(last?.misplacedWbrs, "<wbr> が文節の切れ目にない").toEqual([]);
 }
 
 /** 条件に合う API の応答を、release まで返さない。 */
@@ -111,7 +134,7 @@ test.describe("匿名", () => {
     await expectNoMidPhraseBreaks(page, heading);
   });
 
-  test("読み込み中のスケルトンの title と一覧の見出しも、語の途中で折り返さない", async ({
+  test("読み込み中のスケルトンの title は、語の途中で折り返さない", async ({
     page,
     api,
   }, testInfo) => {
@@ -133,16 +156,19 @@ test.describe("匿名", () => {
     test.skip(await isAutoPhraseRendering(page), "auto-phrase を解釈する描画は文節で切る");
     await expectNoMidPhraseBreaks(page, heading);
     release();
+  });
 
+  test("読み込み中のスケルトンの一覧の見出しは、語の途中で折り返さない", async ({ page }) => {
     const tag = longText();
-    const releaseList = await holdResponses(
+    const release = await holdResponses(
       page,
       (url) => url.pathname === "/api/pages/recent" || url.pathname === "/api/pages",
     );
     await page.goto(`/?tag=${encodeURIComponent(tag)}`);
-    const listHeading = page.locator(".home[aria-busy='true'] .list-title");
-    await expect(listHeading).toHaveText(`タグ「${tag}」`);
-    await expectNoMidPhraseBreaks(page, listHeading);
-    releaseList();
+    const heading = page.locator(".home[aria-busy='true'] .list-title");
+    await expect(heading).toHaveText(`タグ「${tag}」`);
+    test.skip(await isAutoPhraseRendering(page), "auto-phrase を解釈する描画は文節で切る");
+    await expectNoMidPhraseBreaks(page, heading);
+    release();
   });
 });

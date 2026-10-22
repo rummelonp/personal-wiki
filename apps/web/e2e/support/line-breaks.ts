@@ -288,8 +288,34 @@ export async function midPhraseBreaksAcrossWidths(
  * 折り返しに現れない位置も調べる（幅が変わると、その位置で折り返す）。
  */
 export async function misplacedWbrs(locator: Locator): Promise<string[]> {
-  const { seams } = await measure(locator);
+  return misplacedWbrsOf((await measure(locator)).seams);
+}
+
+function misplacedWbrsOf(seams: readonly Seam[]): string[] {
   return seams
     .filter((seam) => seamProblem(seam) !== null)
     .map((seam) => `${seam.before.slice(-3)}|${seam.after.slice(0, 3)}`);
+}
+
+/** measureWrap の結果。各項目は、同名の関数が返す値と同じ。 */
+export interface WrapSummary {
+  lineTexts: string[];
+  midPhraseBreaks: string[];
+  seamCount: number;
+  misplacedWbrs: string[];
+}
+
+/**
+ * lineTexts、midPhraseBreaks、<wbr> の数、misplacedWbrs を 1 回の evaluate で測る。
+ * 画面の幅を実際に振るテストは幅ごとに測るので、項目ごとに evaluate を呼ぶと、負荷の高い runner で
+ * 往復の遅れが幅の数と項目の数の積だけ積もる。
+ */
+export async function measureWrap(locator: Locator): Promise<WrapSummary> {
+  const { lines, seams } = await measure(locator);
+  return {
+    lineTexts: lines.map((line) => line.text),
+    midPhraseBreaks: midPhraseBreaksOf(lines),
+    seamCount: seams.length,
+    misplacedWbrs: misplacedWbrsOf(seams),
+  };
 }
