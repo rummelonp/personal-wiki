@@ -298,10 +298,12 @@ export class LinkRewriteRunner {
     for (const wake of wakers) wake();
   }
 
-  private async untilResumed(generation: number): Promise<void> {
+  /** 待ち終えた時点で世代が変わっていなければ true を返す。 */
+  private async untilResumed(generation: number): Promise<boolean> {
     while (this.suspended && generation === this.generation) {
       await new Promise<void>((resolve) => this.wakers.add(resolve));
     }
+    return generation === this.generation;
   }
 
   /** 終わった結果を閉じる。 */
@@ -372,10 +374,7 @@ export class LinkRewriteRunner {
     let counts: RetryCounts = { conflicts: 0, errors: 0 };
     for (;;) {
       // 待たないときは await を挟まない（start の同じ同期区間で最初の step を送る）
-      if (this.suspended) {
-        await this.untilResumed(generation);
-        if (!current()) return null;
-      }
+      if (this.suspended && !(await this.untilResumed(generation))) return null;
       const result = await this.runStep();
       if (!current()) return null;
       // 止めた状態は、この同期区間の state から作って finish する。await を挟むと、その間の start が

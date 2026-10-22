@@ -457,6 +457,19 @@ describe("LinkRewriteRunner", () => {
     expect(step).toHaveBeenCalledTimes(1);
   });
 
+  it("次の step の前で suspend の解除を待っている間に stop すると、step を送らずに終わる", async () => {
+    const { runner, step } = setup([ok({ processed: processed("b"), remaining: 0 })]);
+    step.mockImplementationOnce(async () => ok({ processed: processed("a"), remaining: 1 }));
+    runner.start(2);
+    runner.suspend();
+    await vi.waitFor(() => expect(runner.getState().done).toBe(1));
+    runner.stop();
+    runner.resume();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runner.getState().status).toBe("idle");
+    expect(step).toHaveBeenCalledTimes(1);
+  });
+
   it("書き換えたページを開いているエディタに知らせ、取り込みの完了は待たずに次を呼ぶ", async () => {
     const { runner, step, settled } = setup([
       ok({ processed: processed("a"), remaining: 1 }),
