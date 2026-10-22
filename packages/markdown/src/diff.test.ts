@@ -2,25 +2,55 @@ import { describe, expect, it } from "vitest";
 import { diffLines, diffWords, type LineDiff, type WordDiff } from "./diff";
 
 /**
- * 両側の行番号が 1 から連番で、その番号の行の内容と一致すること（両側を復元できることを含む）と、
- * 変更箇所の中で delete が insert より先に並ぶことを確かめる。
+ * 片側の行番号が 1 から連番で、その番号の行の内容と一致すること（その側を復元できることを含む）と、
+ * 反対側にしか無い行（old 側なら insert）が、この側の行番号を持たないことを確かめる。
  */
+function sideInconsistency(
+  diff: readonly LineDiff[],
+  side: "old" | "new",
+  lines: readonly string[],
+): string | null {
+  const absent = side === "old" ? "insert" : "delete";
+  let restored = 0;
+  for (const line of diff) {
+    const number = side === "old" ? line.oldLine : line.newLine;
+    if (line.kind === absent) {
+      if (number !== null) return `${absent} が ${side} 側の行番号を持つ: ${JSON.stringify(line)}`;
+    } else if (number !== restored + 1 || line.text !== lines[restored]) {
+      return `${side} 側の ${restored + 1} 行目（${JSON.stringify(lines[restored])}）と合わない: ${JSON.stringify(line)}`;
+    } else {
+      restored++;
+    }
+  }
+  return restored === lines.length ? null : `${side} 側の ${restored} 行しか復元できない`;
+}
+
+/**
+ * 両側の行番号と内容が対応することと、変更箇所の中で delete が insert より先に並ぶことを確かめ、
+ * 破れた条件を文字列で返す（満たせば null）。
+ * 乱数の入力で千回以上呼ぶので、expect を呼び出しごとに何度も使わず、普通の比較で判定する。
+ */
+function inconsistency(
+  diff: readonly LineDiff[],
+  beforeLines: readonly string[],
+  afterLines: readonly string[],
+): string | null {
+  const misorder = diff.findIndex(
+    (line, index) => line.kind === "delete" && diff[index - 1]?.kind === "insert",
+  );
+  return (
+    sideInconsistency(diff, "old", beforeLines) ??
+    sideInconsistency(diff, "new", afterLines) ??
+    (misorder < 0 ? null : `diff の ${misorder + 1} 行目の delete が insert の後に並ぶ`)
+  );
+}
+
 function expectConsistent(
   diff: readonly LineDiff[],
   beforeLines: readonly string[],
   afterLines: readonly string[],
 ): void {
-  expect(
-    diff.filter((line) => line.kind !== "insert").map((line) => [line.oldLine, line.text]),
-  ).toEqual(beforeLines.map((text, index) => [index + 1, text]));
-  expect(
-    diff.filter((line) => line.kind !== "delete").map((line) => [line.newLine, line.text]),
-  ).toEqual(afterLines.map((text, index) => [index + 1, text]));
-  expect(diff.every((line) => line.kind !== "insert" || line.oldLine === null)).toBe(true);
-  expect(diff.every((line) => line.kind !== "delete" || line.newLine === null)).toBe(true);
-  expect(
-    diff.some((line, index) => line.kind === "delete" && diff[index - 1]?.kind === "insert"),
-  ).toBe(false);
+  expect(inconsistency(diff, beforeLines, afterLines)).toBeNull();
 }
 
 function equalCount(diff: readonly LineDiff[]): number {
@@ -125,6 +155,8 @@ describe("diffLines", () => {
     expect(diff.map((line) => line.kind)).toEqual(["delete", "delete", "insert", "insert"]);
   });
 
+  // 仕事量は種の固定で決まるが、並列実行時の CPU 競合で処理が止まる時間は 5s の既定に収まる保証がないので、
+  // 長いページのテストに合わせて伸ばす。
   it("ランダムな入力で、行番号が両側の行と対応し、一致する行数が最長共通部分列と等しい", () => {
     const next = random(20260912);
     const alphabet = ["a", "b", "c", "d", "日本語", ""];
@@ -154,7 +186,7 @@ describe("diffLines", () => {
       expectConsistent(diff, before.split("\n"), after.split("\n"));
       expect(equalCount(diff)).toBe(lcsLength(before.split("\n"), after.split("\n")));
     }
-  });
+  }, 30_000);
 
   // 全行を相手に O((N+M)·D) で探索すると、この規模では数十秒かかる。既定の testTimeout（5s）
   // は単体実行なら十分足りるが、並列実行時の CPU 競合下では超えることがある。
