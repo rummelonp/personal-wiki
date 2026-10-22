@@ -238,13 +238,24 @@ function midPhraseBreaksOf(lines: readonly Line[]): string[] {
   return breaks;
 }
 
+/** splitNumbers の結果。 */
+export interface NumberSplits {
+  /** 描かれた行があったか。false なら文字が幅 0 で、まだ描かれていないので splits は当てにならない */
+  drawn: boolean;
+  /** 数を分けた折り返し。「前の行の末尾の文字|次の行の先頭の文字」 */
+  splits: string[];
+}
+
 /**
  * 要素の本文の折り返しのうち、数とそれに続く単位（「3|文字」）や、「約」と数（「約|3」）を別の行に分けたものを
  * 「前の行の末尾の文字|次の行の先頭の文字」で返す。数の中の区切り（「65,|536」「19:|09」「1/|3」）と、
  * 日付と時刻の間の空白での折り返しは数どうしなので返さない。
+ * iPhone の WebKit は、画面の幅を変えた直後に文字の幅を 0 と返すことがあり、そのとき行は 1 つも無く
+ * 分けた折り返しも見つからない。呼び出し側が測り直せるよう、drawn で描かれたかを返す。
  */
-export async function splitNumbers(locator: Locator): Promise<string[]> {
-  return splitNumbersOf((await measure(locator)).lines);
+export async function splitNumbers(locator: Locator): Promise<NumberSplits> {
+  const { lines } = await measure(locator);
+  return { drawn: lines.length > 0, splits: splitNumbersOf(lines) };
 }
 
 /** 要素の幅を振り、splitNumbers に当たる折り返しを重複なしで集める。幅は 1 回の evaluate で振る。 */

@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { bodyEditor, expect, saveState, test, uniqueTitle } from "./support/fixtures";
-import { splitNumbers, splitNumbersAcrossWidths } from "./support/line-breaks";
+import { type NumberSplits, splitNumbers, splitNumbersAcrossWidths } from "./support/line-breaks";
 
 /*
  * 画面の文言は数と単位を詰めて書く（「3文字以上」「2バイト」）。詰めると、文節で切らない描画（iPhone の WebKit）は
@@ -13,14 +13,34 @@ import { splitNumbers, splitNumbersAcrossWidths } from "./support/line-breaks";
 const NARROWEST = 320;
 const WIDEST = 375;
 
-/** 画面の幅を振り、数と単位が別の行に分かれた幅と位置を集める。 */
+/** 行が描かれるまで測り直す。描かれていれば、測るのは 1 回で済む。 */
+async function drawnNumberSplits(target: Locator, width: number): Promise<string[]> {
+  const measured: NumberSplits[] = [];
+  await expect
+    .poll(
+      async () => {
+        const result = await splitNumbers(target);
+        measured.push(result);
+        return result.drawn;
+      },
+      { message: `${width}px で文が描かれていない` },
+    )
+    .toBe(true);
+  return (measured.at(-1) as NumberSplits).splits;
+}
+
+/**
+ * 画面の幅を振り、数と単位が別の行に分かれた幅と位置を集める。
+ * 幅ごとの往復は setViewportSize と 1 回の evaluate に抑える。負荷の高い runner（CI の macOS）では
+ * 往復が秒単位で止まることがあり、幅の数（56）だけ往復すると 1 テストが 60 秒の時間切れになる。
+ */
 async function numberSplitsAcrossWidths(page: Page, target: Locator): Promise<string[]> {
   const height = page.viewportSize()?.height ?? 800;
+  await expect(target).toBeVisible();
   const found: string[] = [];
   for (let width = NARROWEST; width <= WIDEST; width++) {
     await page.setViewportSize({ width, height });
-    await expect(target).toBeVisible();
-    for (const split of await splitNumbers(target)) found.push(`${width}px: ${split}`);
+    for (const split of await drawnNumberSplits(target, width)) found.push(`${width}px: ${split}`);
   }
   return found;
 }
