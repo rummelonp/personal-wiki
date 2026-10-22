@@ -1,5 +1,5 @@
 import { ownerApi } from "./api";
-import { registerOAuthClient } from "./principals";
+import { connectOAuthWriters, registerOAuthClient } from "./principals";
 import { seed } from "./seed";
 import { setupTimings, startStack, timed } from "./stack";
 
@@ -14,6 +14,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // 同意画面を開くだけのテストが共有する client。Worker の登録は 1 日 20 件までなので、worker ごとには登録しない
     const consentClientId = await timed("OAuth の client", () =>
       registerOAuthClient(stack.origin, "Claude"),
+    );
+    // 履歴のテストが使う接続。繰り返し実行しても Worker の登録の上限に届かないよう、実行ごとに 1 回だけ作る
+    process.env.E2E_OAUTH_WRITER_TOKENS = await timed("OAuth の接続", () =>
+      connectOAuthWriters(stack.origin, stack.sessionSecret),
     );
     process.env.E2E_ORIGIN = stack.origin;
     process.env.E2E_CONSENT_CLIENT_ID = consentClientId;

@@ -127,12 +127,56 @@ export async function registerOAuthClient(origin: string, clientName: string): P
 }
 
 /**
+ * 履歴の作成者の表示を確かめるテストが使う接続の名前。Worker の登録は 1 日 20 件までなので、
+ * テストごとには登録せず、global setup が実行ごとに 1 回ずつ接続して（connectOAuthWriters）、
+ * テストは同じアクセストークンを使い回す。--repeat-each で何回繰り返しても登録は増えない。
+ */
+export const OAUTH_WRITERS = {
+  author: "e2e-client",
+  longName: "Claude Code (personal-wiki) e2e with a long name",
+} as const;
+
+/**
+ * OAUTH_WRITERS の接続を 1 つずつ作り、環境変数に載せるための JSON を返す。
+ * アクセストークンの寿命は 1 時間で、実行がそれを超えると使い回したトークンが 401 になる。
+ */
+export async function connectOAuthWriters(origin: string, sessionSecret: string): Promise<string> {
+  const tokens: Record<string, string> = {};
+  for (const name of Object.values(OAUTH_WRITERS)) {
+    tokens[name] = await connectWith(origin, sessionSecret, name);
+  }
+  return JSON.stringify(tokens);
+}
+
+/** global setup が用意した、OAUTH_WRITERS の接続のアクセストークン */
+export function oauthWriterToken(name: (typeof OAUTH_WRITERS)[keyof typeof OAUTH_WRITERS]): string {
+  const raw = process.env.E2E_OAUTH_WRITER_TOKENS;
+  const token = raw === undefined ? undefined : (JSON.parse(raw) as Record<string, string>)[name];
+  if (token === undefined) {
+    throw new Error("global setup が接続を用意していない（playwright.config.ts から実行する）");
+  }
+  return token;
+}
+
+/**
  * 接続の名前を名乗る client を新しく登録し、owner として同意して、/mcp に使えるアクセストークンを返す。
- * client を使い回さないのは、同じ client が同意し直すと、ライブラリが前の grant を取り消すため（既定）。
- * 同意画面の POST は、画面を開いたときに付く binding の cookie と owner のセッションを両方求める。
+ * 呼ぶたびに client を 1 件登録するので、--repeat-each で繰り返すと Worker の登録の上限に届く。
+ * 同意そのものを確かめるテストだけが使い、作成者の表示などを見るテストは OAUTH_WRITERS の接続を使う。
  */
 export async function connectOAuthClient(clientName: string): Promise<string> {
   const { origin, sessionSecret } = stackEnv();
+  return connectWith(origin, sessionSecret, clientName);
+}
+
+/**
+ * client を使い回さないのは、同じ client が同意し直すと、ライブラリが前の grant を取り消すため（既定）。
+ * 同意画面の POST は、画面を開いたときに付く binding の cookie と owner のセッションを両方求める。
+ */
+async function connectWith(
+  origin: string,
+  sessionSecret: string,
+  clientName: string,
+): Promise<string> {
   const clientId = await registerOAuthClient(origin, clientName);
 
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));

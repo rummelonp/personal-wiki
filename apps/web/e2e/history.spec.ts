@@ -8,8 +8,9 @@ import {
   uniqueTitle,
 } from "./support/fixtures";
 import {
-  connectOAuthClient,
   issueApiToken,
+  OAUTH_WRITERS,
+  oauthWriterToken,
   updatePageWithOAuth,
   updatePageWithToken,
 } from "./support/principals";
@@ -94,7 +95,7 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
 }, testInfo) => {
   const suffix = Math.random().toString(36).slice(2, 8);
   const tokenName = `e2e-token-${suffix}`;
-  const clientName = `e2e-client-${suffix}`;
+  const clientName = OAUTH_WRITERS.author;
   // owner の保存は直前の owner の版にまとまるが、AI の書き込みは毎回 1 件の版になる
   const created = await api.createPage({
     title: uniqueTitle(testInfo, "作成者"),
@@ -104,7 +105,7 @@ test("token と OAuth の接続が保存した版は、作成者を種類つき�
   const token = await issueApiToken(tokenName, "read,write");
   await updatePageWithToken(token, created, "token の本文");
   const afterToken = await api.getPage(created.id);
-  await updatePageWithOAuth(await connectOAuthClient(clientName), afterToken, "OAuth の接続の本文");
+  await updatePageWithOAuth(oauthWriterToken(clientName), afterToken, "OAuth の接続の本文");
 
   await page.goto(`/p/${created.id}`);
   await expect(bodyEditor(page)).toContainText("OAuth の接続の本文");
@@ -128,14 +129,13 @@ test("名前の長い接続の版があっても、行は 1 行のままで作�
   page,
   api,
 }, testInfo) => {
-  const suffix = Math.random().toString(36).slice(2, 8);
-  const clientName = `Claude Code (personal-wiki) ${suffix} with a long name`;
+  const clientName = OAUTH_WRITERS.longName;
   const created = await api.createPage({
     title: uniqueTitle(testInfo, "長い名前"),
     body: "owner の本文",
     visibility: "public",
   });
-  await updatePageWithOAuth(await connectOAuthClient(clientName), created, "接続の本文");
+  await updatePageWithOAuth(oauthWriterToken(clientName), created, "接続の本文");
 
   await page.goto(`/p/${created.id}`);
   await expect(bodyEditor(page)).toContainText("接続の本文");
