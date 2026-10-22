@@ -151,6 +151,56 @@ test("「さらに表示」で読み足した位置まで、戻るで戻る", as
   await expect.poll(() => scrollY(page)).toBeLessThan(target + TOLERANCE);
 });
 
+/**
+ * 再読み込みの後に位置が戻らなかったとき、原因を切り分ける材料。再読み込みの前に history.state に
+ * 位置と件数が書かれていたか、起動の時点で読めていたか、一覧の要求に件数（limit）が付いたかを残す。
+ * アプリのスクリプトが state を書き換える前に起動時の値を取るので、addInitScript で記録する。
+ */
+interface ReloadDiagnostics {
+  /** 再読み込みの直前に、離れる側の画面から読んだ history.state */
+  readBeforeReload: () => Promise<void>;
+  /** 再読み込みの後の、一覧の要求だけを数え直す */
+  startRecordingRequests: () => void;
+  /** 失敗したときの、診断の文。ページが閉じていても投げない */
+  describe: () => Promise<string>;
+}
+
+type WindowWithBootState = Window & { bootHistoryState?: string };
+
+async function watchReload(page: Page): Promise<ReloadDiagnostics> {
+  await page.addInitScript(() => {
+    (window as WindowWithBootState).bootHistoryState = JSON.stringify(history.state);
+  });
+  let stateBeforeReload: string | undefined;
+  let recentRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/pages/recent")) recentRequests.push(request.url());
+  });
+  return {
+    readBeforeReload: async () => {
+      stateBeforeReload = await page.evaluate(() => JSON.stringify(history.state));
+    },
+    startRecordingRequests: () => {
+      recentRequests = [];
+    },
+    describe: async () => {
+      const live = await page
+        .evaluate(() => ({
+          bootState: (window as WindowWithBootState).bootHistoryState,
+          state: JSON.stringify(history.state),
+          scrollY: Math.round(window.scrollY),
+        }))
+        .catch(() => undefined);
+      return [
+        `再読み込みの前の history.state: ${stateBeforeReload ?? "(まだ読んでいない)"}`,
+        `起動の時点の history.state: ${live?.bootState ?? "(読めない)"}`,
+        `今の history.state: ${live?.state ?? "(読めない)"}、scrollY: ${live?.scrollY ?? "(読めない)"}`,
+        `再読み込みの後の recent の要求: ${JSON.stringify(recentRequests)}`,
+      ].join("\n");
+    },
+  };
+}
+
 test("戻る、進む、戻ると続けたあとも、再読み込みのあとも、位置が戻る", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".entries .entry").first()).toBeVisible();
@@ -169,13 +219,21 @@ test("戻る、進む、戻ると続けたあとも、再読み込みのあと�
     await expect(page.locator("h1.note-title, .title-input").first()).toBeVisible();
   }
 
-  await page.goBack();
-  await expect(page.locator(".entries .entry").first()).toBeVisible();
-  await expect.poll(() => scrollY(page)).toBeGreaterThan(SCROLL - TOLERANCE);
-  await page.reload();
-  await expect(page.locator(".entries .entry").first()).toBeVisible();
-  await expect.poll(() => scrollY(page)).toBeGreaterThan(SCROLL - TOLERANCE);
-  await expect.poll(() => scrollY(page)).toBeLessThan(SCROLL + TOLERANCE);
+  const diagnostics = await watchReload(page);
+  try {
+    await page.goBack();
+    await expect(page.locator(".entries .entry").first()).toBeVisible();
+    await expect.poll(() => scrollY(page)).toBeGreaterThan(SCROLL - TOLERANCE);
+    await diagnostics.readBeforeReload();
+    diagnostics.startRecordingRequests();
+    await page.reload();
+    await expect(page.locator(".entries .entry").first()).toBeVisible();
+    await expect.poll(() => scrollY(page)).toBeGreaterThan(SCROLL - TOLERANCE);
+    await expect.poll(() => scrollY(page)).toBeLessThan(SCROLL + TOLERANCE);
+  } catch (error) {
+    if (error instanceof Error) error.message += `\n\n${await diagnostics.describe()}`;
+    throw error;
+  }
 });
 
 test("再読み込みの起動中にスケルトンが出ても、位置が戻る", async ({ page }) => {
