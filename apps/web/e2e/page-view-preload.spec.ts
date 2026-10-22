@@ -184,18 +184,22 @@ test("トップからページの画面の chunk を取るとき、その応答�
   // 初めて要求される
   let dependencies: string[] = [];
   let dependenciesRequested = false;
+  let checked = false;
   await page.route(PAGE_VIEW_CHUNK, async (route) => {
     dependencies = (await markedPaths(page)).slice(1);
     dependenciesRequested = await waitUntil(() =>
       dependencies.every((dependency) => requests.includes(dependency)),
     );
+    checked = true;
     await route.continue();
   });
 
   await page.goto("/");
   const link = page.locator(".entries").getByRole("link", { name: title, exact: true });
   await expect(link).toBeVisible();
-  await expect.poll(() => requests.some((path) => PAGE_VIEW_CHUNK.test(path))).toBe(true);
+  // 先読みは一覧を出した後の手が空いたときに始まり、その前に networkidle が済んでいることがある。
+  // waitForLoadState("networkidle") は済んだ後だと待たずに返るので、handler が確かめ終えたことで待つ
+  await expect.poll(() => checked, { timeout: 15_000 }).toBe(true);
   await page.waitForLoadState("networkidle");
   expect(dependencies.length).toBeGreaterThan(0);
   expect(dependenciesRequested).toBe(true);
