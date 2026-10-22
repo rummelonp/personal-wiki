@@ -80,6 +80,8 @@ E2E のポートは既定で 8790（inspector は 9339）。
 wrangler dev は idle の接続を 5 秒で閉じ、WebKit はそのとき再利用した接続への POST を送り直さず失敗するので、proxy が接続を保つ。
 別の worktree の E2E と同時に流すときは `E2E_PORT=8800 pnpm e2e` のように変える。
 `pnpm e2e:full` と `pnpm e2e:sheet` も同じサーバーを起動するので、`apps/web/dist` の上書き、`E2E_SKIP_BUILD`、`E2E_PORT` は `pnpm e2e` と同じに働く。
+wrangler dev の出力（警告とエラー。Worker が投げた例外を含む）は、行ごとに時刻を付けて `apps/web/e2e-output/wrangler-dev.log` に残り、実行ごとに書き直される。
+テストが Worker の 500 で落ちたときは、ここで例外を読む。
 
 `pnpm e2e` は主の環境（デスクトップの Chromium と iPhone の WebKit）だけを走らせる。
 従の環境（Firefox、Android の Chromium、デスクトップの WebKit）の smoke と速さの計測（`apps/web/e2e/perf-budget.json` の予算）は `pnpm e2e:full` だけが走らせる。

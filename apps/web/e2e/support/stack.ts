@@ -1,10 +1,11 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createWriteStream, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { dirname, join, resolve } from "node:path";
+import type { Readable } from "node:stream";
+import { promisify, stripVTControlCharacters } from "node:util";
 import {
   INSPECTOR_OFFSET,
   localWranglerEnv,
@@ -23,6 +24,11 @@ const run = promisify(execFile);
 
 const WEB_DIR = resolve(import.meta.dirname, "../..");
 export const WORKER_DIR = resolve(WEB_DIR, "../worker");
+/**
+ * wrangler dev の出力を、実行ごとに書き直して残す。Worker が 500 を返したときの例外は、テストの
+ * 失敗には応答の本文しか出ないので、ここで読む。
+ */
+const WRANGLER_LOG = join(WEB_DIR, "e2e-output/wrangler-dev.log");
 
 /**
  * 開発で使う 5173（vite）と 8787（wrangler dev）を避ける。別の worktree の E2E と同時に流すときは
@@ -104,6 +110,42 @@ export async function timed<T>(label: string, task: () => Promise<T>): Promise<T
   }
 }
 
+/**
+ * 子の出力を WRANGLER_LOG に行ごとに時刻を付けて書き、起動の失敗の報告に使う末尾も手元に持つ。
+ * 時刻は、並列のテストのどれの失敗とどの例外が対応するかを、テストの report の時刻と突き合わせるのに使う。
+ * closed は、子の出力が閉じてファイルを書き終えたときに解決する。
+ */
+function recordOutput(child: ChildProcess): { tail: () => string; closed: Promise<void> } {
+  mkdirSync(dirname(WRANGLER_LOG), { recursive: true });
+  const file = createWriteStream(WRANGLER_LOG);
+  const closed = new Promise<void>((done) => file.once("close", done));
+  // wrangler は TTY でなくても警告とエラーに色を付ける（環境変数で止められない）ので、ファイルでは外す
+  const writeLine = (line: string) =>
+    file.write(`${new Date().toISOString()} ${stripVTControlCharacters(line)}\n`);
+  let tail = "";
+  // stdout と stderr は別々に行の途中で切れて届くので、行の残りを流れごとに持つ
+  const follow = (stream: Readable | null) => {
+    let partial = "";
+    // 文字の途中で切れた chunk を化けさせない
+    stream?.setEncoding("utf8");
+    stream?.on("data", (text: string) => {
+      tail = (tail + text).slice(-20_000);
+      const lines = (partial + text).split("\n");
+      partial = lines.pop() ?? "";
+      for (const line of lines) writeLine(line);
+    });
+    stream?.on("end", () => {
+      if (partial !== "") writeLine(partial);
+    });
+  };
+  follow(child.stdout);
+  follow(child.stderr);
+  // exit ではなく close で閉じる。close は、pipe を受け継いだ workerd が wrangler より後に終わっても、
+  // その出力まで読み終えてから来る
+  child.once("close", () => file.end());
+  return { tail: () => tail, closed };
+}
+
 /** 一時ディレクトリに設定と秘密を書き、migration を当てて wrangler dev を起動する。 */
 async function launch(
   dir: string,
@@ -114,6 +156,7 @@ async function launch(
   configPath: string;
   persistDir: string;
   log: () => string;
+  logClosed: Promise<void>;
 }> {
   const sessionSecret = randomBytes(32).toString("base64");
   const config = writeLocalConfig(dir);
@@ -132,7 +175,6 @@ async function launch(
   // wrangler dev は起動時に assets のディレクトリを読むので、build の出力がそろってから起動する
   await build;
 
-  let output = "";
   const child = spawn(
     wrangler,
     [
@@ -160,12 +202,15 @@ async function launch(
       detached: true,
     },
   );
-  const append = (chunk: Buffer) => {
-    output = (output + chunk.toString()).slice(-20_000);
+  const { tail, closed } = recordOutput(child);
+  return {
+    child,
+    sessionSecret,
+    configPath: config,
+    persistDir: persist,
+    log: tail,
+    logClosed: closed,
   };
-  child.stdout?.on("data", append);
-  child.stderr?.on("data", append);
-  return { child, sessionSecret, configPath: config, persistDir: persist, log: () => output };
 }
 
 export async function startStack(): Promise<Stack> {
@@ -195,7 +240,7 @@ export async function startStack(): Promise<Stack> {
     rmSync(dir, { recursive: true, force: true });
     throw error;
   }
-  const { child, sessionSecret, configPath, persistDir, log } = launched;
+  const { child, sessionSecret, configPath, persistDir, log, logClosed } = launched;
 
   // wrangler は workerd を子に持つので、プロセスグループ（detached で作った）ごと止める。
   // wrangler だけを止めると workerd が残り、wrangler dev と inspector のポートを握ったままになることがある
@@ -223,6 +268,8 @@ export async function startStack(): Promise<Stack> {
     }
     // 子の workerd は wrangler より後に終わることがある
     signalGroup("SIGKILL");
+    // teardown の後に Playwright がプロセスを終えると、書き終えていない出力が失われる
+    await logClosed;
     rmSync(dir, { recursive: true, force: true });
     await waitForPortsClosed([E2E_PORT, UPSTREAM_PORT, INSPECTOR_PORT]);
   };
