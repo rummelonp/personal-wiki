@@ -432,8 +432,9 @@ export interface PublicPageEntry {
 /**
  * public で削除されていないページを、更新日時の降順で多くて limit 件返す。principal に関係なく draft を
  * 含めない（owner に返す HTML にも draft の title を入れない）。本文と抜粋は読まない。
- * 並びは pages_alive_updated をたどるが、visibility はインデックスに無く行ごとに照合するので、間に挟まる
- * draft の行も読む。
+ * 並びは public の行だけの部分インデックス pages_public_updated をたどり、draft の行を読まない。
+ * SQLite が部分インデックスを使うのは WHERE から visibility = 'public' が導けるときだけなので、ほかの一覧の
+ * `(? = 0 OR p.visibility = 'public')` の形にすると pages_alive_updated を使い、結果は同じまま draft の行も読む。
  */
 export async function listPublicPages(
   db: D1Database,

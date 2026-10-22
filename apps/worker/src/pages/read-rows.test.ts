@@ -5,6 +5,7 @@ import {
   type Cursor,
   type ListOrder,
   listPageTitles,
+  listPublicPages,
   listRecentPages,
   parseCursor,
 } from "./search";
@@ -140,4 +141,23 @@ describe("一覧の読み取り行数", () => {
       }
     },
   );
+
+  it("public のページの一覧は、それより新しい draft の行を読まない", async () => {
+    const publicPages = 200;
+    // 古い publicPages 件だけを public にし、残りの draft をすべてそれより新しくする
+    await env.DB.prepare(
+      `INSERT INTO pages (id, title, title_key, body, visibility, version, created_at, updated_at)
+       SELECT printf('%022d', value), 'bulk ' || value, 'bulk ' || value, '',
+              CASE WHEN value < ?3 THEN 'public' ELSE 'draft' END, 1, ?2 + value, ?2 + value
+       FROM json_each(?1)`,
+    )
+      .bind(JSON.stringify(Array.from({ length: PAGES }, (_, i) => i)), T0, publicPages)
+      .run();
+    const metered = meteredDb();
+    const pages = await listPublicPages(metered.db, { limit: 100 });
+    expect(pages).toHaveLength(100);
+    expect(pages[0]?.title).toBe(`bulk ${publicPages - 1}`);
+    // draft の行も読むと 1,900 行になる。部分インデックスを使わないクエリでも結果は変わらないので、行数で確かめる
+    expect(metered.counter.rowsRead).toBeLessThan(300);
+  });
 });

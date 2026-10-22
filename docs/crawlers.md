@@ -136,7 +136,7 @@ sitemaps.org の XSD は `<url>` を 1 つ以上求めるが、404 や 503 に�
 
 件数は、sitemaps.org の 1 ファイルの上限の 50,000 件までにする（`sitemap-xml.ts` の `SITEMAP_URL_LIMIT`）。
 sitemap index は作らず、上限を超えた分は更新日時の古いページから出さない。
-一覧は取得のたびに D1 から 1 回で引き、間に挟まる draft の行も含めて全ページの行を読む。
+一覧は取得のたびに D1 から 1 回で引き、public の行だけの部分インデックス（`pages_public_updated`）をたどるので、draft の行は読まない。
 sitemaps.org の非圧縮 50MB の上限や 50,000 件より先に、XML を組み立てる CPU 時間（Free の 10ms）が効き、見積もりでは数千件で超えうる。
 超えると一部でなく sitemap 全体がエラーで返らない。
 取得ごとに読む行数は D1 の日次の読み取りの上限にも数える。

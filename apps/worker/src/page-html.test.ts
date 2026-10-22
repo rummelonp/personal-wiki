@@ -1079,7 +1079,7 @@ describe("トップの HTML", () => {
     });
   });
 
-  it("一覧は本文を読まず、pages_alive_updated をたどって並べ替えない", async () => {
+  it("一覧は本文を読まず、pages_public_updated をたどって並べ替えない", async () => {
     await seed();
     const statements: string[] = [];
     const db = new Proxy(env.DB, {
@@ -1107,7 +1107,7 @@ describe("トップの HTML", () => {
       .bind(ROOT_PAGE_LIST_LIMIT)
       .all<{ detail: string }>();
     const plan = results.map((row) => row.detail).join("\n");
-    expect(plan).toContain("pages_alive_updated");
+    expect(plan).toContain("pages_public_updated");
     expect(plan).not.toContain("TEMP B-TREE");
   });
 });
