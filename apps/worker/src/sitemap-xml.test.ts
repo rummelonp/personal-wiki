@@ -4,7 +4,7 @@ import { createApp } from "./app";
 import { ROOT_PAGE_LIST_LIMIT } from "./page-html";
 import { SITEMAP_URL_LIMIT } from "./sitemap-xml";
 import { ownerCookie, ownerEnv } from "./test/owner";
-import { type PageJson, T0 } from "./test/pages";
+import { insertPublicPages, type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
 
 /*
@@ -165,8 +165,9 @@ describe("/sitemap.xml", () => {
   });
 
   it(`トップの一覧の ${ROOT_PAGE_LIST_LIMIT} 件で切らず、${SITEMAP_URL_LIMIT} 件までを 1 回の読み取りで引く`, async () => {
-    const { create } = await setup();
-    for (let i = 0; i <= ROOT_PAGE_LIST_LIMIT; i++) await create(`Page ${i}`, "public");
+    await insertPublicPages(
+      Array.from({ length: ROOT_PAGE_LIST_LIMIT + 1 }, (_, i) => `Page ${i}`),
+    );
     const statements: { sql: string; params: unknown[] }[] = [];
     const db = new Proxy(env.DB, {
       get(target, prop) {

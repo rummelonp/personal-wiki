@@ -11,7 +11,7 @@ import {
   rewritePageHtml,
 } from "./page-html";
 import { ownerCookie, ownerEnv } from "./test/owner";
-import { type PageJson, T0 } from "./test/pages";
+import { insertPublicPages, type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
 
 /*
@@ -841,11 +841,9 @@ describe("トップの HTML", () => {
   });
 
   it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外し、外したページへは sitemap.xml でたどらせる`, async () => {
-    const { navigate, create } = await setup();
-    const titles: string[] = [];
-    for (let i = 0; i <= ROOT_PAGE_LIST_LIMIT; i++) {
-      titles.push((await create(`Page ${i}`, "", "public")).title);
-    }
+    const { navigate } = await setup();
+    const titles = Array.from({ length: ROOT_PAGE_LIST_LIMIT + 1 }, (_, i) => `Page ${i}`);
+    await insertPublicPages(titles);
     const list = rootListOf(await (await navigate("/")).text());
     expect(list?.links.map((link) => link.title)).toEqual(titles.slice(1).reverse());
     expect(list?.sitemap).toBe(`${ORIGIN}/sitemap.xml`);
@@ -1237,10 +1235,11 @@ describe("ページのリンク先の一覧", () => {
 
   it(`多くて ${PAGE_LINK_LIST_LIMIT} 件で、title_key の順の後ろから外す`, async () => {
     const { navigate, create } = await setup();
-    const titles: string[] = [];
-    for (let i = 0; i <= PAGE_LINK_LIST_LIMIT; i++) {
-      titles.push((await create(`Page ${String(i).padStart(3, "0")}`, "", "public")).title);
-    }
+    const titles = Array.from(
+      { length: PAGE_LINK_LIST_LIMIT + 1 },
+      (_, i) => `Page ${String(i).padStart(3, "0")}`,
+    );
+    await insertPublicPages(titles);
     await create("Hub", titles.map((title) => `[[${title}]]`).join("\n"), "public");
     const links = pageRootOf(await (await navigate("/Hub")).text())?.links;
     expect(links?.map((link) => link.title)).toEqual(titles.slice(0, PAGE_LINK_LIST_LIMIT));

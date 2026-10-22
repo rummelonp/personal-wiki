@@ -266,15 +266,25 @@ describe("POST /api/attachments", () => {
     expect((await bucketOf(env).list()).objects).toEqual([]);
   });
 
-  it("Content-Length が無ければ 411、上限を超えれば 413", async () => {
-    const { call, bearer, writeToken, upload } = await setup();
+  // 上限（10MB）の本文を読んで R2 に書くテスト 2 つは、CPU が空いた手元では合わせて 0.2 秒ほどだが、
+  // ほかの検証と並べて load average が 50 ほどになると 0.6 秒と 2 秒かかり、負荷が増えると既定の 5 秒を
+  // 超える。上限ちょうどの本文を通すことが目的で軽くできないので、この 2 つだけ時間切れを 30 秒にする。
+  const LARGE_BODY_TIMEOUT_MS = 30_000;
+  const attachmentCount = () => env.DB.prepare("SELECT count(*) AS n FROM attachments").first();
+
+  it("Content-Length が無ければ 411", async () => {
+    const { call, bearer, writeToken } = await setup();
     const noLength = await call("/api/attachments", {
       method: "POST",
       headers: { ...bearer(writeToken), "Content-Type": "image/png" },
       body: PNG,
     });
     expect(noLength.status).toBe(411);
+    expect(await attachmentCount()).toEqual({ n: 0 });
+  });
 
+  it("上限を超える Content-Length を宣言すれば 413", async () => {
+    const { bearer, writeToken, upload } = await setup();
     const declared = await upload(PNG, "image/png", {
       ...bearer(writeToken),
       "Content-Length": String(ATTACHMENT_MAX_BYTES + 1),
@@ -284,23 +294,37 @@ describe("POST /api/attachments", () => {
       error: "attachment_too_large",
       max: ATTACHMENT_MAX_BYTES,
     });
-
-    // Content-Length を小さく偽っても、実際の長さで打ち切る
-    const big = new Uint8Array(ATTACHMENT_MAX_BYTES + 1);
-    big.set(PNG);
-    const lied = await upload(big, "image/png", {
-      ...bearer(writeToken),
-      "Content-Length": String(PNG.length),
-    });
-    expect(lied.status).toBe(413);
-
-    const atLimit = new Uint8Array(ATTACHMENT_MAX_BYTES);
-    atLimit.set(PNG);
-    expect((await upload(atLimit)).status).toBe(201);
-    expect(await env.DB.prepare("SELECT count(*) AS n FROM attachments").first()).toEqual({
-      n: 1,
-    });
+    expect(await attachmentCount()).toEqual({ n: 0 });
   });
+
+  it(
+    "Content-Length を小さく偽っても、実際の長さで打ち切って 413",
+    async () => {
+      const { bearer, writeToken, upload } = await setup();
+      const big = new Uint8Array(ATTACHMENT_MAX_BYTES + 1);
+      big.set(PNG);
+      const lied = await upload(big, "image/png", {
+        ...bearer(writeToken),
+        "Content-Length": String(PNG.length),
+      });
+      expect(lied.status).toBe(413);
+      expect(await attachmentCount()).toEqual({ n: 0 });
+      expect((await bucketOf(env).list()).objects).toEqual([]);
+    },
+    LARGE_BODY_TIMEOUT_MS,
+  );
+
+  it(
+    "上限ちょうどの長さは保存する",
+    async () => {
+      const { upload } = await setup();
+      const atLimit = new Uint8Array(ATTACHMENT_MAX_BYTES);
+      atLimit.set(PNG);
+      expect((await upload(atLimit)).status).toBe(201);
+      expect(await attachmentCount()).toEqual({ n: 1 });
+    },
+    LARGE_BODY_TIMEOUT_MS,
+  );
 
   it("R2 の binding が無ければ 503", async () => {
     const { upload, bearer, writeToken } = await setup();

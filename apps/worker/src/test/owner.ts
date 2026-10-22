@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { beforeAll } from "vitest";
 import { encodeBase64Url } from "../auth/base64url";
 import { readOwnerAuthConfig } from "../auth/owner-config";
 import { createSessionValue, SESSION_COOKIE_NAME } from "../auth/session";
@@ -56,8 +57,8 @@ interface KeyPair {
   e: string;
 }
 
-// RSA 2048 の鍵の生成は素数探しで、負荷が高いと 1 回に数秒かかる。テストごとに作ると時間切れで
-// 落ちるので、ファイルごとに slot ごとの 1 組を使い回す。kid は組に付ける名札で、組とは別に決める
+// RSA 2048 の鍵の生成は素数探しで、所要時間がぶれ、負荷が高いと 1 回に数秒かかる。テストごとに作ると
+// 時間切れで落ちるので、ファイルごとに slot ごとの 1 組を使い回す。kid は組に付ける名札で、組とは別に決める
 const keyPairs = new Map<number, Promise<KeyPair>>();
 
 async function generateKeyPair(): Promise<KeyPair> {
@@ -91,6 +92,17 @@ export async function signingKey(kid: string, slot = 0): Promise<SigningKey> {
     privateKey,
     publicJwk: { kty: "RSA", n, e, alg: "RS256", kid } as JsonWebKey & { kid: string },
   };
+}
+
+/**
+ * slot が 0 から slots 未満の鍵を、ファイルの最初のテストより前に作る。テストの中で作ると、生成の
+ * 時間が最初に使うテストの時間切れ（5 秒）に数えられ、負荷が高いと生成が数秒かかって落ちる。
+ * 生成の所要時間は乱数で大きくぶれるので、hook の時間切れは 5 秒でなく 1 分にする。
+ */
+export function pregenerateSigningKeys(slots: number): void {
+  beforeAll(async () => {
+    await Promise.all(Array.from({ length: slots }, (_, slot) => signingKey("pregenerated", slot)));
+  }, 60_000);
 }
 
 const encodeJson = (value: unknown) =>

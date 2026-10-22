@@ -67,6 +67,26 @@ const BASE = {
   kv_namespaces: [{ binding: "OAUTH_KV" }],
 };
 
+// Unicode の 17 面（各 65536 個の code point）
+const PLANES = Array.from({ length: 17 }, (_, plane) => plane);
+
+/** 面の中で、2 つの検査の答えが食い違う 1 文字を U+XXXX で返す。サロゲートは 1 文字にならないので飛ばす。 */
+function mismatchesInPlane(
+  plane: number,
+  check: (text: string) => boolean,
+  reference: (text: string) => boolean,
+): string[] {
+  const mismatches: string[] = [];
+  for (let cp = plane * 0x10000; cp < (plane + 1) * 0x10000; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue;
+    const char = String.fromCodePoint(cp);
+    if (check(char) !== reference(char)) {
+      mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")}`);
+    }
+  }
+  return mismatches;
+}
+
 describe("stripJsonc", () => {
   it("コメントと末尾カンマを除き、文字列の中の // や /* は残す", () => {
     const text = `// 先頭
@@ -171,17 +191,13 @@ describe("readDeployValues", () => {
     expect(isValidSiteName("👨\u200d👩\u200d👧")).toBe(true);
   });
 
-  it("SITE_NAME の禁じる文字の規則は、すべての code point で Worker の検査と一致する", () => {
-    const mismatches: string[] = [];
-    for (let cp = 0; cp <= 0x10ffff; cp++) {
-      if (cp >= 0xd800 && cp <= 0xdfff) continue;
-      const char = String.fromCodePoint(cp);
-      if (isValidSiteNameText(char) !== isValidSiteName(char)) {
-        mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")}`);
-      }
-    }
-    expect(mismatches).toEqual([]);
-  });
+  // 1 回で 111 万の code point を走査すると、負荷で 1 テストの時間切れ（5 秒）を超えるので、面ごとに分ける
+  it.each(PLANES)(
+    "SITE_NAME の禁じる文字の規則は、面 %i のすべての code point で Worker の検査と一致する",
+    (plane) => {
+      expect(mismatchesInPlane(plane, isValidSiteNameText, isValidSiteName)).toEqual([]);
+    },
+  );
 
   it("SITE_NAME は、引用符で囲まない # があると黙って切れるので弾く", () => {
     const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;
@@ -235,17 +251,14 @@ describe("readDeployValues", () => {
     expect(isValidSiteDescription("a\nb")).toBe(false);
   });
 
-  it("SITE_DESCRIPTION の禁じる文字の規則は、すべての code point で Worker の検査と一致する", () => {
-    const mismatches: string[] = [];
-    for (let cp = 0; cp <= 0x10ffff; cp++) {
-      if (cp >= 0xd800 && cp <= 0xdfff) continue;
-      const char = String.fromCodePoint(cp);
-      if (isValidSiteDescriptionText(char) !== isValidSiteDescription(char)) {
-        mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")}`);
-      }
-    }
-    expect(mismatches).toEqual([]);
-  });
+  it.each(PLANES)(
+    "SITE_DESCRIPTION の禁じる文字の規則は、面 %i のすべての code point で Worker の検査と一致する",
+    (plane) => {
+      expect(mismatchesInPlane(plane, isValidSiteDescriptionText, isValidSiteDescription)).toEqual(
+        [],
+      );
+    },
+  );
 
   it("SITE_DESCRIPTION も、引用符で囲まない # があると黙って切れるので弾く", () => {
     const base = `WIKI_HOSTNAME=h.example\nD1_DATABASE_ID=${UUID}\n`;

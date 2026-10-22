@@ -3,6 +3,7 @@ import {
   AUDIENCE,
   fakeJwks,
   OWNER_EMAIL,
+  pregenerateSigningKeys,
   type SigningKey,
   signAccessJwt,
   signingKey,
@@ -12,6 +13,9 @@ import { createAccessVerifier } from "./access";
 import { encodeBase64Url } from "./base64url";
 
 const T0 = Date.UTC(2026, 9, 1);
+
+// 別の鍵（slot 1）で署名するテストがある
+pregenerateSigningKeys(2);
 
 async function setup(keys?: SigningKey[]) {
   const key = await signingKey("key-1");

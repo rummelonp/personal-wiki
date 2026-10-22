@@ -7,6 +7,7 @@ import {
   fakeJwks,
   ownerCookie,
   ownerEnv,
+  pregenerateSigningKeys,
   SESSION_SECRET,
   signAccessJwt,
   signingKey,
@@ -33,6 +34,8 @@ const SAME_ORIGIN = { Origin: ORIGIN, "Sec-Fetch-Site": "same-origin" };
 const FORM = "application/x-www-form-urlencoded";
 const STALE_CONSENT =
   "この同意画面はもう使えません。開いてから時間がたったか、すでに送信したか、別のブラウザで開いた画面です。";
+
+pregenerateSigningKeys(1);
 
 function setup({
   oauthKv = true,

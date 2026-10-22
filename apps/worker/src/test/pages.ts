@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
+import { normalizeTitleKey } from "@personal-wiki/domain";
 import { createApp } from "../app";
+import { generatePageId } from "../pages/id";
 import type { WriteMetric } from "../pages/operations";
 import { insertApiToken } from "./tokens";
 
@@ -54,6 +56,23 @@ export async function buildClient(options: { scopes?: "read" | "read write"; nam
     });
   }
   return { request, create, update, clock, metrics, actor };
+}
+
+/**
+ * 本文の無い public のページを、titles の順に updated_at を 1 ミリ秒ずつ進めて直接入れる。
+ * 件数の上限を確かめるテストが上限を超える件数を API で作ると、件数に比例して遅く、負荷で時間切れになる。
+ * 版と派生データ（抜粋、リンク、検索）は作らないので、一覧と sitemap など pages の行だけを読む経路に使う。
+ */
+export async function insertPublicPages(titles: string[]): Promise<void> {
+  const statements = titles.map((title, i) => {
+    const key = normalizeTitleKey(title);
+    if (!key.ok) throw new Error(`title_key にできない title: ${title}`);
+    return env.DB.prepare(
+      `INSERT INTO pages (id, title, title_key, body, visibility, version, created_at, updated_at)
+       VALUES (?1, ?2, ?3, '', 'public', 1, ?4, ?4)`,
+    ).bind(generatePageId(), title, key.value, T0 + i);
+  });
+  await env.DB.batch(statements);
 }
 
 /** DB 全体の派生データとページを丸ごと取り、書き込みが一切起きなかったことの比較に使う。 */

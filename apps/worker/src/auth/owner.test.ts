@@ -7,6 +7,7 @@ import {
   ownerCookie,
   ownerEnv,
   ownerEnvWithoutBucket,
+  pregenerateSigningKeys,
   SESSION_SECRET,
   signAccessJwt,
   signingKey,
@@ -19,6 +20,8 @@ import { SESSION_COOKIE_NAME } from "./session";
 const T0 = Date.UTC(2026, 9, 1);
 const ORIGIN = "http://localhost";
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+pregenerateSigningKeys(1);
 
 async function setup() {
   const key = await signingKey("key-1");

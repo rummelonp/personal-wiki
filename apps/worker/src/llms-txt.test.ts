@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 import { ROOT_PAGE_LIST_LIMIT } from "./page-html";
 import { ownerCookie, ownerEnv } from "./test/owner";
-import { type PageJson, T0 } from "./test/pages";
+import { insertPublicPages, type PageJson, T0 } from "./test/pages";
 import { insertToken } from "./test/tokens";
 
 /*
@@ -187,11 +187,9 @@ describe("/llms.txt", () => {
   });
 
   it(`多くて ${ROOT_PAGE_LIST_LIMIT} 件で、古いページから外し、外したページへは ## Optional の sitemap.xml でたどらせる`, async () => {
-    const { call, create } = await setup();
-    const titles: string[] = [];
-    for (let i = 0; i <= ROOT_PAGE_LIST_LIMIT; i++) {
-      titles.push((await create(`Page ${i}`, "public")).title);
-    }
+    const { call } = await setup();
+    const titles = Array.from({ length: ROOT_PAGE_LIST_LIMIT + 1 }, (_, i) => `Page ${i}`);
+    await insertPublicPages(titles);
     const text = await (await call("/llms.txt")).text();
     expect(pageLines(text)).toEqual(
       titles
