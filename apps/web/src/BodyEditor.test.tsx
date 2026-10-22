@@ -371,6 +371,19 @@ describe("jumpTo", () => {
     expect(view().hasFocus).toBe(false);
   });
 
+  it("窓が背面で view.hasFocus が false でも、view に focus があれば外す", () => {
+    const ref = createRef<BodyEditorHandle>();
+    const { view } = controlled("# 見出し\n\n本文\n\n## 次", { ref });
+    const v = view();
+    act(() => v.focus());
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    expect(v.hasFocus).toBe(false);
+    expect(v.root.activeElement).toBe(v.contentDOM);
+
+    act(() => ref.current?.jumpTo(10));
+    expect(v.root.activeElement).not.toBe(v.contentDOM);
+  });
+
   it("変換中は落ち着くまで待つ", async () => {
     const ref = createRef<BodyEditorHandle>();
     const { view } = controlled("# 見出し\n\n本文", { ref });

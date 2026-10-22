@@ -123,10 +123,11 @@ const settledKey = Symbol("whenSettled");
  * focus を外す。リンクや目次から見出しへ移るのは読むためで、focus が残ると iOS のキーボードが
  * 画面の半分を隠し、カーソルの行の Live Preview の記号（`## `）も現れる。
  * 続けて編集するには、本文をクリックかタップする。
+ * 窓が背面でも外すため、view.hasFocus（document.hasFocus() も見る）でなく holdsFocus で判定する。
  * focus を残してカーソルだけ別の所に置く案は、画面の外にカーソルがあるまま打てるので採らなかった。
  */
 function leaveEditing(editor: EditorView): void {
-  if (editor.hasFocus) editor.contentDOM.blur();
+  if (holdsFocus(editor)) editor.contentDOM.blur();
 }
 
 /**
